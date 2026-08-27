@@ -31,8 +31,8 @@ oss-data-stack/
 │       └── redshift_to_postgres_dag.py
 ├── dlt/
 │   └── pipelines/
-│       └── redshift_to_postgres/
-│           ├── redshift_pipeline.py
+│       └── sqlserver_to_postgres/
+│           ├── sqlserver_pipeline.py
 │           └── .dlt/
 │               ├── config.toml       # non-secret settings
 │               └── secrets.toml      # fill in real creds, keep out of git
@@ -84,7 +84,7 @@ oss-data-stack/
 6. **Access:**
    - Airflow UI (served by the api-server): http://localhost:8080 (user/pass from `.env`)
    - Superset UI: http://localhost:8088 (admin/admin unless changed)
-   - Postgres: `localhost:5432`, db `analytics`, user/pass `postgres`/`postgres` (Superset's own metadata lives in a separate `superset_meta` database on the same instance — you won't need to touch it directly)
+   - Postgres: `localhost:5433`, db `analytics`, user/pass `postgres`/`postgres` (Superset's own metadata lives in a separate `superset_meta` database on the same instance — you won't need to touch it directly)
 
 7. **In Superset**, add a new database connection to `postgresql://postgres:postgres@postgres:5432/analytics` (use the Docker service name `postgres`, not `localhost`, since Superset is calling it from inside the compose network) and build charts/dashboards against the `data_mart` schema.
 
