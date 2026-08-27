@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: adventureworks
+    description: AdventureWorks2016 OLTP data loaded into the raw schema via dlt.
+    database: analytics_2
+    schema: raw
+    tables:
+      - name: person
+      - name: customer
+      - name: email_address
+      - name: store
+      - name: business_entity
+      - name: business_entity_address
+      - name: address
+      - name: address_type
+      - name: state_province
+      - name: country_region
+      - name: sales_territory
+      - name: sales_territory_history
+      - name: product
+      - name: product_subcategory
+      - name: product_category
+      - name: product_cost_history
+      - name: product_list_price_history
+      - name: product_product_photo
+      - name: product_photo
+      - name: special_offer
+      - name: currency
+      - name: currency_rate
+      - name: sales_person
+      - name: sales_person_quota_history
+      - name: employee
+      - name: employee_department_history
+      - name: department
+      - name: shift
+      - name: vendor
+      - name: sales_order_header
+      - name: sales_order_detail
+      - name: sales_order_header_sales_reason
+      - name: sales_reason
+      - name: product_inventory
+      - name: location

@@ -1,0 +1,12 @@
+# Airflow 3 default (Simple Auth Manager) doesn't provision users the same
+# way — FAB gives back the familiar env-var-based admin user/password setup.
+apache-airflow-providers-fab
+
+# Ingestion
+dlt[postgres]==1.4.1
+setuptools<81
+pyodbc==5.3.0
+
+# Transformation
+dbt-core==1.8.8
+dbt-postgres==1.8.2

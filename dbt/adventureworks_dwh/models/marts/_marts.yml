@@ -1,0 +1,89 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: Date dimension spanning 2010-01-01 to 2013-12-31 (generated date spine).
+    columns:
+      - name: date_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_customer
+    description: Individual (person) customers with email and geography.
+    columns:
+      - name: customer_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_product
+    description: Products with category/subcategory references.
+    columns:
+      - name: product_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_product_category
+    columns:
+      - name: product_category_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_product_subcategory
+    columns:
+      - name: product_subcategory_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_geography
+    columns:
+      - name: geography_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_sales_territory
+    columns:
+      - name: sales_territory_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_promotion
+    columns:
+      - name: promotion_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_currency
+    columns:
+      - name: currency_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_reseller
+    columns:
+      - name: reseller_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_employee
+    columns:
+      - name: employee_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_sales_reason
+    columns:
+      - name: sales_reason_key
+        tests:
+          - unique
+          - not_null

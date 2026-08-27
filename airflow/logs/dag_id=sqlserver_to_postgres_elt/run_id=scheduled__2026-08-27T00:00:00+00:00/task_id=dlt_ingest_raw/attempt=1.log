@@ -1,0 +1,149 @@
+{"timestamp":"2026-08-27T09:59:56.444603Z","level":"info","event":"DAG bundles loaded: dags-folder","filename":"manager.py","lineno":179,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:56.445087Z","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/sqlserver_to_postgres_dag.py","filename":"dagbag.py","lineno":593,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:56.452225Z","level":"warning","event":"The `airflow.decorators.dag` attribute is deprecated. Please use `'airflow.sdk.dag'`.","category":"DeprecatedImportWarning","filename":"/opt/airflow/dags/sqlserver_to_postgres_dag.py","lineno":4,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:56.452315Z","level":"warning","event":"The `airflow.operators.bash.BashOperator` attribute is deprecated. Please use `'airflow.providers.standard.operators.bash.BashOperator'`.","category":"DeprecatedImportWarning","filename":"/opt/airflow/dags/sqlserver_to_postgres_dag.py","lineno":5,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:56.453878Z","level":"info","event":"Stats instance was created in PID 8 but accessed in PID 55. Re-initializing.","logger":"airflow.stats","filename":"stats.py","lineno":57}
+{"timestamp":"2026-08-27T09:59:56.492055Z","level":"info","event":"Tmp dir root location: /tmp","filename":"subprocess.py","lineno":78,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:56.492737Z","level":"info","event":"Running command: ['/usr/bin/bash', '-c', 'cd /opt/airflow/dlt/pipelines/sqlserver_to_postgres && python sqlserver_pipeline.py']","filename":"subprocess.py","lineno":80,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:56.493168Z","level":"info","event":"Output:","filename":"subprocess.py","lineno":92,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:57.562792Z","level":"info","event":"/home/airflow/.local/lib/python3.11/site-packages/dlt/helpers/dbt/__init__.py:3: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T09:59:57.562906Z","level":"info","event":"  import pkg_resources","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.724238Z","level":"info","event":"Traceback (most recent call last):","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.724523Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 3371, in _wrap_pool_connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.726056Z","level":"info","event":"    return fn()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.726271Z","level":"info","event":"           ^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.726428Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 327, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.726690Z","level":"info","event":"    return _ConnectionFairy._checkout(self)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.726873Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.726998Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 894, in _checkout","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.727229Z","level":"info","event":"    fairy = _ConnectionRecord.checkout(pool)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.727374Z","level":"info","event":"            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.727502Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 493, in checkout","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.727627Z","level":"info","event":"    rec = pool._do_get()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.727765Z","level":"info","event":"          ^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.727890Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py\", line 145, in _do_get","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.728016Z","level":"info","event":"    with util.safe_reraise():","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.728139Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py\", line 70, in __exit__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.728478Z","level":"info","event":"    compat.raise_(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.728625Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/compat.py\", line 211, in raise_","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.728883Z","level":"info","event":"    raise exception","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729025Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py\", line 143, in _do_get","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729155Z","level":"info","event":"    return self._create_connection()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729276Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729395Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 273, in _create_connection","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729525Z","level":"info","event":"    return _ConnectionRecord(self)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729643Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729779Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 388, in __init__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.729907Z","level":"info","event":"    self.__connect()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730026Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 690, in __connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730152Z","level":"info","event":"    with util.safe_reraise():","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730269Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py\", line 70, in __exit__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730388Z","level":"info","event":"    compat.raise_(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730505Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/compat.py\", line 211, in raise_","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730627Z","level":"info","event":"    raise exception","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730769Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 686, in __connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.730890Z","level":"info","event":"    self.dbapi_connection = connection = pool._invoke_creator(self)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731013Z","level":"info","event":"                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731132Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/create.py\", line 574, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731259Z","level":"info","event":"    return dialect.connect(*cargs, **cparams)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731381Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731501Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/default.py\", line 598, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731625Z","level":"info","event":"    return self.dbapi.connect(*cargs, **cparams)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731872Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.731999Z","level":"info","event":"pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 18 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732022Z","level":"info","event":"","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732041Z","level":"info","event":"The above exception was the direct cause of the following exception:","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732058Z","level":"info","event":"","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732074Z","level":"info","event":"Traceback (most recent call last):","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732090Z","level":"info","event":"  File \"/opt/airflow/dlt/pipelines/sqlserver_to_postgres/sqlserver_pipeline.py\", line 70, in <module>","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732109Z","level":"info","event":"    load_sqlserver_to_postgres()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732125Z","level":"info","event":"  File \"/opt/airflow/dlt/pipelines/sqlserver_to_postgres/sqlserver_pipeline.py\", line 54, in load_sqlserver_to_postgres","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732142Z","level":"info","event":"    sources = [","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732159Z","level":"info","event":"              ^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732175Z","level":"info","event":"  File \"/opt/airflow/dlt/pipelines/sqlserver_to_postgres/sqlserver_pipeline.py\", line 55, in <listcomp>","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732191Z","level":"info","event":"    sql_database(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732206Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/dlt/extract/decorators.py\", line 196, in __call__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732223Z","level":"info","event":"    source = self._deco_f(*args, **kwargs)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732239Z","level":"info","event":"             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732254Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/dlt/extract/decorators.py\", line 281, in _wrap","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732269Z","level":"info","event":"    return _eval_rv(rv, schema_copy)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732285Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732300Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/dlt/extract/decorators.py\", line 241, in _eval_rv","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732317Z","level":"info","event":"    _rv = list(_rv)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732332Z","level":"info","event":"          ^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732352Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/dlt/sources/sql_database/__init__.py\", line 107, in sql_database","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732388Z","level":"info","event":"    metadata.reflect(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.732407Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/sql/schema.py\", line 4842, in reflect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733171Z","level":"info","event":"    with inspection.inspect(bind)._inspection_context() as insp:","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733210Z","level":"info","event":"         ^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733230Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/inspection.py\", line 64, in inspect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733248Z","level":"info","event":"    ret = reg(subject)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733264Z","level":"info","event":"          ^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733278Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/reflection.py\", line 182, in _engine_insp","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733512Z","level":"info","event":"    return Inspector._construct(Inspector._init_engine, bind)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733530Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733545Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/reflection.py\", line 117, in _construct","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733565Z","level":"info","event":"    init(self, bind)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733582Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/reflection.py\", line 128, in _init_engine","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733607Z","level":"info","event":"    engine.connect().close()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733624Z","level":"info","event":"    ^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733638Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 3325, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733945Z","level":"info","event":"    return self._connection_cls(self, close_with_result=close_with_result)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.733985Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734005Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 96, in __init__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734022Z","level":"info","event":"    else engine.raw_connection()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734038Z","level":"info","event":"         ^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734062Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 3404, in raw_connection","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734242Z","level":"info","event":"    return self._wrap_pool_connect(self.pool.connect, _connection)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734259Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734274Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 3374, in _wrap_pool_connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734526Z","level":"info","event":"    Connection._handle_dbapi_exception_noconnection(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734542Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 2208, in _handle_dbapi_exception_noconnection","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734705Z","level":"info","event":"    util.raise_(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734726Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/compat.py\", line 211, in raise_","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734745Z","level":"info","event":"    raise exception","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.734766Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/base.py\", line 3371, in _wrap_pool_connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735054Z","level":"info","event":"    return fn()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735094Z","level":"info","event":"           ^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735114Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 327, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735132Z","level":"info","event":"    return _ConnectionFairy._checkout(self)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735147Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735161Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 894, in _checkout","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735176Z","level":"info","event":"    fairy = _ConnectionRecord.checkout(pool)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735190Z","level":"info","event":"            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735204Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 493, in checkout","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735226Z","level":"info","event":"    rec = pool._do_get()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735243Z","level":"info","event":"          ^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735261Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py\", line 145, in _do_get","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735276Z","level":"info","event":"    with util.safe_reraise():","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735290Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py\", line 70, in __exit__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735305Z","level":"info","event":"    compat.raise_(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735319Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/compat.py\", line 211, in raise_","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735333Z","level":"info","event":"    raise exception","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735347Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py\", line 143, in _do_get","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735362Z","level":"info","event":"    return self._create_connection()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735375Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735390Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 273, in _create_connection","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735404Z","level":"info","event":"    return _ConnectionRecord(self)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735418Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735431Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 388, in __init__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735526Z","level":"info","event":"    self.__connect()","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735566Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 690, in __connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735588Z","level":"info","event":"    with util.safe_reraise():","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735604Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py\", line 70, in __exit__","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735619Z","level":"info","event":"    compat.raise_(","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735634Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/util/compat.py\", line 211, in raise_","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735650Z","level":"info","event":"    raise exception","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735664Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/pool/base.py\", line 686, in __connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735678Z","level":"info","event":"    self.dbapi_connection = connection = pool._invoke_creator(self)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735691Z","level":"info","event":"                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735705Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/create.py\", line 574, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735813Z","level":"info","event":"    return dialect.connect(*cargs, **cparams)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735852Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735872Z","level":"info","event":"  File \"/home/airflow/.local/lib/python3.11/site-packages/sqlalchemy/engine/default.py\", line 598, in connect","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735890Z","level":"info","event":"    return self.dbapi.connect(*cargs, **cparams)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735904Z","level":"info","event":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735919Z","level":"info","event":"sqlalchemy.exc.OperationalError: (pyodbc.OperationalError) ('HYT00', '[HYT00] [Microsoft][ODBC Driver 18 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.735933Z","level":"info","event":"(Background on this error at: https://sqlalche.me/e/14/e3q8)","filename":"subprocess.py","lineno":99,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.928673Z","level":"info","event":"Command exited with return code 1","filename":"subprocess.py","lineno":103,"logger":"task"}
+{"timestamp":"2026-08-27T10:00:14.929002Z","level":"error","event":"Task failed with exception","logger":"task","filename":"task_runner.py","lineno":1164,"error_detail":[{"exc_type":"AirflowException","exc_value":"Bash command failed. The command returned a non-zero exit code 1.","exc_notes":[],"syntax_error":null,"is_cause":false,"frames":[{"filename":"/home/airflow/.local/lib/python3.11/site-packages/airflow/sdk/execution_time/task_runner.py","lineno":1112,"name":"run"},{"filename":"/home/airflow/.local/lib/python3.11/site-packages/airflow/sdk/execution_time/task_runner.py","lineno":1528,"name":"_execute_task"},{"filename":"/home/airflow/.local/lib/python3.11/site-packages/airflow/sdk/bases/operator.py","lineno":417,"name":"wrapper"},{"filename":"/home/airflow/.local/lib/python3.11/site-packages/airflow/providers/standard/operators/bash.py","lineno":225,"name":"execute"}],"is_group":false,"exceptions":[]}]}

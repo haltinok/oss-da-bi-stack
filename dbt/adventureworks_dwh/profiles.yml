@@ -1,0 +1,12 @@
+adventureworks_dwh:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres
+      port: 5432
+      user: postgres
+      password: postgres
+      dbname: analytics_2
+      schema: stage
+      threads: 4
