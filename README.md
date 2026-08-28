@@ -64,7 +64,7 @@ oss-data-stack/
    # generate real values for AIRFLOW_FERNET_KEY, AIRFLOW_WEBSERVER_SECRET_KEY, SUPERSET_SECRET_KEY
    ```
 
-2. **Fill in real credentials** in `dlt/pipelines/redshift_to_postgres/.dlt/secrets.toml` (Redshift source creds; Postgres destination user/password already match the compose defaults). Add this file to `.gitignore` before pushing anywhere public.
+2. **Fill in real credentials** in `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml` (SQLServer source creds; Postgres destination user/password already match the compose defaults). Add this file to `.gitignore` before pushing anywhere public.
 
 3. **Generate the dlt source module once**, from your host machine (needs `uv`/`dlt` installed locally, or run inside the airflow container after first build):
    ```bash
@@ -88,7 +88,7 @@ oss-data-stack/
 
 7. **In Superset**, add a new database connection to `postgresql://postgres:postgres@postgres:5432/analytics` (use the Docker service name `postgres`, not `localhost`, since Superset is calling it from inside the compose network) and build charts/dashboards against the `data_mart` schema.
 
-8. **Trigger the DAG** (`redshift_to_postgres_elt`) from the Airflow UI, or unpause it to let the daily schedule take over. It runs: `dlt ingest → dbt run --select staging → dbt run --select marts → dbt test`.
+8. **Trigger the DAG** (`sqlserver_to_postgres_elt`) from the Airflow UI, or unpause it to let the daily schedule take over. It runs: `dlt ingest → dbt run --select staging → dbt run --select marts → dbt test`.
 
 ## Notes
 
