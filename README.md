@@ -1,6 +1,6 @@
 # Open-Source D&A Stack
 
-Redshift → (dlt) → Postgres `raw` → (dbt-core) → Postgres `stage` → Postgres `data_mart` → (Superset)
+SQLServer → (dlt) → Postgres `raw` → (dbt-core) → Postgres `stage` → Postgres `data_mart` → (Superset)
 Orchestrated end-to-end by Airflow.
 
 ## Stack
