@@ -28,7 +28,7 @@ oss-data-stack/
 │   ├── Dockerfile            # apache/airflow:3.3.1 + dlt + dbt-core installed
 │   ├── requirements.txt
 │   └── dags/
-│       └── redshift_to_postgres_dag.py
+│       └── sqlserver_to_postgres_dag.py
 ├── dlt/
 │   └── pipelines/
 │       └── sqlserver_to_postgres/
@@ -68,10 +68,10 @@ oss-data-stack/
 
 3. **Generate the dlt source module once**, from your host machine (needs `uv`/`dlt` installed locally, or run inside the airflow container after first build):
    ```bash
-   cd dlt/pipelines/redshift_to_postgres
+   cd dlt/pipelines/sqlserver_to_postgres
    dlt init sql_database postgres
    ```
-   This drops a `sql_database/` module next to `redshift_pipeline.py` — it's what makes `from sql_database import sql_database` work. Then edit `redshift_pipeline.py` to select your actual Redshift table(s).
+   This drops a `sql_database/` module next to `sqlserver_pipeline.py` — it's what makes `from sql_database import sql_database` work. Then edit `sqlserver_pipeline.py` to select your actual Redshift table(s).
 
 4. **Edit the dbt source/model stubs** in `dbt/data_mart/models/` — `_sources.yml` and the two example `.sql` files currently reference a placeholder `your_table_name`; swap in your real table names.
 
