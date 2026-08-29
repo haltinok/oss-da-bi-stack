@@ -1,0 +1,10 @@
+[destination.postgres.credentials]
+host = "postgres"
+port = 5432
+database = "analytics_2"
+username = "postgres"
+
+# Sequential (single-worker) normalization avoids a process-pool race condition
+# seen when loading many small tables (sporadic "No such file or directory" on typed-jsonl files).
+[normalize]
+workers = 1

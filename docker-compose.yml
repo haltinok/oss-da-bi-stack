@@ -19,6 +19,7 @@ x-airflow-common: &airflow-common
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/scripts:/opt/airflow/scripts
     - ./dlt:/opt/airflow/dlt
     - ./dbt:/opt/airflow/dbt
   depends_on:
@@ -40,6 +41,36 @@ services:
       - ./postgres/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres_active:
+    image: postgres:16
+    container_name: postgres_active
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: active_db
+    ports:
+      - "5434:5434"
+    command:
+      - "postgres"
+      - "-p"
+      - "5434"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_wal_size=4GB"
+    volumes:
+      - postgres_active_data:/var/lib/postgresql/data
+      - ./postgres_active/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -p 5434"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -149,4 +180,5 @@ services:
 
 volumes:
   postgres_data:
+  postgres_active_data:
   superset_home:
