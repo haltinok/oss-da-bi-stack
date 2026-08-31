@@ -244,8 +244,30 @@ services:
       kafka:
         condition: service_healthy
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d
+      - ./clickhouse/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml:ro
+    ulimits:
+      nofile: 262144
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8123/ping | grep -qi ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   postgres_data:
   postgres_active_data:
   kafka_data:
+  clickhouse_data:
   superset_home:
