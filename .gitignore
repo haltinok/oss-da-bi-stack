@@ -1,2 +1,3 @@
-/.env.example
-airflow/logs/dag_processor/2026-08-27/dags-folder/sqlserver_to_postgres_dag.py.log
+.env
+airflow/logs/*
+airflow/logs/dag_processor/latest
