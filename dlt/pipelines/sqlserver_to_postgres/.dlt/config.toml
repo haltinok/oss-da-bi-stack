@@ -1,7 +1,7 @@
 [destination.postgres.credentials]
 host = "postgres"
 port = 5432
-database = "analytics_2"
+database = "analytics"
 username = "postgres"
 
 # Sequential (single-worker) normalization avoids a process-pool race condition

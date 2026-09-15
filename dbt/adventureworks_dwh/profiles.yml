@@ -7,6 +7,6 @@ adventureworks_dwh:
       port: 5432
       user: postgres
       password: postgres
-      dbname: analytics_2
+      dbname: analytics
       schema: stage
       threads: 4

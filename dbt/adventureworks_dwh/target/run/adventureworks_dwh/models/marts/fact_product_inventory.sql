@@ -2,14 +2,14 @@
   
     
 
-  create  table "analytics_2"."mart"."fact_product_inventory__dbt_tmp"
+  create  table "analytics"."mart"."fact_product_inventory__dbt_tmp"
   
   
     as
   
   (
     with inventory as (
-    select * from "analytics_2"."stage"."stg_product_inventory"
+    select * from "analytics"."stage"."stg_product_inventory"
 ),
 
 renamed as (

@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: adventureworks
     description: AdventureWorks2016 OLTP data loaded into the raw schema via dlt.
-    database: analytics_2
+    database: analytics
     schema: raw
     tables:
       - name: person

@@ -1,10 +1,10 @@
 
-  create view "analytics_2"."stage"."stg_product_subcategory__dbt_tmp"
+  create view "analytics"."stage"."stg_product_subcategory__dbt_tmp"
     
     
   as (
     with source as (
-    select * from "analytics_2"."raw"."product_subcategory"
+    select * from "analytics"."raw"."product_subcategory"
 ),
 
 renamed as (

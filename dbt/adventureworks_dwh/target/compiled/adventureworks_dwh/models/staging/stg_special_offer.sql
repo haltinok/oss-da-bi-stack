@@ -1,5 +1,5 @@
 with source as (
-    select * from "analytics_2"."raw"."special_offer"
+    select * from "analytics"."raw"."special_offer"
 ),
 
 renamed as (

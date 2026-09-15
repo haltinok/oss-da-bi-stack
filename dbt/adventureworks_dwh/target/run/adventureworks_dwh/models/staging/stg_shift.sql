@@ -1,10 +1,10 @@
 
-  create view "analytics_2"."stage"."stg_shift__dbt_tmp"
+  create view "analytics"."stage"."stg_shift__dbt_tmp"
     
     
   as (
     with source as (
-    select * from "analytics_2"."raw"."shift"
+    select * from "analytics"."raw"."shift"
 ),
 
 renamed as (

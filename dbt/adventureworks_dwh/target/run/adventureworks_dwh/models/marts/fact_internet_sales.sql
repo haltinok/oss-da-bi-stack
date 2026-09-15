@@ -2,27 +2,27 @@
   
     
 
-  create  table "analytics_2"."mart"."fact_internet_sales__dbt_tmp"
+  create  table "analytics"."mart"."fact_internet_sales__dbt_tmp"
   
   
     as
   
   (
     with header as (
-    select * from "analytics_2"."stage"."stg_sales_order_header"
+    select * from "analytics"."stage"."stg_sales_order_header"
     where online_order_flag = true
 ),
 
 detail as (
-    select * from "analytics_2"."stage"."stg_sales_order_detail"
+    select * from "analytics"."stage"."stg_sales_order_detail"
 ),
 
 currency_rate as (
-    select * from "analytics_2"."stage"."stg_currency_rate"
+    select * from "analytics"."stage"."stg_currency_rate"
 ),
 
 product_cost_history as (
-    select * from "analytics_2"."stage"."stg_product_cost_history"
+    select * from "analytics"."stage"."stg_product_cost_history"
 ),
 
 order_lines as (

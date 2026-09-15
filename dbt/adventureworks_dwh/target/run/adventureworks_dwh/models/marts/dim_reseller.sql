@@ -2,38 +2,38 @@
   
     
 
-  create  table "analytics_2"."mart"."dim_reseller__dbt_tmp"
+  create  table "analytics"."mart"."dim_reseller__dbt_tmp"
   
   
     as
   
   (
     with store as (
-    select * from "analytics_2"."stage"."stg_store"
+    select * from "analytics"."stage"."stg_store"
 ),
 
 customer as (
-    select * from "analytics_2"."stage"."stg_customer"
+    select * from "analytics"."stage"."stg_customer"
 ),
 
 business_entity_address as (
-    select * from "analytics_2"."stage"."stg_business_entity_address"
+    select * from "analytics"."stage"."stg_business_entity_address"
 ),
 
 address as (
-    select * from "analytics_2"."stage"."stg_address"
+    select * from "analytics"."stage"."stg_address"
 ),
 
 state_province as (
-    select * from "analytics_2"."stage"."stg_state_province"
+    select * from "analytics"."stage"."stg_state_province"
 ),
 
 country_region as (
-    select * from "analytics_2"."stage"."stg_country_region"
+    select * from "analytics"."stage"."stg_country_region"
 ),
 
 dim_geography as (
-    select * from "analytics_2"."mart"."dim_geography"
+    select * from "analytics"."mart"."dim_geography"
 ),
 
 store_customer as (

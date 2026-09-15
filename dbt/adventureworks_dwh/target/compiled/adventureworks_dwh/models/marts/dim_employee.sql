@@ -1,21 +1,21 @@
 with employee as (
-    select * from "analytics_2"."stage"."stg_employee"
+    select * from "analytics"."stage"."stg_employee"
 ),
 
 person as (
-    select * from "analytics_2"."stage"."stg_person"
+    select * from "analytics"."stage"."stg_person"
 ),
 
 email as (
     select distinct on (business_entity_id)
         business_entity_id,
         email_address
-    from "analytics_2"."stage"."stg_email_address"
+    from "analytics"."stage"."stg_email_address"
     order by business_entity_id, email_address_id
 ),
 
 sales_person as (
-    select * from "analytics_2"."stage"."stg_sales_person"
+    select * from "analytics"."stage"."stg_sales_person"
 ),
 
 emp_dept_hist as (
@@ -23,13 +23,13 @@ emp_dept_hist as (
         business_entity_id,
         department_id,
         shift_id
-    from "analytics_2"."stage"."stg_employee_department_history"
+    from "analytics"."stage"."stg_employee_department_history"
     where end_date is null
     order by business_entity_id, start_date desc
 ),
 
 department as (
-    select * from "analytics_2"."stage"."stg_department"
+    select * from "analytics"."stage"."stg_department"
 ),
 
 renamed as (

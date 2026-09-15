@@ -1,10 +1,10 @@
 
-  create view "analytics_2"."stage"."stg_currency__dbt_tmp"
+  create view "analytics"."stage"."stg_currency__dbt_tmp"
     
     
   as (
     with source as (
-    select * from "analytics_2"."raw"."currency"
+    select * from "analytics"."raw"."currency"
 ),
 
 renamed as (

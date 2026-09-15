@@ -2,14 +2,14 @@
   
     
 
-  create  table "analytics_2"."mart"."fact_sales_quota__dbt_tmp"
+  create  table "analytics"."mart"."fact_sales_quota__dbt_tmp"
   
   
     as
   
   (
     with quota_history as (
-    select * from "analytics_2"."stage"."stg_sales_person_quota_history"
+    select * from "analytics"."stage"."stg_sales_person_quota_history"
 ),
 
 renamed as (

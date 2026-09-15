@@ -2,46 +2,46 @@
   
     
 
-  create  table "analytics_2"."mart"."dim_customer__dbt_tmp"
+  create  table "analytics"."mart"."dim_customer__dbt_tmp"
   
   
     as
   
   (
     with customer as (
-    select * from "analytics_2"."stage"."stg_customer"
+    select * from "analytics"."stage"."stg_customer"
 ),
 
 person as (
-    select * from "analytics_2"."stage"."stg_person"
+    select * from "analytics"."stage"."stg_person"
 ),
 
 email as (
     select distinct on (business_entity_id)
         business_entity_id,
         email_address
-    from "analytics_2"."stage"."stg_email_address"
+    from "analytics"."stage"."stg_email_address"
     order by business_entity_id, email_address_id
 ),
 
 address as (
-    select * from "analytics_2"."stage"."stg_address"
+    select * from "analytics"."stage"."stg_address"
 ),
 
 business_entity_address as (
-    select * from "analytics_2"."stage"."stg_business_entity_address"
+    select * from "analytics"."stage"."stg_business_entity_address"
 ),
 
 state_province as (
-    select * from "analytics_2"."stage"."stg_state_province"
+    select * from "analytics"."stage"."stg_state_province"
 ),
 
 country_region as (
-    select * from "analytics_2"."stage"."stg_country_region"
+    select * from "analytics"."stage"."stg_country_region"
 ),
 
 dim_geography as (
-    select * from "analytics_2"."mart"."dim_geography"
+    select * from "analytics"."mart"."dim_geography"
 ),
 
 customer_person as (

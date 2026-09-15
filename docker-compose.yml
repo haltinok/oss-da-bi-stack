@@ -169,7 +169,7 @@ services:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-changeme_superset_secret}
       PYTHONPATH: /app/pythonpath
     ports:
-      - "8088:8088"
+      - "8089:8088"
     volumes:
       - superset_home:/app/superset_home
       - ./superset/superset_config.py:/app/pythonpath/superset_config.py
@@ -177,6 +177,22 @@ services:
       superset-init:
         condition: service_completed_successfully
     command: ["superset", "run", "-h", "0.0.0.0", "-p", "8088", "--with-threads"]
+
+  superset-mcp:
+    build:
+      context: ./superset
+    container_name: oss_superset_mcp
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-changeme_superset_secret}
+      PYTHONPATH: /app/pythonpath
+      MCP_DEV_USERNAME: ${MCP_DEV_USERNAME:-admin}
+    ports:
+      - "5008:5008"
+    volumes:
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py
+    depends_on:
+      - superset
+    command: ["superset", "mcp", "run", "--host", "0.0.0.0", "--port", "5008"]
 
   kafka:
     image: confluentinc/cp-kafka:8.0.7

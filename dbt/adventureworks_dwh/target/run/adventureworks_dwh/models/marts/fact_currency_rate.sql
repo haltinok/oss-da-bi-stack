@@ -2,18 +2,18 @@
   
     
 
-  create  table "analytics_2"."mart"."fact_currency_rate__dbt_tmp"
+  create  table "analytics"."mart"."fact_currency_rate__dbt_tmp"
   
   
     as
   
   (
     with currency_rate as (
-    select * from "analytics_2"."stage"."stg_currency_rate"
+    select * from "analytics"."stage"."stg_currency_rate"
 ),
 
 currency as (
-    select * from "analytics_2"."stage"."stg_currency"
+    select * from "analytics"."stage"."stg_currency"
 ),
 
 renamed as (

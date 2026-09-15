@@ -5,7 +5,7 @@ FROM apache/superset:latest
 # Python env is a uv-managed venv (/app/.venv) with no pip, so use `uv pip install`
 # against that venv.
 USER root
-RUN uv pip install --python /app/.venv/bin/python3.10 --no-cache psycopg2-binary clickhouse-connect
+RUN uv pip install --python /app/.venv/bin/python3.10 --no-cache psycopg2-binary clickhouse-connect "fastmcp>=3.1.0,<4.0"
 
 # The base image ships translation *source* (.po) files but not the compiled
 # messages.json language packs, so /superset/language_pack/<lang>/ returns 404

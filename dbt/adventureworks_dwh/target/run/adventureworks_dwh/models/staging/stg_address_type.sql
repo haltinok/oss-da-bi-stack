@@ -1,10 +1,10 @@
 
-  create view "analytics_2"."stage"."stg_address_type__dbt_tmp"
+  create view "analytics"."stage"."stg_address_type__dbt_tmp"
     
     
   as (
     with source as (
-    select * from "analytics_2"."raw"."address_type"
+    select * from "analytics"."raw"."address_type"
 ),
 
 renamed as (

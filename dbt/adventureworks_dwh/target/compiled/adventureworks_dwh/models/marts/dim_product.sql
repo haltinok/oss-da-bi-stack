@@ -1,13 +1,13 @@
 with product as (
-    select * from "analytics_2"."stage"."stg_product"
+    select * from "analytics"."stage"."stg_product"
 ),
 
 subcategory as (
-    select * from "analytics_2"."stage"."stg_product_subcategory"
+    select * from "analytics"."stage"."stg_product_subcategory"
 ),
 
 category as (
-    select * from "analytics_2"."stage"."stg_product_category"
+    select * from "analytics"."stage"."stg_product_category"
 ),
 
 renamed as (

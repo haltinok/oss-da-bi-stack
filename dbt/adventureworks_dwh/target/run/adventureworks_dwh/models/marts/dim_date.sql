@@ -2,7 +2,7 @@
   
     
 
-  create  table "analytics_2"."mart"."dim_date__dbt_tmp"
+  create  table "analytics"."mart"."dim_date__dbt_tmp"
   
   
     as

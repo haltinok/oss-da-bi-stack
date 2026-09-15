@@ -2,14 +2,14 @@
   
     
 
-  create  table "analytics_2"."mart"."dim_sales_territory__dbt_tmp"
+  create  table "analytics"."mart"."dim_sales_territory__dbt_tmp"
   
   
     as
   
   (
     with source as (
-    select * from "analytics_2"."stage"."stg_sales_territory"
+    select * from "analytics"."stage"."stg_sales_territory"
 ),
 
 renamed as (

@@ -1,9 +1,9 @@
 with currency_rate as (
-    select * from "analytics_2"."stage"."stg_currency_rate"
+    select * from "analytics"."stage"."stg_currency_rate"
 ),
 
 currency as (
-    select * from "analytics_2"."stage"."stg_currency"
+    select * from "analytics"."stage"."stg_currency"
 ),
 
 renamed as (

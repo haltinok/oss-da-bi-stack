@@ -1,22 +1,22 @@
 with header as (
-    select * from "analytics_2"."stage"."stg_sales_order_header"
+    select * from "analytics"."stage"."stg_sales_order_header"
     where online_order_flag = false
 ),
 
 detail as (
-    select * from "analytics_2"."stage"."stg_sales_order_detail"
+    select * from "analytics"."stage"."stg_sales_order_detail"
 ),
 
 currency_rate as (
-    select * from "analytics_2"."stage"."stg_currency_rate"
+    select * from "analytics"."stage"."stg_currency_rate"
 ),
 
 product_cost_history as (
-    select * from "analytics_2"."stage"."stg_product_cost_history"
+    select * from "analytics"."stage"."stg_product_cost_history"
 ),
 
 customer as (
-    select * from "analytics_2"."stage"."stg_customer"
+    select * from "analytics"."stage"."stg_customer"
 ),
 
 store_customer as (

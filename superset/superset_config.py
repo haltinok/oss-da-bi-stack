@@ -12,3 +12,11 @@ LANGUAGES = {
 }
 BABEL_DEFAULT_LOCALE = "tr"
 SQLALCHEMY_DATABASE_URI = "postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta"
+
+# Built-in MCP server (superset mcp run). Development mode: no auth, all
+# operations run as this user. Never use this outside local dev.
+MCP_DEV_USERNAME = os.environ.get("MCP_DEV_USERNAME", "admin")
+
+# Advertise all tools upfront instead of the search_tools meta-interface, so
+# plain OpenAI-style function-calling clients get the full catalog directly.
+MCP_TOOL_SEARCH_CONFIG = {"enabled": False}

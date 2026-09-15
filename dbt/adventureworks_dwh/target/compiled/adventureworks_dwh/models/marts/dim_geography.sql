@@ -1,17 +1,17 @@
 with address as (
-    select * from "analytics_2"."stage"."stg_address"
+    select * from "analytics"."stage"."stg_address"
 ),
 
 state_province as (
-    select * from "analytics_2"."stage"."stg_state_province"
+    select * from "analytics"."stage"."stg_state_province"
 ),
 
 country_region as (
-    select * from "analytics_2"."stage"."stg_country_region"
+    select * from "analytics"."stage"."stg_country_region"
 ),
 
 sales_territory as (
-    select * from "analytics_2"."stage"."stg_sales_territory"
+    select * from "analytics"."stage"."stg_sales_territory"
 ),
 
 geography_keys as (

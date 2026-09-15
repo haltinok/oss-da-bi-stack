@@ -1,10 +1,10 @@
 
-  create view "analytics_2"."stage"."stg_employee_department_history__dbt_tmp"
+  create view "analytics"."stage"."stg_employee_department_history__dbt_tmp"
     
     
   as (
     with source as (
-    select * from "analytics_2"."raw"."employee_department_history"
+    select * from "analytics"."raw"."employee_department_history"
 ),
 
 renamed as (

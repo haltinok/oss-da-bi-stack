@@ -1,5 +1,5 @@
 with inventory as (
-    select * from "analytics_2"."stage"."stg_product_inventory"
+    select * from "analytics"."stage"."stg_product_inventory"
 ),
 
 renamed as (
