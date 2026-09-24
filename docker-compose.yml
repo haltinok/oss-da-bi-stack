@@ -259,6 +259,25 @@ services:
       kafka:
         condition: service_healthy
 
+  # Creates or updates the Debezium connector once Connect's REST API is up, so
+  # registering it is no longer a manual setup step. Uses the Debezium/Connect
+  # image (which ships python3) and PUT, which is idempotent -- re-running
+  # compose updates the connector in place instead of triggering another
+  # initial snapshot.
+  debezium-register:
+    build:
+      context: ./debezium-connect
+    container_name: oss_debezium_register
+    restart: "no"
+    entrypoint: ["python3", "/connectors/register_connector.py"]
+    volumes:
+      - ./debezium-connect:/connectors:ro
+    depends_on:
+      postgres_active:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_started
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka_ui
