@@ -1,3 +1,19 @@
+# --- Secrets / local env ---------------------------------------------------
 .env
-airflow/logs/*
-airflow/logs/dag_processor/latest
+.env.*
+!.env.example
+**/.dlt/secrets.toml
+
+# --- dbt build artifacts ---------------------------------------------------
+dbt/**/target/
+dbt/**/logs/
+dbt/**/dbt_packages/
+dbt/**/.user.yml
+
+# --- Airflow runtime -------------------------------------------------------
+airflow/logs/
+airflow/plugins/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]

@@ -11,7 +11,20 @@ LANGUAGES = {
     "tr": {"flag": "tr", "name": "Turkçe"},
 }
 BABEL_DEFAULT_LOCALE = "tr"
-SQLALCHEMY_DATABASE_URI = "postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta"
+
+# Metadata connection comes from the environment so no credentials live in git.
+# The default matches the local demo stack only.
+SQLALCHEMY_DATABASE_URI = os.environ.get(
+    "SUPERSET_METADATA_DB_URI",
+    "postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta",
+)
+
+# Credentials used by charts to reach the warehouse. Same rationale as above;
+# the `postgres`/`postgres` default matches the local demo stack only.
+SUPERSET_WAREHOUSE_DB_URI = os.environ.get(
+    "SUPERSET_WAREHOUSE_DB_URI",
+    "postgresql+psycopg2://postgres:postgres@postgres:5432/analytics",
+)
 
 # Built-in MCP server (superset mcp run). Development mode: no auth, all
 # operations run as this user. Never use this outside local dev.

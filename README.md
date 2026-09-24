@@ -90,6 +90,10 @@ Two consumers replicate it in parallel: the `postgres_active_to_postgres` dlt pi
 oss-data-stack/
 ├── docker-compose.yml
 ├── .env.example              # copy to .env and fill in
+├── SECURITY.md               # credential-rotation + history-purge checklist
+├── docs/
+│   ├── superset-dashboard.png
+│   └── superset-dashboard.pdf
 ├── airflow/
 │   ├── Dockerfile            # apache/airflow:3.3.1 + dlt + dbt-core + pyodbc + faker
 │   ├── requirements.txt
@@ -104,13 +108,13 @@ oss-data-stack/
 │       ├── sqlserver_to_postgres/
 │       │   ├── sqlserver_pipeline.py
 │       │   └── .dlt/
-│       │       ├── config.toml       # non-secret settings
-│       │       └── secrets.toml      # real creds, keep out of git
+│       │       ├── config.toml           # non-secret settings
+│       │       └── secrets.toml.example  # copy to secrets.toml (git-ignored)
 │       └── postgres_active_to_postgres/
 │           ├── orders_pipeline.py
 │           └── .dlt/
 │               ├── config.toml
-│               └── secrets.toml
+│               └── secrets.toml.example
 ├── dbt/
 │   └── adventureworks_dwh/
 │       ├── dbt_project.yml

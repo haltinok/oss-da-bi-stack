@@ -1,12 +1,20 @@
+# Connection settings are read from the environment so that no credentials live
+# in git (this repository is public). docker-compose passes POSTGRES_PASSWORD to
+# the Airflow containers; for a local run, export the variables yourself:
+#
+#   DBT_PG_HOST=localhost DBT_PG_PORT=5433 DBT_PG_PASSWORD=postgres \
+#     dbt run --project-dir dbt/adventureworks_dwh --profiles-dir dbt/adventureworks_dwh
+#
+# The `postgres` / `postgres` defaults below only match the local demo stack.
 adventureworks_dwh:
-  target: dev
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
   outputs:
     dev:
       type: postgres
-      host: postgres
-      port: 5432
-      user: postgres
-      password: postgres
-      dbname: analytics
-      schema: stage
-      threads: 4
+      host: "{{ env_var('DBT_PG_HOST', 'postgres') }}"
+      port: "{{ env_var('DBT_PG_PORT', '5432') | as_number }}"
+      user: "{{ env_var('DBT_PG_USER', 'postgres') }}"
+      password: "{{ env_var('DBT_PG_PASSWORD', env_var('POSTGRES_PASSWORD', 'postgres')) }}"
+      dbname: "{{ env_var('DBT_PG_DATABASE', 'analytics') }}"
+      schema: "{{ env_var('DBT_PG_SCHEMA', 'stage') }}"
+      threads: "{{ env_var('DBT_PG_THREADS', '4') | as_number }}"
