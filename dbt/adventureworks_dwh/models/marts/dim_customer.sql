@@ -26,20 +26,15 @@ state_province as (
     select * from {{ ref('stg_state_province') }}
 ),
 
-country_region as (
-    select * from {{ ref('stg_country_region') }}
-),
-
 dim_geography as (
     select * from {{ ref('dim_geography') }}
 ),
 
+-- Individual customers only; reseller (store) customers are in dim_reseller.
 customer_person as (
     select
         c.customer_id,
         c.person_id,
-        c.territory_id,
-        c.account_number,
         p.title,
         p.first_name,
         p.middle_name,
@@ -51,6 +46,9 @@ customer_person as (
     where c.store_id is null
 ),
 
+-- AdventureWorks address_type_id: 1 Billing, 2 Home, 3 Main Office,
+-- 4 Primary, 5 Shipping, 6 Archive. An individual resolves to their Home
+-- address; ties broken by the lowest address_id for determinism.
 customer_address as (
     select distinct on (bea.business_entity_id)
         bea.business_entity_id,

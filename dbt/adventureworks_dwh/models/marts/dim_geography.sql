@@ -10,10 +10,6 @@ country_region as (
     select * from {{ ref('stg_country_region') }}
 ),
 
-sales_territory as (
-    select * from {{ ref('stg_sales_territory') }}
-),
-
 geography_keys as (
     select distinct
         a.city,
@@ -28,11 +24,16 @@ geography_keys as (
     inner join country_region cr on sp.country_region_code = cr.country_region_code
 ),
 
-numbered as (
+-- The surrogate key is a deterministic hash of the natural key, NOT row_number().
+-- dlt reloads the raw layer with `write_disposition="replace"`, so an
+-- order-dependent key gets re-minted whenever a single new address happens to
+-- sort earlier in the window (measured: adding one such row shifted all 683 keys).
+-- A hash stays stable across rebuilds and keeps the column type numeric.
+keyed as (
     select
-        row_number() over (
-            order by city, state_province_code, country_region_code, postal_code
-        ) as geography_key,
+        ('x' || substr(md5(
+            city || '|' || state_province_code || '|' || country_region_code || '|' || postal_code
+        ), 1, 15))::bit(60)::bigint as geography_key,
         city,
         state_province_code,
         state_province_name,
@@ -43,4 +44,4 @@ numbered as (
     from geography_keys
 )
 
-select * from numbered
+select * from keyed

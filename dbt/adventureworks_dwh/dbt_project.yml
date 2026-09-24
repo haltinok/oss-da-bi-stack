@@ -19,6 +19,9 @@ models:
     staging:
       +schema: stage
       +materialized: view
+    intermediate:
+      +schema: stage
+      +materialized: ephemeral
     marts:
       +schema: mart
       +materialized: table

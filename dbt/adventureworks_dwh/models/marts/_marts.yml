@@ -2,20 +2,36 @@ version: 2
 
 models:
   - name: dim_date
-    description: Date dimension spanning 2010-01-01 to 2013-12-31 (generated date spine).
+    description: >
+      Generated date spine, 2008-01-01 to 2015-12-31 (one row per day).
+      The bounds must cover every date key produced by the facts
+      (sales orders 2011-05-31..2014-07-12, product inventory 2008-03-31..2014-08-12,
+      currency rates and quotas 2011-05-31..2014-05-31). The `relationships`
+      tests on the fact date keys fail if a key falls outside this window, so
+      widening the source means widening the spine.
     columns:
       - name: date_key
+        description: YYYYMMDD integer key.
+        tests:
+          - unique
+          - not_null
+      - name: full_date
         tests:
           - unique
           - not_null
 
   - name: dim_customer
-    description: Individual (person) customers with email and geography.
+    description: Individual (person) customers; one row per customer. Reseller (store) customers live in dim_reseller.
     columns:
       - name: customer_key
         tests:
           - unique
           - not_null
+      - name: geography_key
+        tests:
+          - relationships:
+              to: ref('dim_geography')
+              field: geography_key
 
   - name: dim_product
     description: Products with category/subcategory references.
@@ -38,13 +54,48 @@ models:
         tests:
           - unique
           - not_null
+      - name: product_category_key
+        tests:
+          - relationships:
+              to: ref('dim_product_category')
+              field: product_category_key
+
+  - name: dim_location
+    description: Stocking locations (warehouses) referenced by fact_product_inventory.
+    columns:
+      - name: location_key
+        tests:
+          - unique
+          - not_null
 
   - name: dim_geography
+    description: >
+      Distinct city / state province / country / postal code combinations.
+      geography_key is a deterministic hash of the natural key, so it is stable
+      across full rebuilds (row_number() was not). Natural-key uniqueness is
+      enforced by tests/dim_geography_natural_key_unique.sql.
     columns:
       - name: geography_key
         tests:
           - unique
           - not_null
+      - name: city
+        tests:
+          - not_null
+      - name: state_province_code
+        tests:
+          - not_null
+      - name: country_region_code
+        tests:
+          - not_null
+      - name: postal_code
+        tests:
+          - not_null
+      - name: sales_territory_key
+        tests:
+          - relationships:
+              to: ref('dim_sales_territory')
+              field: sales_territory_key
 
   - name: dim_sales_territory
     columns:
@@ -68,11 +119,22 @@ models:
           - not_null
 
   - name: dim_reseller
+    description: Reseller (store) customers; one row per reseller, resolved to its Main Office address.
     columns:
       - name: reseller_key
         tests:
           - unique
           - not_null
+      - name: sales_territory_key
+        tests:
+          - relationships:
+              to: ref('dim_sales_territory')
+              field: sales_territory_key
+      - name: geography_key
+        tests:
+          - relationships:
+              to: ref('dim_geography')
+              field: geography_key
 
   - name: dim_employee
     columns:
@@ -80,6 +142,11 @@ models:
         tests:
           - unique
           - not_null
+      - name: sales_territory_key
+        tests:
+          - relationships:
+              to: ref('dim_sales_territory')
+              field: sales_territory_key
 
   - name: dim_sales_reason
     columns:
@@ -87,3 +154,173 @@ models:
         tests:
           - unique
           - not_null
+
+  # --- Facts -----------------------------------------------------------------
+  # Every key column that should resolve into a dimension is covered by a
+  # `relationships` test. These are what caught the ~97k orphan date keys that
+  # the previous surrogate-key-only test suite reported as PASS.
+
+  - name: fact_internet_sales
+    description: >
+      Online sales order lines. Grain: one row per
+      (sales_order_number, sales_order_line_number) — enforced by
+      tests/fact_sales_line_grain_unique.sql.
+    columns:
+      - name: product_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_key
+      - name: order_date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: due_date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: ship_date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: customer_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_key
+      - name: promotion_key
+        tests:
+          - relationships:
+              to: ref('dim_promotion')
+              field: promotion_key
+      - name: currency_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_currency')
+              field: currency_key
+      - name: sales_territory_key
+        tests:
+          - relationships:
+              to: ref('dim_sales_territory')
+              field: sales_territory_key
+
+  - name: fact_reseller_sales
+    description: >
+      Reseller (distributor) sales order lines. Grain: one row per
+      (sales_order_number, sales_order_line_number) — enforced by
+      tests/fact_sales_line_grain_unique.sql.
+    columns:
+      - name: product_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_key
+      - name: order_date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: due_date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: ship_date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: reseller_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_reseller')
+              field: reseller_key
+      - name: employee_key
+        tests:
+          - relationships:
+              to: ref('dim_employee')
+              field: employee_key
+      - name: promotion_key
+        tests:
+          - relationships:
+              to: ref('dim_promotion')
+              field: promotion_key
+      - name: currency_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_currency')
+              field: currency_key
+      - name: sales_territory_key
+        tests:
+          - relationships:
+              to: ref('dim_sales_territory')
+              field: sales_territory_key
+
+  - name: fact_product_inventory
+    description: >
+      Inventory snapshot by stocking location. Grain: one row per
+      (product_key, location_key).
+    columns:
+      - name: product_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_key
+      - name: location_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_location')
+              field: location_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+  - name: fact_currency_rate
+    description: >
+      Daily currency conversion rates. Grain: one row per
+      (currency_key, date_key).
+    columns:
+      - name: currency_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_currency')
+              field: currency_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+  - name: fact_sales_quota
+    description: Quarterly sales quotas per salesperson.
+    columns:
+      - name: employee_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_employee')
+              field: employee_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
