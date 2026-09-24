@@ -11,4 +11,5 @@ CREATE DATABASE analytics;
 
 CREATE SCHEMA IF NOT EXISTS raw;
 CREATE SCHEMA IF NOT EXISTS stage;
-CREATE SCHEMA IF NOT EXISTS data_mart;
+-- dbt writes the marts here (models/marts -> +schema: mart)
+CREATE SCHEMA IF NOT EXISTS mart;

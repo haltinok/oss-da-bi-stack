@@ -9,7 +9,7 @@ DLT_PROJECT_DIR = "/opt/airflow/dlt/pipelines/postgres_active_to_postgres"
 
 @dag(
     dag_id="postgres_active_to_postgres",
-    description="Replicate the orders table from postgres_active into the analytics_2 raw schema via dlt (incremental + merge)",
+    description="Replicate the orders table from postgres_active into the analytics raw schema via dlt (incremental + merge)",
     schedule="*/15 * * * *",
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,

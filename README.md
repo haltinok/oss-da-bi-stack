@@ -2,9 +2,9 @@
 
 An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source tools:
 
-- **SQL Server** (`AdventureWorks2016`) → (dlt) → Postgres `analytics_2.raw` → (dbt-core) → `stage` → `mart` → (Superset)
+- **SQL Server** (`AdventureWorks2016`) → (dlt) → Postgres `analytics.raw` → (dbt-core) → `stage` → `mart` → (Superset)
 - **Postgres CDC source** (`postgres_active`) → (Debezium) → Kafka topic → **ClickHouse** (real-time OLAP) → (Superset)
-- **Postgres CDC source** (`postgres_active`) → (dlt, incremental + merge) → Postgres `analytics_2.raw`, kept fresh by an Airflow data simulator
+- **Postgres CDC source** (`postgres_active`) → (dlt, incremental + merge) → Postgres `analytics.raw`, kept fresh by an Airflow data simulator
 
 ## Stack
 
@@ -28,7 +28,7 @@ Two Postgres containers:
 **`postgres`** (host port `5433`) — the warehouse/metadata instance, three databases:
 - `airflow` — Airflow's own metadata (implementation detail)
 - `superset_meta` — Superset's own metadata (dashboards, charts, users)
-- `analytics_2` — the warehouse, with three schemas:
+- `analytics` — the warehouse, with three schemas:
   - `raw` — dlt lands data here (AdventureWorks tables + `orders`)
   - `stage` — dbt staging views
   - `mart` — dbt mart tables (dims/facts), what Superset reads
@@ -76,8 +76,8 @@ The Debezium connector (`orders-connector`) is registered via the Connect REST A
 
 | Pipeline | Direction | Strategy | DAG / schedule |
 |----------|-----------|----------|----------------|
-| `sqlserver_to_postgres` | SQL Server `AdventureWorks2016` (all 71 tables) → `analytics_2.raw` | full refresh (`replace`) | `sqlserver_to_postgres_elt` / daily |
-| `postgres_active_to_postgres` | `postgres_active.active_db.orders` → `analytics_2.raw.orders` | incremental on `updated_at` + `merge` (upsert by `id`) | `postgres_active_to_postgres` / every 15 min |
+| `sqlserver_to_postgres` | SQL Server `AdventureWorks2016` (all 71 tables) → `analytics.raw` | full refresh (`replace`) | `sqlserver_to_postgres_elt` / daily |
+| `postgres_active_to_postgres` | `postgres_active.active_db.orders` → `analytics.raw.orders` | incremental on `updated_at` + `merge` (upsert by `id`) | `postgres_active_to_postgres` / every 15 min |
 | `simulate_orders` | mutates `orders` (insert/update/soft-delete) with Faker | — | `simulate_orders` / every 5 min |
 
 The `simulate_orders` DAG generates a steady stream of changes in `active_db.orders`.
@@ -162,17 +162,25 @@ oss-data-stack/
    ```
    First run builds images and runs `airflow-init` / `superset-init`.
 
+   Every published host port is overridable from `.env` (see `.env.example`),
+   so this stack can run next to another one on the same machine:
+
+   ```bash
+   # e.g. if 5434 and 8080 are already taken by another stack
+   POSTGRES_ACTIVE_PORT=5444 AIRFLOW_PORT=8090 docker compose up -d --build
+   ```
+
 3. **Access:**
    - Airflow UI: http://localhost:8080 (user/pass from `.env`, default admin/admin)
    - Superset UI: http://localhost:8088 (admin/admin)
    - Kafka UI: http://localhost:8081
    - Kafka Connect REST: http://localhost:8083
    - ClickHouse HTTP: http://localhost:8123 (user/pass `clickhouse`/`clickhouse`)
-   - Warehouse Postgres: `localhost:5433`, db `analytics_2`, user/pass `postgres`/`postgres`
+   - Warehouse Postgres: `localhost:5433`, db `analytics`, user/pass `postgres`/`postgres`
    - CDC source Postgres: `localhost:5434`, db `active_db`, user/pass `postgres`/`postgres` (Debezium user: `debezium`/`debezium`)
 
 4. **In Superset**, add database connections:
-   - `postgresql+psycopg2://postgres:postgres@postgres:5432/analytics_2` (use the Docker service name `postgres`, not `localhost`) — charts/dashboards against the `mart` schema
+   - `postgresql+psycopg2://postgres:postgres@postgres:5432/analytics` (use the Docker service name `postgres`, not `localhost`) — charts/dashboards against the `mart` schema
    - `clickhousedb+connect://clickhouse:clickhouse@clickhouse:8123/cdc` — real-time CDC data in `cdc.orders`
 
 5. **Unpause the DAGs** (`sqlserver_to_postgres_elt`, `postgres_active_to_postgres`, `simulate_orders`) or trigger them manually from the Airflow UI.

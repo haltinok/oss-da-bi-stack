@@ -25,30 +25,18 @@ def sqlserver_to_postgres_elt():
         bash_command=f"cd {DLT_PROJECT_DIR} && python sqlserver_pipeline.py",
     )
 
-    dbt_run_staging = BashOperator(
-        task_id="dbt_run_staging",
+    # A single `dbt build` instead of `dbt run` staging -> `dbt run` marts ->
+    # `dbt test`: dbt interleaves each model's tests in dependency order, so a
+    # failing staging test stops the run before the marts are rebuilt on top of
+    # bad data. Per-node results are still visible in the task log.
+    dbt_build = BashOperator(
+        task_id="dbt_build",
         bash_command=(
-            f"dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROFILES_DIR} "
-            f"--select staging"
+            f"dbt build --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROFILES_DIR}"
         ),
     )
 
-    dbt_run_marts = BashOperator(
-        task_id="dbt_run_marts",
-        bash_command=(
-            f"dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROFILES_DIR} "
-            f"--select marts"
-        ),
-    )
-
-    dbt_test = BashOperator(
-        task_id="dbt_test",
-        bash_command=(
-            f"dbt test --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROFILES_DIR}"
-        ),
-    )
-
-    ingest_raw >> dbt_run_staging >> dbt_run_marts >> dbt_test
+    ingest_raw >> dbt_build
 
 
 sqlserver_to_postgres_elt()
