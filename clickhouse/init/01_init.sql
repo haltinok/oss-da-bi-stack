@@ -32,6 +32,11 @@ SETTINGS
 -- can legitimately fail (a tombstone has no `after` block at all); the previous
 -- non-Nullable columns plus toDecimal64() made one bad message throw and stall
 -- the materialized view.
+--
+-- `ingested_at` exists purely for retention: history is trimmed after 90 days.
+-- It is not a snapshot date -- with the workload's churn, 90 days is far more
+-- history than reporting needs, and the current-state table below is the
+-- reporting surface anyway.
 CREATE TABLE cdc.orders (
     id            UInt64,
     customer_name String,
@@ -41,9 +46,11 @@ CREATE TABLE cdc.orders (
     updated_at    Nullable(DateTime64(6)),
     deleted_at    Nullable(DateTime64(6)),
     op            String,
-    ts_ms         UInt64
+    ts_ms         UInt64,
+    ingested_at   DateTime DEFAULT now()
 ) ENGINE = MergeTree
-ORDER BY (id, ts_ms);
+ORDER BY (id, ts_ms)
+TTL ingested_at + INTERVAL 90 DAY DELETE;
 
 -- Messages that were not landed, so that nothing disappears without a trace.
 CREATE TABLE cdc.orders_kafka_rejected (
@@ -51,7 +58,8 @@ CREATE TABLE cdc.orders_kafka_rejected (
     reason  String,
     seen_at DateTime DEFAULT now()
 ) ENGINE = MergeTree
-ORDER BY seen_at;
+ORDER BY seen_at
+TTL seen_at + INTERVAL 30 DAY DELETE;
 
 -- Parse the Debezium envelope and land it into MergeTree.
 -- *OrNull extraction: returns NULL instead of throwing on empty/unparseable
@@ -65,6 +73,8 @@ ORDER BY seen_at;
 -- them to cdc.orders_kafka_rejected. Capturing them properly would need
 -- REPLICA IDENTITY FULL on the source table (see
 -- postgres_active/init/01_init.sql).
+--
+-- `ingested_at` is intentionally not inserted: the column default stamps it.
 CREATE MATERIALIZED VIEW cdc.orders_mv TO cdc.orders AS
 SELECT
     JSONExtractUInt(raw, 'after', 'id') AS id,
@@ -95,8 +105,44 @@ SELECT
 FROM cdc.orders_kafka
 WHERE _error != '' OR JSONExtractString(raw, 'op') NOT IN ('r', 'c', 'u');
 
--- Current state: the newest version of each order. This is what reporting should
--- read -- querying cdc.orders directly returns every historical version.
+-- Current state, maintained incrementally instead of computed at read time.
+--
+-- The previous implementation was a view over `cdc.orders` that ran
+-- row_number() OVER (PARTITION BY id ORDER BY ts_ms DESC) on every query: O(n
+-- log n) over the whole history each time. This table instead collapses to the
+-- newest version per id (ReplacingMergeTree keeps the row with the highest
+-- `ts_ms`) as events land, so reads only touch the current state.
+CREATE TABLE cdc.orders_latest (
+    id            UInt64,
+    customer_name String,
+    amount        Nullable(Decimal(12, 2)),
+    status        String,
+    created_at    Nullable(DateTime64(6)),
+    updated_at    Nullable(DateTime64(6)),
+    deleted_at    Nullable(DateTime64(6)),
+    op            String,
+    ts_ms         UInt64
+) ENGINE = ReplacingMergeTree(ts_ms)
+ORDER BY id;
+
+-- Cascading materialized view: every row landed in `cdc.orders` (snapshot,
+-- insert or update) is also written here.
+CREATE MATERIALIZED VIEW cdc.orders_latest_mv TO cdc.orders_latest AS
+SELECT
+    id,
+    customer_name,
+    amount,
+    status,
+    created_at,
+    updated_at,
+    deleted_at,
+    op,
+    ts_ms
+FROM cdc.orders;
+
+-- Current state: the newest version of each order. FINAL collapses any
+-- not-yet-merged duplicates. This is what reporting should read -- querying
+-- cdc.orders directly returns every historical version.
 CREATE VIEW cdc.orders_current AS
 SELECT
     id,
@@ -108,13 +154,7 @@ SELECT
     deleted_at,
     op,
     ts_ms
-FROM (
-    SELECT
-        *,
-        row_number() OVER (PARTITION BY id ORDER BY ts_ms DESC) AS version_rank
-    FROM cdc.orders
-)
-WHERE version_rank = 1;
+FROM cdc.orders_latest FINAL;
 
 -- Current state excluding soft-deleted orders (the dashboard-ready view).
 CREATE VIEW cdc.orders_active AS
@@ -127,5 +167,5 @@ SELECT
     updated_at,
     op,
     ts_ms
-FROM cdc.orders_current
+FROM cdc.orders_latest FINAL
 WHERE deleted_at IS NULL;

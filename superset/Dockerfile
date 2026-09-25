@@ -1,4 +1,4 @@
-FROM apache/superset:latest
+FROM apache/superset:6.1.0
 
 # Database drivers so Superset can connect to the analytics warehouse and
 # the ClickHouse CDC landing zone. The base image ships only with SQLite; its

@@ -6,6 +6,11 @@ Kafka Connect rejects a flat config body with
 requires the {"name", "config"} envelope; this script reads that envelope from
 orders-connector.json.
 
+String values in the spec may reference the environment as `${VAR}` (the
+database password is written that way so the literal never lives in git); this
+script expands them before calling the REST API and fails loudly if a
+referenced variable is unset.
+
 Semantics measured against Connect 8.0.7:
   PUT  /connectors/{name}/config  -> 201 when it creates, 200 when it updates,
                                      so it is idempotent on its own
@@ -20,6 +25,8 @@ a failure even though registration had succeeded.
 """
 
 import json
+import os
+import re
 import sys
 import time
 import urllib.error
@@ -31,6 +38,27 @@ CONNECT_READY_ATTEMPTS = 60
 CONNECT_READY_DELAY = 2
 STATUS_ATTEMPTS = 10
 STATUS_DELAY = 2
+
+ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def expand_env(value):
+    """Recursively replace `${VAR}` references with environment values."""
+    if isinstance(value, str):
+        def replace(match: re.Match) -> str:
+            name = match.group(1)
+            if name not in os.environ:
+                raise SystemExit(
+                    f"ERROR: connector config references ${{{name}}}, which is not set"
+                )
+            return os.environ[name]
+
+        return ENV_REFERENCE.sub(replace, value)
+    if isinstance(value, dict):
+        return {key: expand_env(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [expand_env(item) for item in value]
+    return value
 
 
 def request(method: str, path: str, payload: dict | None = None) -> tuple[int, str]:
@@ -65,9 +93,10 @@ def main() -> int:
     spec = json.loads(open(SPEC_PATH).read())
     name = spec["name"]
     # Accept both the canonical envelope and a flat config with a "name" key.
-    config = spec["config"] if "config" in spec else {
+    raw_config = spec["config"] if "config" in spec else {
         k: v for k, v in spec.items() if k != "name"
     }
+    config = expand_env(raw_config)
 
     if not wait_for_connect():
         print("ERROR: Kafka Connect REST API never became ready", file=sys.stderr)

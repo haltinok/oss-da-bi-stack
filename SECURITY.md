@@ -35,6 +35,25 @@ as compromised.**
   from the environment.
 * `superset/superset_config.py` — now reads `SUPERSET_METADATA_DB_URI` /
   `SUPERSET_WAREHOUSE_DB_URI` from the environment.
+* `docker-compose.yml` — every stack secret (`POSTGRES_PASSWORD`,
+  `DEBEZIUM_PASSWORD`, `CLICKHOUSE_PASSWORD`, `AIRFLOW_FERNET_KEY`,
+  `AIRFLOW_WEBSERVER_SECRET_KEY`, `AIRFLOW_API_AUTH__JWT_SECRET`,
+  `SUPERSET_SECRET_KEY`) is required from `.env` via Compose's `${VAR:?}`
+  syntax; there are no weak fallbacks left to start by accident.
+* `scripts/generate-env.sh` — generates `.env` with strong random values (and
+  creates it mode `0600`).
+* The Debezium credential no longer lives in `debezium-connect/orders-connector.json`:
+  the config references `${DEBEZIUM_PASSWORD}` and the registration script expands
+  it; the replication role itself is created from the same variable by
+  `postgres_active/init/00_debezium_user.sh`.
+* The ClickHouse password no longer lives in a committed `users.xml`: the official
+  image creates the `clickhouse` user from `CLICKHOUSE_PASSWORD` in `.env`.
+* The Postgres password is read from `.env` at pipeline runtime (dlt resolves
+  `secrets.toml` above env vars, so the pipelines apply `POSTGRES_PASSWORD`
+  explicitly). It is no longer duplicated into the dlt secrets files.
+* `.pre-commit-config.yaml` — gitleaks + private-key detection, so a credential
+  cannot be committed again.
+* `.dockerignore` files for the build contexts.
 * Build artifacts and logs — 155 dbt files (`target/`, `logs/`) and 14
   `airflow/logs/*` files are untracked and git-ignored.
 
@@ -80,8 +99,13 @@ Caveats worth knowing before you start:
 ## Preventing a repeat
 
 * `pre-commit` with `gitleaks` / `detect-secrets`, or GitHub's native secret
-  scanning + push protection.
+  scanning + push protection. A `.pre-commit-config.yaml` with gitleaks and
+  `detect-private-key` now ships in this repo — run `pre-commit install` to arm
+  it locally.
 * Keep the `secrets.toml.example` → `secrets.toml` (git-ignored) flow; never
   commit the filled-in file.
 * The `.gitignore` in this repo now covers `.env*`, `**/.dlt/secrets.toml`,
   dbt `target/`+`logs/`, and `airflow/logs/`.
+* `.env` is the single source of truth for the stack's passwords; never paste a
+  real value back into `docker-compose.yml`, `orders-connector.json` or
+  `clickhouse/`.

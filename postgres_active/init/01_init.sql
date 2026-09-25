@@ -1,5 +1,5 @@
--- Debezium replication user (least privilege: replication + select for initial snapshot)
-CREATE USER debezium WITH REPLICATION LOGIN PASSWORD 'debezium';
+-- Debezium replication user: created by 00_debezium_user.sh (it needs
+-- DEBEZIUM_PASSWORD, which postgres init SQL cannot read from the environment).
 
 -- Sample table so Debezium has something to stream immediately.
 -- id: auto-incrementing (BIGSERIAL) primary key.

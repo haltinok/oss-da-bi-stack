@@ -39,9 +39,12 @@ Two Postgres containers:
 - dedicated `debezium` replication user + `dbz_publication` publication (built-in `pgoutput` plugin)
 
 **`clickhouse`** (ports `8123` HTTP / `9000` native) — real-time OLAP landing zone for the CDC stream:
-- database `cdc`, table `cdc.orders` (MergeTree, full history per `(id, ts_ms)`)
-- consumed from Kafka via a Kafka-engine table + materialized view (`cdc/init/01_init.sql`)
-- user `clickhouse` / `clickhouse` (defined in `cdc/users.d/users.xml`)
+- database `cdc`, table `cdc.orders` (MergeTree, full CDC history per `(id, ts_ms)`, 90-day TTL)
+- consumed from Kafka via a Kafka-engine table + materialized view (`clickhouse/init/01_init.sql`)
+- `cdc.orders_latest` (ReplacingMergeTree) keeps one row per order, fed by a cascading
+  materialized view; `cdc.orders_current` / `cdc.orders_active` read it with `FINAL`
+- user `clickhouse`, password from `CLICKHOUSE_PASSWORD` in `.env` (the image creates
+  the user; there is no committed `users.xml`)
 
 ## Kafka / Debezium CDC
 
@@ -70,15 +73,26 @@ Containers:
 - **`kafka-ui`** — browse topics/events at http://localhost:8081
 - **`clickhouse`** — Kafka engine + MergeTree landing zone (see `clickhouse/init/01_init.sql`)
 
-The Debezium connector (`orders-connector`) is registered via the Connect REST API from `debezium-connect/orders-connector.json`. Topic name follows Debezium's convention: `<topic.prefix>.<schema>.<table>` = `active_db.public.orders`. Event op codes: `r` (snapshot read), `c` (insert), `u` (update), `d` (delete). Soft-deletes appear as `u` events with `deleted_at` set.
+The Debezium connector (`orders-connector`) is registered automatically by the
+`debezium-register` Compose service (script `debezium-connect/register_connector.py`,
+config `debezium-connect/orders-connector.json`), so no manual `curl` is needed. The
+connector's DB password is taken from `DEBEZIUM_PASSWORD` in `.env` (the JSON holds a
+`${DEBEZIUM_PASSWORD}` reference, expanded at registration time). Topic name follows
+Debezium's convention: `<topic.prefix>.<schema>.<table>` = `active_db.public.orders`.
+Event op codes: `r` (snapshot read), `c` (insert), `u` (update), `d` (delete).
+Soft-deletes appear as `u` events with `deleted_at` set.
 
 ## Pipelines
 
 | Pipeline | Direction | Strategy | DAG / schedule |
 |----------|-----------|----------|----------------|
-| `sqlserver_to_postgres` | SQL Server `AdventureWorks2016` (all 71 tables) → `analytics.raw` | full refresh (`replace`) | `sqlserver_to_postgres_elt` / daily |
+| `sqlserver_to_postgres` | SQL Server `AdventureWorks2016` (all 71 tables) → `analytics.raw` | full refresh (`replace`), loaded **once** (static source) | `sqlserver_to_postgres_elt` / manual |
 | `postgres_active_to_postgres` | `postgres_active.active_db.orders` → `analytics.raw.orders` | incremental on `updated_at` + `merge` (upsert by `id`) | `postgres_active_to_postgres` / every 15 min |
 | `simulate_orders` | mutates `orders` (insert/update/soft-delete) with Faker | — | `simulate_orders` / every 5 min |
+
+The AdventureWorks source is a static demo database, so `sqlserver_to_postgres_elt` is
+not scheduled: trigger it once from the UI and the dlt step skips itself on later runs
+(pass `--force` to reload).
 
 The `simulate_orders` DAG generates a steady stream of changes in `active_db.orders`.
 Two consumers replicate it in parallel: the `postgres_active_to_postgres` dlt pipeline
@@ -89,7 +103,10 @@ Two consumers replicate it in parallel: the `postgres_active_to_postgres` dlt pi
 ```
 oss-data-stack/
 ├── docker-compose.yml
-├── .env.example              # copy to .env and fill in
+├── .env.example              # required secrets; copy to .env or use the generator
+├── scripts/
+│   └── generate-env.sh       # writes .env with strong random secrets
+├── .pre-commit-config.yaml   # gitleaks + private-key detection
 ├── SECURITY.md               # credential-rotation + history-purge checklist
 ├── docs/
 │   ├── superset-dashboard.png
@@ -125,6 +142,8 @@ oss-data-stack/
 │           ├── staging/
 │           │   ├── _sources.yml
 │           │   └── stg_*.sql
+│           ├── intermediate/
+│           │   └── int_sales_order_lines.sql  # shared fact logic (ephemeral)
 │           └── marts/
 │               ├── dim_*.sql
 │               └── fact_*.sql
@@ -133,15 +152,15 @@ oss-data-stack/
 │       └── 01_init.sql       # airflow + superset_meta + analytics databases
 ├── postgres_active/
 │   └── init/
-│       └── 01_init.sql       # debezium user + orders table + publication
+│       ├── 00_debezium_user.sh  # replication user from DEBEZIUM_PASSWORD
+│       └── 01_init.sql          # orders table + trigger + publication + grants
 ├── debezium-connect/
 │   ├── Dockerfile            # cp-kafka-connect + debezium-connector-postgresql
-│   └── orders-connector.json # Debezium connector config (POST to Connect REST)
+│   ├── orders-connector.json # connector config (password via ${DEBEZIUM_PASSWORD})
+│   └── register_connector.py # idempotent PUT to the Connect REST API
 ├── clickhouse/
-│   ├── init/
-│   │   └── 01_init.sql       # Kafka engine + MergeTree + materialized view
-│   └── users.d/
-│       └── users.xml         # clickhouse user (password, network access)
+│   └── init/
+│       └── 01_init.sql       # Kafka engine + history + current-state + rejected views
 └── superset/
     ├── Dockerfile            # apache/superset + psycopg2 + clickhouse-connect + language packs
     ├── superset_config.py    # metadata in superset_meta, Turkish default locale
@@ -150,11 +169,19 @@ oss-data-stack/
 
 ## Setup
 
-1. **Copy env template:**
+1. **Create `.env` with real secrets:**
    ```bash
-   cp .env.example .env
-   # fill in AIRFLOW_FERNET_KEY, AIRFLOW_WEBSERVER_SECRET_KEY, SUPERSET_SECRET_KEY
+   ./scripts/generate-env.sh
    ```
+   This writes strong random values for the Postgres, Debezium, ClickHouse and
+   Airflow/Superset secrets (mode `0600`). If you prefer to do it by hand, copy
+   `.env.example` to `.env` and fill in every `REPLACE_ME` / empty value —
+   Compose refuses to start with any of them unset.
+
+   Then copy `dlt/pipelines/*/.dlt/secrets.toml.example` to `secrets.toml`
+   (git-ignored) and fill in the real SQL Server host/login/password. The
+   Postgres password is not stored there: both dlt pipelines read it from
+   `POSTGRES_PASSWORD` in `.env`.
 
 2. **Bring the stack up:**
    ```bash
@@ -171,27 +198,33 @@ oss-data-stack/
    ```
 
 3. **Access:**
-   - Airflow UI: http://localhost:8080 (user/pass from `.env`, default admin/admin)
-   - Superset UI: http://localhost:8088 (admin/admin)
+   - Airflow UI: http://localhost:8080 (user/pass from `.env`)
+   - Superset UI: http://localhost:8089 (user/pass from `.env`)
+   - Superset MCP server: http://localhost:5008 (dev-only, unauthenticated)
    - Kafka UI: http://localhost:8081
    - Kafka Connect REST: http://localhost:8083
-   - ClickHouse HTTP: http://localhost:8123 (user/pass `clickhouse`/`clickhouse`)
-   - Warehouse Postgres: `localhost:5433`, db `analytics`, user/pass `postgres`/`postgres`
-   - CDC source Postgres: `localhost:5434`, db `active_db`, user/pass `postgres`/`postgres` (Debezium user: `debezium`/`debezium`)
+   - ClickHouse HTTP: http://localhost:8123 (user `clickhouse`, password from `.env`)
+   - Warehouse Postgres: `localhost:5433`, db `analytics`, user `postgres`, password from `.env`
+   - CDC source Postgres: `localhost:5434`, db `active_db`, user `postgres` / Debezium user `debezium`, passwords from `.env`
 
 4. **In Superset**, add database connections:
-   - `postgresql+psycopg2://postgres:postgres@postgres:5432/analytics` (use the Docker service name `postgres`, not `localhost`) — charts/dashboards against the `mart` schema
-   - `clickhousedb+connect://clickhouse:clickhouse@clickhouse:8123/cdc` — real-time CDC data in `cdc.orders`
+   - `postgresql+psycopg2://postgres:<POSTGRES_PASSWORD>@postgres:5432/analytics` (use the Docker service name `postgres`, not `localhost`) — charts/dashboards against the `mart` schema
+   - `clickhousedb+connect://clickhouse:<CLICKHOUSE_PASSWORD>@clickhouse:8123/cdc` — real-time CDC data (`cdc.orders_active` is the dashboard-ready current state)
 
-5. **Unpause the DAGs** (`sqlserver_to_postgres_elt`, `postgres_active_to_postgres`, `simulate_orders`) or trigger them manually from the Airflow UI.
+5. **Run the DAGs:**
+   - Unpause `postgres_active_to_postgres` and `simulate_orders` (they run on a schedule).
+   - Trigger `sqlserver_to_postgres_elt` **once**; it is unscheduled because the SQL Server source is static, and the dlt step skips itself on later runs.
 
-6. **Register the Debezium connector** (once, after first `up`):
+6. **Debezium registration is automatic.** The `debezium-register` Compose service
+   PUTs `debezium-connect/orders-connector.json` to the Connect REST API after
+   `kafka-connect` is healthy, so there is no manual step. Re-running
+   `docker compose up` updates the connector in place (idempotent `PUT`, no second
+   snapshot). Watch CDC events in the `active_db.public.orders` topic via Kafka UI.
+
+   To inspect the connector manually:
    ```bash
-   curl -X POST http://localhost:8083/connectors \
-     -H "Content-Type: application/json" \
-     -d '{"name":"orders-connector","config":{...}}'
+   curl -s http://localhost:8083/connectors/orders-connector/status
    ```
-   (the full config lives in `debezium-connect/orders-connector.json`). Then watch CDC events in the `active_db.public.orders` topic via Kafka UI.
 
 ## Notes
 
@@ -199,8 +232,12 @@ oss-data-stack/
 - **Debezium decimals**: the connector uses `decimal.handling.mode=string`, so DECIMAL columns arrive as plain strings in Kafka (e.g. `"1234.56"`). ClickHouse's materialized view casts them back to `Decimal(12,2)`.
 - **Kafka is single-node KRaft** (broker+controller combined), no ZooKeeper — the current Confluent recommendation for new deployments.
 - **ClickHouse ingestion**: the Kafka-engine table consumes the Debezium topic as `JSONAsString`; the materialized view parses the envelope with `JSONExtract*` and `parseDateTime64BestEffortOrNull` (the `OrNull` variant is important — `parseDateTime64BestEffort('')` throws instead of returning NULL for JSON-null `deleted_at`). ClickHouse must be **25.x** — 24.8's bundled librdkafka doesn't support the Kafka 4.0 protocol ("Required feature not supported by broker").
+- **ClickHouse current state**: `cdc.orders` keeps full history (90-day TTL). A cascading materialized view feeds `cdc.orders_latest` (`ReplacingMergeTree(ts_ms)`, one row per `id`), and `cdc.orders_current` / `cdc.orders_active` read that with `FINAL`. This replaced a view that ran `row_number()` over the entire history on every query.
 - **Incremental + merge**: `postgres_active_to_postgres` uses `dlt.sources.incremental("updated_at")` with `write_disposition="merge"`, keyed on the reflected primary key `id`. It only fetches rows changed since the last run and upserts them, so `raw.orders` mirrors the current source state (soft-deleted rows remain, flagged by `deleted_at`).
 - **Airflow 3** runs four services (api-server, scheduler, dag-processor, triggerer). FAB auth manager is enabled to keep env-var admin-user provisioning.
 - **dlt normalize race**: `[normalize] workers = 1` is set in each pipeline's `.dlt/config.toml` to avoid a process-pool race condition observed when loading many small tables.
 - **Superset metadata** lives in Postgres (`superset_meta`); the image compiles the shipped `.po` translation sources into `messages.json` at build time so language packs work.
-- Pinned versions in `airflow/requirements.txt` are reasonable as of writing — bump and rebuild if needed.
+- **One-time SQL Server load**: `sqlserver_to_postgres` treats AdventureWorks2016 as a static source. `sqlserver_pipeline.py` checks for a load marker (`raw.customer`) and skips when present; `--force` reloads. The DAG is therefore unscheduled.
+- **Secrets come from `.env`**: Compose requires each secret (`${VAR:?}`) and fails fast rather than falling back to a placeholder. `scripts/generate-env.sh` creates them. The Debezium connector and ClickHouse user read their passwords from the same file, so nothing sensitive lives in a tracked file.
+- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.0.7), as are the Airflow requirements. Bump and rebuild deliberately.
+- **Pre-commit**: `.pre-commit-config.yaml` runs gitleaks and private-key detection; run `pre-commit install` once after cloning.

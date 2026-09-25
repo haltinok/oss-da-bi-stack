@@ -11,8 +11,10 @@ DBT_PROFILES_DIR = "/opt/airflow/dbt/adventureworks_dwh"
 
 @dag(
     dag_id="sqlserver_to_postgres_elt",
-    description="Ingest AdventureWorks2016 from SQL Server into Postgres raw schema via dlt, then build stage/mart with dbt-core",
-    schedule="@daily",
+    description="One-time load of AdventureWorks2016 from SQL Server into Postgres raw via dlt, then build stage/mart with dbt-core",
+    # The AdventureWorks source is static, so this DAG runs manually: the dlt step
+    # skips itself once the raw dataset is populated (trigger with --force to reload).
+    schedule=None,
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
     max_active_runs=1,
