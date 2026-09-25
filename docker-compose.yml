@@ -220,6 +220,11 @@ services:
     depends_on:
       - superset
     command: ["superset", "mcp", "run", "--host", "0.0.0.0", "--port", "5008"]
+    # The base image's healthcheck curls the web server on :8088, which this
+    # container does not run (MCP listens on :5008), so it always reports
+    # unhealthy. Disable the inherited check.
+    healthcheck:
+      disable: true
 
   kafka:
     image: confluentinc/cp-kafka:8.0.7
