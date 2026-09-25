@@ -38,8 +38,9 @@ as compromised.**
 * `docker-compose.yml` — every stack secret (`POSTGRES_PASSWORD`,
   `DEBEZIUM_PASSWORD`, `CLICKHOUSE_PASSWORD`, `AIRFLOW_FERNET_KEY`,
   `AIRFLOW_WEBSERVER_SECRET_KEY`, `AIRFLOW_API_AUTH__JWT_SECRET`,
-  `SUPERSET_SECRET_KEY`) is required from `.env` via Compose's `${VAR:?}`
-  syntax; there are no weak fallbacks left to start by accident.
+  `SUPERSET_SECRET_KEY`, `METABASE_SECRET_KEY`) is required from `.env` via
+  Compose's `${VAR:?}` syntax; there are no weak fallbacks left to start by
+  accident.
 * `scripts/generate-env.sh` — generates `.env` with strong random values (and
   creates it mode `0600`).
 * The Debezium credential no longer lives in `debezium-connect/orders-connector.json`:

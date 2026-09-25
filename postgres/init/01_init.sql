@@ -4,6 +4,9 @@ CREATE DATABASE airflow;
 -- Superset's own metadata database (dashboards, charts, users — not the data it visualizes)
 CREATE DATABASE superset_meta;
 
+-- Metabase's own metadata database (questions, dashboards, users)
+CREATE DATABASE metabase_meta;
+
 -- The actual analytics warehouse dlt/dbt operate on, and what Superset visualizes
 CREATE DATABASE analytics;
 

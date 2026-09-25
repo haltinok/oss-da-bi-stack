@@ -226,6 +226,33 @@ services:
     healthcheck:
       disable: true
 
+  metabase:
+    # The friendly self-service BI layer. Application metadata lives in the
+    # shared Postgres (database `metabase_meta`), so no stateful sidecar.
+    # ClickHouse is bundled in the image (driver promoted to core in Metabase 54),
+    # so no custom image or plugin mount is required.
+    image: metabase/metabase:v0.63.18
+    container_name: oss_metabase
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_CONNECTION_URI: postgresql://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/metabase_meta
+      # Encrypts stored database credentials; must be 16/24/32 characters
+      # (scripts/generate-env.sh produces a 32-char value).
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_SECRET_KEY:?set METABASE_SECRET_KEY in .env}
+      MB_SITE_URL: http://localhost:${METABASE_PORT:-3001}
+    ports:
+      - "${METABASE_PORT:-3001}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
   kafka:
     image: confluentinc/cp-kafka:8.0.7
     container_name: kafka

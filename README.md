@@ -16,7 +16,7 @@ An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source
 | Transformation       | dbt-core                          |
 | Warehouse            | Postgres 16                       |
 | Real-time OLAP       | ClickHouse 25.8                   |
-| Reporting/dashboarding | Superset                         |
+| Reporting/dashboarding | Superset + Metabase        |
 | Kafka UI             | provectuslabs/kafka-ui            |
 | Data simulation      | Faker (Python)                    |
 | Change-data-capture source | Postgres 16 (`wal_level=logical`) |
@@ -25,9 +25,10 @@ An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source
 
 Two Postgres containers:
 
-**`postgres`** (host port `5433`) — the warehouse/metadata instance, three databases:
+**`postgres`** (host port `5433`) — the warehouse/metadata instance, four databases:
 - `airflow` — Airflow's own metadata (implementation detail)
 - `superset_meta` — Superset's own metadata (dashboards, charts, users)
+- `metabase_meta` — Metabase's own metadata (questions, dashboards, users)
 - `analytics` — the warehouse, with three schemas:
   - `raw` — dlt lands data here (AdventureWorks tables + `orders`)
   - `stage` — dbt staging views
@@ -45,6 +46,11 @@ Two Postgres containers:
   materialized view; `cdc.orders_current` / `cdc.orders_active` read it with `FINAL`
 - user `clickhouse`, password from `CLICKHOUSE_PASSWORD` in `.env` (the image creates
   the user; there is no committed `users.xml`)
+
+Two BI tools read the same data:
+- **Superset** — OSS, ClickHouse + Postgres, and a built-in MCP server for agent access.
+- **Metabase** — friendlier self-service UX; metadata in `metabase_meta`, ClickHouse
+  driver bundled in the image (promoted to core in Metabase 54).
 
 ## Kafka / Debezium CDC
 
@@ -201,15 +207,22 @@ oss-data-stack/
    - Airflow UI: http://localhost:8080 (user/pass from `.env`)
    - Superset UI: http://localhost:8089 (user/pass from `.env`)
    - Superset MCP server: http://localhost:5008 (dev-only, unauthenticated)
+   - Metabase UI: http://localhost:3001 (create the admin on first visit)
    - Kafka UI: http://localhost:8081
    - Kafka Connect REST: http://localhost:8083
    - ClickHouse HTTP: http://localhost:8123 (user `clickhouse`, password from `.env`)
    - Warehouse Postgres: `localhost:5433`, db `analytics`, user `postgres`, password from `.env`
    - CDC source Postgres: `localhost:5434`, db `active_db`, user `postgres` / Debezium user `debezium`, passwords from `.env`
 
-4. **In Superset**, add database connections:
+4. **In Superset and Metabase**, add database connections.
+
+   Superset:
    - `postgresql+psycopg2://postgres:<POSTGRES_PASSWORD>@postgres:5432/analytics` (use the Docker service name `postgres`, not `localhost`) — charts/dashboards against the `mart` schema
    - `clickhousedb+connect://clickhouse:<CLICKHOUSE_PASSWORD>@clickhouse:8123/cdc` — real-time CDC data (`cdc.orders_active` is the dashboard-ready current state)
+
+   Metabase (create the admin on first visit, then **Add a database**):
+   - PostgreSQL: host `postgres`, port `5432`, db `analytics`, user `postgres`, password from `.env`, schema `mart`
+   - ClickHouse: host `clickhouse`, port `8123`, db `cdc`, user `clickhouse`, password from `.env` — dashboard `cdc.orders_active` for current state
 
 5. **Run the DAGs:**
    - Unpause `postgres_active_to_postgres` and `simulate_orders` (they run on a schedule).
@@ -239,5 +252,6 @@ oss-data-stack/
 - **Superset metadata** lives in Postgres (`superset_meta`); the image compiles the shipped `.po` translation sources into `messages.json` at build time so language packs work.
 - **One-time SQL Server load**: `sqlserver_to_postgres` treats AdventureWorks2016 as a static source. `sqlserver_pipeline.py` checks for a load marker (`raw.customer`) and skips when present; `--force` reloads. The DAG is therefore unscheduled.
 - **Secrets come from `.env`**: Compose requires each secret (`${VAR:?}`) and fails fast rather than falling back to a placeholder. `scripts/generate-env.sh` creates them. The Debezium connector and ClickHouse user read their passwords from the same file, so nothing sensitive lives in a tracked file.
-- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.0.7), as are the Airflow requirements. Bump and rebuild deliberately.
+- **Metabase**: metadata lives in the shared Postgres (`metabase_meta`). The ClickHouse driver is bundled in the image (core since Metabase 54), so no plugin or custom image is needed. `MB_ENCRYPTION_SECRET_KEY` must be 16/24/32 characters (the generator emits 32) and must not change after first start, or stored DB credentials can no longer be decrypted. English locale on purpose.
+- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `metabase/metabase:v0.63.18`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.0.7), as are the Airflow requirements. Bump and rebuild deliberately.
 - **Pre-commit**: `.pre-commit-config.yaml` runs gitleaks and private-key detection; run `pre-commit install` once after cloning.
