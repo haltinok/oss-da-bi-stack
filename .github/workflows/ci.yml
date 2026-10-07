@@ -167,7 +167,18 @@ jobs:
       - name: build the connect image
         run: docker compose build kafka-connect
       - name: start the cdc path
-        run: docker compose --profile cdc up -d postgres_active kafka kafka-connect debezium-register clickhouse
+        # On failure (e.g. a container never turns healthy), show why: the
+        # health status and the tail of each service's log.
+        run: |
+          if ! docker compose --profile cdc up -d postgres_active kafka kafka-connect debezium-register clickhouse; then
+            for c in kafka_connect kafka postgres_active clickhouse; do
+              echo "::group::$c" >&2
+              docker inspect --format '{{json .State.Health}}' "$c" >&2 || true
+              docker logs "$c" 2>&1 | tail -80 >&2 || true
+              echo "::endgroup::" >&2
+            done
+            exit 1
+          fi
       - name: wait for the connector and its task to reach RUNNING
         run: |
           set -euo pipefail
