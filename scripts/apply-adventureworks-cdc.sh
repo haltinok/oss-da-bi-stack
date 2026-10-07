@@ -20,7 +20,7 @@
 #   POSTGRES_USER / POSTGRES_DB default postgres / active_db
 #   CLICKHOUSE_CONTAINER       default clickhouse
 #   CONNECT_URL                default http://localhost:8083
-#   .env                       read for DEBEZIUM_PASSWORD / CLICKHOUSE_PASSWORD
+#   .env                       read for CLICKHOUSE_PASSWORD
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,7 +40,6 @@ ch_container="${CLICKHOUSE_CONTAINER:-clickhouse}"
 connect_url="${CONNECT_URL:-http://localhost:8083}"
 spec="$root/debezium-connect/orders-connector.json"
 
-: "${DEBEZIUM_PASSWORD:?DEBEZIUM_PASSWORD must be set (in .env)}"
 : "${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set (in .env)}"
 
 # --- 1. Debezium signalling table -----------------------------------------

@@ -41,6 +41,7 @@ AIRFLOW_API_AUTH__JWT_SECRET=$(hex)
 SUPERSET_SECRET_KEY=$(hex)
 SUPERSET_ADMIN_USER=admin
 SUPERSET_ADMIN_PASSWORD=$(hex)
+SUPERSET_DEFAULT_LOCALE=tr
 # Metabase needs a 16/24/32-char key, so 16 bytes of hex (32 chars), not 32.
 METABASE_SECRET_KEY=$(openssl rand -hex 16)
 POSTGRES_PASSWORD=$(hex)

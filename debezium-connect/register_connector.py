@@ -6,10 +6,11 @@ Kafka Connect rejects a flat config body with
 requires the {"name", "config"} envelope; this script reads that envelope from
 orders-connector.json.
 
-String values in the spec may reference the environment as `${VAR}` (the
-database password is written that way so the literal never lives in git); this
-script expands them before calling the REST API and fails loudly if a
-referenced variable is unset.
+Secrets use Kafka Connect's own config provider, `${env:VAR}` (the database
+password is written that way): Connect resolves it at runtime from its own
+environment, so the value never reaches this script, the REST API or the
+_connect_configs topic. Plain `${VAR}` references are still expanded here from
+this script's environment (and fail loudly if unset), for non-secret values.
 
 Semantics measured against Connect 8.0.7:
   PUT  /connectors/{name}/config  -> 201 when it creates, 200 when it updates,

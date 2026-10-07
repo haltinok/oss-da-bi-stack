@@ -36,8 +36,6 @@ PASSWORD = os.environ["POSTGRES_PASSWORD"]
 # status codes (1=In process, 2=Approved, 3=Backordered, 4=Rejected, 5=Shipped,
 # 6=Cancelled).
 REVISION_NUMBER = 8
-# AdventureWorks status codes: 1=In process, 2=Approved, 3=Backordered,
-# 4=Rejected, 5=Shipped, 6=Cancelled.
 TRANSACTION_TYPES = ["W", "S", "P"]
 
 # New orders start at the front of the lifecycle: mostly in process (1),

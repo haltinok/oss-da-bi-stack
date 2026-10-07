@@ -88,8 +88,10 @@ Containers:
 The Debezium connector (`orders-connector`) is registered automatically by the
 `debezium-register` Compose service (script `debezium-connect/register_connector.py`,
 config `debezium-connect/orders-connector.json`), so no manual `curl` is needed. The
-connector's DB password is taken from `DEBEZIUM_PASSWORD` in `.env` (the JSON holds a
-`${DEBEZIUM_PASSWORD}` reference, expanded at registration time). Topic name follows
+connector's DB password is `DEBEZIUM_PASSWORD` from `.env`: the JSON holds
+`${env:DEBEZIUM_PASSWORD}`, which Kafka Connect's `EnvVarConfigProvider` resolves at
+runtime, so the password is never stored in Connect's `_connect_configs` topic or
+returned by `GET /connectors/orders-connector/config`. Topic name follows
 Debezium's convention: `<topic.prefix>.<schema>.<table>` = `active_db.public.orders`.
 Event op codes: `r` (snapshot read), `c` (insert), `u` (update), `d` (delete).
 Soft-deletes appear as `u` events with `deleted_at` set.
@@ -259,13 +261,14 @@ oss-da-bi-stack/
 ├── ruff.toml
 ├── tests/
 │   └── test_dag_integrity.py # every DAG imports cleanly (CI `dags` job)
-├── SECURITY.md               # credential-rotation + history-purge checklist
+├── SECURITY.md               # how secrets are handled, guard rails, reporting
 ├── skills/                   # agent skills for working with this stack
 ├── docs/
 │   ├── superset-dashboard.png
 │   ├── superset-dashboard.pdf
 │   └── Metabase - Internet Sales.pdf
 ├── .github/
+│   ├── dependabot.yml          # weekly grouped updates: actions, pip, Docker images
 │   └── workflows/
 │       └── ci.yml              # gitleaks, pre-commit, DAG import, seed→dlt→dbt build, compose config
 ├── airflow/
@@ -327,7 +330,7 @@ oss-da-bi-stack/
 │       └── 04_debezium_signal.sql         # incremental-snapshot signalling table
 ├── debezium-connect/
 │   ├── Dockerfile            # cp-kafka-connect + debezium-connector-postgresql
-│   ├── orders-connector.json # connector config (password via ${DEBEZIUM_PASSWORD})
+│   ├── orders-connector.json # connector config (password via ${env:DEBEZIUM_PASSWORD})
 │   └── register_connector.py # idempotent PUT to the Connect REST API
 ├── clickhouse/
 │   └── init/
@@ -335,7 +338,7 @@ oss-da-bi-stack/
 │       └── 02_adventureworks_cdc.sql  # AW: multi-topic Kafka table + aw_events + typed tables
 └── superset/
     ├── Dockerfile            # apache/superset + psycopg2 + clickhouse-connect + language packs
-    ├── superset_config.py    # metadata in superset_meta, Turkish default locale
+    ├── superset_config.py    # metadata in superset_meta, default locale from SUPERSET_DEFAULT_LOCALE (tr)
     ├── set_bi_database.py    # restore the BI connection's password after import
     ├── compile_translations.py
     └── dashboards/
@@ -461,4 +464,5 @@ oss-da-bi-stack/
 - **Hard deletes**: the dlt path (`raw_active`) cannot see hard deletes, so it keeps deleted `product_review` / `shopping_cart_item` rows while the Debezium/ClickHouse path records them as `op='d'`. The contrast is intentional in the demo; a production feed would add a soft-delete column (like `orders.deleted_at`) or a full refresh for those tables.
 - **dlt incremental cursor**: `modified_date` is often a date at midnight, so many rows share the cursor value; dlt warns about it but `merge` on the primary key keeps the load correct.
 - **Pre-commit**: `.pre-commit-config.yaml` runs gitleaks, private-key detection and `ruff check` (config in `ruff.toml`); run `pre-commit install` once after cloning.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped PRs for the SHA-pinned Actions, `airflow/requirements.txt` and the Docker base images (major image bumps are skipped; those need code changes). Each PR goes through CI, including the end-to-end `dwh` job.
 - **CI** (`.github/workflows/ci.yml`): besides gitleaks, pre-commit and `docker compose config`, the `dags` job imports every DAG under the Airflow version from `airflow/Dockerfile`, and the `dwh` job loads the committed `postgres_active` schema + seed into a Postgres service, runs the AW and orders dlt pipelines and then `dbt build` (all models, the snapshot and every data test).
