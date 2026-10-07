@@ -356,12 +356,11 @@ oss-da-bi-stack/
    `.env.example` to `.env` and fill in every `REPLACE_ME` / empty value —
    Compose refuses to start with any of them unset.
 
-    dlt 1.30 requires credentials to resolve from a secrets provider, so each
-    pipeline's `.dlt/secrets.toml` must exist — `scripts/generate-env.sh` copies
-    them from the committed `secrets.toml.example` templates. The Postgres
-    pipelines' passwords come from `POSTGRES_PASSWORD` in `.env`; only the
-    optional SQL Server load needs real values filled into
-    `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml` (host/login/password).
+   The two Postgres→Postgres dlt pipelines need nothing else: their hosts are
+   in `.dlt/config.toml` and the password is `POSTGRES_PASSWORD` from `.env`.
+   Only the optional SQL Server load needs a secrets file: copy
+   `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml.example` to
+   `secrets.toml` (git-ignored) and fill in the real SQL Server host/login/password.
 
 2. **Bring the stack up.** Services are grouped into Compose profiles, so you can
    start just the batch path or the whole demo:
@@ -461,7 +460,7 @@ oss-da-bi-stack/
 - **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `metabase/metabase:v0.63.18`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.0.7), as are the Airflow requirements (`dlt[postgres]==1.30.0`, `dbt-core==1.11.9` + `dbt-postgres==1.11.0`, `faker`) and the Debezium connector (`debezium-connector-postgresql:3.2.6` — the newest 3.x on Confluent Hub). Bump and rebuild deliberately; Dependabot handles minor/patch bumps, majors stay manual.
 - **AdventureWorks OLTP sandbox**: `postgres_active` holds a generated, seeded copy of the AdventureWorks tables (see [AdventureWorks OLTP sandbox](#adventureworks-oltp-sandbox)). The schema and seed are **generated files** — edit `scripts/gen_adventureworks_schema.py` / `scripts/gen_adventureworks_seed.py`, not the SQL. Primary keys are restored; foreign keys are not enforced, but the seed is **referentially consistent** (10% of the driver tables expanded along the FK graph), so joins resolve. `simulate_adventureworks` mutates the tables every 5 min.
 - **DWH source**: `dbt/adventureworks_dwh` reads `analytics.raw_active`, fed by the `postgres_active_to_postgres_aw` dlt pipeline. The static `analytics.raw` (SQL Server load) is an alternative source. `dim_date` runs to 2040 because the simulator stamps new rows with `now()`.
-- **ClickHouse mart**: the dbt star is copied into ClickHouse `mart` by `scripts/sync_mart_to_clickhouse.py` (the last task of the `postgres_active_to_postgres_aw` DAG) using ClickHouse's `postgresql()` table function. It reads the mart as the read-only `bi_ro` role, and since the password rides the query text it sets `log_queries=0` to keep it out of `system.query_log`. (dlt's ClickHouse destination was tried first, but dlt 1.4.1 mis-quotes the staging table name and the load fails.)
+- **ClickHouse mart**: the dbt star is copied into ClickHouse `mart` by `scripts/sync_mart_to_clickhouse.py` (the last task of the `postgres_active_to_postgres_aw` DAG) using ClickHouse's `postgresql()` table function. It reads the mart as the read-only `bi_ro` role, and since the password rides the query text it sets `log_queries=0` to keep it out of `system.query_log`. (dlt's ClickHouse destination was tried first, but dlt 1.4.1 mis-quoted the staging table name and the load failed; not re-evaluated since the dlt 1.30 upgrade.)
 - **Hard deletes**: the dlt path (`raw_active`) cannot see hard deletes, so it keeps deleted `product_review` / `shopping_cart_item` rows while the Debezium/ClickHouse path records them as `op='d'`. The contrast is intentional in the demo; a production feed would add a soft-delete column (like `orders.deleted_at`) or a full refresh for those tables.
 - **dlt incremental cursor**: `modified_date` is often a date at midnight, so many rows share the cursor value; dlt warns about it but `merge` on the primary key keeps the load correct.
 - **Pre-commit**: `.pre-commit-config.yaml` runs gitleaks, private-key detection and `ruff check` (config in `ruff.toml`); run `pre-commit install` once after cloning.

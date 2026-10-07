@@ -1,4 +1,7 @@
-[destination.postgres.credentials]
+# Warehouse connection (password: POSTGRES_PASSWORD, see stack_credentials.py).
+# Deliberately NOT under `destination.postgres.credentials`: dlt >=1.x treats a
+# `credentials` section in config.toml as a secret in a non-secret provider.
+[stack.warehouse]
 host = "postgres"
 port = 5432
 database = "analytics"

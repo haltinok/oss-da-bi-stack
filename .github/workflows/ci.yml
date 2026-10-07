@@ -75,10 +75,11 @@ jobs:
       POSTGRES_PASSWORD: ci
       BI_READONLY_PASSWORD: ci_ro
       DEBEZIUM_PASSWORD: ci_dbz
-      # dlt: env vars override the Compose hostnames in .dlt/config.toml.
-      DESTINATION__POSTGRES__CREDENTIALS__HOST: localhost
-      SOURCES__SQL_DATABASE__CREDENTIALS__HOST: localhost
-      SOURCES__SQL_DATABASE__CREDENTIALS__PORT: "5432"
+      # dlt: env vars override the Compose hostnames in .dlt/config.toml
+      # ([stack.warehouse] / [stack.postgres_active], see stack_credentials.py).
+      STACK__WAREHOUSE__HOST: localhost
+      STACK__POSTGRES_ACTIVE__HOST: localhost
+      STACK__POSTGRES_ACTIVE__PORT: "5432"
       DBT_PG_HOST: localhost
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

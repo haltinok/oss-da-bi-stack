@@ -1,15 +1,16 @@
 """Postgres credentials shared by the dlt pipelines in this directory.
 
 Non-secret connection settings (driver, host, port, database, user) live in each
-pipeline's `.dlt/config.toml`. The password is the stack's `POSTGRES_PASSWORD`
-from `.env`, applied here explicitly (dlt gives `secrets.toml` a higher priority
-than environment variables, so an env-var override is not possible through
-configuration alone).
+pipeline's `.dlt/config.toml` under `[stack.warehouse]` / `[stack.postgres_active]`.
+They are deliberately not under dlt's own `...credentials` paths: dlt (1.30+)
+rejects a `credentials` section in config.toml as a secret in a non-secret
+provider, even when the pipeline passes credentials explicitly. Override them
+with env vars such as `STACK__WAREHOUSE__HOST`.
 
-dlt 1.30 requires credentials to resolve from a secrets provider, so each
-pipeline's `.dlt/secrets.toml` carries the `credentials` *password* sections as
-placeholders (see the committed `secrets.toml.example`); their presence shadows
-the config.toml sections, and the values are never used for the connection.
+The password is the stack's `POSTGRES_PASSWORD` from `.env`, applied here
+explicitly, so the Postgres->Postgres pipelines need no `secrets.toml`. A
+`password` under the same section in `secrets.toml` is only a fallback for
+running a pipeline outside the stack.
 
 The pipelines run as scripts (``cd <pipeline dir> && python <pipeline>.py``), so
 each one puts this directory on ``sys.path`` before importing the module.
@@ -21,8 +22,8 @@ import os
 
 import dlt
 
-DESTINATION_PATH = "destination.postgres.credentials"
-SOURCE_PATH = "sources.sql_database.credentials"
+DESTINATION_PATH = "stack.warehouse"
+SOURCE_PATH = "stack.postgres_active"
 _KEYS = ("drivername", "host", "port", "database", "username")
 
 
