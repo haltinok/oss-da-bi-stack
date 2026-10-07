@@ -21,6 +21,13 @@ updates:
     groups:
       python:
         patterns: ["*"]
+    ignore:
+      # dbt-core must track the dbt-postgres adapter: the adapter lags core, so
+      # a group bump can pair core 1.12.x with postgres 1.11.x, which breaks
+      # `dbt build` (snapshot: "Not a directory" in target/run). Upgrade the
+      # pair together, by hand.
+      - dependency-name: "dbt-core"
+        versions: [">=1.12"]
 
   # Base images of the custom builds. Major bumps (Airflow, Superset,
   # Confluent) usually need code changes, so they are left to a human.
