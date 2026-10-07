@@ -57,7 +57,7 @@ if [ "$force" -eq 1 ]; then
 fi
 
 if [ "${seeded:-0}" != "0" ]; then
-    echo "==> seed already present (${seeded} tables with data); skipping."
+    echo "==> seed already present (${seeded} sales_order_header rows); skipping."
     echo "    Re-run with --force to truncate and reload the 10% sample."
     exit 0
 fi
