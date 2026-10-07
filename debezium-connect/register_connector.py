@@ -25,6 +25,10 @@ right after the connector is created, which previously made this script report
 a failure even though registration had succeeded.
 """
 
+# Keeps the `dict | None`-style hints from being evaluated at import time: the
+# Confluent 8.3 Connect image ships a Python older than 3.10.
+from __future__ import annotations
+
 import json
 import os
 import re

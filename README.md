@@ -11,7 +11,7 @@ An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source
 
 | Layer                | Tool                              |
 |----------------------|-----------------------------------|
-| Orchestration        | Airflow 3.3.1 (LocalExecutor)     |
+| Orchestration        | Airflow 3.3.2 (LocalExecutor)     |
 | Ingestion / CDC      | dlt                               |
 | Streaming / CDC      | Kafka (KRaft) + Kafka Connect + Debezium |
 | Transformation       | dbt-core                          |
@@ -80,8 +80,8 @@ Kafka topic `active_db.public.orders`
 ```
 
 Containers:
-- **`kafka`** — single-node broker, KRaft combined mode (`confluentinc/cp-kafka:8.0.7`)
-- **`kafka-connect`** — Debezium source connector host (`cp-kafka-connect:8.0.7` + `debezium-connector-postgresql:3.2.6`), REST on port `8083`
+- **`kafka`** — single-node broker, KRaft combined mode (`confluentinc/cp-kafka:8.3.2`)
+- **`kafka-connect`** — Debezium source connector host (`cp-kafka-connect:8.3.2` + `debezium-connector-postgresql:3.2.6`), REST on port `8083`
 - **`kafka-ui`** — browse topics/events at http://localhost:8081
 - **`clickhouse`** — Kafka engine + MergeTree landing zone (see `clickhouse/init/01_init.sql`)
 
@@ -272,7 +272,7 @@ oss-da-bi-stack/
 │   └── workflows/
 │       └── ci.yml              # gitleaks, pre-commit, DAG import, seed→dlt→dbt build, compose config
 ├── airflow/
-│   ├── Dockerfile            # apache/airflow:3.3.1 + dlt + dbt-core + pyodbc + faker
+│   ├── Dockerfile            # apache/airflow:3.3.2 + dlt + dbt-core + pyodbc + faker
 │   ├── requirements.txt
 │   ├── dags/
 │   │   ├── sqlserver_to_postgres_dag.py
@@ -448,6 +448,7 @@ oss-da-bi-stack/
 - **Replication slot WAL cap**: `max_slot_wal_keep_size=2GB` bounds the WAL the Debezium slot can pin while Connect is down or the `cdc` profile is off (the simulators keep writing). Without it the slot would retain WAL until the volume fills. A slot that falls more than 2GB behind is invalidated and the connector fails; recover by deleting the connector, dropping the slot (`select pg_drop_replication_slot('debezium')`) and registering it again under a new `name` in `orders-connector.json` (Connect keeps offsets per connector name, so only a new name re-snapshots; the ClickHouse current-state tables absorb the replayed rows). If you stop using CDC for good, drop the slot.
 - **Debezium decimals**: the connector uses `decimal.handling.mode=string`, so DECIMAL columns arrive as plain strings in Kafka (e.g. `"1234.56"`). ClickHouse's materialized view casts them back to `Decimal(12,2)`.
 - **AdventureWorks CDC stream**: the connector's `table.include.list` covers `orders` plus the nine simulated AdventureWorks tables. They land in `cdc.aw_events` (generic envelope) and two typed current-state tables; see [AdventureWorks CDC stream](#adventureworks-cdc-stream). Deletes carry the primary key in `before`, not `after` (the source tables keep `REPLICA IDENTITY DEFAULT`). The `public.debezium_signal` table used for incremental snapshots is also captured by Debezium (it is in the `FOR ALL TABLES` publication), producing one extra topic that is harmless. Backfill existing rows with `scripts/apply-adventureworks-cdc.sh`.
+- **Confluent 8.3+ images** no longer ship `cub` or `curl`, and their `python3` is older than 3.10, so the `kafka` health check uses Kafka's own `kafka-broker-api-versions`, the `kafka-connect` one a plain bash `/dev/tcp` HTTP request, and `register_connector.py` uses `from __future__ import annotations`.
 - **Kafka is single-node KRaft** (broker+controller combined), no ZooKeeper — the current Confluent recommendation for new deployments.
 - **ClickHouse ingestion**: the Kafka-engine table consumes the Debezium topic as `JSONAsString`; the materialized view parses the envelope with `JSONExtract*` and `parseDateTime64BestEffortOrNull` (the `OrNull` variant is important — `parseDateTime64BestEffort('')` throws instead of returning NULL for JSON-null `deleted_at`). ClickHouse must be **25.x** — 24.8's bundled librdkafka doesn't support the Kafka 4.0 protocol ("Required feature not supported by broker"). `clickhouse/config.d/kafka.xml` lowers librdkafka's topic metadata refresh to 10 s: Debezium creates the AdventureWorks topics during its snapshot, after ClickHouse has subscribed, and with the 300 s default most of them reached `cdc.aw_events` up to 5 minutes late on a fresh stack.
 - **ClickHouse current state**: `cdc.orders` keeps full history (90-day TTL). A cascading materialized view feeds `cdc.orders_latest` (`ReplacingMergeTree(ts_ms)`, one row per `id`), and `cdc.orders_current` / `cdc.orders_active` read that with `FINAL`. This replaced a view that ran `row_number()` over the entire history on every query.
@@ -459,7 +460,7 @@ oss-da-bi-stack/
 - **One-time SQL Server load**: `sqlserver_to_postgres` treats AdventureWorks2016 as a static source. `sqlserver_pipeline.py` checks for a load marker (`raw.customer`) and skips when present; `--force` reloads. The DAG is therefore unscheduled.
 - **Secrets come from `.env`**: Compose requires each secret (`${VAR:?}`) and fails fast rather than falling back to a placeholder. `scripts/generate-env.sh` creates them. The Debezium connector and ClickHouse user read their passwords from the same file, so nothing sensitive lives in a tracked file.
 - **Metabase**: metadata lives in the shared Postgres (`metabase_meta`). The ClickHouse driver is bundled in the image (core since Metabase 54), so no plugin or custom image is needed. `MB_ENCRYPTION_SECRET_KEY` must be 16/24/32 characters (the generator emits 32) and must not change after first start, or stored DB credentials can no longer be decrypted. English locale on purpose.
-- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `metabase/metabase:v0.63.18`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.0.7), as are the Airflow requirements (`dlt[postgres]==1.30.0`, `dbt-core==1.11.9` + `dbt-postgres==1.11.0`, `faker`) and the Debezium connector (`debezium-connector-postgresql:3.2.6` — the newest 3.x on Confluent Hub). Bump and rebuild deliberately; Dependabot handles minor/patch bumps, majors stay manual.
+- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `metabase/metabase:v0.63.19.1`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.3.2), as are the Airflow requirements (`dlt[postgres]==1.30.0`, `dbt-core==1.11.9` + `dbt-postgres==1.11.0`, `faker`) and the Debezium connector (`debezium-connector-postgresql:3.2.6` — the newest 3.x on Confluent Hub). Bump and rebuild deliberately; Dependabot handles minor/patch bumps, majors stay manual.
 - **AdventureWorks OLTP sandbox**: `postgres_active` holds a generated, seeded copy of the AdventureWorks tables (see [AdventureWorks OLTP sandbox](#adventureworks-oltp-sandbox)). The schema and seed are **generated files** — edit `scripts/gen_adventureworks_schema.py` / `scripts/gen_adventureworks_seed.py`, not the SQL. Primary keys are restored; foreign keys are not enforced, but the seed is **referentially consistent** (10% of the driver tables expanded along the FK graph), so joins resolve. `simulate_adventureworks` mutates the tables every 5 min.
 - **DWH source**: `dbt/adventureworks_dwh` reads `analytics.raw_active`, fed by the `postgres_active_to_postgres_aw` dlt pipeline. The static `analytics.raw` (SQL Server load) is an alternative source. `dim_date` runs to 2040 because the simulator stamps new rows with `now()`.
 - **ClickHouse mart**: the dbt star is copied into ClickHouse `mart` by `scripts/sync_mart_to_clickhouse.py` (the last task of the `postgres_active_to_postgres_aw` DAG) using ClickHouse's `postgresql()` table function. It reads the mart as the read-only `bi_ro` role, and since the password rides the query text it sets `log_queries=0` to keep it out of `system.query_log`. (dlt's ClickHouse destination works on dlt 1.30 — native port 9000, `http_port` 8123, `secure=False` — but needs `dlt[clickhouse]`, which the Airflow image doesn't install; `postgresql()` needs no extra driver.)
