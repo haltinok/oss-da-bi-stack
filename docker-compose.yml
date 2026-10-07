@@ -430,6 +430,8 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./clickhouse/init:/docker-entrypoint-initdb.d
+      # Kafka client settings (fast discovery of the CDC topics); see the file.
+      - ./clickhouse/config.d/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
     ulimits:
       nofile: 262144
     # No hard dependency on Kafka: ClickHouse starts fine without it (the

@@ -209,29 +209,28 @@ jobs:
           exit 1
       - name: update one product and wait for it in cdc.aw_events
         # The AdventureWorks tables share one multi-topic Kafka-engine table;
-        # this covers that path (an update, so op = 'u') the same way. The
-        # initial AW snapshot is large, so first wait until cdc.aw_events stops
-        # growing -- an update made mid-snapshot is absorbed by the snapshot
-        # (op = 'r') and never arrives as 'u'.
+        # this covers that path (an update, so op = 'u') the same way. First
+        # wait until ClickHouse is consuming all nine AW topics: Debezium only
+        # creates them during its snapshot, and cdc.aw_kafka picks up a topic
+        # on its next metadata refresh (10 s, clickhouse/config.d/kafka.xml).
+        # Every seeded AW table has rows, so each topic shows up in aw_events.
         run: |
           set -euo pipefail
           set -a; . ./.env; set +a
-          stable=0
-          last=-1
-          for i in $(seq 1 90); do
-            n="$(docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
-              -q "select count() from cdc.aw_events" 2>/dev/null || echo 0)"
-            if [ "$n" = "$last" ]; then
-              stable=$((stable + 1))
-              if [ "$stable" -ge 3 ]; then
-                echo "aw_events settled at $n rows (poll $i)"
-                break
-              fi
-            else
-              stable=0
+          for i in $(seq 1 60); do
+            topics="$(docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+              -q "select uniqExact(source_table) from cdc.aw_events" 2>/dev/null || echo 0)"
+            if [ "$topics" -ge 9 ]; then
+              echo "all 9 AdventureWorks topics consumed (poll $i)"
+              break
             fi
-            last="$n"
-            sleep 10
+            if [ "$i" -eq 60 ]; then
+              echo "only $topics of 9 AdventureWorks topics reached cdc.aw_events" >&2
+              docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+                -q "select source_table, op, count() from cdc.aw_events group by 1, 2" >&2 || true
+              exit 1
+            fi
+            sleep 3
           done
           docker exec postgres_active psql -U postgres -p 5434 -d active_db -c \
             "update public.product set modified_date = now()
