@@ -298,7 +298,7 @@ services:
       start_period: 90s
 
   kafka:
-    image: confluentinc/cp-kafka:8.0.7
+    image: confluentinc/cp-kafka:8.3.2
     container_name: kafka
     profiles: [cdc]
     restart: unless-stopped
