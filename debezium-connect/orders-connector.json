@@ -1,0 +1,24 @@
+{
+  "name": "orders-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres_active",
+    "database.port": "5434",
+    "database.user": "debezium",
+    "database.password": "${DEBEZIUM_PASSWORD}",
+    "database.dbname": "active_db",
+    "topic.prefix": "active_db",
+    "table.include.list": "public.orders,public.sales_order_header,public.sales_order_detail,public.product,public.product_inventory,public.work_order,public.transaction_history,public.product_review,public.shopping_cart_item,public.person",
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "snapshot.mode": "initial",
+    "decimal.handling.mode": "string",
+    "signal.data.collection": "public.debezium_signal",
+    "signal.enabled.channels": "source",
+    "incremental.snapshot.chunk.size": "1024",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false"
+  }
+}

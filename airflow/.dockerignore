@@ -1,0 +1,5 @@
+# Keep the build context small: only requirements.txt is copied into the image.
+logs/
+plugins/
+__pycache__/
+*.pyc

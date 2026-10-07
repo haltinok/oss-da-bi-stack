@@ -1,0 +1,6 @@
+# Lint only (no formatter): pyflakes, syntax errors and bugbear.
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["F", "E9", "B"]

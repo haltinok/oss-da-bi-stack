@@ -1,0 +1,426 @@
+# All secrets are required from .env -- there are deliberately no weak fallbacks.
+# `scripts/generate-env.sh` writes a .env with strong random values.
+x-airflow-common: &airflow-common
+  build:
+    context: ./airflow
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # dbt reads its connection from the environment (see dbt/.../profiles.yml),
+    # so no credentials are stored in the repository.
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Used by the mart→ClickHouse sync (ClickHouse's postgresql() table function).
+    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+    # Used by the mart sync to read the star as the read-only bi_ro role.
+    BI_READONLY_PASSWORD: ${BI_READONLY_PASSWORD:?set BI_READONLY_PASSWORD in .env}
+    # Simulator tuning: per-run chance of creating a new sales order.
+    SIM_ORDER_CHANCE: ${SIM_ORDER_CHANCE:-0.05}
+    # Per-run chance an order advances toward shipped, or is rejected/cancelled.
+    STATUS_ADVANCE_CHANCE: ${STATUS_ADVANCE_CHANCE:-0.25}
+    STATUS_CANCEL_CHANCE: ${STATUS_CANCEL_CHANCE:-0.05}
+    DBT_PG_HOST: postgres
+    DBT_PG_PORT: "5432"
+    DBT_PG_USER: postgres
+    DBT_PG_DATABASE: ${POSTGRES_DB:-analytics}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?set AIRFLOW_FERNET_KEY in .env}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?set AIRFLOW_WEBSERVER_SECRET_KEY in .env}
+    # Airflow 3 defaults to the Simple Auth Manager; switching to FAB keeps
+    # the familiar env-var-provisioned admin user/password workflow.
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-api-server:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH__JWT_SECRET:?set AIRFLOW_API_AUTH__JWT_SECRET in .env}
+    AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW_API_AUTH__JWT_ISSUER:-airflow}
+    _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:-admin}
+    _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/scripts:/opt/airflow/scripts
+    - ./dlt:/opt/airflow/dlt
+    - ./dbt:/opt/airflow/dbt
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+# Every published port is overridable from .env so this stack can run next to
+# another one on the same host (the defaults below are the historical values).
+services:
+  postgres:
+    image: postgres:16
+    container_name: oss_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: postgres
+      # Used by init/02_bi_readonly.sh to create the BI read-only role.
+      BI_READONLY_PASSWORD: ${BI_READONLY_PASSWORD:?set BI_READONLY_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres_active:
+    image: postgres:16
+    container_name: postgres_active
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: active_db
+      # Used by init/00_debezium_user.sh to create the replication user.
+      DEBEZIUM_PASSWORD: ${DEBEZIUM_PASSWORD:?set DEBEZIUM_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_ACTIVE_PORT:-5434}:5434"
+    command:
+      - "postgres"
+      - "-p"
+      - "5434"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_wal_size=4GB"
+      # Cap the WAL a replication slot may pin. Without it, an inactive Debezium
+      # slot (cdc profile off, Connect down) retains WAL forever while the
+      # simulators keep writing, until the volume fills. A slot that falls
+      # further behind is invalidated; Debezium then needs a re-snapshot.
+      - "-c"
+      - "max_slot_wal_keep_size=2GB"
+    volumes:
+      - postgres_active_data:/var/lib/postgresql/data
+      - ./postgres_active/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -p 5434"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-perm-fix:
+    <<: *airflow-common
+    container_name: oss_airflow_perm_fix
+    restart: "no"
+    user: "0:0"
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/plugins
+        chown -R 50000:0 /opt/airflow/logs /opt/airflow/plugins
+        mkdir -p /opt/airflow/dbt/adventureworks_dwh/target /opt/airflow/dbt/adventureworks_dwh/logs
+        chown -R 50000:0 /opt/airflow/dbt/adventureworks_dwh/target /opt/airflow/dbt/adventureworks_dwh/logs
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: oss_airflow_init
+    restart: "no"
+    entrypoint: /bin/bash
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-perm-fix:
+        condition: service_completed_successfully
+    command:
+      - -c
+      - |
+        set -euo pipefail
+        airflow db migrate
+        # Only the user creation may fail (the admin already exists on re-runs).
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" \
+          --firstname Admin --lastname User --role Admin \
+          --email admin@example.com || true
+
+  airflow-api-server:
+    <<: *airflow-common
+    container_name: oss_airflow_api_server
+    restart: unless-stopped
+    command: api-server
+    ports:
+      - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: oss_airflow_scheduler
+    restart: unless-stopped
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: oss_airflow_dag_processor
+    restart: unless-stopped
+    command: dag-processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: oss_airflow_triggerer
+    restart: unless-stopped
+    command: triggerer
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  superset-init:
+    build:
+      context: ./superset
+    container_name: oss_superset_init
+    profiles: [bi]
+    restart: "no"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
+      SUPERSET_METADATA_DB_URI: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/superset_meta
+      PYTHONPATH: /app/pythonpath
+      # Used by set_bi_database.py to set the read-only connection's password.
+      BI_READONLY_PASSWORD: ${BI_READONLY_PASSWORD:?set BI_READONLY_PASSWORD in .env}
+      SUPERSET_ADMIN_USER: ${SUPERSET_ADMIN_USER:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:?set SUPERSET_ADMIN_PASSWORD in .env}
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py
+      - ./superset/set_bi_database.py:/app/pythonpath/set_bi_database.py:ro
+      - ./superset/dashboards:/app/dashboards:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # `set -e` so a failed `db upgrade` / `init` fails the service instead of
+    # letting superset start on a broken schema. Only create-admin (the admin
+    # already exists on re-runs) and the dashboard import may fail.
+    command:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        superset db upgrade
+        superset fab create-admin --username "$${SUPERSET_ADMIN_USER}" --firstname Superset --lastname Admin --email admin@superset.local --password "$${SUPERSET_ADMIN_PASSWORD}" || true
+        superset init
+        superset import-dashboards -p /app/dashboards/adventureworks.zip -u "$${SUPERSET_ADMIN_USER}" || true
+        python /app/pythonpath/set_bi_database.py
+
+  superset:
+    build:
+      context: ./superset
+    container_name: oss_superset
+    profiles: [bi]
+    restart: unless-stopped
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
+      SUPERSET_METADATA_DB_URI: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/superset_meta
+      PYTHONPATH: /app/pythonpath
+    ports:
+      - "127.0.0.1:${SUPERSET_PORT:-8089}:8088"
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    command: ["superset", "run", "-h", "0.0.0.0", "-p", "8088", "--with-threads"]
+
+  superset-mcp:
+    build:
+      context: ./superset
+    container_name: oss_superset_mcp
+    profiles: [bi]
+    restart: unless-stopped
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
+      SUPERSET_METADATA_DB_URI: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/superset_meta
+      PYTHONPATH: /app/pythonpath
+      MCP_DEV_USERNAME: ${MCP_DEV_USERNAME:-admin}
+    ports:
+      - "127.0.0.1:${SUPERSET_MCP_PORT:-5008}:5008"
+    volumes:
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py
+    depends_on:
+      - superset
+    command: ["superset", "mcp", "run", "--host", "0.0.0.0", "--port", "5008"]
+    # The base image's healthcheck curls the web server on :8088, which this
+    # container does not run (MCP listens on :5008), so it always reports
+    # unhealthy. Disable the inherited check.
+    healthcheck:
+      disable: true
+
+  metabase:
+    # The friendly self-service BI layer. Application metadata lives in the
+    # shared Postgres (database `metabase_meta`), so no stateful sidecar.
+    # ClickHouse is bundled in the image (driver promoted to core in Metabase 54),
+    # so no custom image or plugin mount is required.
+    image: metabase/metabase:v0.63.18
+    container_name: oss_metabase
+    profiles: [bi]
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_CONNECTION_URI: postgresql://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/metabase_meta
+      # Encrypts stored database credentials; must be 16/24/32 characters
+      # (scripts/generate-env.sh produces a 32-char value).
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_SECRET_KEY:?set METABASE_SECRET_KEY in .env}
+      MB_SITE_URL: http://localhost:${METABASE_PORT:-3001}
+    ports:
+      - "127.0.0.1:${METABASE_PORT:-3001}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+
+  kafka:
+    image: confluentinc/cp-kafka:8.0.7
+    container_name: kafka
+    profiles: [cdc]
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms256m
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready 1 20 -b kafka:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka-connect:
+    build:
+      context: ./debezium-connect
+    container_name: kafka_connect
+    profiles: [cdc]
+    restart: unless-stopped
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_PORT: 8083
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_GROUP_ID: connect-cluster
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect_configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect_offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect_status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+      CONNECT_HEAP: -Xmx1g
+    ports:
+      - "127.0.0.1:${KAFKA_CONNECT_PORT:-8083}:8083"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Creates or updates the Debezium connector once Connect's REST API is up, so
+  # registering it is no longer a manual setup step. Uses the Debezium/Connect
+  # image (which ships python3) and PUT, which is idempotent -- re-running
+  # compose updates the connector in place instead of triggering another
+  # initial snapshot.
+  debezium-register:
+    build:
+      context: ./debezium-connect
+    container_name: oss_debezium_register
+    profiles: [cdc]
+    restart: "no"
+    entrypoint: ["python3", "/connectors/register_connector.py"]
+    environment:
+      # Expanded into ${DEBEZIUM_PASSWORD} in orders-connector.json.
+      DEBEZIUM_PASSWORD: ${DEBEZIUM_PASSWORD:?set DEBEZIUM_PASSWORD in .env}
+    volumes:
+      - ./debezium-connect:/connectors:ro
+    depends_on:
+      postgres_active:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka_ui
+    profiles: [cdc]
+    restart: unless-stopped
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "127.0.0.1:${KAFKA_UI_PORT:-8081}:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: clickhouse
+    profiles: [cdc, bi]
+    restart: unless-stopped
+    environment:
+      # The official image writes users.d/default-user.xml from these, so the
+      # password lives in .env instead of a committed users.xml.
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d
+    ulimits:
+      nofile: 262144
+    # No hard dependency on Kafka: ClickHouse starts fine without it (the
+    # Kafka-engine cdc.* tables just retry until Kafka is up). This keeps the
+    # `bi` profile self-contained, since it does not include Kafka.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8123/ping | grep -qi ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_data:
+  postgres_active_data:
+  kafka_data:
+  clickhouse_data:
+  superset_home:

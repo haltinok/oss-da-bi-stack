@@ -1,0 +1,121 @@
+version: 2
+
+sources:
+  - name: adventureworks
+    description: >
+      AdventureWorks2016 tables replicated live from the postgres_active OLTP
+      sandbox by the `postgres_active_to_postgres_aw` dlt pipeline (incremental
+      on modified_date + merge). The sandbox is a referentially consistent 10%
+      sample, so relationships tests pass. Set the `aw_source_schema` var to
+      `raw` to build from the static SQL Server load instead.
+    database: analytics
+    schema: "{{ var('aw_source_schema', 'raw_active') }}"
+    tables:
+      # --- live: mutated every 5 min by the simulate_adventureworks DAG ---
+      - name: sales_order_header
+        loaded_at_field: modified_date
+        freshness:
+          warn_after: { count: 1, period: day }
+          error_after: { count: 7, period: day }
+        columns:
+          - name: sales_order_id
+            data_tests: [unique, not_null]
+      - name: sales_order_detail
+        loaded_at_field: modified_date
+        freshness:
+          warn_after: { count: 1, period: day }
+          error_after: { count: 7, period: day }
+      - name: product
+        loaded_at_field: modified_date
+        freshness:
+          warn_after: { count: 1, period: day }
+          error_after: { count: 7, period: day }
+        columns:
+          - name: product_id
+            data_tests: [unique, not_null]
+      - name: product_inventory
+        loaded_at_field: modified_date
+        freshness:
+          warn_after: { count: 1, period: day }
+          error_after: { count: 7, period: day }
+      - name: person
+        loaded_at_field: modified_date
+        freshness:
+          warn_after: { count: 1, period: day }
+          error_after: { count: 7, period: day }
+        columns:
+          - name: business_entity_id
+            data_tests: [unique, not_null]
+      # --- dimensions (loaded once, then only when the sandbox re-seeds) ---
+      - name: address
+        columns:
+          - name: address_id
+            data_tests: [unique, not_null]
+      - name: business_entity_address
+      - name: country_region
+        columns:
+          - name: country_region_code
+            data_tests: [unique, not_null]
+      - name: currency
+        columns:
+          - name: currency_code
+            data_tests: [unique, not_null]
+      - name: currency_rate
+        columns:
+          - name: currency_rate_id
+            data_tests: [unique, not_null]
+      - name: customer
+        columns:
+          - name: customer_id
+            data_tests: [unique, not_null]
+      - name: department
+        columns:
+          - name: department_id
+            data_tests: [unique, not_null]
+      - name: email_address
+        columns:
+          - name: email_address_id
+            data_tests: [unique, not_null]
+      - name: employee
+        columns:
+          - name: business_entity_id
+            data_tests: [unique, not_null]
+      - name: employee_department_history
+      - name: location
+        columns:
+          - name: location_id
+            data_tests: [unique, not_null]
+      - name: product_category
+        columns:
+          - name: product_category_id
+            data_tests: [unique, not_null]
+      - name: product_cost_history
+      - name: product_subcategory
+        columns:
+          - name: product_subcategory_id
+            data_tests: [unique, not_null]
+      - name: sales_person
+        columns:
+          - name: business_entity_id
+            data_tests: [unique, not_null]
+      - name: sales_person_quota_history
+      - name: sales_reason
+        columns:
+          - name: sales_reason_id
+            data_tests: [unique, not_null]
+      - name: sales_territory
+        columns:
+          - name: territory_id
+            data_tests: [unique, not_null]
+      - name: special_offer
+        columns:
+          - name: special_offer_id
+            data_tests: [unique, not_null]
+      - name: state_province
+        columns:
+          - name: state_province_id
+            data_tests: [unique, not_null]
+      - name: store
+        columns:
+          - name: business_entity_id
+            data_tests: [unique, not_null]

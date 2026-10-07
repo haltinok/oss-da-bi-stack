@@ -1,0 +1,25 @@
+# --- Secrets / local env ---------------------------------------------------
+.env
+.env.*
+!.env.example
+**/.dlt/secrets.toml
+
+# --- dbt build artifacts ---------------------------------------------------
+dbt/**/target/
+dbt/**/logs/
+dbt/**/dbt_packages/
+dbt/**/.user.yml
+
+# --- Airflow runtime -------------------------------------------------------
+airflow/logs/
+airflow/plugins/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+
+# --- nodeterm canvas state (local) ---------------------------------------
+.nodeterm/
+
+# --- OpenChamber browser screenshots (local) ------------------------------
+.openchamber/

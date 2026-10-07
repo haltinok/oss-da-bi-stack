@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Actions are pinned to commit SHAs (the repository is public); the comment
+# names the tag each SHA was resolved from.
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: pre-commit
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files
+
+  # Every DAG imports cleanly under the Airflow version the image uses.
+  dags:
+    runs-on: ubuntu-latest
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: install Airflow (version from airflow/Dockerfile)
+        run: |
+          version="$(sed -n 's|^FROM apache/airflow:\([0-9.]*\)-.*|\1|p' airflow/Dockerfile)"
+          pip install "apache-airflow==${version}" apache-airflow-providers-standard pytest \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${version}/constraints-3.11.txt"
+      - name: DAG integrity
+        run: |
+          airflow db migrate
+          pytest -q tests/test_dag_integrity.py
+
+  # End to end on the batch path: seed the postgres_active sandbox from the
+  # committed init files, replicate it with the dlt pipeline, then `dbt build`
+  # (models + snapshot + all data tests) on the result.
+  dwh:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ci
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ci
+      BI_READONLY_PASSWORD: ci_ro
+      DEBEZIUM_PASSWORD: ci_dbz
+      # dlt: env vars override the Compose hostnames in .dlt/config.toml.
+      DESTINATION__POSTGRES__CREDENTIALS__HOST: localhost
+      SOURCES__SQL_DATABASE__CREDENTIALS__HOST: localhost
+      SOURCES__SQL_DATABASE__CREDENTIALS__PORT: "5432"
+      DBT_PG_HOST: localhost
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: install dlt + dbt (versions from airflow/requirements.txt)
+        run: |
+          pip install $(grep -E '^(dlt|setuptools|dbt-core|dbt-postgres)' airflow/requirements.txt \
+            | sed 's/^dlt\[postgres\]/dlt[postgres,sql_database]/')
+      - name: initialise the warehouse and the postgres_active sandbox
+        run: |
+          psql -v ON_ERROR_STOP=1 -d postgres -f postgres/init/01_init.sql
+          bash postgres/init/02_bi_readonly.sh
+          psql -v ON_ERROR_STOP=1 -d postgres -c "create database active_db"
+          POSTGRES_DB=active_db bash postgres_active/init/00_debezium_user.sh
+          for f in 01_init.sql 02_adventureworks_schema.sql; do
+            psql -q -v ON_ERROR_STOP=1 -d active_db -f "postgres_active/init/$f"
+          done
+          gunzip -c postgres_active/init/03_adventureworks_seed.sql.gz \
+            | psql -q -v ON_ERROR_STOP=1 -d active_db >/dev/null
+          psql -v ON_ERROR_STOP=1 -d active_db -f postgres_active/init/04_debezium_signal.sql
+      - name: dlt postgres_active -> raw_active
+        working-directory: dlt/pipelines/postgres_active_to_postgres_aw
+        run: python aw_pipeline.py
+      - name: dlt postgres_active -> raw.orders
+        working-directory: dlt/pipelines/postgres_active_to_postgres
+        run: python orders_pipeline.py
+      - name: dbt build
+        run: dbt build --project-dir dbt/adventureworks_dwh --profiles-dir dbt/adventureworks_dwh
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: validate compose (every profile)
+        run: |
+          cp .env.example .env
+          docker compose config >/dev/null
+          docker compose --profile cdc config >/dev/null
+          docker compose --profile bi config >/dev/null
+          docker compose --profile cdc --profile bi config >/dev/null
