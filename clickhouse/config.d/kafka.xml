@@ -1,0 +1,17 @@
+<!--
+  Kafka client settings for ClickHouse's Kafka-engine tables (cdc.orders_kafka,
+  cdc.aw_kafka). ClickHouse passes each element to librdkafka with `_` turned
+  into `.`, so this is `topic.metadata.refresh.interval.ms`.
+
+  cdc.aw_kafka subscribes to nine topics that Debezium only creates during its
+  initial snapshot, usually after ClickHouse has already subscribed. A topic
+  that is missing at subscribe time is only picked up on the next metadata
+  refresh, and librdkafka's default interval is 300 s, so on a fresh stack most
+  AdventureWorks changes reached cdc.aw_events up to 5 minutes late. 10 s makes
+  new topics (including ones added to the list later) show up almost at once.
+-->
+<clickhouse>
+    <kafka>
+        <topic_metadata_refresh_interval_ms>10000</topic_metadata_refresh_interval_ms>
+    </kafka>
+</clickhouse>

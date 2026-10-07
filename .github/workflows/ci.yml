@@ -122,3 +122,130 @@ jobs:
           docker compose --profile cdc config >/dev/null
           docker compose --profile bi config >/dev/null
           docker compose --profile cdc --profile bi config >/dev/null
+
+  # Builds the three custom images. The dags/dwh jobs install Python packages
+  # directly on the runner, so without this job a Dockerfile break (or a
+  # requirements change that breaks the image build) can pass CI. Building is
+  # also the only real test of the base-image bumps Dependabot proposes for
+  # the airflow, superset and debezium-connect Dockerfiles.
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: fill .env (values don't matter, only that they're set)
+        run: cp .env.example .env
+      - name: build the images
+        run: docker compose build airflow-scheduler superset kafka-connect
+      - name: check the airflow image's Python environment
+        run: |
+          docker run --rm --entrypoint /bin/bash oss-da-bi-stack-airflow-scheduler:latest -ec '
+            pip check
+            python -c "import dlt, dbt; print(\"dlt\", dlt.__version__)"
+            # pip show exits 1 when the package is missing.
+            pip show apache-airflow-providers-fab >/dev/null
+            echo "airflow image checks passed"
+          '
+      - name: check the superset image's drivers
+        # The build only proves the pinned drivers installed; this proves they
+        # import in Superset's venv.
+        run: |
+          docker run --rm --entrypoint /app/.venv/bin/python oss-da-bi-stack-superset:latest \
+            -c "import psycopg2, clickhouse_connect, fastmcp; print('superset drivers import')"
+
+  # End to end on the CDC path, which nothing else in CI touches: bring up the
+  # cdc profile from the compose file, wait for the connector's initial
+  # snapshot, insert one row into postgres_active.orders and check it lands in
+  # clickhouse's cdc.orders. This is the test run by hand for every connector,
+  # broker or ClickHouse change -- including Dependabot's cp-kafka (#7),
+  # cp-kafka-connect (#3) and ClickHouse (#5) bumps.
+  cdc-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: fill .env
+        run: cp .env.example .env
+      - name: build the connect image
+        run: docker compose build kafka-connect
+      - name: start the cdc path
+        run: docker compose --profile cdc up -d postgres_active kafka kafka-connect debezium-register clickhouse
+      - name: wait for the connector and its task to reach RUNNING
+        run: |
+          set -euo pipefail
+          # The connector can report RUNNING while its task has FAILED (bad
+          # password, missing slot), so require every task to be RUNNING too.
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:8083/connectors/orders-connector/status > /tmp/connector.json \
+              && jq -e '.connector.state == "RUNNING" and (.tasks | length > 0) and all(.tasks[]; .state == "RUNNING")' \
+                   /tmp/connector.json >/dev/null; then
+              echo "connector and task RUNNING (poll $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "connector or task never reached RUNNING" >&2
+          cat /tmp/connector.json >&2 || true
+          docker logs kafka_connect | tail -40 >&2
+          docker logs oss_debezium_register | tail -20 >&2
+          exit 1
+      - name: insert one row and wait for it in clickhouse
+        run: |
+          set -euo pipefail
+          set -a; . ./.env; set +a
+          docker exec postgres_active psql -U postgres -p 5434 -d active_db \
+            -c "insert into public.orders (customer_name, amount, status) values ('ci-smoke', 12.34, 'created');"
+          for i in $(seq 1 60); do
+            n="$(docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+              -q "select count() from cdc.orders where customer_name = 'ci-smoke'" 2>/dev/null || echo 0)"
+            if [ "$n" -ge 1 ]; then
+              echo "row arrived in cdc.orders (poll $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "row never reached cdc.orders" >&2
+          docker logs kafka_connect | tail -40 >&2
+          docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+            -q "select count() from cdc.orders" >&2 || true
+          exit 1
+      - name: update one product and wait for it in cdc.aw_events
+        # The AdventureWorks tables share one multi-topic Kafka-engine table;
+        # this covers that path (an update, so op = 'u') the same way. First
+        # wait until ClickHouse is consuming all nine AW topics: Debezium only
+        # creates them during its snapshot, and cdc.aw_kafka picks up a topic
+        # on its next metadata refresh (10 s, clickhouse/config.d/kafka.xml).
+        # Every seeded AW table has rows, so each topic shows up in aw_events.
+        run: |
+          set -euo pipefail
+          set -a; . ./.env; set +a
+          for i in $(seq 1 60); do
+            topics="$(docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+              -q "select uniqExact(source_table) from cdc.aw_events" 2>/dev/null || echo 0)"
+            if [ "$topics" -ge 9 ]; then
+              echo "all 9 AdventureWorks topics consumed (poll $i)"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "only $topics of 9 AdventureWorks topics reached cdc.aw_events" >&2
+              docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+                -q "select source_table, op, count() from cdc.aw_events group by 1, 2" >&2 || true
+              exit 1
+            fi
+            sleep 3
+          done
+          docker exec postgres_active psql -U postgres -p 5434 -d active_db -c \
+            "update public.product set modified_date = now()
+             where product_id = (select min(product_id) from public.product);"
+          for i in $(seq 1 60); do
+            n="$(docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+              -q "select count() from cdc.aw_events where source_table = 'active_db.public.product' and op = 'u'" 2>/dev/null || echo 0)"
+            if [ "$n" -ge 1 ]; then
+              echo "product update arrived in cdc.aw_events (poll $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "product update never reached cdc.aw_events" >&2
+          docker logs kafka_connect | tail -40 >&2
+          docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+            -q "select source_table, op, count() from cdc.aw_events group by 1, 2" >&2 || true
+          exit 1

@@ -328,6 +328,9 @@ services:
   kafka-connect:
     build:
       context: ./debezium-connect
+    # Explicit tag, shared with debezium-register below, so the image is built
+    # once whatever the project (folder) name is.
+    image: oss-da-bi-stack-kafka-connect
     container_name: kafka_connect
     profiles: [cdc]
     restart: unless-stopped
@@ -376,6 +379,11 @@ services:
   debezium-register:
     build:
       context: ./debezium-connect
+    # Same artifact as kafka-connect (the register script needs only python3):
+    # sharing the explicit tag means the confluent-hub plugin downloads once
+    # per build instead of twice, and the CI cdc-smoke job pre-builds it with
+    # one command.
+    image: oss-da-bi-stack-kafka-connect
     container_name: oss_debezium_register
     profiles: [cdc]
     restart: "no"
@@ -422,6 +430,8 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./clickhouse/init:/docker-entrypoint-initdb.d
+      # Kafka client settings (fast discovery of the CDC topics); see the file.
+      - ./clickhouse/config.d/kafka.xml:/etc/clickhouse-server/config.d/kafka.xml:ro
     ulimits:
       nofile: 262144
     # No hard dependency on Kafka: ClickHouse starts fine without it (the
