@@ -12,7 +12,9 @@ LANGUAGES = {
     "en": {"flag": "us", "name": "English"},
     "tr": {"flag": "tr", "name": "Turkçe"},
 }
-BABEL_DEFAULT_LOCALE = "tr"
+# Default UI language; users can switch in the UI. Set SUPERSET_DEFAULT_LOCALE
+# in .env (`en` or `tr`).
+BABEL_DEFAULT_LOCALE = os.environ.get("SUPERSET_DEFAULT_LOCALE", "en")
 
 # Metadata connection comes from the environment so no credentials live in git.
 SQLALCHEMY_DATABASE_URI = os.environ["SUPERSET_METADATA_DB_URI"]

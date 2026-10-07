@@ -1,6 +1,8 @@
 FROM apache/airflow:3.3.1-python3.11
 
 USER root
+# build-essential: dbt-core 1.8 depends on logbook<1.6, which ships only as an
+# sdist and is compiled at install time. It can go once dbt is upgraded.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential libpq-dev curl gnupg \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \

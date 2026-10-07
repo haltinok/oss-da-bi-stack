@@ -5,7 +5,7 @@
     "database.hostname": "postgres_active",
     "database.port": "5434",
     "database.user": "debezium",
-    "database.password": "${DEBEZIUM_PASSWORD}",
+    "database.password": "${env:DEBEZIUM_PASSWORD}",
     "database.dbname": "active_db",
     "topic.prefix": "active_db",
     "table.include.list": "public.orders,public.sales_order_header,public.sales_order_detail,public.product,public.product_inventory,public.work_order,public.transaction_history,public.product_review,public.shopping_cart_item,public.person",

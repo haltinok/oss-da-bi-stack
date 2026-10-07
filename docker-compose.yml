@@ -227,6 +227,8 @@ services:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
       SUPERSET_METADATA_DB_URI: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/superset_meta
       PYTHONPATH: /app/pythonpath
+      # UI default language (`en` or `tr`); users can still switch in the UI.
+      SUPERSET_DEFAULT_LOCALE: ${SUPERSET_DEFAULT_LOCALE:-tr}
     ports:
       - "127.0.0.1:${SUPERSET_PORT:-8089}:8088"
     volumes:
@@ -340,6 +342,14 @@ services:
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
       CONNECT_HEAP: -Xmx1g
+      # Resolve `${env:VAR}` in connector configs at runtime, so the Debezium
+      # password is never stored in the _connect_configs topic or returned by
+      # GET /connectors/<name>/config. The allowlist limits which variables a
+      # connector config can read.
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      CONNECT_CONFIG_PROVIDERS_ENV_PARAM_ALLOWLIST_PATTERN: ^DEBEZIUM_PASSWORD$$
+      DEBEZIUM_PASSWORD: ${DEBEZIUM_PASSWORD:?set DEBEZIUM_PASSWORD in .env}
     ports:
       - "127.0.0.1:${KAFKA_CONNECT_PORT:-8083}:8083"
     depends_on:
@@ -364,9 +374,8 @@ services:
     profiles: [cdc]
     restart: "no"
     entrypoint: ["python3", "/connectors/register_connector.py"]
-    environment:
-      # Expanded into ${DEBEZIUM_PASSWORD} in orders-connector.json.
-      DEBEZIUM_PASSWORD: ${DEBEZIUM_PASSWORD:?set DEBEZIUM_PASSWORD in .env}
+    # No secrets here: the connector config holds `${env:DEBEZIUM_PASSWORD}`,
+    # which kafka-connect itself resolves (see CONNECT_CONFIG_PROVIDERS).
     volumes:
       - ./debezium-connect:/connectors:ro
     depends_on:

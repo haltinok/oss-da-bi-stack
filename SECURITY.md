@@ -1,112 +1,58 @@
-# Security notes
+# Security
 
-## Credentials that were committed to this (public) repository
+This is a local demo stack. It is built to run on one machine, not to be
+exposed to a network. This page describes how it handles secrets and what
+keeps them out of git.
 
-`https://github.com/haltinok/oss-da-bi-stack` is **public**, and the following
-files were tracked in git. Anyone who cloned or browsed the repo has them.
+## Reporting a problem
 
-| File | What was exposed |
-|------|------------------|
-| `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml` | SQL Server login `ANALYZER` + password, host `192.168.1.148` (a later working-tree revision pointed at `192.168.1.181`), port `1433` |
-| `dlt/pipelines/postgres_active_to_postgres/.dlt/secrets.toml` | warehouse + source Postgres passwords |
-| `dbt/adventureworks_dwh/profiles.yml` | warehouse Postgres user/password |
-| `superset/superset_config.py` | Superset metadata Postgres URI (inline) |
+Please report a suspected leak or vulnerability privately through
+**GitHub → Security → Report a vulnerability** on this repository, not in a
+public issue.
 
-The last three are only the local demo's `postgres`/`postgres`, which is not a
-meaningful secret. **The SQL Server credential is a real one and must be treated
-as compromised.**
+## How secrets are handled
 
-## Immediate actions (do these first)
+* **`.env` is the only place real secrets live.** It is git-ignored.
+  `scripts/generate-env.sh` writes it with strong random values (mode `0600`).
+  `.env.example` documents every variable and holds only placeholders.
+* **No weak fallbacks.** `docker-compose.yml` requires each secret with
+  Compose's `${VAR:?}` syntax, so the stack refuses to start rather than run
+  with a guessable default.
+* **Nothing sensitive in tracked files.**
+  * dbt (`profiles.yml`), Superset (`superset_config.py`) and the dlt
+    pipelines read their credentials from the environment.
+  * The Debezium connector config references `${env:DEBEZIUM_PASSWORD}`, which
+    Kafka Connect resolves at runtime, so the password is not stored in
+    Connect's config topic or returned by its REST API.
+  * ClickHouse creates its user from `CLICKHOUSE_PASSWORD`; there is no
+    committed `users.xml`.
+  * The Superset dashboard export carries a masked password, restored from
+    `BI_READONLY_PASSWORD` by `superset/set_bi_database.py`.
+* **Only the optional SQL Server load needs a secrets file:**
+  `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml`, created from
+  `secrets.toml.example` and git-ignored.
+* **Least privilege for BI.** Superset, Metabase and the ClickHouse mart sync
+  read the warehouse as the `bi_ro` role, which can only `SELECT` from `mart`.
+* **Local-only ports.** Every published port binds to `127.0.0.1`. Several
+  services are unauthenticated by design (Superset MCP server, Kafka UI, Kafka
+  Connect REST); never publish them on a public interface.
 
-1. **Rotate the SQL Server `ANALYZER` password.** Assume it is public. While you
-   are there, check what that login can reach and whether it needs to be
-   reachable from outside `192.168.1.0/24`.
-2. Rotate the Postgres passwords if this stack is ever exposed beyond localhost
-   (`postgres` on the warehouse and on `postgres_active`, plus the `debezium`
-   replication user).
-3. Rotate `SUPERSET_SECRET_KEY` / `AIRFLOW_FERNET_KEY` / `AIRFLOW_WEBSERVER_SECRET_KEY`
-   if they were ever set to real values rather than the `changeme` placeholders.
+## Guard rails
 
-## Already fixed in the working tree
+* **pre-commit** (`.pre-commit-config.yaml`): gitleaks, private-key detection
+  and large-file checks. Run `pre-commit install` once after cloning.
+* **CI** (`.github/workflows/ci.yml`): gitleaks over the full history on every
+  push and pull request.
+* **Dependabot** (`.github/dependabot.yml`): keeps the pinned GitHub Actions,
+  Python requirements and Docker base images current.
+* **Repository settings** to keep on: *Secret scanning*, *Push protection* and
+  *Dependabot alerts* (Settings → Code security).
 
-* `dlt/**/.dlt/secrets.toml` — untracked, plus `secrets.toml.example` templates
-  and a `.gitignore` rule (`**/.dlt/secrets.toml`).
-* `dbt/adventureworks_dwh/profiles.yml` — now reads `DBT_PG_*` / `POSTGRES_PASSWORD`
-  from the environment.
-* `superset/superset_config.py` — now reads `SUPERSET_METADATA_DB_URI` /
-  `SUPERSET_WAREHOUSE_DB_URI` from the environment.
-* `docker-compose.yml` — every stack secret (`POSTGRES_PASSWORD`,
-  `DEBEZIUM_PASSWORD`, `CLICKHOUSE_PASSWORD`, `AIRFLOW_FERNET_KEY`,
-  `AIRFLOW_WEBSERVER_SECRET_KEY`, `AIRFLOW_API_AUTH__JWT_SECRET`,
-  `SUPERSET_SECRET_KEY`, `METABASE_SECRET_KEY`) is required from `.env` via
-  Compose's `${VAR:?}` syntax; there are no weak fallbacks left to start by
-  accident.
-* `scripts/generate-env.sh` — generates `.env` with strong random values (and
-  creates it mode `0600`).
-* The Debezium credential no longer lives in `debezium-connect/orders-connector.json`:
-  the config references `${DEBEZIUM_PASSWORD}` and the registration script expands
-  it; the replication role itself is created from the same variable by
-  `postgres_active/init/00_debezium_user.sh`.
-* The ClickHouse password no longer lives in a committed `users.xml`: the official
-  image creates the `clickhouse` user from `CLICKHOUSE_PASSWORD` in `.env`.
-* The Postgres password is read from `.env` at pipeline runtime (dlt resolves
-  `secrets.toml` above env vars, so the pipelines apply `POSTGRES_PASSWORD`
-  explicitly). It is no longer duplicated into the dlt secrets files.
-* `.pre-commit-config.yaml` — gitleaks + private-key detection, so a credential
-  cannot be committed again.
-* `.dockerignore` files for the build contexts.
-* Build artifacts and logs — 155 dbt files (`target/`, `logs/`) and 14
-  `airflow/logs/*` files are untracked and git-ignored.
+## If a secret is committed
 
-Untracking is **not** enough on its own: the blobs are still in history. The
-steps below are required to actually remove them.
-
-## Purging git history
-
-Run this on a **fresh clone** (nothing else in flight). `git filter-repo` is
-preferred; BFG works too.
-
-```bash
-pipx install git-filter-repo
-git clone https://github.com/haltinok/oss-da-bi-stack.git repo-clean && cd repo-clean
-
-# 1. Drop the secret files and the build artifacts from every commit.
-git filter-repo --force \
-  --path dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml \
-  --path dlt/pipelines/postgres_active_to_postgres/.dlt/secrets.toml \
-  --path dbt/adventureworks_dwh/target \
-  --path dbt/adventureworks_dwh/logs \
-  --path airflow/logs \
-  --invert-paths
-
-# 2. Scrub the private host addresses wherever else they appear in history.
-git filter-repo --force \
-  --replace-text <(printf '192.168.1.148==>REDACTED_HOST\n192.168.1.181==>REDACTED_HOST\n')
-
-# 3. filter-repo removes the remote; put it back and force-push.
-git remote add origin https://github.com/haltinok/oss-da-bi-stack.git
-git push --force --all && git push --force --tags
-```
-
-Caveats worth knowing before you start:
-
-* A force-push does **not** reach clones that already exist (including your own
-  working copies — re-clone), forks, or GitHub's cached object views. For a
-  credential leak, the only fully reliable fix is to **delete and recreate the
-  repository**, or ask GitHub Support to expire the cached blobs.
-* `git filter-repo` rewrites every commit hash, so open PRs and any local
-  branches must be re-based or re-created.
-
-## Preventing a repeat
-
-* `pre-commit` with `gitleaks` / `detect-secrets`, or GitHub's native secret
-  scanning + push protection. A `.pre-commit-config.yaml` with gitleaks and
-  `detect-private-key` now ships in this repo — run `pre-commit install` to arm
-  it locally.
-* Keep the `secrets.toml.example` → `secrets.toml` (git-ignored) flow; never
-  commit the filled-in file.
-* The `.gitignore` in this repo now covers `.env*`, `**/.dlt/secrets.toml`,
-  dbt `target/`+`logs/`, and `airflow/logs/`.
-* `.env` is the single source of truth for the stack's passwords; never paste a
-  real value back into `docker-compose.yml`, `orders-connector.json` or
-  `clickhouse/`.
+1. **Rotate it first.** Assume anything pushed to a public repository has been
+   copied; deleting the commit does not undo that.
+2. Then remove it from history (`git filter-repo --invert-paths --path <file>`
+   on a fresh mirror clone, then force-push), or recreate the repository from
+   a clean tree.
+3. Re-clone every working copy: old clones still hold the secret.
