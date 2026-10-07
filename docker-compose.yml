@@ -136,12 +136,18 @@ services:
       - |
         set -euo pipefail
         airflow db migrate
-        # Only the user creation may fail (the admin already exists on re-runs).
+        # Create the admin on the first run. In Airflow 3.x `users create` exits
+        # 0 even when the user already exists (it only logs) and never updates
+        # an existing user, so always re-sync the password to
+        # AIRFLOW_ADMIN_PASSWORD from .env afterwards.
         airflow users create \
           --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
           --password "$${_AIRFLOW_WWW_USER_PASSWORD}" \
           --firstname Admin --lastname User --role Admin \
           --email admin@example.com || true
+        airflow users reset-password \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}"
 
   airflow-api-server:
     <<: *airflow-common
