@@ -1,4 +1,4 @@
-FROM apache/airflow:3.3.1-python3.11
+FROM apache/airflow:3.3.2-python3.11
 
 USER root
 # No compiler toolchain: every package in requirements.txt installs from a
