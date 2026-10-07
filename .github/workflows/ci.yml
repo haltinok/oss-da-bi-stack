@@ -166,6 +166,13 @@ jobs:
         run: cp .env.example .env
       - name: build the connect image
         run: docker compose build kafka-connect
+      - name: (diagnosis) tools available in the Confluent images
+        run: |
+          for img in "$(sed -n 's|.*image: \(confluentinc/cp-kafka:.*\)|\1|p' docker-compose.yml)" oss-da-bi-stack-kafka-connect; do
+            echo "== $img"
+            docker run --rm --entrypoint bash "$img" -c \
+              'for t in bash python3 curl wget cub kafka-broker-api-versions head grep; do printf "%-28s " "$t"; command -v "$t" || echo MISSING; done'
+          done
       - name: start the cdc path
         # On failure (e.g. a container never turns healthy), show why: the
         # health status and the tail of each service's log.
