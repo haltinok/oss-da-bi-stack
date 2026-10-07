@@ -274,7 +274,7 @@ services:
     # shared Postgres (database `metabase_meta`), so no stateful sidecar.
     # ClickHouse is bundled in the image (driver promoted to core in Metabase 54),
     # so no custom image or plugin mount is required.
-    image: metabase/metabase:v0.63.18
+    image: metabase/metabase:v0.63.19.1
     container_name: oss_metabase
     profiles: [bi]
     restart: unless-stopped
@@ -298,7 +298,7 @@ services:
       start_period: 90s
 
   kafka:
-    image: confluentinc/cp-kafka:8.0.7
+    image: confluentinc/cp-kafka:8.3.2
     container_name: kafka
     profiles: [cdc]
     restart: unless-stopped
