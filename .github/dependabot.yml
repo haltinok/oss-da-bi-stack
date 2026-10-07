@@ -52,11 +52,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Confluent 8.3.2 broke Kafka Connect (container never turned healthy in
-      # cdc-smoke; reverted to 8.0.7). Held back until that is understood --
-      # remove this and the matching cp-kafka rule below when it is.
-      - dependency-name: "confluentinc/cp-kafka-connect"
-        versions: [">= 8.1"]
 
   # Images referenced directly in docker-compose.yml (postgres, clickhouse,
   # kafka, metabase, kafka-ui).
@@ -77,6 +72,3 @@ updates:
       # current LTS still come through; bump to the next LTS (26.3) by hand.
       - dependency-name: "clickhouse/clickhouse-server"
         versions: [">= 25.9"]
-      # Held back together with cp-kafka-connect (see the docker section).
-      - dependency-name: "confluentinc/cp-kafka"
-        versions: [">= 8.1"]
