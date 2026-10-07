@@ -63,13 +63,23 @@ EOF
 chmod 600 "$env_file"
 echo "wrote $env_file"
 
-# --- dlt secrets: the Postgres->Postgres pipelines take their password from
-# .env and need no secrets file. Only the optional SQL Server load does. -----
-mssql_secrets="$root/dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml"
+# --- dlt secrets ---------------------------------------------------------
+# dlt 1.30 requires credentials to resolve from a secrets provider, so every
+# pipeline needs a secrets.toml. The Postgres pipelines' files are the committed
+# templates (their password comes from POSTGRES_PASSWORD in .env); the SQL Server
+# one still needs the real host/login/password filled in.
+for pipeline in postgres_active_to_postgres postgres_active_to_postgres_aw; do
+    secrets="$root/dlt/pipelines/$pipeline/.dlt/secrets.toml"
+    if [ ! -f "$secrets" ]; then
+        cp "$secrets.example" "$secrets"
+        echo "created $secrets from the template"
+    fi
+done
 
+mssql_secrets="$root/dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml"
 if [ ! -f "$mssql_secrets" ]; then
-    echo "NOTE: $mssql_secrets is missing; create it from secrets.toml.example and"
-    echo "      fill in the real SQL Server host/login/password."
+    cp "$mssql_secrets.example" "$mssql_secrets"
+    echo "NOTE: fill in the real SQL Server host/login/password in $mssql_secrets"
 fi
 
 echo

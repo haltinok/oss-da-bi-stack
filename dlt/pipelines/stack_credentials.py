@@ -1,11 +1,15 @@
 """Postgres credentials shared by the dlt pipelines in this directory.
 
-Non-secret settings (driver, host, port, database, user) live in each pipeline's
-`.dlt/config.toml`. The password is the stack's `POSTGRES_PASSWORD` from `.env`:
-dlt gives `secrets.toml` a higher priority than environment variables, so an
-env-var override is not possible through configuration alone and is applied
-here explicitly. `secrets.toml` is only a fallback for running a pipeline
-outside the stack.
+Non-secret connection settings (driver, host, port, database, user) live in each
+pipeline's `.dlt/config.toml`. The password is the stack's `POSTGRES_PASSWORD`
+from `.env`, applied here explicitly (dlt gives `secrets.toml` a higher priority
+than environment variables, so an env-var override is not possible through
+configuration alone).
+
+dlt 1.30 requires credentials to resolve from a secrets provider, so each
+pipeline's `.dlt/secrets.toml` carries the `credentials` *password* sections as
+placeholders (see the committed `secrets.toml.example`); their presence shadows
+the config.toml sections, and the values are never used for the connection.
 
 The pipelines run as scripts (``cd <pipeline dir> && python <pipeline>.py``), so
 each one puts this directory on ``sys.path`` before importing the module.
