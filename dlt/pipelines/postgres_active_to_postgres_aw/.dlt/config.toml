@@ -1,12 +1,14 @@
-[destination.postgres.credentials]
+# Warehouse connection (password: POSTGRES_PASSWORD, see stack_credentials.py).
+# Deliberately NOT under `destination.postgres.credentials`: dlt >=1.x treats a
+# `credentials` section in config.toml as a secret in a non-secret provider.
+[stack.warehouse]
 host = "postgres"
 port = 5432
 database = "analytics"
 username = "postgres"
 
-# The postgres_active source. The password is POSTGRES_PASSWORD from .env (see
-# dlt/pipelines/stack_credentials.py), so this pipeline needs no secrets.toml.
-[sources.sql_database.credentials]
+# postgres_active source connection (same password rules as above).
+[stack.postgres_active]
 drivername = "postgresql+psycopg2"
 host = "postgres_active"
 port = 5434

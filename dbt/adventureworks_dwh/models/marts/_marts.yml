@@ -30,8 +30,9 @@ models:
       - name: geography_key
         data_tests:
           - relationships:
-              to: ref('dim_geography')
-              field: geography_key
+              arguments:
+                to: ref('dim_geography')
+                field: geography_key
 
   - name: dim_product
     description: Products with category/subcategory references.
@@ -57,8 +58,9 @@ models:
       - name: product_category_key
         data_tests:
           - relationships:
-              to: ref('dim_product_category')
-              field: product_category_key
+              arguments:
+                to: ref('dim_product_category')
+                field: product_category_key
 
   - name: dim_location
     description: Stocking locations (warehouses) referenced by fact_product_inventory.
@@ -94,8 +96,9 @@ models:
       - name: sales_territory_key
         data_tests:
           - relationships:
-              to: ref('dim_sales_territory')
-              field: sales_territory_key
+              arguments:
+                to: ref('dim_sales_territory')
+                field: sales_territory_key
 
   - name: dim_sales_territory
     columns:
@@ -128,13 +131,15 @@ models:
       - name: sales_territory_key
         data_tests:
           - relationships:
-              to: ref('dim_sales_territory')
-              field: sales_territory_key
+              arguments:
+                to: ref('dim_sales_territory')
+                field: sales_territory_key
       - name: geography_key
         data_tests:
           - relationships:
-              to: ref('dim_geography')
-              field: geography_key
+              arguments:
+                to: ref('dim_geography')
+                field: geography_key
 
   - name: dim_employee
     columns:
@@ -145,8 +150,9 @@ models:
       - name: sales_territory_key
         data_tests:
           - relationships:
-              to: ref('dim_sales_territory')
-              field: sales_territory_key
+              arguments:
+                to: ref('dim_sales_territory')
+                field: sales_territory_key
 
   - name: dim_sales_reason
     columns:
@@ -170,46 +176,54 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_product')
-              field: product_key
+              arguments:
+                to: ref('dim_product')
+                field: product_key
       - name: order_date_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: due_date_key
         data_tests:
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: ship_date_key
         data_tests:
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: customer_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_customer')
-              field: customer_key
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
       - name: promotion_key
         data_tests:
           - relationships:
-              to: ref('dim_promotion')
-              field: promotion_key
+              arguments:
+                to: ref('dim_promotion')
+                field: promotion_key
       - name: currency_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_currency')
-              field: currency_key
+              arguments:
+                to: ref('dim_currency')
+                field: currency_key
       - name: sales_territory_key
         data_tests:
           - relationships:
-              to: ref('dim_sales_territory')
-              field: sales_territory_key
+              arguments:
+                to: ref('dim_sales_territory')
+                field: sales_territory_key
 
   - name: fact_reseller_sales
     description: >
@@ -221,51 +235,60 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_product')
-              field: product_key
+              arguments:
+                to: ref('dim_product')
+                field: product_key
       - name: order_date_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: due_date_key
         data_tests:
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: ship_date_key
         data_tests:
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
       - name: reseller_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_reseller')
-              field: reseller_key
+              arguments:
+                to: ref('dim_reseller')
+                field: reseller_key
       - name: employee_key
         data_tests:
           - relationships:
-              to: ref('dim_employee')
-              field: employee_key
+              arguments:
+                to: ref('dim_employee')
+                field: employee_key
       - name: promotion_key
         data_tests:
           - relationships:
-              to: ref('dim_promotion')
-              field: promotion_key
+              arguments:
+                to: ref('dim_promotion')
+                field: promotion_key
       - name: currency_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_currency')
-              field: currency_key
+              arguments:
+                to: ref('dim_currency')
+                field: currency_key
       - name: sales_territory_key
         data_tests:
           - relationships:
-              to: ref('dim_sales_territory')
-              field: sales_territory_key
+              arguments:
+                to: ref('dim_sales_territory')
+                field: sales_territory_key
 
   - name: fact_product_inventory
     description: >
@@ -276,20 +299,23 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_product')
-              field: product_key
+              arguments:
+                to: ref('dim_product')
+                field: product_key
       - name: location_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_location')
-              field: location_key
+              arguments:
+                to: ref('dim_location')
+                field: location_key
       - name: date_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
 
   - name: fact_currency_rate
     description: >
@@ -300,14 +326,16 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_currency')
-              field: currency_key
+              arguments:
+                to: ref('dim_currency')
+                field: currency_key
       - name: date_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
 
   - name: fact_sales_quota
     description: Quarterly sales quotas per salesperson.
@@ -316,14 +344,16 @@ models:
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_employee')
-              field: employee_key
+              arguments:
+                to: ref('dim_employee')
+                field: employee_key
       - name: date_key
         data_tests:
           - not_null
           - relationships:
-              to: ref('dim_date')
-              field: date_key
+              arguments:
+                to: ref('dim_date')
+                field: date_key
 
   - name: dim_product_history
     description: >
