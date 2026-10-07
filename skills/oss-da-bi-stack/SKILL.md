@@ -141,9 +141,10 @@ docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" -q \
 ```
 
 Refresh by hand: `docker exec oss_airflow_scheduler python /opt/airflow/scripts/sync_mart_to_clickhouse.py`.
-Note: dlt's ClickHouse destination works on dlt 1.30 (re-tested — loads fine via native
-port 9000 + `http_port` 8123; the dlt 1.4.1 staging-table quoting bug is gone). The mart
-sync still uses the `postgresql()` script, which predates the upgrade.
+Note: dlt's ClickHouse destination works on dlt 1.30 (re-tested; native port 9000 +
+`http_port` 8123), but it needs `dlt[clickhouse]`, which the Airflow image does **not**
+install, so it fails inside Airflow with a missing-dependency error. The mart sync uses
+the `postgresql()` script, which needs no extra driver.
 
 ## Warehouse DWH (fed live from the sandbox)
 
