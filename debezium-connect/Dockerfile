@@ -1,4 +1,4 @@
-FROM confluentinc/cp-kafka-connect:8.0.7
+FROM confluentinc/cp-kafka-connect:8.0.8
 
 USER root
 # Latest 3.x on Confluent Hub (upstream Debezium is newer but the Hub lags it).
