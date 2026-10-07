@@ -268,7 +268,7 @@ oss-da-bi-stack/
 │   ├── superset-dashboard.pdf
 │   └── Metabase - Internet Sales.pdf
 ├── .github/
-│   ├── dependabot.yml          # weekly grouped updates: actions, pip, Docker images
+│   ├── dependabot.yml          # monthly grouped updates: actions, pip, Docker images
 │   └── workflows/
 │       └── ci.yml              # gitleaks, pre-commit, DAG import, seed→dlt→dbt build, compose config
 ├── airflow/
@@ -466,5 +466,5 @@ oss-da-bi-stack/
 - **Hard deletes**: the dlt path (`raw_active`) cannot see hard deletes, so it keeps deleted `product_review` / `shopping_cart_item` rows while the Debezium/ClickHouse path records them as `op='d'`. The contrast is intentional in the demo; a production feed would add a soft-delete column (like `orders.deleted_at`) or a full refresh for those tables.
 - **dlt incremental cursor**: `modified_date` is often a date at midnight, so many rows share the cursor value; dlt warns about it but `merge` on the primary key keeps the load correct.
 - **Pre-commit**: `.pre-commit-config.yaml` runs gitleaks, private-key detection and `ruff check` (config in `ruff.toml`); run `pre-commit install` once after cloning.
-- **Dependabot** (`.github/dependabot.yml`): weekly grouped PRs for the SHA-pinned Actions, `airflow/requirements.txt` and the Docker base images (major image bumps are skipped; those need code changes). Each PR goes through CI, including the end-to-end `dwh` job.
+- **Dependabot** (`.github/dependabot.yml`): monthly grouped PRs (on the 1st) for the SHA-pinned Actions, `airflow/requirements.txt` and the Docker base images (major image bumps are skipped; those need code changes). Each PR goes through CI, including the `images`, `dwh` and `cdc-smoke` jobs; merge only once they are green on the current `main`. Security fixes don't wait for the schedule (Dependabot alerts / security updates).
 - **CI** (`.github/workflows/ci.yml`): besides gitleaks, pre-commit and `docker compose config`, the `dags` job imports every DAG under the Airflow version from `airflow/Dockerfile`, and the `dwh` job loads the committed `postgres_active` schema + seed into a Postgres service, runs the AW and orders dlt pipelines and then `dbt build` (all models, the snapshot and every data test).

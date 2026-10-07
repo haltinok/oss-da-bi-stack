@@ -1,5 +1,7 @@
-# Keeps the pinned versions current. Updates are grouped so each ecosystem
-# opens at most one PR a week; CI must pass before merging.
+# Keeps the pinned versions current. Runs monthly (on the 1st) and groups
+# updates, so each ecosystem opens at most one PR a month; CI must pass before
+# merging. Security fixes don't wait for this schedule: they arrive through
+# Dependabot alerts / security updates as soon as an advisory is published.
 #
 # NOTE: cp-kafka (in docker-compose.yml) and cp-kafka-connect (in
 # debezium-connect/Dockerfile) are different ecosystems, so Dependabot can
@@ -13,7 +15,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       actions:
         patterns: ["*"]
@@ -23,7 +25,7 @@ updates:
   - package-ecosystem: pip
     directory: /airflow
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       python:
         patterns: ["*"]
@@ -43,7 +45,7 @@ updates:
       - /superset
       - /debezium-connect
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       docker:
         patterns: ["*"]
@@ -61,7 +63,7 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       docker-compose:
         patterns: ["*"]
