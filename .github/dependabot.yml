@@ -1,5 +1,11 @@
 # Keeps the pinned versions current. Updates are grouped so each ecosystem
 # opens at most one PR a week; CI must pass before merging.
+#
+# NOTE: cp-kafka (in docker-compose.yml) and cp-kafka-connect (in
+# debezium-connect/Dockerfile) are different ecosystems, so Dependabot can
+# never put them in one PR. When their PRs arrive, merge them together -- the
+# cdc-smoke CI job is the enforcement that Kafka and Connect still work as a
+# pair.
 version: 2
 updates:
   # Actions are pinned to commit SHAs; Dependabot bumps the SHA and its
@@ -38,6 +44,9 @@ updates:
       - /debezium-connect
     schedule:
       interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -48,6 +57,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      docker-compose:
+        patterns: ["*"]
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # ClickHouse: stay on long-term-support releases. LTS lines are 24.8,
+      # 25.3, 25.8, 26.3, ... and the minors in between (e.g. 25.12) are
+      # non-LTS; the README notes the Kafka-engine tables depend on the bundled
+      # Kafka client, so a non-LTS bump deserves a human. Patch bumps of the
+      # current LTS still come through; bump to the next LTS (26.3) by hand.
+      - dependency-name: "clickhouse/clickhouse-server"
+        versions: [">= 25.9"]
