@@ -400,7 +400,7 @@ services:
         condition: service_healthy
 
   clickhouse:
-    image: clickhouse/clickhouse-server:25.8
+    image: clickhouse/clickhouse-server:25.12
     container_name: clickhouse
     profiles: [cdc, bi]
     restart: unless-stopped
