@@ -328,6 +328,9 @@ services:
   kafka-connect:
     build:
       context: ./debezium-connect
+    # Explicit tag, shared with debezium-register below, so the image is built
+    # once whatever the project (folder) name is.
+    image: oss-da-bi-stack-kafka-connect
     container_name: kafka_connect
     profiles: [cdc]
     restart: unless-stopped
@@ -377,8 +380,9 @@ services:
     build:
       context: ./debezium-connect
     # Same artifact as kafka-connect (the register script needs only python3):
-    # sharing the tag means the confluent-hub plugin downloads once per build
-    # instead of twice, and the CI cdc-smoke job pre-builds it with one command.
+    # sharing the explicit tag means the confluent-hub plugin downloads once
+    # per build instead of twice, and the CI cdc-smoke job pre-builds it with
+    # one command.
     image: oss-da-bi-stack-kafka-connect
     container_name: oss_debezium_register
     profiles: [cdc]

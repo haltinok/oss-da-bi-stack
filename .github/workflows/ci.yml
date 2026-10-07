@@ -139,12 +139,18 @@ jobs:
       - name: check the airflow image's Python environment
         run: |
           docker run --rm --entrypoint /bin/bash oss-da-bi-stack-airflow-scheduler:latest -ec '
-            set -e
             pip check
             python -c "import dlt, dbt; print(\"dlt\", dlt.__version__)"
-            pip show apache-airflow-providers-fab | grep -q ^Version:
+            # pip show exits 1 when the package is missing.
+            pip show apache-airflow-providers-fab >/dev/null
             echo "airflow image checks passed"
           '
+      - name: check the superset image's drivers
+        # The build only proves the pinned drivers installed; this proves they
+        # import in Superset's venv.
+        run: |
+          docker run --rm --entrypoint /app/.venv/bin/python oss-da-bi-stack-superset:latest \
+            -c "import psycopg2, clickhouse_connect, fastmcp; print('superset drivers import')"
 
   # End to end on the CDC path, which nothing else in CI touches: bring up the
   # cdc profile from the compose file, wait for the connector's initial
@@ -162,20 +168,22 @@ jobs:
         run: docker compose build kafka-connect
       - name: start the cdc path
         run: docker compose --profile cdc up -d postgres_active kafka kafka-connect debezium-register clickhouse
-      - name: wait for the connector to reach RUNNING
+      - name: wait for the connector and its task to reach RUNNING
         run: |
           set -euo pipefail
+          # The connector can report RUNNING while its task has FAILED (bad
+          # password, missing slot), so require every task to be RUNNING too.
           for i in $(seq 1 90); do
-            if curl -sf http://127.0.0.1:8083/connectors/orders-connector/status > /tmp/connector.json; then
-              state="$(jq -r '.connector.state // empty' /tmp/connector.json)"
-              if [ "$state" = "RUNNING" ]; then
-                echo "connector RUNNING (poll $i)"
-                exit 0
-              fi
+            if curl -sf http://127.0.0.1:8083/connectors/orders-connector/status > /tmp/connector.json \
+              && jq -e '.connector.state == "RUNNING" and (.tasks | length > 0) and all(.tasks[]; .state == "RUNNING")' \
+                   /tmp/connector.json >/dev/null; then
+              echo "connector and task RUNNING (poll $i)"
+              exit 0
             fi
             sleep 2
           done
-          echo "connector never reached RUNNING" >&2
+          echo "connector or task never reached RUNNING" >&2
+          cat /tmp/connector.json >&2 || true
           docker logs kafka_connect | tail -40 >&2
           docker logs oss_debezium_register | tail -20 >&2
           exit 1
@@ -198,4 +206,27 @@ jobs:
           docker logs kafka_connect | tail -40 >&2
           docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
             -q "select count() from cdc.orders" >&2 || true
+          exit 1
+      - name: update one product and wait for it in cdc.aw_events
+        # The AdventureWorks tables share one multi-topic Kafka-engine table;
+        # this covers that path (an update, so op = 'u') the same way.
+        run: |
+          set -euo pipefail
+          set -a; . ./.env; set +a
+          docker exec postgres_active psql -U postgres -p 5434 -d active_db -c \
+            "update public.product set name = name, modified_date = now()
+             where product_id = (select min(product_id) from public.product);"
+          for i in $(seq 1 60); do
+            n="$(docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+              -q "select count() from cdc.aw_events where source_table = 'active_db.public.product' and op = 'u'" 2>/dev/null || echo 0)"
+            if [ "$n" -ge 1 ]; then
+              echo "product update arrived in cdc.aw_events (poll $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "product update never reached cdc.aw_events" >&2
+          docker logs kafka_connect | tail -40 >&2
+          docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
+            -q "select source_table, op, count() from cdc.aw_events group by 1, 2" >&2 || true
           exit 1
