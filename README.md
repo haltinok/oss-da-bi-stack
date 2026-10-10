@@ -5,6 +5,7 @@ An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source
 - **SQL Server** (`AdventureWorks2016`) → (dlt) → Postgres `analytics.raw` → (dbt-core) → `stage` → `mart` → (Superset)
 - **Postgres CDC source** (`postgres_active`) → (Debezium) → Kafka topic → **ClickHouse** (real-time OLAP) → (Superset)
 - **Postgres CDC source** (`postgres_active`) → (dlt, incremental + merge) → Postgres `analytics.raw`, kept fresh by an Airflow data simulator
+- **dbt `mart`** → a **live sales dashboard** (`dashboard/`, http://localhost:8050): KPIs, cross-filtering and Excel export, re-queried every 30 s — see [Live sales dashboard](#live-sales-dashboard)
 - **AdventureWorks2016 OLTP sandbox** in `postgres_active` — a ~10% sample of the AdventureWorks tables, kept live by the `simulate_adventureworks` simulator, so you can practise against a churning OLTP database without the real SQL Server
 
 ## Stack
@@ -17,7 +18,7 @@ An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source
 | Transformation       | dbt-core                          |
 | Warehouse            | Postgres 16                       |
 | Real-time OLAP       | ClickHouse 25.8                   |
-| Reporting/dashboarding | Superset + Metabase        |
+| Reporting/dashboarding | Superset + Metabase + a live sales dashboard (`dashboard/`) |
 | Kafka UI             | provectuslabs/kafka-ui            |
 | Data simulation      | Faker (Python)                    |
 | Change-data-capture source | Postgres 16 (`wal_level=logical`) |
@@ -57,6 +58,10 @@ Two BI tools read the same data:
 - **Superset** — OSS, ClickHouse + Postgres, and a built-in MCP server for agent access.
 - **Metabase** — friendlier self-service UX; metadata in `metabase_meta`, ClickHouse
   driver bundled in the image (promoted to core in Metabase 54).
+
+A third, purpose-built view sits next to them: the **live sales dashboard**
+(`dashboard/`, port `8050`), a small Python app that reads `mart` as `bi_ro`
+and refreshes itself every 30 s — see [Live sales dashboard](#live-sales-dashboard).
 
 ## Kafka / Debezium CDC
 
