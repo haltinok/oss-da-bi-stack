@@ -261,6 +261,11 @@ territory and a live feed of the latest orders.
   bookmarked.
 - **Accessible:** every chart has a table view, keyboard-focusable marks with
   tooltips, and light/dark themes.
+- **Excel export:** every chart has an *Excel* button, and *Export all* writes one
+  workbook with a sheet per chart. Cells are typed (currency, %, counts, dates),
+  each sheet states the filters it was exported with, and the rows are the same
+  ones the chart's table view shows. The `.xlsx` is generated in the browser by
+  `static/xlsx.js` (no dependency).
 
 ```bash
 docker compose up -d --build dashboard     # needs only postgres; also in the `bi` profile
@@ -387,7 +392,7 @@ oss-da-bi-stack/
 ├── dashboard/                # live sales dashboard over the dbt star (see below)
 │   ├── Dockerfile            # python:3.12-slim + psycopg
 │   ├── app.py                # stdlib HTTP server + JSON API, reads mart as bi_ro
-│   └── static/               # index.html, app.js (inline-SVG charts), style.css
+│   └── static/               # index.html, app.js (inline-SVG charts), xlsx.js (Excel export), style.css
 └── superset/
     ├── Dockerfile            # apache/superset + psycopg2 + clickhouse-connect + language packs
     ├── superset_config.py    # metadata in superset_meta, default locale from SUPERSET_DEFAULT_LOCALE (tr)
