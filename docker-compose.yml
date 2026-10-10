@@ -274,7 +274,7 @@ services:
     # shared Postgres (database `metabase_meta`), so no stateful sidecar.
     # ClickHouse is bundled in the image (driver promoted to core in Metabase 54),
     # so no custom image or plugin mount is required.
-    image: metabase/metabase:v0.63.19.1
+    image: metabase/metabase:v0.64.1
     container_name: oss_metabase
     profiles: [bi]
     restart: unless-stopped
