@@ -10,7 +10,7 @@ read-only `bi_ro` role, so the page is as fresh as the last `dbt build`
     GET /api/dashboard    every panel's data for the current filters
     GET /healthz          liveness (also checks the database)
 
-Filters (all optional query parameters): fy, channel, group, region, category.
+Filters (all optional query parameters): fy, channel, group, region, category, subcategory.
 """
 
 import datetime as dt
@@ -80,6 +80,8 @@ f as (
       and (%(region)s::text is null or coalesce(st.sales_territory_region, 'Unassigned') = %(region)s)
       and (%(category)s::text is null
            or coalesce(p.product_category_name, 'Uncategorized') = %(category)s)
+      and (%(subcategory)s::text is null
+           or coalesce(p.product_subcategory_name, 'Uncategorized') = %(subcategory)s)
 ),
 
 cur as (
@@ -175,6 +177,9 @@ select
         from mart.dim_sales_territory) t) as territories,
     (select array_agg(distinct product_category_name order by product_category_name)
        from mart.dim_product where product_category_name is not null) as categories,
+    (select json_agg(s order by s.category, s.subcategory) from (
+        select distinct product_category_name as category, product_subcategory_name as subcategory
+        from mart.dim_product where product_subcategory_name is not null) s) as subcategories,
     (select max(order_date) from (
         select order_date from mart.fact_internet_sales
         union all select order_date from mart.fact_reseller_sales) o) as last_order_at,
@@ -182,7 +187,7 @@ select
       + (select count(*) from mart.fact_reseller_sales) as fact_rows
 """
 
-FILTERS = ("fy", "channel", "group", "region", "category")
+FILTERS = ("fy", "channel", "group", "region", "category", "subcategory")
 
 
 def parse_filters(query):
@@ -193,6 +198,7 @@ def parse_filters(query):
         "grp": raw.get("group"),
         "region": raw.get("region"),
         "category": raw.get("category"),
+        "subcategory": raw.get("subcategory"),
     }
     if raw.get("fy"):
         params["fy"] = int(raw["fy"])
@@ -253,7 +259,7 @@ def dashboard(params):
         "kpis": (KPIS, params),
         "monthly": (MONTHLY, params),
         # Cross-filtering panels: drop their own dimension, highlight it client-side.
-        "mix": (MIX, without("category")),
+        "mix": (MIX, without("category", "subcategory")),
         "top_products": (TOP_PRODUCTS, params),
         "territories": (TERRITORIES, without("grp", "region")),
         "latest_orders": (LATEST_ORDERS, without("fy")),

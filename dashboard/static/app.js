@@ -49,7 +49,7 @@ const ago = (iso) => {
 
 // --------------------------------------------------------------------- state
 const state = {
-  filters: { fy: "", channel: "", group: "", region: "", category: "" },
+  filters: { fy: "", channel: "", group: "", region: "", category: "", subcategory: "" },
   meta: null,
   data: null,
   tables: new Set(),
@@ -165,12 +165,14 @@ function fillFilters() {
   opts("#f-group", "All groups", [...new Set(territories.map((t) => t.grp))].map((g) => [g, g]));
   opts("#f-region", "All regions", territories.filter((t) => !f.group || t.grp === f.group).map((t) => [t.region, t.region]));
   opts("#f-category", "All categories", categories.map((c) => [c, c]));
+  opts("#f-subcategory", "All subcategories", (state.meta.subcategories || [])
+    .filter((x) => !f.category || x.category === f.category).map((x) => [x.subcategory, x.subcategory]));
   syncControls();
 }
 
 function syncControls() {
   const f = state.filters;
-  for (const k of ["fy", "group", "region", "category"]) {
+  for (const k of ["fy", "group", "region", "category", "subcategory"]) {
     const s = $(`#f-${k}`);
     s.value = f[k];
     if (s.value !== f[k]) { f[k] = ""; s.value = ""; } // value no longer offered
@@ -192,6 +194,16 @@ function setFilter(patch) {
     const t = state.meta.territories.find((x) => x.region === patch.region);
     if (t) { state.filters.group = t.grp; fillFilters(); }
   }
+  if ("category" in patch && state.meta) {
+    // Same for a subcategory outside the chosen category.
+    const x = (state.meta.subcategories || []).find((y) => y.subcategory === state.filters.subcategory);
+    if (x && state.filters.category && x.category !== state.filters.category) state.filters.subcategory = "";
+    fillFilters();
+  }
+  if (patch.subcategory && state.meta) {
+    const x = (state.meta.subcategories || []).find((y) => y.subcategory === patch.subcategory);
+    if (x) { state.filters.category = x.category; fillFilters(); }
+  }
   syncControls();
   writeUrl();
   load();
@@ -200,7 +212,7 @@ function setFilter(patch) {
 $("#f-channel").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (b) setFilter({ channel: b.dataset.v });
 });
-for (const k of ["fy", "group", "region", "category"]) {
+for (const k of ["fy", "group", "region", "category", "subcategory"]) {
   $(`#f-${k}`).addEventListener("change", (e) => setFilter({ [k]: e.target.value }));
 }
 $("#reset").addEventListener("click", () => {
@@ -538,7 +550,7 @@ function squarify(items, x, y, w, h) {
 function renderMix() {
   const rows = state.data.mix.filter((r) => r.revenue > 0);
   const host = $("#mix"), scale = $("#mix-scale");
-  const sel = state.filters.category;
+  const sel = state.filters.category, selSub = state.filters.subcategory;
   if (state.tables.has("mix")) {
     scale.innerHTML = "";
     host.style.height = "";
@@ -563,7 +575,8 @@ function renderMix() {
   }
   for (const c of squarify([...cats.values()], 0, 0, W, H)) {
     const dim = sel && sel !== c.name;
-    const toggle = () => setFilter({ category: sel === c.name ? "" : c.name });
+    // Header (and the folded "Other" tile): filter the whole category; a tile: its subcategory.
+    const toggle = () => setFilter({ category: sel === c.name && !selSub ? "" : c.name, subcategory: "" });
     const lab = el("div", { class: `group-label${dim ? " dim" : ""}`, role: "button", tabindex: 0,
       style: `left:${c.x + 2}px;top:${c.y}px;width:${Math.max(0, c.w - 4)}px;height:${HEAD}px;line-height:${HEAD}px` },
       `${esc(c.name)} · ${money(c.value)} · ${pct(ratio(c.gp, c.value), 0)}`);
@@ -583,8 +596,10 @@ function renderMix() {
       const [, fill, light] = marginBin(m);
       const w = s.w - GAP, h = s.h - GAP;
       if (w < 1 || h < 1) continue;
+      const other = s.subcategory.startsWith("Other (");
+      const dimCell = dim || (selSub && selSub !== s.subcategory);
       const cell = el("div", {
-        class: `cell${light ? " ink-light" : ""}${dim ? " dim" : ""}`, role: "button", tabindex: 0,
+        class: `cell${light ? " ink-light" : ""}${dimCell ? " dim" : ""}`, role: "button", tabindex: 0,
         style: `left:${s.x + GAP / 2}px;top:${s.y + GAP / 2}px;width:${w}px;height:${h}px;background:${fill}`,
         "data-tip": tipAttr(tipLines(`${s.category} › ${s.subcategory}`, [
           ["Revenue", moneyFull(s.revenue)], ["Share of total", pct(s.revenue / total)],
@@ -595,8 +610,9 @@ function renderMix() {
       // Only label a tile when the text fits with padding; the tooltip and table carry the rest.
       if (w > 64 && h > 34) cell.innerHTML = `<div class="n">${esc(s.subcategory)}</div><div class="v">${money(s.revenue)} · ${pct(m, 0)}</div>`;
       else if (w > 48 && h > 20) cell.innerHTML = `<div class="n">${esc(s.subcategory)}</div>`;
-      cell.addEventListener("click", toggle);
-      cell.addEventListener("keydown", (e) => { if (e.key === "Enter") toggle(); });
+      const pick = other ? toggle : () => setFilter({ subcategory: selSub === s.subcategory ? "" : s.subcategory });
+      cell.addEventListener("click", pick);
+      cell.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(); });
       host.append(cell);
     }
   }
