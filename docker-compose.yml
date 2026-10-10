@@ -297,6 +297,27 @@ services:
       retries: 20
       start_period: 90s
 
+  dashboard:
+    # Live sales dashboard over the dbt star (dashboard/): a small Python
+    # service that re-queries analytics.mart on every page poll, as the
+    # read-only bi_ro role. Part of the `bi` profile; start it on its own with
+    # `docker compose up -d --build dashboard` (only needs `postgres`).
+    build:
+      context: ./dashboard
+    container_name: oss_dashboard
+    profiles: [bi]
+    restart: unless-stopped
+    environment:
+      DASHBOARD_PG_HOST: postgres
+      DASHBOARD_PG_PORT: "5432"
+      DASHBOARD_PG_DATABASE: ${POSTGRES_DB:-analytics}
+      BI_READONLY_PASSWORD: ${BI_READONLY_PASSWORD:?set BI_READONLY_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-8050}:8050"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   kafka:
     image: confluentinc/cp-kafka:8.3.2
     container_name: kafka

@@ -7,6 +7,8 @@
 --   sales orders          2011-05-31 .. 2014-06-30 (due/ship up to 2014-07-12)
 --   product inventory     2008-03-31 .. 2014-08-12
 --   currency rate / quota 2011-05-31 .. 2014-05-31
+-- (source calendar; with the default `date_shift_years: 12` these land in
+-- 2020-2026 in the mart -- see macros/shift_history_date.sql)
 -- The source is now the live postgres_active sandbox, whose simulator stamps new
 -- orders and inventory movements with `now()`, so the spine runs well past the
 -- historical data to keep those live date keys in range.

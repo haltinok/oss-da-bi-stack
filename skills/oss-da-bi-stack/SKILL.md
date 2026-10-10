@@ -19,7 +19,7 @@ this skill is the operator's shortcut for the common tasks.
 - **CDC source / OLTP sandbox** `postgres_active` (`localhost:5434`, db `active_db`).
 - **Streaming** Debezium → Kafka (`localhost:8081` UI) → ClickHouse (`localhost:8123`, db `cdc`).
 - **Orchestration** Airflow (`localhost:8080`).
-- **BI** Superset (`localhost:8089`) and Metabase (`localhost:3001`).
+- **BI** Superset (`localhost:8089`), Metabase (`localhost:3001`) and the live sales dashboard (`localhost:8050`, `dashboard/`).
 
 Three data paths: SQL Server → `analytics.raw` (dlt, one-time static load, now a
 fallback); `postgres_active.orders` → Kafka → ClickHouse and → `analytics.raw.orders`

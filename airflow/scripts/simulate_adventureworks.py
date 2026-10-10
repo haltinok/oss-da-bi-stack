@@ -126,8 +126,13 @@ def _pick(values, default=None):
     return random.choice(values) if values else default
 
 
-def insert_sales_order(cur, keys):
+def insert_sales_order(cur, keys, order_date=None, status=None):
     """Insert one sales order with its lines. Returns (order_id, line_ids).
+
+    ``order_date`` and ``status`` default to now and a new-order status; the
+    backfill (backfill_adventureworks_orders.py) passes past dates and final
+    statuses. ``modified_date`` is always now, so the incremental dlt pipeline
+    (cursor on modified_date) picks backfilled rows up too.
 
     The lines are computed first, so the header is written once with the real
     sub_total/tax/freight/total_due. It used to insert the header with zero
@@ -136,9 +141,9 @@ def insert_sales_order(cur, keys):
     """
     order_id = _next_id(cur, "sales_order_header", "sales_order_id")
     now = datetime.now(timezone.utc)
-    order_date = now
-    due_date = now + timedelta(days=14)
-    ship_date = now + timedelta(days=7)
+    order_date = order_date or now
+    due_date = order_date + timedelta(days=14)
+    ship_date = order_date + timedelta(days=7)
     customer_id = _pick(keys["individual_customer_id"])
     bill_to = _pick(keys["address_id"])
     ship_to = _pick(keys["address_id"], bill_to)
@@ -180,7 +185,7 @@ def insert_sales_order(cur, keys):
         """,
         (
             str(uuid.uuid4()), order_id, REVISION_NUMBER, order_date, due_date, ship_date,
-            _pick(NEW_ORDER_STATUSES), True, f"SO{order_id:05d}", customer_id,
+            status or _pick(NEW_ORDER_STATUSES), True, f"SO{order_id:05d}", customer_id,
             # Online orders carry no salesperson in AdventureWorks.
             None, _pick(keys["territory_id"]), bill_to, ship_to,
             _pick(keys["ship_method_id"]), _pick(keys["credit_card_id"]),
@@ -393,26 +398,31 @@ def delete_leaf_rows(cur):
     return deleted
 
 
+def load_keys(cur):
+    """Existing key values the inserts draw from, so new rows reference real rows."""
+    return {
+        # Online orders must use individual customers: the DWH's
+        # dim_customer only holds customers with no store_id
+        # (resellers live in dim_reseller).
+        "individual_customer_id": _ids_where(cur, "customer", "customer_id", "store_id is null"),
+        "address_id": _ids(cur, "address", "address_id"),
+        "product_id": _ids(cur, "product", "product_id"),
+        "sold_product": _sold_products(cur),
+        "ship_method_id": _ids(cur, "ship_method", "ship_method_id"),
+        "currency_rate_id": _ids(cur, "currency_rate", "currency_rate_id"),
+        "territory_id": _ids(cur, "sales_territory", "territory_id"),
+        "special_offer_id": _ids(cur, "special_offer", "special_offer_id"),
+        "scrap_reason_id": _ids(cur, "scrap_reason", "scrap_reason_id"),
+        "credit_card_id": _ids(cur, "credit_card", "credit_card_id"),
+    }
+
+
 def main():
     conn = _connect()
     try:
         with conn:
             with conn.cursor() as cur:
-                keys = {
-                    # Online orders must use individual customers: the DWH's
-                    # dim_customer only holds customers with no store_id
-                    # (resellers live in dim_reseller).
-                    "individual_customer_id": _ids_where(cur, "customer", "customer_id", "store_id is null"),
-                    "address_id": _ids(cur, "address", "address_id"),
-                    "product_id": _ids(cur, "product", "product_id"),
-                    "sold_product": _sold_products(cur),
-                    "ship_method_id": _ids(cur, "ship_method", "ship_method_id"),
-                    "currency_rate_id": _ids(cur, "currency_rate", "currency_rate_id"),
-                    "territory_id": _ids(cur, "sales_territory", "territory_id"),
-                    "special_offer_id": _ids(cur, "special_offer", "special_offer_id"),
-                    "scrap_reason_id": _ids(cur, "scrap_reason", "scrap_reason_id"),
-                    "credit_card_id": _ids(cur, "credit_card", "credit_card_id"),
-                }
+                keys = load_keys(cur)
                 if not keys["sold_product"] or not keys["individual_customer_id"]:
                     print("simulate_adventureworks: tables look empty, nothing to do")
                     return

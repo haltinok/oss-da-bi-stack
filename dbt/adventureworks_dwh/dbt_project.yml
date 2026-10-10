@@ -26,3 +26,12 @@ models:
     marts:
       +schema: mart
       +materialized: table
+
+vars:
+  # Historical AdventureWorks dates end in mid-2014; the live simulator writes
+  # current dates. Shifting history forward 12 years lands it in 2023-2026, so
+  # the series runs into the live data without a gap (see
+  # macros/shift_history_date.sql). Set to 0 for the original calendar.
+  date_shift_years: 12
+  # Dates before this are historical seed data and get shifted.
+  date_shift_cutoff: '2015-01-01'

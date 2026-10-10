@@ -6,9 +6,9 @@ renamed as (
     select
         sales_order_id,
         revision_number,
-        order_date,
-        due_date,
-        ship_date,
+        {{ shift_history_date('order_date') }} as order_date,
+        {{ shift_history_date('due_date') }} as due_date,
+        {{ shift_history_date('ship_date') }} as ship_date,
         status,
         online_order_flag,
         sales_order_number,

@@ -44,6 +44,7 @@ updates:
       - /airflow
       - /superset
       - /debezium-connect
+      - /dashboard
     schedule:
       interval: monthly
     groups:
@@ -52,6 +53,15 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+
+  # The live dashboard's single Python dependency (psycopg).
+  - package-ecosystem: pip
+    directory: /dashboard
+    schedule:
+      interval: monthly
+    groups:
+      dashboard:
+        patterns: ["*"]
 
   # Images referenced directly in docker-compose.yml (postgres, clickhouse,
   # kafka, metabase, kafka-ui).
