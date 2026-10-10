@@ -29,7 +29,11 @@ const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFra
 const money = (v) => (v == null ? "—" : (v < 0 ? "−$" : "$") + (Math.abs(v) >= 1000 ? compact.format(Math.abs(v)) : Math.abs(v).toFixed(2)));
 const moneyFull = (v) => (v == null ? "—" : v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
 const int = (v) => (v == null ? "—" : Math.round(v).toLocaleString("en-US"));
-const pct = (v, d = 1) => (v == null || !isFinite(v) ? "—" : (v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(d) + "%");
+const pct = (v, d = 1) => {
+  if (v == null || !isFinite(v)) return "—";
+  const txt = Math.abs(v * 100).toFixed(d);
+  return (v < 0 && +txt !== 0 ? "−" : "") + txt + "%"; // no "−0%" for tiny negatives
+};
 const ratio = (a, b) => (b ? a / b : null);
 const fyOf = (iso) => { const [y, m] = iso.split("-").map(Number); return m >= 7 ? y + 1 : y; };
 const fyRange = (fy) => `Jul ${String(fy - 1).slice(2)} – Jun ${String(fy).slice(2)}`;
@@ -511,13 +515,23 @@ function renderFeed() {
   state.seenOrders = new Set([...(seen || []), ...rows.map((o) => o.sales_order_number)]);
 }
 
-// ---- Product mix treemap (area = revenue, colour = gross margin, diverging around 0)
-const MARGIN_BINS = [ // [upper bound, fill, light text?]
-  [-0.30, "#9a2526", true], [-0.20, "#c13534", true], [-0.10, "#e34948", true], [-0.02, "#f4a9a8", false],
-  [0.02, "#e6e5e0", false],
-  [0.10, "#9ec5f4", false], [0.20, "#5598e7", false], [0.30, "#2a78d6", true], [Infinity, "#184f95", true],
-];
-const marginBin = (m) => MARGIN_BINS.find(([ub]) => m < ub) || MARGIN_BINS[MARGIN_BINS.length - 1];
+// ---- Product mix treemap (area = revenue, hue = category, shade = subcategory)
+// Category hues are palette slots that blue/orange (the channel colours used by
+// every other panel) can't be confused with. Each subcategory gets the next
+// shade of its category's hue, largest first, so neighbouring tiles differ.
+const CATEGORY_HUE = {
+  Bikes: { hue: "#6250d6", lightTextFrom: 78 },
+  Components: { hue: "#1baf7a" },
+  Clothing: { hue: "#e87ba4" },
+  Accessories: { hue: "#eda100" },
+};
+const FALLBACK_HUE = { hue: "#898781" };
+const SHADES = [100, 78, 62, 50, 40, 32]; // % of the hue, mixed with white
+function shade(category, i) {
+  const { hue, lightTextFrom = Infinity } = CATEGORY_HUE[category] || FALLBACK_HUE;
+  const p = SHADES[i % SHADES.length];
+  return { fill: p === 100 ? hue : `color-mix(in oklab, ${hue} ${p}%, #fcfcfb)`, light: p >= lightTextFrom };
+}
 
 function squarify(items, x, y, w, h) {
   const total = items.reduce((s, i) => s + i.value, 0);
@@ -549,10 +563,9 @@ function squarify(items, x, y, w, h) {
 
 function renderMix() {
   const rows = state.data.mix.filter((r) => r.revenue > 0);
-  const host = $("#mix"), scale = $("#mix-scale");
+  const host = $("#mix");
   const sel = state.filters.category, selSub = state.filters.subcategory;
   if (state.tables.has("mix")) {
-    scale.innerHTML = "";
     host.style.height = "";
     host.innerHTML = table([
       { k: "category", label: "Category" }, { k: "subcategory", label: "Subcategory" },
@@ -563,7 +576,7 @@ function renderMix() {
     ], rows);
     return;
   }
-  if (!rows.length) { host.style.height = ""; host.innerHTML = `<div class="empty">No product sales match these filters</div>`; scale.innerHTML = ""; return; }
+  if (!rows.length) { host.style.height = ""; host.innerHTML = `<div class="empty">No product sales match these filters</div>`; return; }
   const W = Math.max(host.clientWidth, 260), H = W < 500 ? 380 : 330, HEAD = 20, GAP = 2;
   host.style.height = `${H}px`;
   host.innerHTML = "";
@@ -574,12 +587,18 @@ function renderMix() {
     c.value += r.revenue; c.gp += r.gross_profit; c.subs.push(r); cats.set(r.category, c);
   }
   for (const c of squarify([...cats.values()], 0, 0, W, H)) {
-    const dim = sel && sel !== c.name;
+    // Selection is drawn as an outline + check mark, never by fading the rest.
+    const catSel = sel === c.name && !selSub;
     // Header (and the folded "Other" tile): filter the whole category; a tile: its subcategory.
     const toggle = () => setFilter({ category: sel === c.name && !selSub ? "" : c.name, subcategory: "" });
-    const lab = el("div", { class: `group-label${dim ? " dim" : ""}`, role: "button", tabindex: 0,
+    const lab = el("div", { class: `group-label${catSel ? " sel" : ""}`, role: "button", tabindex: 0,
+      "aria-pressed": String(catSel),
       style: `left:${c.x + 2}px;top:${c.y}px;width:${Math.max(0, c.w - 4)}px;height:${HEAD}px;line-height:${HEAD}px` },
-      `${esc(c.name)} · ${money(c.value)} · ${pct(ratio(c.gp, c.value), 0)}`);
+      `${catSel ? "✓ " : ""}${esc(c.name)} · ${money(c.value)} · ${pct(ratio(c.gp, c.value), 0)}`);
+    if (catSel) {
+      host.append(el("div", { class: "group-ring", "aria-hidden": "true",
+        style: `left:${c.x}px;top:${c.y + HEAD}px;width:${c.w}px;height:${Math.max(0, c.h - HEAD)}px` }));
+    }
     lab.addEventListener("click", toggle);
     lab.addEventListener("keydown", (e) => { if (e.key === "Enter") toggle(); });
     host.append(lab);
@@ -591,15 +610,16 @@ function renderMix() {
       big.push({ category: c.name, subcategory: `Other (${small.length})`, revenue: agg("revenue"), gross_profit: agg("gross_profit"), units: agg("units") });
     } else big.push(...small);
     const inner = squarify(big.map((s) => ({ ...s, value: s.revenue })), c.x, c.y + HEAD, c.w, Math.max(0, c.h - HEAD));
-    for (const s of inner) {
+    inner.forEach((s, i) => {
       const m = ratio(s.gross_profit, s.revenue);
-      const [, fill, light] = marginBin(m);
+      const { fill, light } = shade(c.name, i);
       const w = s.w - GAP, h = s.h - GAP;
-      if (w < 1 || h < 1) continue;
+      if (w < 1 || h < 1) return;
       const other = s.subcategory.startsWith("Other (");
-      const dimCell = dim || (selSub && selSub !== s.subcategory);
+      const isSel = selSub === s.subcategory;
       const cell = el("div", {
-        class: `cell${light ? " ink-light" : ""}${dimCell ? " dim" : ""}`, role: "button", tabindex: 0,
+        class: `cell${light ? " ink-light" : ""}${isSel ? " sel" : ""}`, role: "button", tabindex: 0,
+        "aria-pressed": String(isSel),
         style: `left:${s.x + GAP / 2}px;top:${s.y + GAP / 2}px;width:${w}px;height:${h}px;background:${fill}`,
         "data-tip": tipAttr(tipLines(`${s.category} › ${s.subcategory}`, [
           ["Revenue", moneyFull(s.revenue)], ["Share of total", pct(s.revenue / total)],
@@ -608,17 +628,15 @@ function renderMix() {
         "aria-label": `${s.subcategory}: ${moneyFull(s.revenue)}, margin ${pct(m)}`,
       });
       // Only label a tile when the text fits with padding; the tooltip and table carry the rest.
-      if (w > 64 && h > 34) cell.innerHTML = `<div class="n">${esc(s.subcategory)}</div><div class="v">${money(s.revenue)} · ${pct(m, 0)}</div>`;
-      else if (w > 48 && h > 20) cell.innerHTML = `<div class="n">${esc(s.subcategory)}</div>`;
+      const name = `${isSel ? "✓ " : ""}${esc(s.subcategory)}`;
+      if (w > 64 && h > 34) cell.innerHTML = `<div class="n">${name}</div><div class="v">${money(s.revenue)} · ${pct(m, 0)} margin</div>`;
+      else if (w > 48 && h > 20) cell.innerHTML = `<div class="n">${name}</div>`;
       const pick = other ? toggle : () => setFilter({ subcategory: selSub === s.subcategory ? "" : s.subcategory });
       cell.addEventListener("click", pick);
       cell.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(); });
       host.append(cell);
-    }
+    });
   }
-  const labels = ["< −30%", "−20%", "−10%", "−2%", "0", "2%", "10%", "20%", "> 30%"];
-  scale.innerHTML = `<span>Gross margin</span>` + MARGIN_BINS.map(([, f], i) =>
-    `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:2px"><i class="swatch" style="background:${f};width:22px;height:8px;border-radius:2px"></i>${i % 2 === 0 ? labels[i] : "&nbsp;"}</span>`).join("");
 }
 
 // ---- Ranked rows shared by top products and territories
@@ -685,10 +703,9 @@ function renderTerritories() {
     gh.addEventListener("click", tg); gh.addEventListener("keydown", (e) => { if (e.key === "Enter") tg(); });
     col.append(gh);
     for (const r of list) {
-      const dim = (selR && selR !== r.region) || (!selR && selG && selG !== r.grp);
       const m = ratio(r.gross_profit, r.revenue);
       const row = el("div", {
-        class: `row clickable${dim ? " dim" : ""}${selR === r.region ? " sel" : ""}`, role: "button", tabindex: 0,
+        class: `row clickable${selR === r.region || (!selR && selG === r.grp) ? " sel" : ""}`, role: "button", tabindex: 0,
         "data-tip": rowTip(`${r.region} · ${r.grp}`, r, [["Orders", int(r.orders)]]),
       }, `<span class="name">${esc(r.region)}</span>${stackBar(r, max)}<span class="num">${money(r.revenue)}</span><span class="num muted${m < 0 ? " neg" : ""}">${pct(m, 0)}</span>`);
       const t = () => setFilter({ region: selR === r.region ? "" : r.region });

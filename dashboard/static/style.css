@@ -201,9 +201,12 @@ button, select { font: inherit; color: inherit; }
   text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tm .group-label:hover { color: var(--ink); }
-.tm .dim { opacity: 0.25; }
-.scale { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
-.scale .bar { height: 8px; flex: 0 1 220px; border-radius: 4px; }
+.tm .cell.sel { box-shadow: inset 0 0 0 3px var(--ink), inset 0 0 0 5px var(--surface); }
+.tm .group-label.sel { color: var(--ink); }
+.tm .group-ring {
+  position: absolute; pointer-events: none; border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--ink);
+}
 
 /* Ranked rows (top products, territories) */
 .rows { display: flex; flex-direction: column; gap: 2px; }
@@ -213,7 +216,6 @@ button, select { font: inherit; color: inherit; }
 }
 .row.clickable { cursor: pointer; }
 .row.clickable:hover, .row.clickable:focus-visible { background: var(--surface-2); outline: none; }
-.row.dim { opacity: 0.35; }
 .row.sel { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--focus); }
 .row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .name small { color: var(--muted); margin-left: 6px; }
