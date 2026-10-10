@@ -248,8 +248,9 @@ psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5434/active_db" -c '\dt
 `dashboard/` is a small, dependency-light web app over the dbt star: revenue,
 gross profit and margin, orders, average order value and units (each with a
 sparkline and a change vs the prior fiscal year), monthly revenue by channel,
-a product-mix treemap coloured by margin, the top 10 products, revenue by
-territory and a live feed of the latest orders.
+a product-mix treemap (one hue per category, a shade per subcategory, margin in
+each tile's label and tooltip), the top 10 products, revenue by territory and a
+live feed of the latest orders.
 
 - **Live:** every panel is re-queried from `analytics.mart` (as the read-only
   `bi_ro` role) each time the page polls, every 30 s. New orders appear once the
@@ -257,15 +258,19 @@ territory and a live feed of the latest orders.
   (every 15 min).
 - **Cross-filtering:** channel, fiscal year, territory group/region and product
   category in one filter row; clicking a month, treemap tile or territory
-  applies the same filters. The filters are kept in the URL, so a view can be
-  bookmarked.
+  applies the same filters. A selection is marked with an outline/check rather
+  than by fading everything else. Clicking a region (or subcategory) also sets
+  its group (or category); clicking it again undoes both, restoring whatever
+  group/category you had picked before. The filters are kept in the URL, so a
+  view can be bookmarked.
 - **Accessible:** every chart has a table view, keyboard-focusable marks with
   tooltips, and light/dark themes.
-- **Excel export:** every chart has an *Excel* button, and *Export all* writes one
-  workbook with a sheet per chart. Cells are typed (currency, %, counts, dates),
-  each sheet states the filters it was exported with, and the rows are the same
-  ones the chart's table view shows. The `.xlsx` is generated in the browser by
-  `static/xlsx.js` (no dependency).
+- **Excel export:** every chart has an *Excel* button, and *Export all* writes
+  one workbook with a sheet per chart plus the key figures. Cells are typed
+  (currency, %, counts, dates), each sheet has a frozen header and autofilter
+  and states the filters it was exported with (and any the panel deliberately
+  ignores), and the rows are the same ones the chart's table view shows. The
+  `.xlsx` is generated in the browser by `static/xlsx.js` (no dependency).
 
 ```bash
 docker compose up -d --build dashboard     # needs only postgres; also in the `bi` profile
