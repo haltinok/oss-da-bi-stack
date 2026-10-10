@@ -5,8 +5,8 @@ with source as (
 renamed as (
     select
         product_id,
-        start_date,
-        end_date,
+        {{ shift_history_date('start_date') }} as start_date,
+        {{ shift_history_date('end_date') }} as end_date,
         standard_cost,
         modified_date
     from source

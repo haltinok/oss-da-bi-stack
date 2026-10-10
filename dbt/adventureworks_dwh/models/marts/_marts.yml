@@ -6,7 +6,8 @@ models:
       Generated date spine, 2008-01-01 to 2040-12-31 (one row per day).
       The bounds must cover every date key produced by the facts
       (sales orders 2011-05-31..2014-07-12, product inventory 2008-03-31..2014-08-12,
-      currency rates and quotas 2011-05-31..2014-05-31). The `relationships`
+      currency rates and quotas 2011-05-31..2014-05-31; source calendar, shifted
+      forward by the `date_shift_years` var, 12 by default). The `relationships`
       tests on the fact date keys fail if a key falls outside this window, so
       widening the source means widening the spine.
     columns:

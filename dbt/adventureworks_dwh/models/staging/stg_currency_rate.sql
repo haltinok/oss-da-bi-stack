@@ -5,7 +5,7 @@ with source as (
 renamed as (
     select
         currency_rate_id,
-        currency_rate_date,
+        {{ shift_history_date('currency_rate_date') }} as currency_rate_date,
         from_currency_code,
         to_currency_code,
         average_rate,

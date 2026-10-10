@@ -243,6 +243,51 @@ Explore it:
 psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5434/active_db" -c '\dt public.*'
 ```
 
+## Live sales dashboard
+
+`dashboard/` is a small, dependency-light web app over the dbt star: revenue,
+gross profit and margin, orders, average order value and units (each with a
+sparkline and a change vs the prior fiscal year), monthly revenue by channel,
+a product-mix treemap coloured by margin, the top 10 products, revenue by
+territory and a live feed of the latest orders.
+
+- **Live:** every panel is re-queried from `analytics.mart` (as the read-only
+  `bi_ro` role) each time the page polls, every 30 s. New orders appear once the
+  `postgres_active_to_postgres_aw` DAG has replicated them and rebuilt the mart
+  (every 15 min).
+- **Cross-filtering:** channel, fiscal year, territory group/region and product
+  category in one filter row; clicking a month, treemap tile or territory
+  applies the same filters. The filters are kept in the URL, so a view can be
+  bookmarked.
+- **Accessible:** every chart has a table view, keyboard-focusable marks with
+  tooltips, and light/dark themes.
+
+```bash
+docker compose up -d --build dashboard     # needs only postgres; also in the `bi` profile
+open http://localhost:8050
+```
+
+**Continuous dates.** The AdventureWorks sample's business dates end in mid-2014,
+while the simulator stamps new orders with `now()`. dbt therefore shifts the
+historical dates forward by the `date_shift_years` var (default `12`, see
+`macros/shift_history_date.sql`): order/due/ship dates, cost history, special
+offers, quotas, currency rates and inventory movements, but only values before
+`date_shift_cutoff` (`2015-01-01`), so live rows pass through unchanged. History
+then runs 2023-05 .. 2026-06 and meets the live orders. Build on the original
+calendar with `dbt build --vars '{date_shift_years: 0}'`.
+
+The stretch between the end of the shifted history (2026-06-30) and the day the
+simulator first ran is filled by `airflow/scripts/backfill_adventureworks_orders.py`:
+internet orders built like the simulator's and reseller orders modelled on the
+seeded reseller history (Faker; the simulator itself only creates internet orders).
+It skips days (internet) / months (reseller) that already have orders, so re-run it
+after Airflow has been down to close the hole:
+
+```bash
+docker compose exec airflow-scheduler \
+  python /opt/airflow/scripts/backfill_adventureworks_orders.py --start 2026-07-01
+```
+
 ## Folder structure
 
 ```
@@ -283,6 +328,7 @@ oss-da-bi-stack/
 │   └── scripts/
 │       ├── simulate_orders.py
 │       ├── simulate_adventureworks.py
+│       ├── backfill_adventureworks_orders.py  # fill past date ranges (both channels)
 │       └── sync_mart_to_clickhouse.py
 ├── dlt/
 │   └── pipelines/
@@ -338,6 +384,10 @@ oss-da-bi-stack/
 │   └── init/
 │       ├── 01_init.sql       # orders: Kafka engine + history + current-state + rejected views
 │       └── 02_adventureworks_cdc.sql  # AW: multi-topic Kafka table + aw_events + typed tables
+├── dashboard/                # live sales dashboard over the dbt star (see below)
+│   ├── Dockerfile            # python:3.12-slim + psycopg
+│   ├── app.py                # stdlib HTTP server + JSON API, reads mart as bi_ro
+│   └── static/               # index.html, app.js (inline-SVG charts), style.css
 └── superset/
     ├── Dockerfile            # apache/superset + psycopg2 + clickhouse-connect + language packs
     ├── superset_config.py    # metadata in superset_meta, default locale from SUPERSET_DEFAULT_LOCALE (tr)
@@ -395,6 +445,7 @@ oss-da-bi-stack/
    - Superset UI: http://localhost:8089 (user/pass from `.env`)
    - Superset MCP server: http://localhost:5008 (dev-only, unauthenticated)
    - Metabase UI: http://localhost:3001 (create the admin on first visit)
+   - Live sales dashboard: http://localhost:8050 (no login; see [Live sales dashboard](#live-sales-dashboard))
    - Kafka UI: http://localhost:8081
    - Kafka Connect REST: http://localhost:8083
    - ClickHouse HTTP: http://localhost:8123 (user `clickhouse`, password from `.env`)

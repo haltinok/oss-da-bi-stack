@@ -5,7 +5,7 @@ with source as (
 renamed as (
     select
         business_entity_id,
-        quota_date,
+        {{ shift_history_date('quota_date') }} as quota_date,
         sales_quota,
         rowguid,
         modified_date
