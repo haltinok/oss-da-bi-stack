@@ -58,6 +58,9 @@ const state = {
   data: null,
   tables: new Set(),
   seenOrders: null,
+  // Parent filter value from before a chart click picked a child (region ->
+  // group, subcategory -> category), so a second click can undo it exactly.
+  restore: {},
   polls: 0,
   timer: null,
   inflight: null,
@@ -186,7 +189,13 @@ function syncControls() {
   $("#reset").hidden = !Object.values(f).some(Boolean);
 }
 
-function setFilter(patch) {
+function setFilter(patch, { keepRestore = false } = {}) {
+  // Changing a child or its parent any other way (dropdown, heading, reset) ends that undo window.
+  if (!keepRestore) {
+    for (const [child, parent] of Object.entries(PARENT)) {
+      if (child in patch || parent in patch) delete state.restore[child];
+    }
+  }
   Object.assign(state.filters, patch);
   if ("group" in patch && state.meta) {
     // A region outside the chosen group is meaningless; re-derive the region list.
@@ -213,6 +222,24 @@ function setFilter(patch) {
   load();
 }
 
+// Chart click on a child member (a region, a subcategory). Selecting it also sets
+// its parent (setFilter derives that); clicking it again restores the filters
+// to exactly what they were before the first click, parent included.
+const PARENT = { region: "group", subcategory: "category" };
+
+function toggleChild(child, parent, value) {
+  const f = state.filters;
+  if (f[child] === value) {
+    const prior = state.restore[child] ?? "";
+    delete state.restore[child];
+    setFilter({ [child]: "", [parent]: prior }, { keepRestore: true });
+  } else {
+    // Switching between children keeps the original pre-click parent.
+    if (!f[child]) state.restore[child] = f[parent];
+    setFilter({ [child]: value }, { keepRestore: true });
+  }
+}
+
 $("#f-channel").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (b) setFilter({ channel: b.dataset.v });
 });
@@ -221,6 +248,7 @@ for (const k of ["fy", "group", "region", "category", "subcategory"]) {
 }
 $("#reset").addEventListener("click", () => {
   for (const k of Object.keys(state.filters)) state.filters[k] = "";
+  state.restore = {};
   fillFilters(); writeUrl(); load();
 });
 $("#refresh").addEventListener("click", () => load());
@@ -631,7 +659,7 @@ function renderMix() {
       const name = `${isSel ? "✓ " : ""}${esc(s.subcategory)}`;
       if (w > 64 && h > 34) cell.innerHTML = `<div class="n">${name}</div><div class="v">${money(s.revenue)} · ${pct(m, 0)} margin</div>`;
       else if (w > 48 && h > 20) cell.innerHTML = `<div class="n">${name}</div>`;
-      const pick = other ? toggle : () => setFilter({ subcategory: selSub === s.subcategory ? "" : s.subcategory });
+      const pick = other ? toggle : () => toggleChild("subcategory", "category", s.subcategory);
       cell.addEventListener("click", pick);
       cell.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(); });
       host.append(cell);
@@ -708,7 +736,7 @@ function renderTerritories() {
         class: `row clickable${selR === r.region || (!selR && selG === r.grp) ? " sel" : ""}`, role: "button", tabindex: 0,
         "data-tip": rowTip(`${r.region} · ${r.grp}`, r, [["Orders", int(r.orders)]]),
       }, `<span class="name">${esc(r.region)}</span>${stackBar(r, max)}<span class="num">${money(r.revenue)}</span><span class="num muted${m < 0 ? " neg" : ""}">${pct(m, 0)}</span>`);
-      const t = () => setFilter({ region: selR === r.region ? "" : r.region });
+      const t = () => toggleChild("region", "group", r.region);
       row.addEventListener("click", t); row.addEventListener("keydown", (e) => { if (e.key === "Enter") t(); });
       col.append(row);
     }
