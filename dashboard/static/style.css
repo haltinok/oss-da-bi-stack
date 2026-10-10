@@ -103,6 +103,13 @@ button, select { font: inherit; color: inherit; }
   border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer;
 }
 .icon-btn:hover { background: var(--surface-2); }
+.export-all {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 13px;
+}
+.export-all:hover { background: var(--surface-2); }
+.export-all svg { width: 14px; height: 14px; }
+.card-h .xls-btn { margin-left: -6px; }
 .icon-btn svg { width: 16px; height: 16px; }
 
 /* Filter row */

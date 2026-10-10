@@ -284,11 +284,169 @@ function renderAll() {
   renderNotes();
 }
 
-function table(cols, rows) {
-  const head = cols.map((c) => `<th class="${c.num ? "n" : ""}">${esc(c.label)}</th>`).join("");
-  const body = rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.num ? "n" : ""}">${esc(c.fmt ? c.fmt(r[c.k], r) : r[c.k])}</td>`).join("")}</tr>`).join("");
+// ---- Datasets: one definition per panel feeds both its table view and its
+// Excel sheet, so what the page shows and what is exported cannot drift apart.
+// A column is [label, type, get(row), tableFormat?]; types match xlsx.js.
+const SHOW = {
+  text: (v) => v ?? "", int, money: moneyFull, pct: (v) => pct(v),
+  date: (v) => (v ? new Date(v).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : ""),
+  auto: (c) => (c?.v == null ? "—" : SHOW[c.t](c.v)), // a { v, t } cell
+};
+const col = (label, type, get, fmt) => ({ label, type, get, fmt: fmt || SHOW[type] });
+const chRev = (c) => (r) => r.ch?.[c]?.revenue ?? 0;
+const margin = (r) => ratio(r.gross_profit, r.revenue);
+
+const DATASETS = {
+  kpis: () => {
+    const { current: c, previous: p } = state.data.kpis;
+    const fy = state.filters.fy;
+    // Mixed units per row, so each value cell carries its own type.
+    const rows = KPIS.map((k) => {
+      const v = c ? k.get(c) : null, pv = p ? k.get(p) : null;
+      const type = k.points ? "pct" : k.fmt === money ? "money" : "int";
+      const change = v == null || pv == null || !pv ? null : k.points ? v - pv : (v - pv) / Math.abs(pv);
+      return { label: k.label, v: { v, t: type }, pv: { v: pv, t: type }, change, unit: k.points ? "percentage points" : "%" };
+    });
+    return {
+      key: "kpis", name: "Key figures", title: "Key figures", ignores: [],
+      columns: [
+        col("Metric", "text", (r) => r.label),
+        col(fy ? `FY${fy}` : "All fiscal years", "auto", (r) => r.v),
+        col(fy ? `FY${fy - 1}` : "Previous FY", "auto", (r) => r.pv),
+        col("Change", "pct", (r) => r.change),
+        col("Change unit", "text", (r) => (r.change == null ? "" : r.unit)),
+      ],
+      rows,
+    };
+  },
+  trend: () => ({
+    key: "trend", name: "Monthly revenue", title: "Monthly revenue by channel", ignores: [],
+    columns: [
+      col("Month", "text", (r) => r.month.slice(0, 7), (v) => monthLabel(`${v}-01`)),
+      col("Fiscal year", "text", (r) => `FY${fyOf(r.month)}`),
+      col("Internet", "money", chRev("Internet")),
+      col("Reseller", "money", chRev("Reseller")),
+      col("Revenue", "money", (r) => r.revenue),
+      col("Gross profit", "money", (r) => r.gross_profit),
+      col("Gross margin", "pct", margin),
+      col("Orders", "int", (r) => r.orders),
+      col("Units", "int", (r) => r.units),
+    ],
+    rows: monthSeries(state.data.monthly).filter((m) => !m.break),
+  }),
+  feed: () => ({
+    key: "feed", name: "Latest orders", title: "Latest orders", ignores: ["fy"],
+    ignoreNote: "this panel always lists the newest orders",
+    columns: [
+      col("Order", "text", (r) => r.sales_order_number),
+      col("Channel", "text", (r) => r.channel),
+      col("Order date (UTC)", "date", (r) => r.order_date),
+      col("Region", "text", (r) => r.region),
+      col("Status", "text", (r) => (STATUS[r.order_status] || String(r.order_status)).replace(/^\S+ /, "")),
+      col("Lines", "int", (r) => r.lines),
+      col("Revenue", "money", (r) => r.revenue),
+    ],
+    rows: state.data.latest_orders,
+  }),
+  mix: () => ({
+    key: "mix", name: "Product mix", title: "Product mix by subcategory", ignores: ["category", "subcategory"],
+    ignoreNote: "all products are listed; the dashboard highlights the selection",
+    columns: [
+      col("Category", "text", (r) => r.category),
+      col("Subcategory", "text", (r) => r.subcategory),
+      col("Revenue", "money", (r) => r.revenue),
+      col("Gross profit", "money", (r) => r.gross_profit),
+      col("Gross margin", "pct", margin),
+      col("Orders", "int", (r) => r.orders),
+      col("Units", "int", (r) => r.units),
+    ],
+    rows: state.data.mix.filter((r) => r.revenue > 0),
+  }),
+  products: () => ({
+    key: "products", name: "Top 10 products", title: "Top 10 products", ignores: [],
+    columns: [
+      col("Product", "text", (r) => r.product_name),
+      col("Category", "text", (r) => r.category),
+      col("Internet", "money", (r) => r.internet ?? 0),
+      col("Reseller", "money", (r) => r.reseller ?? 0),
+      col("Revenue", "money", (r) => r.revenue),
+      col("Gross profit", "money", (r) => r.gross_profit),
+      col("Gross margin", "pct", margin),
+      col("Units", "int", (r) => r.units),
+    ],
+    rows: state.data.top_products,
+  }),
+  territories: () => ({
+    key: "territories", name: "Territories", title: "Revenue by territory", ignores: ["group", "region"],
+    ignoreNote: "all territories are listed; the dashboard highlights the selection",
+    columns: [
+      col("Territory group", "text", (r) => r.grp),
+      col("Region", "text", (r) => r.region),
+      col("Internet", "money", (r) => r.internet ?? 0),
+      col("Reseller", "money", (r) => r.reseller ?? 0),
+      col("Revenue", "money", (r) => r.revenue),
+      col("Gross profit", "money", (r) => r.gross_profit),
+      col("Gross margin", "pct", margin),
+      col("Orders", "int", (r) => r.orders),
+    ],
+    rows: state.data.territories,
+  }),
+};
+
+function table({ columns, rows }) {
+  const num = (c) => (c.type !== "text" && c.type !== "date" ? "n" : "");
+  const head = columns.map((c) => `<th class="${num(c)}">${esc(c.label)}</th>`).join("");
+  const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="${num(c)}">${esc(c.fmt(c.get(r)))}</td>`).join("")}</tr>`).join("");
   return `<div class="tbl-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
+
+// ---- Excel export
+const FILTER_LABEL = { fy: "fiscal year", channel: "channel", group: "territory group", region: "region", category: "category", subcategory: "subcategory" };
+
+function filterSummary(ignores, note) {
+  const f = state.filters;
+  const parts = [];
+  if (f.fy && !ignores.includes("fy")) parts.push(`FY${f.fy} (${fyRange(+f.fy)})`);
+  if (f.channel) parts.push(`${f.channel} channel`);
+  const terr = [f.group, f.region].filter((v, i) => v && !ignores.includes(["group", "region"][i]));
+  if (terr.length) parts.push(terr.join(" › "));
+  const prod = [f.category, f.subcategory].filter((v, i) => v && !ignores.includes(["category", "subcategory"][i]));
+  if (prod.length) parts.push(prod.join(" › "));
+  const skipped = ignores.filter((k) => f[k]).map((k) => FILTER_LABEL[k]);
+  const stamp = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+  return [
+    `Filters: ${parts.length ? parts.join(" · ") : "none"}`,
+    skipped.length ? `${skipped.join(" and ")} filter not applied (${note})` : "",
+    `exported ${stamp} from analytics.mart`,
+  ].filter(Boolean).join(" · ");
+}
+
+function toSheet(d) {
+  return {
+    name: d.name,
+    title: d.title,
+    subtitle: filterSummary(d.ignores, d.ignoreNote),
+    columns: d.columns.map((c) => ({ label: c.label, type: c.type })),
+    rows: d.rows.map((r) => d.columns.map((c) => c.get(r))),
+  };
+}
+
+function exportXlsx(keys) {
+  if (!state.data) return;
+  const blob = window.buildXlsx(keys.map((k) => toSheet(DATASETS[k]())));
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
+  const slug = keys.length === 1 ? DATASETS[keys[0]]().name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "dashboard";
+  const a = el("a", { href: URL.createObjectURL(blob), download: `adventureworks-${slug}-${stamp}.xlsx` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
+for (const btn of document.querySelectorAll(".xls-btn")) {
+  btn.addEventListener("click", () => exportXlsx([btn.closest("[data-panel]").dataset.panel]));
+}
+$("#export-all").addEventListener("click", () => exportXlsx(["kpis", "trend", "feed", "mix", "products", "territories"]));
 
 // Monthly rows -> one entry per month (both channels), zero-filling short gaps
 // and marking long ones as breaks.
@@ -407,14 +565,7 @@ function renderTrend(months) {
   $("#trend-hint").textContent = fy ? `FY${fy} · ${fyRange(+fy)} · click a month to clear` : "Click a month to focus its fiscal year";
   if (state.tables.has("trend")) {
     marginHead.hidden = true; mHost.innerHTML = "";
-    host.innerHTML = table([
-      { k: "month", label: "Month", fmt: (v) => monthLabel(v) },
-      { k: "i", label: "Internet", num: true, fmt: (_, r) => moneyFull(r.ch.Internet?.revenue ?? 0) },
-      { k: "r", label: "Reseller", num: true, fmt: (_, r) => moneyFull(r.ch.Reseller?.revenue ?? 0) },
-      { k: "revenue", label: "Total", num: true, fmt: moneyFull },
-      { k: "orders", label: "Orders", num: true, fmt: int },
-      { k: "gm", label: "Margin", num: true, fmt: (_, r) => pct(ratio(r.gross_profit, r.revenue)) },
-    ], data);
+    host.innerHTML = table(DATASETS.trend());
     return;
   }
   marginHead.hidden = false;
@@ -521,12 +672,7 @@ function renderFeed() {
   const rows = state.data.latest_orders;
   const host = $("#feed");
   if (state.tables.has("feed")) {
-    host.innerHTML = table([
-      { k: "sales_order_number", label: "Order" }, { k: "channel", label: "Channel" },
-      { k: "order_date", label: "Date", fmt: (v) => new Date(v).toLocaleString("en-GB") },
-      { k: "region", label: "Region" }, { k: "order_status", label: "Status", fmt: (v) => STATUS[v] || v },
-      { k: "revenue", label: "Revenue", num: true, fmt: moneyFull },
-    ], rows);
+    host.innerHTML = table(DATASETS.feed());
     return;
   }
   const seen = state.seenOrders;
@@ -595,13 +741,7 @@ function renderMix() {
   const sel = state.filters.category, selSub = state.filters.subcategory;
   if (state.tables.has("mix")) {
     host.style.height = "";
-    host.innerHTML = table([
-      { k: "category", label: "Category" }, { k: "subcategory", label: "Subcategory" },
-      { k: "revenue", label: "Revenue", num: true, fmt: moneyFull },
-      { k: "gross_profit", label: "Gross profit", num: true, fmt: moneyFull },
-      { k: "m", label: "Margin", num: true, fmt: (_, r) => pct(ratio(r.gross_profit, r.revenue)) },
-      { k: "units", label: "Units", num: true, fmt: int },
-    ], rows);
+    host.innerHTML = table(DATASETS.mix());
     return;
   }
   if (!rows.length) { host.style.height = ""; host.innerHTML = `<div class="empty">No product sales match these filters</div>`; return; }
@@ -683,13 +823,7 @@ function renderProducts() {
   const rows = state.data.top_products;
   const host = $("#products");
   if (state.tables.has("products")) {
-    host.innerHTML = table([
-      { k: "product_name", label: "Product" }, { k: "category", label: "Category" },
-      { k: "internet", label: "Internet", num: true, fmt: moneyFull }, { k: "reseller", label: "Reseller", num: true, fmt: moneyFull },
-      { k: "revenue", label: "Revenue", num: true, fmt: moneyFull },
-      { k: "m", label: "Margin", num: true, fmt: (_, r) => pct(ratio(r.gross_profit, r.revenue)) },
-      { k: "units", label: "Units", num: true, fmt: int },
-    ], rows);
+    host.innerHTML = table(DATASETS.products());
     return;
   }
   if (!rows.length) { host.innerHTML = `<div class="empty">No products match these filters</div>`; return; }
@@ -710,13 +844,7 @@ function renderTerritories() {
   const host = $("#territories");
   const { group: selG, region: selR } = state.filters;
   if (state.tables.has("territories")) {
-    host.innerHTML = table([
-      { k: "grp", label: "Group" }, { k: "region", label: "Region" },
-      { k: "internet", label: "Internet", num: true, fmt: moneyFull }, { k: "reseller", label: "Reseller", num: true, fmt: moneyFull },
-      { k: "revenue", label: "Revenue", num: true, fmt: moneyFull },
-      { k: "m", label: "Margin", num: true, fmt: (_, r) => pct(ratio(r.gross_profit, r.revenue)) },
-      { k: "orders", label: "Orders", num: true, fmt: int },
-    ], rows);
+    host.innerHTML = table(DATASETS.territories());
     return;
   }
   if (!rows.length) { host.innerHTML = `<div class="empty">No territory sales match these filters</div>`; return; }
