@@ -188,6 +188,27 @@ def _sold_products(cur, cutoff, window_days=SEED_WINDOW_DAYS):
     return [(row[0], float(row[1])) for row in rows]
 
 
+def _order_line_counts(cur, cutoff, window_days=SEED_WINDOW_DAYS):
+    """Lines per order, one entry per order, over the seeded history's window.
+
+    Picked from directly rather than averaged, the way load_reseller_keys does
+    it: the real distribution runs 1-8 lines (19% / 36% / 27% / 13% / ...) and
+    averages 2.48 over the window. A hardcoded randint(1, 3) averaged 2.0 and
+    left revenue per order ~17% short of the history it continues.
+    """
+    cur.execute(
+        f"""
+        SELECT count(*)
+        FROM public.sales_order_header h
+        JOIN public.sales_order_detail d ON d.sales_order_id = h.sales_order_id
+        WHERE {_SEED_WINDOW_SQL}
+        GROUP BY h.sales_order_id
+        """,
+        {"online": True, "cutoff": cutoff, "window": window_days},
+    )
+    return [row[0] for row in cur.fetchall()]
+
+
 def seed_order_rate(cur, cutoff, online=True, window_days=SEED_WINDOW_DAYS):
     """Orders per day over the seeded history's trailing window, or None if empty.
 
@@ -260,9 +281,9 @@ def insert_sales_order(cur, keys, order_date=None, status=None):
     bill_to = _pick(keys["address_id"])
     ship_to = _pick(keys["address_id"], bill_to)
 
-    # 1-3 lines per order (the seeded history averages 2.16), each a distinct
-    # product drawn from the frequency-weighted catalogue.
-    chosen = _pick_distinct_products(keys["sold_product"], random.randint(1, 3))
+    # Line count drawn from the seeded window's own distribution (1-8, averaging
+    # 2.48), each line a distinct product from the frequency-weighted catalogue.
+    chosen = _pick_distinct_products(keys["sold_product"], _pick(keys["line_count"], 2))
     lines = []
     sub_total = 0.0
     for line_no, (product_id, list_price) in enumerate(chosen, start=1):
@@ -527,6 +548,7 @@ def load_keys(cur, cutoff=None):
         "product_id": _ids(cur, "product", "product_id"),
         "sold_product": _sold_products(cur, cutoff),
         "seed_order_rate": seed_order_rate(cur, cutoff),
+        "line_count": _order_line_counts(cur, cutoff),
         "ship_method_id": _ids(cur, "ship_method", "ship_method_id"),
         "currency_rate_id": _ids(cur, "currency_rate", "currency_rate_id"),
         "territory_id": _ids(cur, "sales_territory", "territory_id"),
