@@ -16,6 +16,7 @@ An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source
 | Ingestion / CDC      | dlt                               |
 | Streaming / CDC      | Kafka (KRaft) + Kafka Connect + Debezium |
 | Transformation       | dbt-core                          |
+| Semantic layer       | MetricFlow (`dbt-metricflow`)     |
 | Warehouse            | Postgres 16                       |
 | Real-time OLAP       | ClickHouse 25.8                   |
 | Reporting/dashboarding | Superset + Metabase + a live sales dashboard (`dashboard/`) |
@@ -163,6 +164,61 @@ dbt build  →  analytics.mart (19 dim/fact tables)
   and the copy always matches the latest `dbt build`.
 - **Caveat:** the Postgres password travels in the query text; the sync sets
   `log_queries=0` on the session so it stays out of `system.query_log`.
+
+## Semantic layer (MetricFlow)
+
+`dbt/adventureworks_dwh/models/semantic/` defines metrics on top of the mart star,
+so "revenue" and "gross margin %" have **one** definition that Superset, Metabase,
+the Python dashboard and an ad-hoc query all resolve the same way — instead of one
+copy per dashboard that drifts. Change the margin formula once and every consumer
+moves with it.
+
+- `_semantic_models.yml` — nine semantic models: both channel facts carry the
+  measures, the dimension tables carry what you group by, joined on shared entities.
+- `_metrics.yml` — 25 metrics covering all four types (`simple`, `ratio`, `derived`,
+  `cumulative`), plus a saved query.
+
+Query it from the Airflow container (`mf` ships in the image):
+
+```bash
+docker compose exec airflow-scheduler bash
+cd /opt/airflow/dbt/adventureworks_dwh
+dbt parse                       # refreshes target/semantic_manifest.json
+mf list metrics
+mf query --metrics internet_revenue,internet_gross_margin_pct \
+         --group-by metric_time__month
+mf query --saved-query internet_sales_overview
+```
+
+Or as a one-liner, without the interactive shell:
+
+```bash
+docker compose exec -w /opt/airflow/dbt/adventureworks_dwh airflow-scheduler \
+  mf query --metrics total_revenue --group-by metric_time__quarter
+```
+
+Worth knowing:
+
+- **`dbt parse` first.** `mf` reads the compiled `target/semantic_manifest.json`, so
+  edits to the YAML are invisible until you re-parse.
+- **Time spine.** The cumulative metrics (`*_mtd`, `*_ytd`, `*_rolling_28d`) and the
+  year-over-year offset join `dim_date`, declared as the spine in `marts/_marts.yml`
+  with `granularity: day`. Remove that declaration and those metrics stop resolving.
+- **Offset metrics overrun the data.** `internet_revenue_yoy_pct` has
+  `offset_window: 1 year`, which shifts the prior-year series *forward*, so the
+  result runs one year past the last fact — four empty 2027 quarters today, where
+  the prior value exists but the current one does not. The head is blank for the
+  same reason (no 2022 to compare 2023 against). Constrain it with
+  `--start-time` / `--end-time`; it is not a gap in the spine, which runs to 2040.
+- **Composite fact grain.** The sales facts are at
+  `(sales_order_number, sales_order_line_number)` and neither column is unique
+  alone, so the primary entity is the composite and order counts are
+  `count_distinct` on the order number. Counting rows would overcount orders by
+  the number of lines.
+- **No semantic model on `dim_geography`.** MetricFlow joins one hop from the fact,
+  and the sales facts key `customer_key`, not `geography_key`, so city/country
+  would only be reachable as fact → customer → geography and would not resolve.
+  Territory-grain geography comes from `dim_sales_territory`, which the facts do key.
 
 ## Pipelines
 
@@ -332,7 +388,7 @@ oss-da-bi-stack/
 │   └── workflows/
 │       └── ci.yml              # gitleaks, pre-commit, DAG import, seed→dlt→dbt build, compose config
 ├── airflow/
-│   ├── Dockerfile            # apache/airflow:3.3.2 + dlt + dbt-core + pyodbc + faker
+│   ├── Dockerfile            # apache/airflow:3.3.2 + dlt + dbt-core + metricflow + pyodbc + faker
 │   ├── requirements.txt
 │   ├── dags/
 │   │   ├── sqlserver_to_postgres_dag.py
@@ -366,7 +422,8 @@ oss-da-bi-stack/
 │       ├── dbt_project.yml
 │       ├── profiles.yml
 │       ├── macros/
-│       │   └── generate_schema_name.sql
+│       │   ├── generate_schema_name.sql
+│       │   └── shift_history_date.sql   # moves seeded history onto live dates
 │       ├── snapshots/
 │       │   └── dim_product_snapshot.sql  # Type 2 product history
 │       └── models/
@@ -375,9 +432,12 @@ oss-da-bi-stack/
 │           │   └── stg_*.sql
 │           ├── intermediate/
 │           │   └── int_sales_order_lines.sql  # shared fact logic (ephemeral)
-│           └── marts/
-│               ├── dim_*.sql          # includes dim_product_history (from the snapshot)
-│               └── fact_*.sql
+│           ├── marts/
+│           │   ├── dim_*.sql          # includes dim_product_history (from the snapshot)
+│           │   └── fact_*.sql
+│           └── semantic/              # MetricFlow layer over the star (see above)
+│               ├── _semantic_models.yml  # 9 semantic models: measures + dimensions
+│               └── _metrics.yml          # 25 metrics + a saved query
 ├── postgres/
 │   └── init/
 │       ├── 01_init.sql           # airflow + superset_meta + analytics databases
@@ -526,7 +586,7 @@ oss-da-bi-stack/
 - **One-time SQL Server load**: `sqlserver_to_postgres` treats AdventureWorks2016 as a static source. `sqlserver_pipeline.py` checks for a load marker (`raw.customer`) and skips when present; `--force` reloads. The DAG is therefore unscheduled.
 - **Secrets come from `.env`**: Compose requires each secret (`${VAR:?}`) and fails fast rather than falling back to a placeholder. `scripts/generate-env.sh` creates them. The Debezium connector and ClickHouse user read their passwords from the same file, so nothing sensitive lives in a tracked file.
 - **Metabase**: metadata lives in the shared Postgres (`metabase_meta`). The ClickHouse driver is bundled in the image (core since Metabase 54), so no plugin or custom image is needed. `MB_ENCRYPTION_SECRET_KEY` must be 16/24/32 characters (the generator emits 32) and must not change after first start, or stored DB credentials can no longer be decrypted. English locale on purpose.
-- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `metabase/metabase:v0.63.19.1`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.3.2), as are the Airflow requirements (`dlt[postgres]==1.30.0`, `dbt-core==1.11.9` + `dbt-postgres==1.11.0`, `faker`) and the Debezium connector (`debezium-connector-postgresql:3.2.6` — the newest 3.x on Confluent Hub). Bump and rebuild deliberately; Dependabot handles minor/patch bumps, majors stay manual.
+- **Pinned versions**: base images are pinned (`apache/superset:6.1.0`, `metabase/metabase:v0.63.19.1`, `provectuslabs/kafka-ui:v0.7.2`, `clickhouse/clickhouse-server:25.8`, `postgres:16`, Confluent 8.3.2), as are the Airflow requirements (`dlt[postgres]==1.30.0`, `dbt-core==1.11.15` + `dbt-postgres==1.11.0` + `dbt-metricflow==0.15.0`, `faker`) and the Debezium connector (`debezium-connector-postgresql:3.2.6` — the newest 3.x on Confluent Hub). Bump and rebuild deliberately; Dependabot handles minor/patch bumps, majors stay manual.
 - **AdventureWorks OLTP sandbox**: `postgres_active` holds a generated, seeded copy of the AdventureWorks tables (see [AdventureWorks OLTP sandbox](#adventureworks-oltp-sandbox)). The schema and seed are **generated files** — edit `scripts/gen_adventureworks_schema.py` / `scripts/gen_adventureworks_seed.py`, not the SQL. Primary keys are restored; foreign keys are not enforced, but the seed is **referentially consistent** (10% of the driver tables expanded along the FK graph), so joins resolve. `simulate_adventureworks` mutates the tables every 5 min.
 - **DWH source**: `dbt/adventureworks_dwh` reads `analytics.raw_active`, fed by the `postgres_active_to_postgres_aw` dlt pipeline. The static `analytics.raw` (SQL Server load) is an alternative source. `dim_date` runs to 2040 because the simulator stamps new rows with `now()`.
 - **ClickHouse mart**: the dbt star is copied into ClickHouse `mart` by `scripts/sync_mart_to_clickhouse.py` (the last task of the `postgres_active_to_postgres_aw` DAG) using ClickHouse's `postgresql()` table function. It reads the mart as the read-only `bi_ro` role, and since the password rides the query text it sets `log_queries=0` to keep it out of `system.query_log`. (dlt's ClickHouse destination works on dlt 1.30 — native port 9000, `http_port` 8123, `secure=False` — but needs `dlt[clickhouse]`, which the Airflow image doesn't install; `postgresql()` needs no extra driver.)
