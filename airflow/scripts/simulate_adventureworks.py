@@ -42,6 +42,15 @@ TRANSACTION_TYPES = ["W", "S", "P"]
 # occasionally backordered (3) or already approved (2). update_rows then moves
 # them toward shipped, one step at a time.
 NEW_ORDER_STATUSES = [1, 1, 1, 1, 3, 2]
+SHIPPED_STATUS = 5
+
+# Offsets AdventureWorks itself uses, measured on the seeded history: of 3147
+# orders, 3145 are due 12 days out and shipped 7 days out (the other two are
+# +13/+8). due_date used to be hardcoded at 14 here, which made every simulated
+# and backfilled order disagree with the seeded history on any "days to due"
+# cut -- a visible step at the seam between the two.
+DUE_DATE_DAYS = 12
+SHIP_DATE_DAYS = 7
 
 # Per-run chance of creating a new order. The DAG runs every 5 min (288 runs/day),
 # so 0.05 is ~14 orders/day -- visibly alive without swamping the ~2.7 orders/day
@@ -142,8 +151,15 @@ def insert_sales_order(cur, keys, order_date=None, status=None):
     order_id = _next_id(cur, "sales_order_header", "sales_order_id")
     now = datetime.now(timezone.utc)
     order_date = order_date or now
-    due_date = order_date + timedelta(days=14)
-    ship_date = order_date + timedelta(days=7)
+    status = status or _pick(NEW_ORDER_STATUSES)
+    due_date = order_date + timedelta(days=DUE_DATE_DAYS)
+    # Only a shipped order has a ship date. advance_orders() stamps it on the
+    # transition to status 5 and the seeded history (all shipped) always carries
+    # one; setting it unconditionally here gave in-process orders a ship date in
+    # the future, and gave the backfill's rejected/cancelled orders one at all.
+    ship_date = (
+        order_date + timedelta(days=SHIP_DATE_DAYS) if status == SHIPPED_STATUS else None
+    )
     customer_id = _pick(keys["individual_customer_id"])
     bill_to = _pick(keys["address_id"])
     ship_to = _pick(keys["address_id"], bill_to)
@@ -185,7 +201,7 @@ def insert_sales_order(cur, keys, order_date=None, status=None):
         """,
         (
             str(uuid.uuid4()), order_id, REVISION_NUMBER, order_date, due_date, ship_date,
-            status or _pick(NEW_ORDER_STATUSES), True, f"SO{order_id:05d}", customer_id,
+            status, True, f"SO{order_id:05d}", customer_id,
             # Online orders carry no salesperson in AdventureWorks.
             None, _pick(keys["territory_id"]), bill_to, ship_to,
             _pick(keys["ship_method_id"]), _pick(keys["credit_card_id"]),
