@@ -19,27 +19,54 @@ pipeline picks them up on its next run like any other change.
 
 Idempotent: a day (internet) or month (reseller, ~11 orders/month) that already
 has orders of that channel is skipped, so the script can be re-run safely.
+That check is made on **star-schema dates**, not the dates stored here: the
+seeded history is still dated 2011-2014 in this database and dbt shifts it
+forward by `date_shift_years` on the way into the star, so a day that looks
+empty here may already be populated in the warehouse. The shift is read from
+the dbt project (--dbt-project) rather than duplicated.
+
+This also makes it safe to fill the gaps *inside* the seeded history, which is
+sparse because the seed is a ~10% sample of AdventureWorks: 794 of the 1127 days
+it spans carry orders, the rest none, and the thinning is worst in the earliest
+year (47% of days populated in the first year, 99% in the last).
 
     # inside an Airflow container (has the driver, Faker and POSTGRES_PASSWORD)
     python /opt/airflow/scripts/backfill_adventureworks_orders.py \
         --start 2026-07-01 [--end 2026-10-01] [--channel both|internet|reseller]
 
---end defaults to today (exclusive); days the simulator already filled are skipped.
+    # fill the gaps in the shifted seed history (dates are post-shift)
+    python /opt/airflow/scripts/backfill_adventureworks_orders.py \
+        --start 2023-06-01 --end 2026-07-01
+
+--end defaults to today (exclusive); periods already filled are skipped.
 """
 
 import argparse
 import math
+import os
 import random
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
+
+import yaml
 
 from simulate_adventureworks import (
+    DUE_DATE_DAYS,
     REVISION_NUMBER,
+    SHIP_DATE_DAYS,
+    SHIPPED_STATUS,
     _connect,
     _next_id,
     _pick,
     insert_sales_order,
     load_keys,
+)
+
+# The dbt project whose date-shift vars have to be honoured; the compose stack
+# mounts ./dbt at /opt/airflow/dbt.
+DEFAULT_DBT_PROJECT = os.environ.get(
+    "DBT_PROJECT_DIR", "/opt/airflow/dbt/adventureworks_dwh"
 )
 
 # Final statuses for orders that are already in the past: 5 shipped, 4 rejected,
@@ -58,13 +85,59 @@ def period(channel, day):
     return day if channel == "internet" else (day.year, day.month)
 
 
-def periods_with_orders(cur, channel, start, end):
+def dbt_date_shift(project_dir):
+    """Read `date_shift_years` / `date_shift_cutoff` from dbt_project.yml.
+
+    These have to match what dbt applies, so they are read from the project
+    rather than duplicated here. Returns (years, cutoff_date).
+    """
+    path = Path(project_dir) / "dbt_project.yml"
+    with path.open() as fh:
+        project_vars = (yaml.safe_load(fh) or {}).get("vars") or {}
+    if "date_shift_years" not in project_vars:
+        raise KeyError(f"date_shift_years not found in {path}")
+    years = int(project_vars["date_shift_years"])
+    cutoff = project_vars.get("date_shift_cutoff", "2015-01-01")
+    if isinstance(cutoff, date):
+        return years, cutoff
+    return years, date.fromisoformat(str(cutoff))
+
+
+def periods_with_orders(cur, channel, start, end, shift_years, shift_cutoff):
+    """Periods already carrying orders of this channel, in star-schema dates.
+
+    The comparison has to happen on the date the warehouse will show, not the
+    one stored here, because two different vintages live in this table:
+
+    * rows the simulator or an earlier backfill wrote, already current-dated and
+      past the cutoff, which dbt passes through unchanged;
+    * the seeded AdventureWorks history, still dated 2011-2014, which dbt's
+      shift_history_date macro moves forward by `date_shift_years`.
+
+    Matching on the stored date made every seeded day look empty -- a backfill
+    over the shifted history's window would have filled all ~1127 days of it,
+    doubling the volume on the ~794 that already had orders.
+    """
     cur.execute(
         """
-        SELECT DISTINCT order_date::date FROM public.sales_order_header
-        WHERE order_date >= %s AND order_date < %s AND online_order_flag = %s
+        SELECT DISTINCT star_date FROM (
+            SELECT CASE
+                       WHEN order_date < %(cutoff)s
+                           THEN (order_date + make_interval(years => %(years)s))::date
+                       ELSE order_date::date
+                   END AS star_date
+            FROM public.sales_order_header
+            WHERE online_order_flag = %(online)s
+        ) shifted
+        WHERE star_date >= %(start)s AND star_date < %(end)s
         """,
-        (start, end, channel == "internet"),
+        {
+            "cutoff": shift_cutoff,
+            "years": shift_years,
+            "online": channel == "internet",
+            "start": start,
+            "end": end,
+        },
     )
     return {period(channel, row[0]) for row in cur.fetchall()}
 
@@ -150,7 +223,10 @@ def insert_reseller_order(cur, keys, rkeys, order_date, status):
         """,
         (
             str(uuid.uuid4()), order_id, REVISION_NUMBER, order_date,
-            order_date + timedelta(days=12), order_date + timedelta(days=7),
+            order_date + timedelta(days=DUE_DATE_DAYS),
+            # Same rule as the internet path: a ship date only on a shipped order.
+            (order_date + timedelta(days=SHIP_DATE_DAYS)
+             if status == SHIPPED_STATUS else None),
             status, f"SO{order_id:05d}", f"PO{random.randint(10**9, 10**10 - 1)}",
             customer_id, sales_person_id, territory_id, _pick(keys["address_id"]),
             _pick(keys["address_id"]), _pick(keys["ship_method_id"]),
@@ -176,9 +252,28 @@ def main():
     parser.add_argument("--end", type=date.fromisoformat, help="exclusive; default: today")
     parser.add_argument("--channel", choices=["both", "internet", "reseller"], default="both")
     parser.add_argument("--seed", type=int, help="random seed, for a reproducible backfill")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="report the periods that would be filled, write nothing",
+    )
+    parser.add_argument(
+        "--dbt-project", default=DEFAULT_DBT_PROJECT,
+        help="dbt project to read date_shift_years/date_shift_cutoff from "
+             f"(default: {DEFAULT_DBT_PROJECT})",
+    )
     args = parser.parse_args()
     if args.seed is not None:
         random.seed(args.seed)
+
+    shift_years, shift_cutoff = dbt_date_shift(args.dbt_project)
+    # The dates written here are literal, so a range reaching below the cutoff
+    # would itself be shifted forward by dbt and land somewhere else entirely.
+    if shift_years and args.start < shift_cutoff:
+        parser.error(
+            f"--start {args.start} is before the dbt date_shift_cutoff "
+            f"{shift_cutoff}: dbt would shift these rows forward by "
+            f"{shift_years} years. Backfill at the shifted dates instead."
+        )
 
     conn = _connect()
     try:
@@ -191,24 +286,33 @@ def main():
             channels = ["internet", "reseller"] if args.channel == "both" else [args.channel]
             rkeys = load_reseller_keys(cur) if "reseller" in channels else None
             for channel in channels:
-                done = periods_with_orders(cur, channel, args.start, end)
-                orders = 0
+                done = periods_with_orders(
+                    cur, channel, args.start, end, shift_years, shift_cutoff
+                )
+                orders, filled = 0, set()
                 day = args.start
                 while day < end:
                     if period(channel, day) not in done:
+                        filled.add(period(channel, day))
                         for _ in range(poisson(DEFAULT_RATE[channel])):
                             at = datetime.combine(day, time(), timezone.utc) + timedelta(
                                 seconds=random.randint(0, 86_399)
                             )
                             status = random.choices(FINAL_STATUSES, FINAL_WEIGHTS)[0]
-                            if channel == "internet":
+                            if args.dry_run:
+                                pass
+                            elif channel == "internet":
                                 insert_sales_order(cur, keys, order_date=at, status=status)
                             else:
                                 insert_reseller_order(cur, keys, rkeys, at, status)
                             orders += 1
                     day += timedelta(days=1)
-                print(f"backfill {channel}: {orders} orders over {args.start}..{end} (exclusive), "
-                      f"{len(done)} {'days' if channel == 'internet' else 'months'} already present")
+                unit = "days" if channel == "internet" else "months"
+                print(f"backfill{' (dry run)' if args.dry_run else ''} {channel}: "
+                      f"{orders} orders over {args.start}..{end} (exclusive) into "
+                      f"{len(filled)} empty {unit}, {len(done)} {unit} already present")
+            if args.dry_run:
+                conn.rollback()
     finally:
         conn.close()
 
