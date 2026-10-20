@@ -1,0 +1,244 @@
+version: 2
+
+# Metrics over the semantic models in _semantic_models.yml.
+#
+# The point of defining them here rather than in each BI tool: "revenue" and
+# "gross margin %" get one definition that Metabase, Superset, the Python
+# dashboard and an ad-hoc `mf query` all resolve the same way. Change the
+# margin formula once and every consumer moves with it.
+#
+# Types used below:
+#   simple     -- one measure, optionally filtered
+#   ratio      -- numerator / denominator, each a metric
+#   derived    -- an expression over other metrics (this is also how a metric
+#                 spans two semantic models, and how period-over-period works
+#                 via offset_window)
+#   cumulative -- a running window or period-to-date, needs the time spine
+#                 declared on dim_date in marts/_marts.yml
+
+metrics:
+  # ------------------------------------------------------- internet channel --
+  - name: internet_revenue
+    label: Internet revenue
+    description: Net online revenue, after line discount, before tax and freight.
+    type: simple
+    type_params:
+      measure: internet_sales_amount
+
+  - name: internet_units_sold
+    label: Internet units sold
+    type: simple
+    type_params:
+      measure: internet_order_quantity
+
+  - name: internet_orders
+    label: Internet orders
+    description: Distinct online orders, not order lines.
+    type: simple
+    type_params:
+      measure: internet_order_count
+
+  - name: internet_customers
+    label: Internet customers
+    description: Distinct customers who placed an online order in the period.
+    type: simple
+    type_params:
+      measure: internet_customer_count
+
+  - name: internet_cost_of_goods
+    label: Internet cost of goods
+    type: simple
+    type_params:
+      measure: internet_product_cost
+
+  - name: internet_discount_given
+    label: Internet discount given
+    type: simple
+    type_params:
+      measure: internet_discount_amount
+
+  # Shipped orders only (AdventureWorks status 5), as a worked example of a
+  # metric-level filter: same measure, different business question.
+  - name: internet_revenue_shipped
+    label: Internet revenue (shipped)
+    description: Online revenue on lines that reached shipped status.
+    type: simple
+    type_params:
+      measure: internet_sales_amount
+    filter: "{{ Dimension('internet_sales_line__order_status') }} = 5"
+
+  - name: internet_gross_margin
+    label: Internet gross margin
+    description: Internet revenue less standard cost of goods sold.
+    type: derived
+    type_params:
+      expr: internet_revenue - internet_cost_of_goods
+      metrics:
+        - name: internet_revenue
+        - name: internet_cost_of_goods
+
+  - name: internet_gross_margin_pct
+    label: Internet gross margin %
+    description: Gross margin as a share of revenue. Null, not zero, when there is no revenue.
+    type: derived
+    type_params:
+      expr: case when internet_revenue = 0 then null else (internet_revenue - internet_cost_of_goods) / internet_revenue end
+      metrics:
+        - name: internet_revenue
+        - name: internet_cost_of_goods
+
+  - name: internet_average_order_value
+    label: Internet average order value
+    description: Revenue per distinct order. Denominator counts orders, so this is safe at line grain.
+    type: ratio
+    type_params:
+      numerator: internet_revenue
+      denominator: internet_orders
+
+  - name: internet_units_per_order
+    label: Internet units per order
+    type: ratio
+    type_params:
+      numerator: internet_units_sold
+      denominator: internet_orders
+
+  - name: internet_revenue_per_customer
+    label: Internet revenue per customer
+    type: ratio
+    type_params:
+      numerator: internet_revenue
+      denominator: internet_customers
+
+  # ------------------------------------------------------- reseller channel --
+  - name: reseller_revenue
+    label: Reseller revenue
+    type: simple
+    type_params:
+      measure: reseller_sales_amount
+
+  - name: reseller_units_sold
+    label: Reseller units sold
+    type: simple
+    type_params:
+      measure: reseller_order_quantity
+
+  - name: reseller_orders
+    label: Reseller orders
+    type: simple
+    type_params:
+      measure: reseller_order_count
+
+  - name: reseller_cost_of_goods
+    label: Reseller cost of goods
+    type: simple
+    type_params:
+      measure: reseller_product_cost
+
+  - name: reseller_gross_margin
+    label: Reseller gross margin
+    type: derived
+    type_params:
+      expr: reseller_revenue - reseller_cost_of_goods
+      metrics:
+        - name: reseller_revenue
+        - name: reseller_cost_of_goods
+
+  - name: reseller_average_order_value
+    label: Reseller average order value
+    type: ratio
+    type_params:
+      numerator: reseller_revenue
+      denominator: reseller_orders
+
+  # ------------------------------------------------------------ both channels --
+  # A derived metric can span semantic models, so these only group by the
+  # dimensions both facts share (order date, product, promotion, territory).
+  # Asking for total_revenue by `reseller__reseller_name` will fail, correctly:
+  # that dimension does not exist on the internet side.
+  - name: total_revenue
+    label: Total revenue
+    description: Internet plus reseller net revenue.
+    type: derived
+    type_params:
+      expr: internet_revenue + reseller_revenue
+      metrics:
+        - name: internet_revenue
+        - name: reseller_revenue
+
+  - name: total_gross_margin
+    label: Total gross margin
+    type: derived
+    type_params:
+      expr: (internet_revenue + reseller_revenue) - (internet_cost_of_goods + reseller_cost_of_goods)
+      metrics:
+        - name: internet_revenue
+        - name: reseller_revenue
+        - name: internet_cost_of_goods
+        - name: reseller_cost_of_goods
+
+  - name: internet_share_of_revenue
+    label: Internet share of revenue
+    description: Online revenue as a share of all revenue.
+    type: derived
+    type_params:
+      expr: case when (internet_revenue + reseller_revenue) = 0 then null else internet_revenue / (internet_revenue + reseller_revenue) end
+      metrics:
+        - name: internet_revenue
+        - name: reseller_revenue
+
+  # ------------------------------------------------- time-based (need spine) --
+  - name: internet_revenue_mtd
+    label: Internet revenue (month to date)
+    type: cumulative
+    type_params:
+      measure: internet_sales_amount
+      cumulative_type_params:
+        grain_to_date: month
+
+  - name: internet_revenue_ytd
+    label: Internet revenue (year to date)
+    type: cumulative
+    type_params:
+      measure: internet_sales_amount
+      cumulative_type_params:
+        grain_to_date: year
+
+  - name: internet_revenue_rolling_28d
+    label: Internet revenue (rolling 28 days)
+    description: Trailing 28-day window, for a trend line that ignores day-of-week noise.
+    type: cumulative
+    type_params:
+      measure: internet_sales_amount
+      cumulative_type_params:
+        window: 28 days
+
+  - name: internet_revenue_yoy_pct
+    label: Internet revenue YoY %
+    description: >
+      Change against the same period one year earlier. Null when the prior
+      period had no revenue, so a from-zero start does not render as infinity.
+    type: derived
+    type_params:
+      expr: case when revenue_prior = 0 then null else (revenue_current - revenue_prior) / revenue_prior end
+      metrics:
+        - name: internet_revenue
+          alias: revenue_current
+        - name: internet_revenue
+          offset_window: 1 year
+          alias: revenue_prior
+
+# A saved query names a dashboard panel's exact question once, so the panel and
+# any scheduled export stay in step. Run it with:
+#   mf query --saved-query internet_sales_overview
+saved_queries:
+  - name: internet_sales_overview
+    description: The headline online-sales cut -- monthly, by product category.
+    query_params:
+      metrics:
+        - internet_revenue
+        - internet_orders
+        - internet_average_order_value
+        - internet_gross_margin_pct
+      group_by:
+        - TimeDimension('internet_sales_line__order_date', 'month')
+        - Dimension('product__product_category_name')

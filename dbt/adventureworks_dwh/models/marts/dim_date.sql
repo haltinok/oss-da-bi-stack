@@ -10,14 +10,25 @@
 -- (source calendar; with the default `date_shift_years: 12` these land in
 -- 2020-2026 in the mart -- see macros/shift_history_date.sql)
 -- The source is now the live postgres_active sandbox, whose simulator stamps new
--- orders and inventory movements with `now()`, so the spine runs well past the
--- historical data to keep those live date keys in range.
+-- orders and inventory movements with `now()`, so the spine has to run past
+-- today to keep those live date keys in range.
 -- The `relationships` tests in _marts.yml fail loudly if a fact key lands
 -- outside this window, so widening the source means widening this spine.
 with date_series as (
     select generate_series(
         '2008-01-01'::date,
-        '2040-12-31'::date,
+        -- The upper bound is relative to the build rather than a hardcoded year
+        -- (it was '2040-12-31'). The spine only has to outrun the simulator's
+        -- now() keys and the due/ship dates that trail a couple of weeks behind
+        -- them, so two years of headroom is plenty, and a relative bound can't
+        -- quietly expire the way a fixed one eventually does. It also drops
+        -- ~4.5k rows that no fact or metric query ever reaches.
+        -- This does NOT change what MetricFlow returns: a cumulative metric's
+        -- horizon comes from its own grain_to_date/window and any offset_window
+        -- on the metric, not from where the spine stops.
+        -- Note the model is non-deterministic across builds by design -- the
+        -- tail moves with the build date.
+        (current_date + interval '2 years')::date,
         interval '1 day'
     ) as date_day
 ),
