@@ -21,9 +21,11 @@ taken from environment variables with defaults for the local stack.
 import os
 import random
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import psycopg2
+import yaml
 from faker import Faker
 
 HOST = os.environ.get("POSTGRES_HOST", "postgres_active")
@@ -52,11 +54,36 @@ SHIPPED_STATUS = 5
 DUE_DATE_DAYS = 12
 SHIP_DATE_DAYS = 7
 
-# Per-run chance of creating a new order. The DAG runs every 5 min (288 runs/day),
-# so 0.05 is ~14 orders/day -- visibly alive without swamping the ~2.7 orders/day
-# the seeded history implies (set 0.01 to match it exactly). Override with
-# SIM_ORDER_CHANCE.
-ORDER_CHANCE = float(os.environ.get("SIM_ORDER_CHANCE", "0.05"))
+# The seeded history is not uniform: AdventureWorks launched accessories online
+# partway through and volume ramped, so the whole-history averages are nothing
+# like the last year of it.
+#
+#   seeded year   internet orders/day   bikes as a share of lines
+#   2011                   1.36                    100%
+#   2012                   1.42                    100%
+#   2013                   3.25                     25%
+#   2014 (to Jun)          4.85                     17.5%
+#
+# Both the rate and the product mix are therefore measured over a trailing
+# window of the seeded history rather than all of it, so what the simulator
+# writes continues the series instead of stepping off it. Bikes carry ~95% of
+# revenue, so drawing products from the whole history (33% bikes) doubled
+# revenue per order on its own.
+SEED_WINDOW_DAYS = int(os.environ.get("SIM_SEED_WINDOW_DAYS", "365"))
+
+# The DAG's schedule, used to turn an orders/day rate into a per-run chance.
+RUNS_PER_DAY = 288  # every 5 minutes
+
+# Per-run chance of creating a new order. Unset (the default) derives it from
+# the seeded history's trailing window -- 4.84 orders/day over the last 365
+# seeded days, so ~0.017 -- which keeps the live series continuous with the
+# history. Set SIM_ORDER_CHANCE to pin it instead: 0.05 is ~14 orders/day, a
+# livelier demo at the cost of a visible step at the seam.
+ORDER_CHANCE = os.environ.get("SIM_ORDER_CHANCE") or None
+
+# The dbt project whose date-shift vars mark where the seeded history ends; the
+# compose stack mounts ./dbt at /opt/airflow/dbt.
+DEFAULT_DBT_PROJECT = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/adventureworks_dwh")
 
 # Per-run chance that an eligible (in-process / approved / backordered) order
 # advances one step toward shipped. Small values spread the lifecycle over many
@@ -87,24 +114,114 @@ def _ids_where(cur, table, column, where):
     return [row[0] for row in cur.fetchall()]
 
 
-def _sold_products(cur):
+def dbt_date_shift(project_dir=None):
+    """Read `date_shift_years` / `date_shift_cutoff` from dbt_project.yml.
+
+    These have to match what dbt applies, so they are read from the project
+    rather than duplicated here. The cutoff also separates the two vintages
+    living in this table: seeded AdventureWorks history below it, rows the
+    simulator and backfill write above it. Returns (years, cutoff_date).
+    """
+    path = Path(project_dir or DEFAULT_DBT_PROJECT) / "dbt_project.yml"
+    with path.open() as fh:
+        project_vars = (yaml.safe_load(fh) or {}).get("vars") or {}
+    if "date_shift_years" not in project_vars:
+        raise KeyError(f"date_shift_years not found in {path}")
+    years = int(project_vars["date_shift_years"])
+    cutoff = project_vars.get("date_shift_cutoff", "2015-01-01")
+    if isinstance(cutoff, date):
+        return years, cutoff
+    return years, date.fromisoformat(str(cutoff))
+
+
+# The seeded history's own last `SEED_WINDOW_DAYS`, as a SQL predicate over
+# sales_order_header `h`. Anchored on the history's own max order date, not on
+# now(): the stored seed dates are the original 2011-2014 ones (dbt shifts them
+# downstream), so now() is a decade past the end of it.
+_SEED_WINDOW_SQL = """
+    h.online_order_flag = %(online)s
+    AND h.order_date < %(cutoff)s
+    AND h.order_date >= (
+        SELECT max(order_date) - make_interval(days => %(window)s)
+        FROM public.sales_order_header
+        WHERE order_date < %(cutoff)s AND online_order_flag = %(online)s
+    )
+"""
+
+
+def _sold_products(cur, cutoff, window_days=SEED_WINDOW_DAYS):
     """(product_id, list_price) entries for the seeded internet history's lines.
 
     One entry per historical line, not per distinct product, so picking with
     random.choice() weights each product by how often the history actually sold
     it -- mostly cheap accessories, rather than one bike per product.
+
+    Restricted to the history's trailing window (see SEED_WINDOW_DAYS): the
+    product mix drifts hard over the seeded years, and the whole-history
+    weighting put twice as many bikes in the pool as the recent history sells.
+    Falls back to the entire seeded history if the window comes back empty.
     """
+    params = {"online": True, "cutoff": cutoff, "window": window_days}
     cur.execute(
-        """
+        f"""
         SELECT d.product_id, p.list_price
         FROM public.sales_order_detail d
         JOIN public.sales_order_header h ON h.sales_order_id = d.sales_order_id
         JOIN public.product p ON p.product_id = d.product_id
-        WHERE d.modified_date < now() - interval '1 day'
-          AND h.online_order_flag
-        """
+        WHERE {_SEED_WINDOW_SQL}
+        """,
+        params,
     )
-    return [(row[0], float(row[1])) for row in cur.fetchall()]
+    rows = cur.fetchall()
+    if not rows:
+        cur.execute(
+            """
+            SELECT d.product_id, p.list_price
+            FROM public.sales_order_detail d
+            JOIN public.sales_order_header h ON h.sales_order_id = d.sales_order_id
+            JOIN public.product p ON p.product_id = d.product_id
+            WHERE h.online_order_flag AND h.order_date < %(cutoff)s
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    return [(row[0], float(row[1])) for row in rows]
+
+
+def _order_line_counts(cur, cutoff, window_days=SEED_WINDOW_DAYS):
+    """Lines per order, one entry per order, over the seeded history's window.
+
+    Picked from directly rather than averaged, the way load_reseller_keys does
+    it: the real distribution runs 1-8 lines (19% / 36% / 27% / 13% / ...) and
+    averages 2.48 over the window. A hardcoded randint(1, 3) averaged 2.0 and
+    left revenue per order ~17% short of the history it continues.
+    """
+    cur.execute(
+        f"""
+        SELECT count(*)
+        FROM public.sales_order_header h
+        JOIN public.sales_order_detail d ON d.sales_order_id = h.sales_order_id
+        WHERE {_SEED_WINDOW_SQL}
+        GROUP BY h.sales_order_id
+        """,
+        {"online": True, "cutoff": cutoff, "window": window_days},
+    )
+    return [row[0] for row in cur.fetchall()]
+
+
+def seed_order_rate(cur, cutoff, online=True, window_days=SEED_WINDOW_DAYS):
+    """Orders per day over the seeded history's trailing window, or None if empty.
+
+    The calibration target for everything written after the history ends: match
+    the rate the series was running at where it stopped, not its all-time mean
+    (1.4 orders/day in 2011 against 4.8 in 2014).
+    """
+    cur.execute(
+        f"SELECT count(*) FROM public.sales_order_header h WHERE {_SEED_WINDOW_SQL}",
+        {"online": online, "cutoff": cutoff, "window": window_days},
+    )
+    orders = cur.fetchone()[0]
+    return orders / window_days if orders else None
 
 
 def _next_id(cur, table, column):
@@ -164,9 +281,9 @@ def insert_sales_order(cur, keys, order_date=None, status=None):
     bill_to = _pick(keys["address_id"])
     ship_to = _pick(keys["address_id"], bill_to)
 
-    # 1-3 lines per order (the seeded history averages 2.16), each a distinct
-    # product drawn from the frequency-weighted catalogue.
-    chosen = _pick_distinct_products(keys["sold_product"], random.randint(1, 3))
+    # Line count drawn from the seeded window's own distribution (1-8, averaging
+    # 2.48), each line a distinct product from the frequency-weighted catalogue.
+    chosen = _pick_distinct_products(keys["sold_product"], _pick(keys["line_count"], 2))
     lines = []
     sub_total = 0.0
     for line_no, (product_id, list_price) in enumerate(chosen, start=1):
@@ -414,8 +531,14 @@ def delete_leaf_rows(cur):
     return deleted
 
 
-def load_keys(cur):
-    """Existing key values the inserts draw from, so new rows reference real rows."""
+def load_keys(cur, cutoff=None):
+    """Existing key values the inserts draw from, so new rows reference real rows.
+
+    `cutoff` is the dbt date-shift cutoff separating the seeded history from
+    what the simulator writes; read from the dbt project when not supplied.
+    """
+    if cutoff is None:
+        _, cutoff = dbt_date_shift()
     return {
         # Online orders must use individual customers: the DWH's
         # dim_customer only holds customers with no store_id
@@ -423,7 +546,9 @@ def load_keys(cur):
         "individual_customer_id": _ids_where(cur, "customer", "customer_id", "store_id is null"),
         "address_id": _ids(cur, "address", "address_id"),
         "product_id": _ids(cur, "product", "product_id"),
-        "sold_product": _sold_products(cur),
+        "sold_product": _sold_products(cur, cutoff),
+        "seed_order_rate": seed_order_rate(cur, cutoff),
+        "line_count": _order_line_counts(cur, cutoff),
         "ship_method_id": _ids(cur, "ship_method", "ship_method_id"),
         "currency_rate_id": _ids(cur, "currency_rate", "currency_rate_id"),
         "territory_id": _ids(cur, "sales_territory", "territory_id"),
@@ -443,9 +568,17 @@ def main():
                     print("simulate_adventureworks: tables look empty, nothing to do")
                     return
 
+                # Derived from the seeded tail unless SIM_ORDER_CHANCE pins it.
+                if ORDER_CHANCE is not None:
+                    order_chance = float(ORDER_CHANCE)
+                elif keys["seed_order_rate"]:
+                    order_chance = keys["seed_order_rate"] / RUNS_PER_DAY
+                else:
+                    order_chance = 0.0
+
                 inserted = 0
                 created_order_ids = []
-                if random.random() < ORDER_CHANCE:
+                if random.random() < order_chance:
                     order_id, line_ids = insert_sales_order(cur, keys)
                     insert_transaction_history(cur, keys, order_id, line_ids)
                     inserted += 1 + len(line_ids)

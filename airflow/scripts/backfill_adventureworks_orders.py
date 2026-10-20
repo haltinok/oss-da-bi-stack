@@ -43,30 +43,24 @@ year (47% of days populated in the first year, 99% in the last).
 
 import argparse
 import math
-import os
 import random
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
-
-import yaml
 
 from simulate_adventureworks import (
+    DEFAULT_DBT_PROJECT,
     DUE_DATE_DAYS,
     REVISION_NUMBER,
+    SEED_WINDOW_DAYS,
     SHIP_DATE_DAYS,
     SHIPPED_STATUS,
     _connect,
     _next_id,
     _pick,
+    dbt_date_shift,
     insert_sales_order,
     load_keys,
-)
-
-# The dbt project whose date-shift vars have to be honoured; the compose stack
-# mounts ./dbt at /opt/airflow/dbt.
-DEFAULT_DBT_PROJECT = os.environ.get(
-    "DBT_PROJECT_DIR", "/opt/airflow/dbt/adventureworks_dwh"
+    seed_order_rate,
 )
 
 # Final statuses for orders that are already in the past: 5 shipped, 4 rejected,
@@ -75,32 +69,21 @@ FINAL_STATUSES = [5, 4, 6]
 FINAL_WEIGHTS = [96, 2, 2]
 
 
-# Average orders per day, from the seeded history (internet: the live simulator's
-# default rate; reseller: 11.1 orders/month over 33 months).
-DEFAULT_RATE = {"internet": 14.0, "reseller": 11.1 * 12 / 365}
+# Fallback orders/day, used only if the seeded history is missing or too thin to
+# measure. Normally the rate is measured per channel over the history's trailing
+# window (see SEED_WINDOW_DAYS in simulate_adventureworks): 4.84/day internet and
+# 0.35/day reseller as currently seeded.
+#
+# This used to be a hardcoded internet rate of 14.0/day, which was ~3x what the
+# history was running at where it ended. Together with a product pool drawn from
+# the whole history rather than its tail, it put a 4-5x step in the revenue
+# series on the day the backfill takes over.
+FALLBACK_RATE = {"internet": 4.84, "reseller": 11.1 * 12 / 365}
 
 
 def period(channel, day):
     """Idempotency unit: a day for internet, a month for the much sparser reseller."""
     return day if channel == "internet" else (day.year, day.month)
-
-
-def dbt_date_shift(project_dir):
-    """Read `date_shift_years` / `date_shift_cutoff` from dbt_project.yml.
-
-    These have to match what dbt applies, so they are read from the project
-    rather than duplicated here. Returns (years, cutoff_date).
-    """
-    path = Path(project_dir) / "dbt_project.yml"
-    with path.open() as fh:
-        project_vars = (yaml.safe_load(fh) or {}).get("vars") or {}
-    if "date_shift_years" not in project_vars:
-        raise KeyError(f"date_shift_years not found in {path}")
-    years = int(project_vars["date_shift_years"])
-    cutoff = project_vars.get("date_shift_cutoff", "2015-01-01")
-    if isinstance(cutoff, date):
-        return years, cutoff
-    return years, date.fromisoformat(str(cutoff))
 
 
 def periods_with_orders(cur, channel, start, end, shift_years, shift_cutoff):
@@ -253,6 +236,11 @@ def main():
     parser.add_argument("--channel", choices=["both", "internet", "reseller"], default="both")
     parser.add_argument("--seed", type=int, help="random seed, for a reproducible backfill")
     parser.add_argument(
+        "--rate", type=float,
+        help="orders/day to generate, both channels; default: measured per channel "
+             f"over the seeded history's last {SEED_WINDOW_DAYS} days",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="report the periods that would be filled, write nothing",
     )
@@ -282,19 +270,24 @@ def main():
             if end <= args.start:
                 print(f"backfill: nothing to do (start={args.start}, end={end})")
                 return
-            keys = load_keys(cur)
+            keys = load_keys(cur, shift_cutoff)
             channels = ["internet", "reseller"] if args.channel == "both" else [args.channel]
             rkeys = load_reseller_keys(cur) if "reseller" in channels else None
             for channel in channels:
                 done = periods_with_orders(
                     cur, channel, args.start, end, shift_years, shift_cutoff
                 )
+                # Match the rate the history was running at where it ended, so
+                # the backfill continues the series instead of stepping off it.
+                rate = args.rate or seed_order_rate(
+                    cur, shift_cutoff, online=channel == "internet"
+                ) or FALLBACK_RATE[channel]
                 orders, filled = 0, set()
                 day = args.start
                 while day < end:
                     if period(channel, day) not in done:
                         filled.add(period(channel, day))
-                        for _ in range(poisson(DEFAULT_RATE[channel])):
+                        for _ in range(poisson(rate)):
                             at = datetime.combine(day, time(), timezone.utc) + timedelta(
                                 seconds=random.randint(0, 86_399)
                             )
@@ -310,7 +303,8 @@ def main():
                 unit = "days" if channel == "internet" else "months"
                 print(f"backfill{' (dry run)' if args.dry_run else ''} {channel}: "
                       f"{orders} orders over {args.start}..{end} (exclusive) into "
-                      f"{len(filled)} empty {unit}, {len(done)} {unit} already present")
+                      f"{len(filled)} empty {unit}, {len(done)} {unit} already present "
+                      f"(rate {rate:.3f} orders/day)")
             if args.dry_run:
                 conn.rollback()
     finally:
