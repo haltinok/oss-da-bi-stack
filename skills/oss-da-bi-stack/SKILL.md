@@ -162,9 +162,7 @@ runs `dbt build`.
   `psql ... -c "drop schema if exists raw_active cascade"` then
   `docker exec -w /opt/airflow/dlt/pipelines/postgres_active_to_postgres_aw oss_airflow_scheduler python aw_pipeline.py`.
   dlt's cursor lives in the dropped schema, so this also resets the incremental state.
-- **`dim_date` runs to two years past the build date** because the simulator stamps
-  new rows with `now()`. The bound is relative rather than a fixed year so it can't
-  expire; it also doubles as MetricFlow's time spine (`time_spine` in `_marts.yml`).
+- **`dim_date` runs to 2040** because the simulator stamps new rows with `now()`.
 - The seed is referentially consistent, so `dbt build` should pass 168/168. If a
   relationship test fails, check `scripts/gen_adventureworks_seed.py`'s closure
   (`SELECTION_SETS` / `TABLE_PREDICATES`) rather than the dbt models.
