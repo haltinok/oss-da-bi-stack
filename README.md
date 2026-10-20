@@ -208,8 +208,10 @@ Server required.
   every table (full copies of tables with 100 rows or fewer). The Postgres image runs it
   automatically on first start.
 - **Simulation** — the `simulate_adventureworks` DAG (every 5 min) creates a sales
-  order with probability `SIM_ORDER_CHANCE` (default 0.05 ≈ 14 orders/day; set 0.01
-  to match the seeded ~2.7 orders/day), inserts work orders, transaction history,
+  order with probability `SIM_ORDER_CHANCE` — by default derived from the seeded
+  history's last 365 days (~0.017, 4.8 orders/day) so the live series continues the
+  history rather than stepping off it; set it to pin a livelier rate (0.05 ≈ 14
+  orders/day) — inserts work orders, transaction history,
   reviews and cart items; advances order statuses forward through the lifecycle
   (in process → approved → shipped, with occasional backordered / rejected /
   cancelled); updates prices, inventory and names; and deletes leaf rows — always

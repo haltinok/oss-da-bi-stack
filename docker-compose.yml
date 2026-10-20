@@ -14,8 +14,11 @@ x-airflow-common: &airflow-common
     CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
     # Used by the mart sync to read the star as the read-only bi_ro role.
     BI_READONLY_PASSWORD: ${BI_READONLY_PASSWORD:?set BI_READONLY_PASSWORD in .env}
-    # Simulator tuning: per-run chance of creating a new sales order.
-    SIM_ORDER_CHANCE: ${SIM_ORDER_CHANCE:-0.05}
+    # Simulator tuning: per-run chance of creating a new sales order. Empty by
+    # default, which derives it from the seeded history's trailing window so the
+    # live series continues the history instead of stepping off it (~0.017,
+    # 4.8 orders/day). Set it in .env to pin a livelier rate: 0.05 is ~14/day.
+    SIM_ORDER_CHANCE: ${SIM_ORDER_CHANCE:-}
     # Per-run chance an order advances toward shipped, or is rejected/cancelled.
     STATUS_ADVANCE_CHANCE: ${STATUS_ADVANCE_CHANCE:-0.25}
     STATUS_CANCEL_CHANCE: ${STATUS_CANCEL_CHANCE:-0.05}
