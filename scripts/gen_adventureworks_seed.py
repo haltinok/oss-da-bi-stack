@@ -42,37 +42,47 @@ SCRATCH_SCHEMA = "seed_sel"
 
 # Driver tables sampled at 10%; the DWH tables are derived from them.
 #
-# Orders are sampled **date-stratified**, not uniformly at random: one order per
-# order-day first, then the rest of the 10% budget at random. A flat random 10%
-# spread the sample thinly over the days the source covers rather than over the
-# orders, which left 333 of the 1127 days the history spans with no orders at
-# all -- and worst in the earliest year, because AdventureWorks order volume
-# ramps up over time (47% of days populated in the first year against 99% in the
-# last). Any daily time series over the seed was visibly ragged, and more ragged
-# the further back it went. Stratifying costs nothing: the row budget is the
-# same, the orders are real, and day coverage goes from 794 to ~1124 of 1127 --
-# the 3 days the full source itself has no orders on stay empty.
+# Orders are sampled **stratified by (channel, order-day)**, not uniformly at
+# random: one order per channel per day first, then the rest of the 10% budget
+# at random.
+#
+# A flat random 10% spread the sample over the orders rather than over the days
+# they fall on, which left 333 of the 1127 days the history spans with no orders
+# at all -- worst in the earliest year, because AdventureWorks order volume ramps
+# up over time (47% of days populated in the first year against 99% in the last).
+# Any daily series over the seed was ragged, and more ragged the further back it
+# went.
+#
+# Stratifying per day alone fixed the total but not the channels: the two are
+# very unevenly spread in the source -- internet sells on all 1124 days it
+# covers, reseller on just 40 (it is effectively a monthly channel) -- so on 13
+# days the single guaranteed order happened to be a reseller one and internet
+# was left empty. Guaranteeing a row per channel per day covers both.
+#
+# It still costs nothing: 1164 channel-days against a 3147-order budget, the
+# orders are real, and the remainder is filled at random as before. The 3 days
+# the full source itself has no orders on stay empty.
 SAMPLE_SQL = {
     "be_sample": "select business_entity_id from raw.business_entity order by random() limit (select greatest(1, ceil(count(*) * 0.10))::int from raw.business_entity)",
     "prod_sample": "select product_id from raw.product order by random() limit (select greatest(1, ceil(count(*) * 0.10))::int from raw.product)",
     "so": """
-        with per_day as (
-            select distinct on (order_date::date) sales_order_id
+        with per_channel_day as (
+            select distinct on (online_order_flag, order_date::date) sales_order_id
             from raw.sales_order_header
-            order by order_date::date, random()
+            order by online_order_flag, order_date::date, random()
         ),
         budget as (
             select greatest(1, ceil(count(*) * 0.10))::int as target,
-                   count(distinct order_date::date)::int as days
+                   count(distinct (online_order_flag, order_date::date))::int as channel_days
             from raw.sales_order_header
         )
-        select sales_order_id from per_day
+        select sales_order_id from per_channel_day
         union
         select sales_order_id from (
             select sales_order_id from raw.sales_order_header
-            where sales_order_id not in (select sales_order_id from per_day)
+            where sales_order_id not in (select sales_order_id from per_channel_day)
             order by random()
-            limit (select greatest(0, target - days) from budget)
+            limit (select greatest(0, target - channel_days) from budget)
         ) fill
     """,
 }
