@@ -3,8 +3,7 @@ version: 2
 models:
   - name: dim_date
     description: >
-      Generated date spine, 2008-01-01 to two years past the build date
-      (one row per day).
+      Generated date spine, 2008-01-01 to 2040-12-31 (one row per day).
       The bounds must cover every date key produced by the facts
       (sales orders 2011-05-31..2014-07-12, product inventory 2008-03-31..2014-08-12,
       currency rates and quotas 2011-05-31..2014-05-31; source calendar, shifted
@@ -15,6 +14,11 @@ models:
     # rolling windows) and period-over-period offsets join it to get the
     # periods where a fact has no rows at all. One row per day, already unique
     # and gapless by construction.
+    # The upper bound above is deliberately a fixed date and not something like
+    # current_date + interval '2 years': a relative bound rebuilds a different
+    # table on every run, and the far-future rows cost nothing, since a
+    # cumulative metric's horizon comes from its own grain_to_date/window and
+    # any offset_window on the metric, not from where this spine stops.
     time_spine:
       standard_granularity_column: full_date
     columns:
