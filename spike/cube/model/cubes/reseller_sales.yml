@@ -1,0 +1,325 @@
+cubes:
+  - name: reseller_sales
+    # Rejected (4) and cancelled (6) orders are not revenue; the dashboard leaves
+    # them out everywhere, so the cube does too.
+    sql: >
+      SELECT * FROM mart.fact_reseller_sales WHERE order_status NOT IN (4, 6)
+    data_source: default
+
+    joins:
+      - name: products
+        relationship: many_to_one
+        sql: "{CUBE}.product_key = {products}.product_key"
+      - name: dates
+        relationship: many_to_one
+        sql: "{CUBE}.order_date_key = {dates}.date_key"
+      - name: territories
+        relationship: many_to_one
+        sql: "{CUBE}.sales_territory_key = {territories}.sales_territory_key"
+
+    dimensions:
+      - name: order_line_id
+        sql: "CONCAT({CUBE}.sales_order_number, '-', {CUBE}.sales_order_line_number)"
+        type: string
+        primary_key: true
+      - name: order_number
+        sql: sales_order_number
+        type: string
+      - name: order_date
+        sql: order_date
+        type: time
+
+    measures:
+      - name: revenue
+        sql: sales_amount
+        type: sum
+      - name: product_cost
+        sql: "COALESCE({CUBE}.total_product_cost, 0)"
+        type: sum
+      - name: gross_profit
+        sql: "{CUBE}.sales_amount - COALESCE({CUBE}.total_product_cost, 0)"
+        type: sum
+      - name: margin_pct
+        sql: "100 * {gross_profit} / NULLIF({revenue}, 0)"
+        type: number
+      - name: units
+        sql: order_quantity
+        type: sum
+      - name: discount
+        sql: discount_amount
+        type: sum
+      - name: lines
+        type: count
+      - name: orders
+        sql: sales_order_number
+        type: count_distinct
+      - name: aov
+        sql: "{revenue} / NULLIF({orders}, 0)"
+        type: number
+
+    pre_aggregations:
+      # Additive measures, monthly, by everything the dashboard slices on. Every
+      # rollup carries the territory dimensions (Phase 5 row-level security filters on them).
+      - name: monthly
+        measures: [revenue, product_cost, gross_profit, units, discount, lines]
+        dimensions:
+          - territories.key
+          - territories.region
+          - territories.group_name
+          - products.category
+          - products.subcategory
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      # Product-level slices (top products table, product filter), additive.
+      - name: monthly_product
+        measures: [revenue, product_cost, gross_profit, units]
+        dimensions:
+          - products.name
+          - products.category
+          - products.subcategory
+          - territories.region
+          - territories.group_name
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      # count_distinct is not additive, so a rollup serves only queries whose
+      # dimensions (group-by AND filtered) match it exactly. One rollup per grain the
+      # dashboard asks for, with/without the fiscal-year and Phase 5 territory
+      # filters, each as a monthly series (orders_month_*) and as a whole-period
+      # total with no time dimension (orders_*).
+      - name: orders_month_all
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.region
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.region
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_group_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.group_name
+          - territories.region
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_group_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.group_name
+          - territories.region
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_mix
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_mix_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_mix_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - territories.region
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_month_mix_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - territories.region
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        partition_granularity: month
+        refresh_key:
+          every: 1 hour
+          incremental: true
+          update_window: 5 week
+
+      - name: orders_all
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        refresh_key:
+          every: 1 day
+
+      - name: orders_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 day
+
+      - name: orders_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.region
+        refresh_key:
+          every: 1 day
+
+      - name: orders_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.region
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 day
+
+      - name: orders_group_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.group_name
+          - territories.region
+        refresh_key:
+          every: 1 day
+
+      - name: orders_group_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - territories.group_name
+          - territories.region
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 day
+
+      - name: orders_mix
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+        refresh_key:
+          every: 1 day
+
+      - name: orders_mix_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 day
+
+      - name: orders_mix_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - territories.region
+        refresh_key:
+          every: 1 day
+
+      - name: orders_mix_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - territories.region
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 day
+
+      # Daily totals for the live strip.
+      - name: daily
+        measures: [revenue, units, lines]
+        dimensions:
+          - territories.key
+          - territories.region
+        time_dimension: order_date
+        granularity: day
+        partition_granularity: month
+        refresh_key:
+          every: 10 minutes
+          incremental: true
+          update_window: 1 week

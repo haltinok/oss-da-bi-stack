@@ -1,0 +1,19 @@
+cubes:
+  - name: territories
+    sql_table: mart.dim_sales_territory
+    data_source: default
+
+    dimensions:
+      - name: key
+        sql: sales_territory_key
+        type: number
+        primary_key: true
+      - name: region
+        sql: sales_territory_region
+        type: string
+      - name: group_name
+        sql: sales_territory_group
+        type: string
+      - name: country
+        sql: sales_territory_country
+        type: string

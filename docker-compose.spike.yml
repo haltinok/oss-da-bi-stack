@@ -84,6 +84,9 @@ services:
       CUBEJS_DB_PASS: ${STARROCKS_PASSWORD:-}
       CUBEJS_CUBESTORE_HOST: cubestore
       CUBEJS_SQL_PORT: "15432"
+      # StarRocks (27 GB BE) OOMs on several concurrent 500M-row scans; Cube defaults to 8+.
+      CUBEJS_CONCURRENCY: "${CUBE_CONCURRENCY:-2}"
+      CUBEJS_DB_MAX_POOL: "${CUBE_CONCURRENCY:-2}"
       CUBEJS_SQL_USER: ${CUBE_SQL_USER:-cube}
       CUBEJS_SQL_PASSWORD: ${CUBE_SQL_PASSWORD:?set CUBE_SQL_PASSWORD in .env.spike}
     volumes:
