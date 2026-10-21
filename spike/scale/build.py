@@ -1,13 +1,13 @@
 """Phase 2: build scaled copies of the order tables inside StarRocks.
 
 For copy k in [0, K):
-  order ids        sales_order_id + k * 1_000_000            (bigint)
+  order ids        sales_order_id + k * 1_000_000            (bigint); sales_order_number = 'SO' || id
   customer-side    key + (k % 100) * 1_000_000               (customer/person/address/email/bea, x100)
   dates            + (k % 8) years  (order/due/ship/modified)
 Builds scale_500m from raw, then scale_100m / scale_10m as copy-index subsets
 (copy index = sales_order_id div 1_000_000). Unscaled tables are views over raw.
 
-  uv run --with pymysql python -I spike/scale/build.py [--only 10m|100m|500m]
+  uv run --with pymysql python -I spike/scale/build.py [--only 10m|100m|500m | --cust-only]
 """
 import sys
 import time
@@ -26,7 +26,8 @@ KEYS = {
     "sales_order_detail": {"sales_order_id": "o"},
 }
 CUST_KEYS = {
-    "customer": ["customer_id", "person_id"],
+    "customer": ["customer_id", "person_id", "store_id"],   # store_id too: one store per store-customer copy
+    "store": ["business_entity_id"],
     "person": ["business_entity_id"],
     "email_address": ["business_entity_id"],
     "business_entity_address": ["business_entity_id", "address_id"],
@@ -35,7 +36,7 @@ CUST_KEYS = {
 ORDER_KEYS_DDL = {
     "sales_order_header": ("sales_order_id",),
     "sales_order_detail": ("sales_order_id", "sales_order_detail_id"),
-    "customer": ("customer_id",), "person": ("business_entity_id",), "email_address": ("business_entity_id", "email_address_id"),
+    "customer": ("customer_id",), "store": ("business_entity_id",), "person": ("business_entity_id",), "email_address": ("business_entity_id", "email_address_id"),
     "business_entity_address": ("business_entity_id", "address_id", "address_type_id"), "address": ("address_id",),
 }
 
@@ -83,6 +84,8 @@ def sel_order(table, a, b, base):
             e = f"cast(t.{c} as bigint) + n.k * {OFF}"
         elif kind == "c":
             e = f"if(t.{c} is null, null, cast(t.{c} as bigint) + (n.k % {CUST_COPIES}) * {OFF})"
+        elif c == "sales_order_number":
+            e = f"concat('SO', cast(cast(t.sales_order_id as bigint) + n.k * {OFF} as string))"
         elif c in DATE_COLS:
             e = f"years_add(t.{c}, cast(n.k % 8 as int))"
         else:
@@ -131,6 +134,20 @@ def build_subset(name):
         print(f"  {s}.{tbl}: {secs:.0f}s", flush=True)
 
 
+def build_cust_only():
+    """Rebuild just the customer-side tables in all scales (no 15-minute fact rebuild)."""
+    for tbl in CUST_KEYS:
+        for s in ("scale_500m", "scale_100m", "scale_10m"):
+            cur.execute("select table_type from information_schema.tables where table_schema=%s and table_name=%s", (s, tbl))
+            row = cur.fetchone()
+            if row:
+                run(f"DROP {'VIEW' if row[0] == 'VIEW' else 'TABLE'} {s}.{tbl}")
+            run(ddl(s, tbl))
+            src = sel_cust(tbl) if s == "scale_500m" else f"SELECT * FROM scale_500m.{tbl}"
+            secs = run(f"INSERT INTO {s}.{tbl} {src}")
+            print(f"  {s}.{tbl}: {secs:.0f}s", flush=True)
+
+
 def views(schema):
     scaled = set(KEYS) | set(CUST_KEYS)
     cur.execute("select table_name from information_schema.tables where table_schema='raw' "
@@ -141,6 +158,10 @@ def views(schema):
 
 
 if __name__ == "__main__":
+    if "--cust-only" in sys.argv:
+        build_cust_only()
+        print("done")
+        sys.exit(0)
     only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
     run("CREATE DATABASE IF NOT EXISTS scale_meta")
     run("DROP TABLE IF EXISTS scale_meta.nums")
