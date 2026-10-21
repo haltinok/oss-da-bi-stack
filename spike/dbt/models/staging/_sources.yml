@@ -1,0 +1,40 @@
+version: 2
+
+sources:
+  - name: adventureworks
+    description: >
+      The ingestr-loaded AdventureWorks tables in StarRocks. The var
+      `aw_source_schema` picks the Phase 2 scale (scale_10m / 100m / 500m); unscaled
+      tables there are views over `raw`.
+    schema: "{{ var('aw_source_schema') }}"
+    tables:
+      - name: sales_order_header
+        columns:
+          - name: sales_order_id
+            data_tests: [unique, not_null]
+      - name: sales_order_detail
+      - name: currency_rate
+        columns:
+          - name: currency_rate_id
+            data_tests: [unique, not_null]
+      - name: product_cost_history
+      - name: customer
+        columns:
+          - name: customer_id
+            data_tests: [unique, not_null]
+      - name: product
+        columns:
+          - name: product_id
+            data_tests: [unique, not_null]
+      - name: product_subcategory
+      - name: product_category
+      - name: sales_territory
+        columns:
+          - name: territory_id
+            data_tests: [unique, not_null]
+      - name: person
+      - name: email_address
+      - name: address
+      - name: business_entity_address
+      - name: state_province
+      - name: country_region

@@ -1,0 +1,13 @@
+# No credentials in git: connection settings come from the environment.
+spike_starrocks:
+  target: dev
+  outputs:
+    dev:
+      type: starrocks
+      host: "{{ env_var('DBT_SR_HOST', '127.0.0.1') }}"
+      port: "{{ env_var('DBT_SR_PORT', '9030') | as_number }}"
+      username: "{{ env_var('DBT_SR_USER', 'root') }}"
+      password: "{{ env_var('DBT_SR_PASSWORD', '') }}"
+      schema: "{{ env_var('DBT_SR_SCHEMA', 'adventureworks_dwh') }}"
+      version: "3.3"
+      threads: "{{ env_var('DBT_SR_THREADS', '4') | as_number }}"

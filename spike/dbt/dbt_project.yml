@@ -1,0 +1,30 @@
+# StarRocks port of dbt/adventureworks_dwh for the spike (see ../../starrocks-cube-spike.md).
+# The Postgres project stays as is; this one reads the scaled schemas built in Phase 2.
+name: 'spike_starrocks'
+version: '1.0.0'
+config-version: 2
+profile: 'spike_starrocks'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  spike_starrocks:
+    staging:
+      +schema: stage
+      +materialized: view
+    marts:
+      +schema: mart
+      +materialized: table
+
+vars:
+  # Which Phase 2 schema to read: scale_10m | scale_100m | scale_500m (or raw).
+  aw_source_schema: scale_10m
+  # The scaled data already spans 2011-2021, so no history shift (see the
+  # Postgres project's macros/shift_history_date.sql). Keep 0.
+  date_shift_years: 0
+  date_shift_cutoff: '2015-01-01'

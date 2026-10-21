@@ -1,0 +1,85 @@
+version: 2
+
+# Spike scope: the marts the dashboard reads plus dim_customer / dim_geography.
+# dim_promotion, dim_currency, dim_reseller and dim_employee are not ported, so
+# their relationships tests are left out.
+models:
+  - name: dim_date
+    columns:
+      - name: date_key
+        data_tests: [unique, not_null]
+      - name: full_date
+        data_tests: [unique, not_null]
+  - name: dim_product
+    columns:
+      - name: product_key
+        data_tests: [unique, not_null]
+  - name: dim_sales_territory
+    columns:
+      - name: sales_territory_key
+        data_tests: [unique, not_null]
+  - name: dim_geography
+    columns:
+      - name: geography_key
+        data_tests: [unique, not_null]
+      - name: sales_territory_key
+        data_tests:
+          - relationships:
+              arguments: { to: "ref('dim_sales_territory')", field: sales_territory_key }
+  - name: dim_customer
+    columns:
+      - name: customer_key
+        data_tests: [unique, not_null]
+      - name: geography_key
+        data_tests:
+          - relationships:
+              arguments: { to: "ref('dim_geography')", field: geography_key }
+  - name: fact_internet_sales
+    columns:
+      - name: product_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: "ref('dim_product')", field: product_key }
+      - name: order_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: "ref('dim_date')", field: date_key }
+      - name: due_date_key
+        data_tests:
+          - relationships:
+              arguments: { to: "ref('dim_date')", field: date_key }
+      - name: ship_date_key
+        data_tests:
+          - relationships:
+              arguments: { to: "ref('dim_date')", field: date_key }
+      - name: sales_territory_key
+        data_tests:
+          - relationships:
+              arguments: { to: "ref('dim_sales_territory')", field: sales_territory_key }
+      - name: customer_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: "ref('dim_customer')", field: customer_key }
+  - name: fact_reseller_sales
+    columns:
+      - name: product_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: "ref('dim_product')", field: product_key }
+      - name: order_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: { to: "ref('dim_date')", field: date_key }
+      - name: sales_territory_key
+        data_tests:
+          - relationships:
+              arguments: { to: "ref('dim_sales_territory')", field: sales_territory_key }
+  - name: product_versions
+    columns:
+      - name: product_id
+        data_tests: [not_null]
