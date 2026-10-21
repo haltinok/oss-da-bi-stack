@@ -13,8 +13,8 @@ services:
   starrocks:
     <<: *restart
     image: starrocks/allin1-ubuntu:${STARROCKS_VERSION:-3.3-latest}
-    # FE + BE in one container; give the Docker VM / host >= 16 GB.
-    mem_limit: ${STARROCKS_MEM_LIMIT:-16g}
+    # FE + BE in one container; give the Docker VM / host >= 32 GB for the 500M scale (16 GB OOMs on count(distinct)).
+    mem_limit: ${STARROCKS_MEM_LIMIT:-32g}
     ports:
       - "127.0.0.1:${STARROCKS_MYSQL_PORT:-9030}:9030"
       - "127.0.0.1:${STARROCKS_HTTP_PORT:-8030}:8030"
