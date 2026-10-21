@@ -25,3 +25,4 @@ __pycache__/
 # --- OpenChamber browser screenshots (local) ------------------------------
 .openchamber/
 .vscode/mcp.json
+spike/ingest/deleted_orders.json

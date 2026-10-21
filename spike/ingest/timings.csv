@@ -25,3 +25,7 @@ ts,table,strategy,seconds,status
 2026-10-21T20:04:27+03:00,special_offer,merge,1.0,ok
 2026-10-21T20:04:29+03:00,state_province,merge,2.0,ok
 2026-10-21T20:04:31+03:00,store,merge,1.6,ok
+2026-10-21T20:08:02+03:00,sales_order_detail,merge,2.8,ok
+2026-10-21T20:08:04+03:00,sales_order_header,merge,1.9,ok
+2026-10-21T20:08:18+03:00,sales_order_detail,merge,2.0,ok
+2026-10-21T20:08:20+03:00,sales_order_header,merge,1.8,ok
