@@ -25,6 +25,16 @@ x-airflow-common: &airflow-common
     DBT_SR_PORT: "9030"
     STARROCKS_HOST: starrocks-fe
     STARROCKS_PORT: "9030"
+    # `inventory_weekly_proposals` DAG (the proposal agent): its Keycloak service account and where it reaches
+    # Cube, the auth service and the actions service. ANTHROPIC_API_KEY is optional: without it the agent drafts
+    # with plain rules instead of a model.
+    AGENT_CLIENT_SECRET: ${AGENT_CLIENT_SECRET:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    AGENT_LOG_DIR: /opt/airflow/logs/agent
+    KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/token
+    AUTH_URL: http://auth:8200
+    CUBE_URL: http://cube:4000/cubejs-api/v1/load
+    ACTIONS_URL: http://actions:8300
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?set AIRFLOW_FERNET_KEY in .env}
     AIRFLOW__API__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?set AIRFLOW_WEBSERVER_SECRET_KEY in .env}
     # Airflow 3 defaults to the Simple Auth Manager; switching to FAB keeps
@@ -40,6 +50,7 @@ x-airflow-common: &airflow-common
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
     - ./airflow/scripts:/opt/airflow/scripts
+    - ./agent:/opt/airflow/agent:ro
     - ./dlt:/opt/airflow/dlt
     - ./dbt:/opt/airflow/dbt
   depends_on:

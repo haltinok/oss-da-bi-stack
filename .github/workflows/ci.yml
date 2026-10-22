@@ -163,7 +163,10 @@ jobs:
             ingestr --version
             /home/airflow/dbt-starrocks/bin/pip check
             /home/airflow/dbt-starrocks/bin/dbt --version
-            echo "ingestr + dbt-starrocks checks passed"
+            # the weekly proposal agent's own environment
+            /home/airflow/agent/bin/pip check
+            /home/airflow/agent/bin/python -c "import anthropic, requests; print(\"anthropic\", anthropic.__version__)"
+            echo "ingestr + dbt-starrocks + agent checks passed"
           '
 
   # End to end on the CDC path, which nothing else in CI touches: bring up the
@@ -324,7 +327,7 @@ jobs:
             echo "::group::$c"; docker logs --tail 60 "$c" 2>&1 || true; echo "::endgroup::"
           done
 
-  # The actions service's validation rules need no services.
+  # The actions service's validation rules and the proposal agent (against a scripted stand-in for the model) need no services.
   actions-rules:
     runs-on: ubuntu-latest
     steps:
@@ -332,5 +335,5 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install pytest
-      - run: python -m pytest actions/tests/test_rules.py -q
+      - run: pip install pytest requests
+      - run: python -m pytest actions/tests/test_rules.py agent/tests -q
