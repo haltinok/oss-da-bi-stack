@@ -348,7 +348,7 @@ services:
   # Airflow container (ingestr) would fail; here the backend registers by hostname.
   # ------------------------------------------------------------------------
   starrocks-fe:
-    image: starrocks/fe-ubuntu:3.3-latest
+    image: starrocks/fe-ubuntu:3.5-latest
     profiles: [starrocks]
     restart: unless-stopped
     hostname: starrocks-fe
@@ -370,7 +370,7 @@ services:
       start_period: 30s
 
   starrocks-be:
-    image: starrocks/be-ubuntu:3.3-latest
+    image: starrocks/be-ubuntu:3.5-latest
     profiles: [starrocks]
     restart: unless-stopped
     hostname: starrocks-be
@@ -390,7 +390,7 @@ services:
       start_period: 30s
 
   starrocks-init:
-    image: starrocks/fe-ubuntu:3.3-latest
+    image: starrocks/fe-ubuntu:3.5-latest
     profiles: [starrocks]
     restart: "no"
     entrypoint: ["bash", "/init.sh"]
@@ -531,7 +531,7 @@ services:
   dashboard-cube:
     # The dashboard UI (dashboard/static), served as static files with the Cube data source
     # injected in front of app.js (Keycloak sign-in + Cube queries instead of SQL).
-    image: nginx:1.27-alpine
+    image: nginx:1.29-alpine
     profiles: [starrocks]
     restart: unless-stopped
     depends_on:
