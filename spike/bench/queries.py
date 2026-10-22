@@ -1,4 +1,4 @@
-"""The dashboard's panel queries as Cube queries (what spike/dashboard/cube-source.mjs sends)."""
+"""The dashboard's panel queries as Cube queries (what dashboard/cube/cube-source.mjs sends)."""
 import copy
 
 CH = {"internet": "internet_sales", "reseller": "reseller_sales"}

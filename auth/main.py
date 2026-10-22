@@ -7,7 +7,7 @@ POST /token   Authorization: Bearer <Keycloak access token>
   4. mint a Cube JWT {user_id, role, territories} signed with CUBEJS_API_SECRET, 15 min
 
 Cube re-verifies that signature and applies the territory filter in queryRewrite
-(spike/cube/cube.js), so a client can neither widen its territories nor extend the token.
+(cube/cube.js), so a client can neither widen its territories nor extend the token.
 """
 import os
 import time

@@ -7,14 +7,14 @@ server {
     index index.html;
 
     # Where the browser finds Keycloak, the auth service and Cube (published on localhost).
-    location = /spike/config.js {
+    location = /cube/config.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache";
-        return 200 'window.SPIKE = { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" };';
+        return 200 'window.STACK = { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" };';
     }
 
-    location /spike/ {
-        alias /srv/spike/;
+    location /cube/ {
+        alias /srv/cube/;
         default_type text/javascript;   # .mjs is not in nginx's mime.types
         add_header Cache-Control "no-cache";
     }
@@ -24,6 +24,6 @@ server {
         add_header Cache-Control "no-cache";
         sub_filter_once on;
         sub_filter '<script src="app.js"></script>'
-                   '<script src="spike/config.js"></script><script src="spike/boot.js"></script><script type="module" src="spike/cube-source.mjs"></script><script src="app.js"></script>';
+                   '<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script src="app.js"></script>';
     }
 }

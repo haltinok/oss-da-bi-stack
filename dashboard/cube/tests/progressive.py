@@ -1,7 +1,7 @@
 """Progressive rendering + cancellation check (Phase 6). Needs the spike stack up.
 
   set -a; . ./.env.spike; set +a
-  uv run --with playwright python -I spike/dashboard/progressive.py [user]
+  uv run --with playwright python -I dashboard/cube/tests/progressive.py [user] [subcategory]
 Applies a subcategory filter as `user` (default admin) and reports when each panel stops being dimmed
 and when the Orders tile resolves; then changes the filter again mid-flight and counts cancelled requests.
 """

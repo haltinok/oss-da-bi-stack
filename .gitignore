@@ -30,3 +30,4 @@ spike/ingest/deleted_orders.json
 # --- dbt (spike) ---
 spike/bench/conf-*/
 dbt/**/.venv/
+dashboard/cube/tests/screenshots/
