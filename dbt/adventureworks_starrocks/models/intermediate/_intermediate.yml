@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: int_as_of_date
+    description: One row, the newest order date across both facts. All trailing-window logic anchors here, not on the current date.
+    columns:
+      - name: as_of_date
+        description: Newest order date in the data.
+        data_tests:
+          - not_null
