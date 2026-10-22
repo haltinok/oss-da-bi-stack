@@ -1,18 +1,20 @@
 {{ config(
-    table_type='DUPLICATE',
+    materialized='incremental',
+    unique_key=['order_date', 'sales_order_number', 'sales_order_line_number'],
     keys=['order_date', 'sales_order_number', 'sales_order_line_number'],
+    table_type='PRIMARY',
     partition_type='Expr',
     partition_by=["date_trunc('month', order_date)"],
-    distributed_by=['product_key'],
+    distributed_by=['sales_order_number'],
     buckets=4,
+    post_hook=["{{ delete_removed_orders() }}"],
 ) }}
 
 -- Online (web) sales order lines.
 -- Grain: one row per (sales_order_number, sales_order_line_number).
--- Shared line/measure logic lives in int_sales_order_lines.
+-- Incremental upsert (primary-key table): see macros/sales_order_lines.sql.
 with lines as (
-    select * from {{ ref('int_sales_order_lines') }}
-    where channel = 'internet'
+    {{ sales_order_lines('internet') }}
 )
 
 select
@@ -42,5 +44,6 @@ select
     carrier_tracking_number,
     customer_po_number,
     due_date,
-    ship_date
+    ship_date,
+    source_modified_date
 from lines

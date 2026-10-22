@@ -328,6 +328,15 @@ every minute). Measured end to end with `spike/bench/freshness.py` (random inser
 median 126 s, fastest 86 s, slowest 276 s, none missed (a small sample; the design
 bound is one 5-minute cycle + ~35 s of pipeline + ~1 min for Cube, about 6.5 minutes).
 
+**Incremental facts.** `fact_internet_sales` and `fact_reseller_sales` are primary-key tables
+(`order_date`, `sales_order_number`, `sales_order_line_number`) upserted each cycle. A run rebuilds only the
+orders whose header or line `modified_date` is at or after the fact's own watermark (`max(source_modified_date)`
+minus a 60-minute lookback, `incremental_lookback_minutes`), so the line-number window and joins scan a few
+orders, not every line. A post-hook deletes fact rows whose order left staging (hard deletes, via the PK
+snapshot). Known limits: a line deleted from a surviving order, or an order whose `order_date` changes, is not
+removed until `dbt build --full-refresh`; and the 500M-row effect is not measured yet (the full rebuild was
+~22 min per fact). Changing a fact's columns needs a one-off `--full-refresh`.
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.
