@@ -5,6 +5,15 @@
   POST /actions/campaigns        {idempotency_key, product_ids, discount_pct, days}   marketing, admin
   GET  /actions/log                                                                   the role's own kinds
 
+  POST /proposals                {run_id, proposals: [...]}                           the proposal agent only
+  GET  /proposals                                                                     open proposals of the role's kinds
+  POST /proposals/{id}/dismiss                                                        the role's kinds
+  (an action request may carry proposal_id: approving it marks the proposal approved)
+
+The proposal agent (a Keycloak service account of its own client) can only draft: every proposal is validated
+by the same rules as an action before it is stored, and it cannot create, approve or dismiss anything. A person
+turns a proposal into an action through the normal endpoints, with whatever edits the rules allow.
+
 Every request carries a Keycloak access token, verified like the auth service does (signature, issuer,
 expiry, client). Nothing the client sends is trusted beyond the product ids and the edits a role may make
 (a quantity, a discount, a length): the vendor, unit price, lead time and the product's state come from the
@@ -19,7 +28,8 @@ import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from decimal import Decimal
+from typing import Annotated, Literal
 
 import jwt
 import psycopg2
@@ -35,8 +45,11 @@ import rules
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
+AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
 ROLE_ORDER = ("admin", "purchasing", "marketing")
-KINDS = {"admin": ("purchase_order", "work_order", "campaign"), "purchasing": ("purchase_order", "work_order"), "marketing": ("campaign",)}
+# What each role may create. The agent creates none: it only drafts proposals.
+KINDS = {"admin": ("purchase_order", "work_order", "campaign"), "purchasing": ("purchase_order", "work_order"),
+         "marketing": ("campaign",), "agent": ()}
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="actions")
@@ -63,10 +76,14 @@ def current_user(authorization: str = Header(default="")) -> User:
         claims = jwt.decode(raw, key, algorithms=["RS256"], issuer=ISSUER, options={"verify_aud": False})
     except jwt.PyJWTError as exc:
         raise HTTPException(401, f"invalid token: {exc}") from exc
-    if claims.get("azp") != CLIENT_ID:
-        raise HTTPException(401, "token was not issued to the dashboard client")
+    azp = claims.get("azp")
     roles = claims.get("realm_access", {}).get("roles", [])
-    role = next((r for r in ROLE_ORDER if r in roles), None)
+    if azp == AGENT_CLIENT_ID:
+        role = "agent" if "agent" in roles else None     # the agent client can only ever be the agent
+    elif azp == CLIENT_ID:
+        role = next((r for r in ROLE_ORDER if r in roles), None)
+    else:
+        raise HTTPException(401, "token was not issued to a known client")
     if role is None:
         raise HTTPException(403, "your role has no inventory actions")
     return User(name=claims["preferred_username"], role=role)
@@ -90,8 +107,9 @@ def inventory_rows(product_ids: list[int]) -> dict[int, dict]:
     """The current mart.inventory_health rows for these products. dbt drops and recreates the table on every
     build, so for a split second it does not exist: retry that (and only that) briefly."""
     marks = ", ".join(["%s"] * len(product_ids))
-    sql = ("select product_key, status, replenishment_type, vendor_id, lead_time_days, unit_cost, suggested_order_qty, "
-           "min_order_qty, max_order_qty, suggested_discount_pct from mart.inventory_health "
+    sql = ("select product_key, product_name, status, replenishment_type, vendor_id, vendor_name, lead_time_days, unit_cost, "
+           "suggested_order_qty, min_order_qty, max_order_qty, suggested_discount_pct, on_hand, on_order, daily_demand, "
+           "days_of_cover, excess_units, excess_value, reason from mart.inventory_health "
            f"where product_key in ({marks})")
     for attempt in range(4):
         try:
@@ -131,9 +149,18 @@ def audit(cur, user: User, kind: str, key: str, payload: dict, outcome: str, res
     return row["id"] if isinstance(row, dict) else row[0]
 
 
-def run_action(user: User, kind: str, key: str, payload: dict, products: list[int], build):
+def open_proposal(cur, proposal_id: int, kind: str) -> None:
+    """Lock the proposal this action approves; it must still be open and of the same kind."""
+    cur.execute("select kind, status from public.proposals where id = %s for update", (proposal_id,))
+    row = cur.fetchone()
+    if row is None or row["status"] != "proposed" or row["kind"] != kind:
+        raise rules.Refused(f"proposal {proposal_id} is not an open {kind.replace('_', ' ')} proposal")
+
+
+def run_action(user: User, kind: str, key: str, payload: dict, products: list[int], build, proposal_id: int | None = None):
     """Idempotency, validation, one transaction for the writes and the audit row, one log row for a refusal.
-    `build(cur, rows)` validates against the inventory rows and inserts; it returns the result dict."""
+    `build(cur, rows)` validates against the inventory rows and inserts; it returns the result dict.
+    With a proposal_id the same transaction marks that proposal approved."""
     rules_error = None
     with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("select username, result from public.actions_log where idempotency_key = %s and outcome = 'approved'", (key,))
@@ -147,8 +174,13 @@ def run_action(user: User, kind: str, key: str, payload: dict, products: list[in
         for attempt in range(3):
             try:
                 with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    if proposal_id is not None:
+                        open_proposal(cur, proposal_id, kind)
                     result = build(cur, rows)
                     log_id = audit(cur, user, kind, key, payload, "approved", result, products)
+                    if proposal_id is not None:
+                        cur.execute("update public.proposals set status = 'approved', decided_by = %s, decided_at = now(), action_log_id = %s "
+                                    "where id = %s", (user.name, log_id, proposal_id))
                 return {"ok": True, "idempotent": False, "log_id": log_id, **result}
             except psycopg2.errors.UniqueViolation as exc:
                 if attempt == 2 or "actions_log" in str(exc):
@@ -170,6 +202,7 @@ class Line(BaseModel):
 class Replenish(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=80, pattern=r"^[A-Za-z0-9._:-]+$")
     lines: list[Line]
+    proposal_id: int | None = Field(default=None, gt=0)    # the proposal this approves, if any
 
 
 class Campaign(BaseModel):
@@ -177,6 +210,7 @@ class Campaign(BaseModel):
     product_ids: list[int] = Field(min_length=1, max_length=rules.MAX_LINES)
     discount_pct: int = Field(ge=1, le=100)
     days: int = Field(ge=1, le=365)
+    proposal_id: int | None = Field(default=None, gt=0)
 
 
 def now() -> datetime:
@@ -221,7 +255,7 @@ def purchase_orders(req: Replenish, user: Annotated[User, Depends(current_user)]
             created.append({"purchase_order_id": po_id, "vendor_id": vendor_id, "lines": len(vlines), "total": total})
         return {"action": "purchase_order", "purchase_orders": created}
 
-    return run_action(user, "purchase_order", req.idempotency_key, req.model_dump(), [l.product_id for l in checked], build)
+    return run_action(user, "purchase_order", req.idempotency_key, req.model_dump(), [l.product_id for l in checked], build, req.proposal_id)
 
 
 @app.post("/actions/work-orders")
@@ -242,7 +276,7 @@ def work_orders(req: Replenish, user: Annotated[User, Depends(current_user)]) ->
             created.append({"work_order_id": wo_id, "product_id": l["product_id"], "qty": l["qty"]})
         return {"action": "work_order", "work_orders": created}
 
-    return run_action(user, "work_order", req.idempotency_key, req.model_dump(), [l.product_id for l in checked], build)
+    return run_action(user, "work_order", req.idempotency_key, req.model_dump(), [l.product_id for l in checked], build, req.proposal_id)
 
 
 @app.post("/actions/campaigns")
@@ -264,7 +298,7 @@ def campaigns(req: Campaign, user: Annotated[User, Depends(current_user)]) -> di
                         (str(uuid.uuid4()), offer_id, pid, t))
         return {"action": "campaign", "special_offer_id": offer_id, "products": len(req.product_ids), "discount_pct": req.discount_pct}
 
-    return run_action(user, "campaign", req.idempotency_key, req.model_dump(), req.product_ids, build)
+    return run_action(user, "campaign", req.idempotency_key, req.model_dump(), req.product_ids, build, req.proposal_id)
 
 
 def _lines(req: Replenish) -> list[Line]:
@@ -288,3 +322,128 @@ def log(user: Annotated[User, Depends(current_user)], limit: int = 100) -> dict:
     for r in rows:
         r["ts"] = r["ts"].isoformat()
     return {"entries": rows}
+
+
+# ----------------------------------------------------------------------------------- proposals
+class ProposalIn(BaseModel):
+    kind: Literal["purchase_order", "work_order", "campaign"]
+    title: str = Field(min_length=3, max_length=200)
+    rationale: str = Field(min_length=10, max_length=2000)
+    payload: dict
+
+
+class ProposalBatch(BaseModel):
+    run_id: str = Field(min_length=8, max_length=80, pattern=r"^[A-Za-z0-9._:-]+$")
+    proposals: list[ProposalIn] = Field(min_length=1, max_length=50)
+
+
+class LinesPayload(BaseModel):
+    lines: list[Line]
+
+
+class CampaignPayload(BaseModel):
+    product_ids: list[int] = Field(min_length=1, max_length=rules.MAX_LINES)
+    discount_pct: int = Field(ge=1, le=100)
+    days: int = Field(ge=1, le=365)
+
+
+def snapshot(row: dict, **extra) -> dict:
+    """The numbers behind a proposal, as the mart showed them when it was drafted."""
+    keys = ("product_name", "status", "replenishment_type", "vendor_name", "on_hand", "on_order", "daily_demand", "days_of_cover",
+            "lead_time_days", "suggested_order_qty", "excess_units", "excess_value", "suggested_discount_pct", "reason")
+    return {**{k: (float(row[k]) if isinstance(row[k], Decimal) else row[k]) for k in keys if k in row}, **extra}
+
+
+def validate_proposal(p: ProposalIn, rows: dict[int, dict]) -> tuple[dict, list[int]]:
+    """Run the action rules on a drafted proposal; returns (numbers, product ids) or raises Refused."""
+    if p.kind == "campaign":
+        c = CampaignPayload(**p.payload)
+        rules.check_line_count(len(c.product_ids))
+        rules.check_campaign(rows, c.product_ids, c.discount_pct, c.days)
+        return {"products": [snapshot(rows[i], product_id=i) for i in c.product_ids]}, c.product_ids
+    lines = LinesPayload(**p.payload).lines
+    rules.check_line_count(len(lines))
+    if len({l.product_id for l in lines}) != len(lines):
+        raise rules.Refused("a product appears more than once")
+    kind = "purchase" if p.kind == "purchase_order" else "manufacture"
+    checked = [rules.check_replenishment(rows.get(l.product_id), l.product_id, l.qty, kind) for l in lines]
+    if kind == "purchase" and len({c["vendor_id"] for c in checked}) != 1:
+        raise rules.Refused("a purchase-order proposal covers one vendor")
+    return {"products": [snapshot(rows[l.product_id], product_id=l.product_id, proposed_qty=l.qty) for l in lines]}, [l.product_id for l in lines]
+
+
+@app.post("/proposals")
+def create_proposals(batch: ProposalBatch, user: Annotated[User, Depends(current_user)]) -> dict:
+    if user.role != "agent":
+        raise HTTPException(403, "only the proposal agent drafts proposals")
+    wanted: list[int] = []
+    malformed: set[int] = set()
+    for seq, p in enumerate(batch.proposals):
+        try:
+            wanted += _payload_products(p)
+        except (ValueError, TypeError, KeyError):
+            malformed.add(seq)
+    rows = inventory_rows(sorted(set(wanted))) if wanted else {}
+    results, accepted = [], []
+    for seq, p in enumerate(batch.proposals):
+        try:
+            if seq in malformed:
+                raise ValueError("malformed")
+            numbers, products = validate_proposal(p, rows)
+        except rules.Refused as exc:
+            results.append({"seq": seq, "ok": False, "reason": exc.reason})
+        except (ValueError, TypeError, KeyError):
+            results.append({"seq": seq, "ok": False, "reason": "payload is malformed"})
+        else:
+            accepted.append((seq, p, numbers, products))
+    with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        for seq, p, numbers, _ in accepted:
+            cur.execute(
+                "insert into public.proposals (run_id, seq, created_by, kind, title, rationale, payload, numbers) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict (run_id, seq) do nothing returning id",
+                (batch.run_id, seq, user.name, p.kind, p.title, p.rationale, json.dumps(p.payload), json.dumps(numbers, default=str)))
+            row = cur.fetchone()
+            results.append({"seq": seq, "ok": True, "id": row["id"], "duplicate": False} if row else {"seq": seq, "ok": True, "duplicate": True})
+        audit(cur, user, "proposal", f"{batch.run_id}#drafted-{uuid.uuid4().hex[:8]}", {"run_id": batch.run_id, "count": len(batch.proposals)},
+              "drafted", {"results": sorted(results, key=lambda r: r["seq"])}, sorted({i for *_, ids in accepted for i in ids}))
+    return {"run_id": batch.run_id, "results": sorted(results, key=lambda r: r["seq"])}
+
+
+def _payload_products(p: ProposalIn) -> list[int]:
+    if p.kind == "campaign":
+        return CampaignPayload(**p.payload).product_ids
+    return [l.product_id for l in LinesPayload(**p.payload).lines]
+
+
+READ_KINDS = {**KINDS, "agent": ("purchase_order", "work_order", "campaign")}
+
+
+@app.get("/proposals")
+def list_proposals(user: Annotated[User, Depends(current_user)], status: str = "proposed", limit: int = 100) -> dict:
+    if status not in ("proposed", "approved", "dismissed", "all"):
+        raise HTTPException(422, "status must be proposed, approved, dismissed or all")
+    with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "select id, created_at, run_id, seq, created_by, kind, title, rationale, payload, numbers, status, decided_by, decided_at "
+            "from public.proposals where kind = any(%s) and (%s = 'all' or status = %s) order by id desc limit %s",
+            (list(READ_KINDS[user.role]), status, status, max(1, min(limit, 500))))
+        rows = cur.fetchall()
+    for r in rows:
+        for k in ("created_at", "decided_at"):
+            r[k] = r[k].isoformat() if r[k] else None
+    return {"proposals": rows}
+
+
+@app.post("/proposals/{proposal_id}/dismiss")
+def dismiss(proposal_id: int, user: Annotated[User, Depends(current_user)]) -> dict:
+    with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("select kind, status from public.proposals where id = %s", (proposal_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(404, "no such proposal")
+        need(user, row["kind"])
+        cur.execute("update public.proposals set status = 'dismissed', decided_by = %s, decided_at = now() where id = %s and status = 'proposed'",
+                    (user.name, proposal_id))
+        if cur.rowcount == 0:
+            raise HTTPException(409, f"proposal is already {row['status']}")
+    return {"ok": True, "id": proposal_id, "status": "dismissed"}

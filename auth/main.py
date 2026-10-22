@@ -23,9 +23,12 @@ ISSUER = os.environ["KEYCLOAK_ISSUER"]                 # as it appears in tokens
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]             # reachable from this container
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
 ROLE_ORDER = ("admin", "purchasing", "marketing", "manager", "rep")
+# The proposal agent is a Keycloak service account (client-credentials grant) of its own client: it may only
+# ever be the `agent` role, and the dashboard client may never be. Neither can borrow the other's roles.
+AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
 # Only these roles are scoped by territory. purchasing and marketing work on inventory, which is not
 # territory-bound; cube/cube.js keeps them away from the sales cubes.
-TERRITORY_ROLES = ("admin", "manager", "rep")
+TERRITORY_ROLES = ("admin", "manager", "rep")   # the agent has none either
 # Optional: a (username, region) table to read instead of joining the mart (operator-set, not user input).
 REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE", "")
 
@@ -93,11 +96,15 @@ def token(authorization: str = Header(default="")) -> dict:
         claims = jwt.decode(raw, key, algorithms=["RS256"], issuer=ISSUER, options={"verify_aud": False})
     except jwt.PyJWTError as exc:
         raise HTTPException(401, f"invalid token: {exc}") from exc
-    if claims.get("azp") != CLIENT_ID:
-        raise HTTPException(401, "token was not issued to the dashboard client")
+    azp = claims.get("azp")
+    if azp not in (CLIENT_ID, AGENT_CLIENT_ID):
+        raise HTTPException(401, "token was not issued to a known client")
 
     roles = claims.get("realm_access", {}).get("roles", [])
-    role = next((r for r in ROLE_ORDER if r in roles), None)
+    if azp == AGENT_CLIENT_ID:
+        role = "agent" if "agent" in roles else None
+    else:
+        role = next((r for r in ROLE_ORDER if r in roles), None)
     if role is None:
         raise HTTPException(403, "no dashboard role")
     user = claims["preferred_username"]

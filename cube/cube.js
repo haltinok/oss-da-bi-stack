@@ -33,6 +33,8 @@ const PROFIT_MEMBERS = new Set(['gross_profit', 'margin_pct', 'product_cost']);
 // side, marketing sees stock and offers but nothing about suppliers or order sizes; managers and reps see neither.
 const INVENTORY_CUBES = new Set(['inventory_health', 'offer_performance']);
 const ROLE_CUBES = {
+  // the proposal agent (a service account): reads both inventory cubes in full, nothing else, and cannot write
+  agent: new Set(['inventory_health', 'offer_performance', 'products']),
   purchasing: new Set(['inventory_health', 'products']),
   marketing: new Set(['inventory_health', 'offer_performance', 'products']),
 };
