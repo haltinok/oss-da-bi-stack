@@ -343,9 +343,32 @@ removed until `dbt build --full-refresh`; and the 500M-row effect is not measure
 - dbt drops and recreates tables on every build, and StarRocks drops table-level grants with the table.
   Read access is therefore a wildcard grant on a schema (`ALL TABLES IN DATABASE`), and the auth service
   reads its own small `rls` schema.
-- Cube answers from whichever rollup partitions are built, so a rollup that rebuilds partition by
-  partition returns incomplete totals mid-rebuild. The live rollups are unpartitioned (rebuilt whole and
-  swapped in); at 500M rows, use partitions with incremental windows as in `spike/cube/model`.
+- Cube answers from whichever rollup partitions are built, so a rollup whose partitions are all rebuilt
+  (a SQL refresh key, or a changed definition) returns incomplete totals while it rebuilds. The live
+  rollups are therefore partitioned with a time-based incremental refresh: `every: 5 minute`,
+  `update_window: 5 week`, so each tick rebuilds only the partitions touching the last 5 weeks (year
+  partitions for `monthly` and `monthly_product`, month for `daily`) and older partitions are never
+  rescanned. A SQL refresh key such as `mart.data_version` cannot be combined with `incremental`, so
+  rollup freshness is now clock-driven (see the measured lag below). Orders changed more than 5 weeks
+  ago are not picked up until a full rebuild of the rollup. The four non-additive `orders_mix*` rollups
+  stay unpartitioned and rebuild hourly (raise this at 500M: each is a whole-table distinct count).
+
+  Two consequences of the incremental window. (1) A partition outside it is built once and never again,
+  so after a `dbt build --full-refresh`, a backfill or a correction to old orders, rebuild the rollups:
+  `CUBE_PREAGG_SCHEMA=rollups_$(date +%s) docker compose --profile starrocks up -d cube` (a new schema name
+  makes Cube build every partition from scratch; the old tables are cleaned up by Cube Store). Until a
+  fresh build finishes, Cube can answer from the partitions built so far (incomplete totals). (2) Cube
+  bounds a partition's build range by `max(order_date)` truncated to milliseconds, which silently
+  dropped the newest order when it carried microseconds, so the facts now store `order_date` in whole
+  seconds (a one-off `--full-refresh` is needed when upgrading, as the key changed).
+
+**Partitioned rollups at ~500M lines** (248.8M internet + 251M reseller lines, run against a copy of the
+live model on the old spike stack's data; one 22-minute run): the first full build of
+the monthly rollup took 64-138 s, rollup-served queries answered in 20-50 ms, and over 22 minutes with a
+marker order inserted every 150 s (the update window forced to cover the 2021 partition so a real
+14M-line year partition was rebuilt each tick) the total, polled every ~2 s, never dipped (9 inserts) and each insert became visible 15-205 s later. That lag is Cube's refresh only; add the pipeline
+cycle for the end-to-end figure. Caveat: the tick rebuilt one real year partition, not the production
+volume of a year of 500M data.
 
 **Checks** (the 29 security tests, and every role in a real browser):
 

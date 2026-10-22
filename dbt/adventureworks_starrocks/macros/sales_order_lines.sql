@@ -120,7 +120,9 @@ final as (
         cast(date_format(ol.order_date, '%Y%m%d') as int) as order_date_key,
         cast(date_format(ol.due_date, '%Y%m%d') as int) as due_date_key,
         cast(date_format(ol.ship_date, '%Y%m%d') as int) as ship_date_key,
-        ol.order_date,
+        -- Whole seconds: Cube bounds a rollup partition's build range by max(order_date) truncated to
+        -- milliseconds, which silently dropped the newest row when it carried microseconds.
+        date_trunc('second', ol.order_date) as order_date,
         ol.due_date,
         ol.ship_date,
         ol.order_qty as order_quantity,
