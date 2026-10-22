@@ -72,6 +72,14 @@ const state = {
   invData: null,
   invTimer: null,
   invCtrl: null,
+  // Approve actions (Phase 2): selected product ids per list, edited quantities, the audit log from the
+  // actions service, and the campaign form.
+  actions: null,
+  actionLog: [],
+  actionsError: null,
+  sel: { reorder: new Set(), overstock: new Set() },
+  qty: new Map(),
+  camp: { discount: null, days: 30 },
 };
 
 function readUrl() {
@@ -1055,6 +1063,123 @@ function renderInventory() {
     if (!d[key]) continue;
     const ds = DATASETS[key]();
     $(`#${key}`).innerHTML = ds.rows.length ? table(ds) : `<div class="empty-list">Nothing to act on right now.</div>`;
+    if (ds.rows.length) decorate(key, ds);
+    renderBar(key);
+  }
+}
+
+// ---- Approve actions. The page picks rows and edits a quantity or a discount; the actions service
+// (actions/main.py) checks the role and every rule again, so what is enforced is on the server.
+const KIND_OF = { reorder: ["purchase_order", "work_order"], overstock: ["campaign"] };
+// Mirror of actions/rules.py reorder_bounds, used only to pre-fill and hint; a request outside it is refused.
+function qtyBounds(r) {
+  const sug = r.qty || 0;
+  if (r.type === "manufacture") return [1, Math.max(1, 2 * sug)];
+  let low = Math.max(1, r.min_qty || 0), high = Math.max(2 * sug, low);
+  const cap = r.max_qty || 0;
+  if (cap > 0) { high = Math.min(high, cap); low = Math.min(low, cap); }
+  return [low, high];
+}
+const defaultQty = (r) => { const [lo, hi] = qtyBounds(r); return r.qty > 0 ? Math.min(Math.max(r.qty, lo), hi) : lo; };
+const DAY_MS = 86_400_000;
+function approvedEntry(key, id) {
+  const now = Date.now();
+  return state.actionLog.find((e) => e.outcome === "approved" && KIND_OF[key].includes(e.action) && e.product_ids?.includes(id)
+    && now - new Date(e.ts).getTime() < DAY_MS);
+}
+
+function decorate(key, ds) {
+  const table_ = $(`#${key} table`);
+  if (!table_ || !state.actions) return;
+  const head = table_.querySelector("thead tr");
+  // checkbox first, the action badge right after the product name so it is never scrolled out of view
+  head.insertAdjacentHTML("afterbegin", "<th></th>");
+  head.children[1].insertAdjacentHTML("afterend", "<th>Action</th>");
+  const qtyCol = key === "reorder" ? ds.columns.findIndex((c) => c.label === "Suggested qty") + 2 : -1;
+  [...table_.querySelectorAll("tbody tr")].forEach((tr, i) => {
+    const r = ds.rows[i];
+    const done = approvedEntry(key, r.id);
+    tr.insertAdjacentHTML("afterbegin", `<td>${done ? "" : `<input type="checkbox" aria-label="Select ${esc(r.product)}" ${state.sel[key].has(r.id) ? "checked" : ""}>`}</td>`);
+    tr.children[1].insertAdjacentHTML("afterend", `<td class="${done ? "act-done" : ""}">${done ? `✓ approved ${esc(ago(done.ts))} by ${esc(done.username)}` : ""}</td>`);
+    if (done) return;
+    tr.querySelector("input[type=checkbox]").addEventListener("change", (e) => {
+      e.target.checked ? state.sel[key].add(r.id) : state.sel[key].delete(r.id);
+      renderBar(key);
+    });
+    if (qtyCol > 0) {
+      const [lo, hi] = qtyBounds(r);
+      if (!state.qty.has(r.id)) state.qty.set(r.id, defaultQty(r));
+      const cell = tr.children[qtyCol];
+      cell.innerHTML = `<input class="qty-in" type="number" min="${lo}" max="${hi}" step="1" value="${state.qty.get(r.id)}" title="Allowed ${lo}-${hi}" aria-label="Quantity for ${esc(r.product)}">`;
+      cell.querySelector("input").addEventListener("input", (e) => state.qty.set(r.id, Number(e.target.value)));
+    }
+  });
+}
+
+function renderBar(key) {
+  const bar = $(`#${key}-bar`);
+  const rows = (state.invData?.[key] || []).filter((r) => state.sel[key].has(r.id) && !approvedEntry(key, r.id));
+  for (const id of [...state.sel[key]]) if (!(state.invData?.[key] || []).some((r) => r.id === id)) state.sel[key].delete(id); // left the list
+  const msg = state.actMsg?.[key];
+  if (!state.actions) { bar.hidden = true; return; }
+  bar.hidden = false;
+  if (key === "reorder") {
+    bar.innerHTML = `<button class="act-btn" id="reorder-approve" ${rows.length && !state.actionBusy ? "" : "disabled"}>Approve ${rows.length || ""} selected</button>
+      <span class="act-msg ${msg?.cls || ""}">${esc(msg?.text || (rows.length ? "Creates approved purchase orders (one per vendor) and work orders; they arrive after their lead time." : "Tick the items to order; edit a quantity if needed."))}</span>`;
+    $("#reorder-approve").addEventListener("click", () => approveReorder(rows));
+  } else {
+    if (state.camp.discount == null || !state.camp.touched) state.camp.discount = Math.max(5, ...rows.map((r) => r.discount_pct || 0));
+    bar.innerHTML = `<label>Discount % <input type="number" id="camp-discount" min="1" max="50" step="1" value="${state.camp.discount}"></label>
+      <label>Days <input type="number" id="camp-days" min="7" max="90" step="1" value="${state.camp.days}"></label>
+      <button class="act-btn" id="camp-go" ${rows.length && !state.actionBusy ? "" : "disabled"}>Create campaign for ${rows.length || ""} selected</button>
+      <span class="act-msg ${msg?.cls || ""}">${esc(msg?.text || (rows.length ? "Creates one special offer covering the selected products." : "Tick the products to discount."))}</span>`;
+    $("#camp-discount").addEventListener("input", (e) => { state.camp.discount = Number(e.target.value); state.camp.touched = true; });
+    $("#camp-days").addEventListener("input", (e) => { state.camp.days = Number(e.target.value); });
+    $("#camp-go").addEventListener("click", () => createCampaign(rows));
+  }
+}
+
+function say(key, text, cls = "") { (state.actMsg ||= {})[key] = { text, cls }; renderBar(key); }
+const newKey = () => `ui-${crypto.randomUUID()}`;
+
+async function refreshLog() {
+  if (!state.actions) return;
+  try { state.actionLog = (await state.actions.log()).entries; state.actionsError = null; } catch (e) { state.actionsError = e.message; }
+}
+
+async function approveReorder(rows) {
+  const lines = (type) => rows.filter((r) => (type === "purchase") === (r.type !== "manufacture")).map((r) => ({ product_id: r.id, qty: state.qty.get(r.id) ?? defaultQty(r) }));
+  const buy = lines("purchase"), make = lines("manufacture");
+  const vendors = new Set(rows.filter((r) => r.type !== "manufacture").map((r) => r.vendor)).size;
+  const text = [buy.length ? `${buy.length} purchase-order line${buy.length === 1 ? "" : "s"} (${vendors} vendor${vendors === 1 ? "" : "s"})` : "", make.length ? `${make.length} work order${make.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+  if (!confirm(`Create ${text}? They are written to the ERP as approved.`)) return;
+  state.actionBusy = true; say("reorder", "Sending…");
+  const done = [], failed = [];
+  for (const [path, ls] of [["/actions/purchase-orders", buy], ["/actions/work-orders", make]]) {
+    if (!ls.length) continue;
+    try { await state.actions.post(path, { idempotency_key: newKey(), lines: ls }); done.push(...ls.map((l) => l.product_id)); }
+    catch (e) { failed.push(e.message); }
+  }
+  state.actionBusy = false;
+  done.forEach((id) => state.sel.reorder.delete(id));
+  await refreshLog();
+  renderInventory();
+  say("reorder", failed.length ? `${done.length ? `${done.length} approved. ` : ""}Refused: ${failed.join("; ")}` : `Approved ${done.length} line${done.length === 1 ? "" : "s"}. The list updates after the next pipeline cycle.`, failed.length ? "err" : "ok");
+}
+
+async function createCampaign(rows) {
+  const { discount, days } = state.camp;
+  if (!confirm(`Create a ${discount}% campaign for ${rows.length} product${rows.length === 1 ? "" : "s"}, ${days} days?`)) return;
+  state.actionBusy = true; say("overstock", "Sending…");
+  try {
+    await state.actions.post("/actions/campaigns", { idempotency_key: newKey(), product_ids: rows.map((r) => r.id), discount_pct: discount, days });
+    rows.forEach((r) => state.sel.overstock.delete(r.id));
+    state.actionBusy = false;
+    await refreshLog(); renderInventory();
+    say("overstock", `Campaign created for ${rows.length} product${rows.length === 1 ? "" : "s"}.`, "ok");
+  } catch (e) {
+    state.actionBusy = false;
+    say("overstock", `Refused: ${e.message}`, "err");
   }
 }
 
@@ -1072,8 +1197,10 @@ async function loadInventory({ quiet = false } = {}) {
     sel.forEach((q) => pend(q, true)); startTicker();
   }
   try {
-    const data = await getJSON("/api/inventory", ctrl.signal);
-    const changed = JSON.stringify({ ...data, generated_at: 0 }) !== JSON.stringify({ ...(state.invData || {}), generated_at: 0 });
+    const [data] = await Promise.all([getJSON("/api/inventory", ctrl.signal), refreshLog()]);
+    const logKey = JSON.stringify(state.actionLog.map((e) => e.id));
+    const changed = JSON.stringify({ ...data, generated_at: 0 }) !== JSON.stringify({ ...(state.invData || {}), generated_at: 0 }) || logKey !== state.logKey;
+    state.logKey = logKey;
     if (changed) { state.invData = data; renderInventory(); }
     if (!quiet) {
       const ms = performance.now() - state.invT0;
@@ -1100,7 +1227,8 @@ async function loadInventory({ quiet = false } = {}) {
 // purchasing and marketing; the reorder list for admin and purchasing; overstock for admin and marketing.
 async function initRole() {
   if (!window.dashboardData) return; // legacy data source: sales only
-  await window.dashboardData.ready;
+  const source = await window.dashboardData.ready;
+  state.actions = source.actions || null;
   const role = window.dashboardData.role;
   state.role = role;
   state.salesView = role !== "purchasing" && role !== "marketing";

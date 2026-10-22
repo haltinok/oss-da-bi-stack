@@ -396,7 +396,13 @@ maximum over header and detail ids, because the sample has lines whose header is
 the simulator receiving an approved order after its lead time (a day of lead time = 2 minutes) and the next
 pipeline cycle updating `inventory_health`: `actions/tests/loop_e2e.py` times it (a stocked-out product was no
 longer a stockout 295 s after approval, one run). Campaigns create the offer rows only: simulated sales do not
-yet pick offers up, so a campaign's effect on sales is not modelled.
+yet pick offers up, so a campaign's effect on sales is not modelled. The dashboard's lists have an
+Approve flow on top: tick rows (and edit a quantity, or a campaign's discount and length), confirm, and the page
+posts to the service; an approved row shows "approved … by …" until the pipeline moves it. In this data no
+purchased component ever has demand (only finished goods are sold), so only in-house work orders come up; the
+purchase-order path is covered by the unit tests. `scripts/demo_stock_scenario.py` lowers the stock of a dozen
+best-selling in-house products so the reorder list has something to approve (stock covers ~1000 days otherwise,
+and an approved order empties the list again).
 
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another

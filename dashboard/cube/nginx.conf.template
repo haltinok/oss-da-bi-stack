@@ -10,7 +10,7 @@ server {
     location = /cube/config.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache";
-        return 200 'window.STACK = { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" };';
+        return 200 'window.STACK = { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", actions: "http://localhost:${ACTIONS_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" };';
     }
 
     location /cube/ {

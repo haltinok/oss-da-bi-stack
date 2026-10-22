@@ -68,6 +68,12 @@ with sync_playwright() as p:
         check(page.locator('[data-panel="overstock"]').is_visible() == overstock, f"overstock list {'shown' if overstock else 'hidden'}")
         check(page.locator("#inv-kpis .kpi").count() == tiles, f"{page.locator('#inv-kpis .kpi').count()} inventory KPI tiles (expected {tiles})")
         check(bool(inv_calls) == bool(reorder or overstock), f"inventory queried only when the role has it ({len(inv_calls)} calls)")
+        # Approve controls exist and are inert until something is ticked (nothing is written here)
+        if reorder:
+            check(page.locator("#reorder-approve").count() == 1 and page.locator("#reorder-approve").is_disabled(), "reorder: Approve button present and disabled until a row is ticked")
+        if overstock:
+            check(page.locator("#camp-go").count() == 1 and page.locator("#camp-go").is_disabled() and page.locator("#camp-discount").count() == 1,
+                  "overstock: campaign controls present and Create disabled until a row is ticked")
         if reorder:
             check(page.locator('[data-panel="reorder"] tbody tr').count() > 0, "reorder list has rows")
             check("Vendor" in page.locator('[data-panel="reorder"]').inner_text(), "reorder list shows the vendor column")

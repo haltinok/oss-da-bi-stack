@@ -279,7 +279,8 @@ def test_auth_service_rejects_bad_keycloak_tokens():
 
 INV = {"measures": ["inventory_health.stockout_items", "inventory_health.excess_value_total"]}
 SUPPLIER = ["inventory_health.vendor_name", "inventory_health.unit_cost", "inventory_health.suggested_order_value",
-            "inventory_health.suggested_order_qty", "inventory_health.lead_time_days", "inventory_health.vendor_id"]
+            "inventory_health.suggested_order_qty", "inventory_health.lead_time_days", "inventory_health.vendor_id",
+            "inventory_health.min_order_qty", "inventory_health.max_order_qty"]
 
 
 def test_inventory_totals_match_sql_for_allowed_roles(tokens):
@@ -320,7 +321,7 @@ def test_marketing_sees_stock_and_offers_but_no_supplier_data(tokens):
     status, body = load({"measures": ["offer_performance.avg_lift"], "dimensions": ["offer_performance.discount_band"]}, tokens["marketer"])
     assert status == 200, body
     for member in SUPPLIER:
-        kind = "dimensions" if member.split(".")[1] in ("vendor_name", "unit_cost", "lead_time_days", "vendor_id", "suggested_order_qty", "suggested_order_value") else "measures"
+        kind = "dimensions" if member.split(".")[1] in ("vendor_name", "unit_cost", "lead_time_days", "vendor_id", "suggested_order_qty", "suggested_order_value", "min_order_qty", "max_order_qty") else "measures"
         # asked for directly, used as a filter, and used only to order the result
         for q in ({kind: [member]},
                   {"measures": ["inventory_health.overstock_items"], "filters": [{"member": member, "operator": "set"}]},

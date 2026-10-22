@@ -381,6 +381,23 @@ async function meta(signal) {
 // Not territory-bound and not filtered: it ignores every page filter, and the role decides what is asked
 // for (cube/cube.js enforces the same split, so a tampered page cannot see more than its role allows).
 const INV = "inventory_health";
+
+// ------------------------------------------------------------------ inventory actions service
+// The same Keycloak access token as the auth service gets; the service checks the role and every rule again.
+async function actionsCall(method, path, body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const kc = await keycloakTokens();
+    const res = await fetch(`${C.actions}${path}`, {
+      method, headers: { Authorization: `Bearer ${kc.access}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401 && attempt === 0) { store.del("kc"); continue; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : Array.isArray(data.detail) ? "The request was malformed" : `HTTP ${res.status}`);
+    return data;
+  }
+}
+
 const BAND_OF = { 10: "1-10%", 20: "11-20%", 30: "21-30%", 40: "over 30%" };
 
 async function inventory(signal) {
@@ -396,13 +413,14 @@ async function inventory(signal) {
         reorder_now: num(x[`${INV}.reorder_items`]) || 0, order_value: num(x[`${INV}.suggested_order_value_total`]) || 0 };
     }));
     const dims = ["key", "product_name", "status", "replenishment_type", "vendor_name", "on_hand", "on_order", "daily_demand",
-      "days_of_cover", "lead_time_days", "suggested_order_qty", "suggested_order_value", "reason"].map((d) => `${INV}.${d}`);
+      "days_of_cover", "lead_time_days", "suggested_order_qty", "suggested_order_value", "min_order_qty", "max_order_qty", "reason"].map((d) => `${INV}.${d}`);
     q.push(run({
       dimensions: dims,
       filters: [{ member: `${INV}.status`, operator: "equals", values: ["stockout", "reorder_now"] }],
       order: [[`${INV}.suggested_order_value`, "desc"], [`${INV}.days_of_cover`, "asc"]], limit: 500,
     }, signal).then((rows) => {
       out.reorder = rows.map((r) => ({
+        id: num(r[`${INV}.key`]), min_qty: num(r[`${INV}.min_order_qty`]), max_qty: num(r[`${INV}.max_order_qty`]),
         product: r[`${INV}.product_name`], status: r[`${INV}.status`], type: r[`${INV}.replenishment_type`],
         vendor: r[`${INV}.vendor_name`], on_hand: num(r[`${INV}.on_hand`]), on_order: num(r[`${INV}.on_order`]),
         daily_demand: num(r[`${INV}.daily_demand`]), days_of_cover: num(r[`${INV}.days_of_cover`]),
@@ -427,6 +445,7 @@ async function inventory(signal) {
       order: [[`${INV}.excess_value`, "desc"]], limit: 500,
     }, signal).then((rows) => {
       out.overstock = rows.map((r) => ({
+        id: num(r[`${INV}.key`]),
         product: r[`${INV}.product_name`], status: r[`${INV}.status`], on_hand: num(r[`${INV}.on_hand`]),
         days_of_cover: num(r[`${INV}.days_of_cover`]), excess_units: num(r[`${INV}.excess_units`]),
         excess_value: num(r[`${INV}.excess_value`]), discount_pct: num(r[`${INV}.suggested_discount_pct`]),
@@ -460,6 +479,8 @@ async function inventory(signal) {
 // ------------------------------------------------------------------ the endpoints the page calls
 await cubeToken(); // signs in (redirecting if needed) before the first request
 window.__dashboardDataReady({
+  // Inventory actions: the page posts approvals here (the service re-checks the role and every rule).
+  actions: { log: () => actionsCall("GET", "/actions/log?limit=200"), post: (path, body) => actionsCall("POST", path, body) },
   async get(url, signal, update) {
     const u = new URL(url, location.origin);
     if (u.pathname === "/api/meta") return meta(signal);
