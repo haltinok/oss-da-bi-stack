@@ -83,3 +83,18 @@ models:
     columns:
       - name: product_id
         data_tests: [not_null]
+
+  - name: inventory_health
+    description: >
+      One row per product that is stocked, sold or on order: stock position, status, reorder quantity
+      for stockout / reorder_now products, and excess units and a discount tier for overstock / dead stock.
+      Thresholds are dbt vars; all windows anchor on int_as_of_date. Rules are documented in the model.
+    columns:
+      - name: product_key
+        data_tests: [unique, not_null]
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [discontinued, not_stocked, stockout, reorder_now, dead_stock, overstock, healthy]

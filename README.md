@@ -337,6 +337,20 @@ snapshot). Known limits: a line deleted from a surviving order, or an order whos
 removed until `dbt build --full-refresh`; and the 500M-row effect is not measured yet (the full rebuild was
 ~22 min per fact). Changing a fact's columns needs a one-off `--full-refresh`.
 
+**Inventory health** (`mart.inventory_health`, one row per stocked, sold or on-order product; plan in
+`docs/inventory-actions-plan.md`, Phase 1.1-1.3). The pipeline now also ingests vendors, product-vendor,
+purchase orders, work orders, offers and inventory. Status (first match wins): `discontinued`, `not_stocked`
+(no inventory record), `stockout` (nothing on hand, demand), `reorder_now` (stock projected for the end of the
+lead time is down to the safety stock), `dead_stock` (stock, no sale in 90 days), `overstock` (cover above 120
+days), `healthy`. Reorder quantity = demand over lead time plus review period, plus safety stock, less on
+hand and on order, within the vendor's minimum and maximum. Demand is the trailing 28-day (else 90-day)
+average, anchored on the data's newest order (`int_as_of_date`), not today. Thresholds are dbt vars in
+`dbt_project.yml`. AdventureWorks' stored safety stock is static and unrelated to its sales, so it is capped at
+30 days of demand. Open purchase orders count only when their header is present and pending/approved.
+To develop against a scaled tier without touching the live schemas:
+`dbt build --vars '{aw_source_schema: scale_25m, date_shift_years: 0, mart_suffix: _25m, apply_ro_grants: false}'`
+(`mart_suffix` now suffixes the stage, mart, rls and default schemas).
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.

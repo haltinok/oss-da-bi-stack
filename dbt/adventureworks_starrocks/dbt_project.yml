@@ -36,6 +36,12 @@ vars:
   # benchmark schemas (scale_*) already span 2011-2021 and must run with date_shift_years: 0.
   date_shift_years: 12
   date_shift_cutoff: '2015-01-01'
+  # Inventory rules (models/marts/inventory_health.sql); change them to reshape the demo.
+  dead_stock_days: 90        # no sale for this long, with stock on hand -> dead stock
+  overstock_days: 120        # cover (on hand + on order) above this many days of demand -> overstock
+  review_period_days: 14     # reorder quantity covers lead time plus this review period
+  target_cover_days: 60      # stock above this many days of demand counts as excess
+  safety_stock_cap_days: 30  # AdventureWorks' fixed safety stock is capped at this many days of demand
 
 seeds:
   adventureworks_starrocks:

@@ -46,3 +46,27 @@ sources:
       - name: business_entity_address
       - name: state_province
       - name: country_region
+      - name: product_inventory
+      - name: location
+        columns:
+          - name: location_id
+            data_tests: [unique, not_null]
+      - name: product_vendor
+      - name: vendor
+        columns:
+          - name: business_entity_id
+            data_tests: [unique, not_null]
+      - name: purchase_order_header
+        columns:
+          - name: purchase_order_id
+            data_tests: [unique, not_null]
+      - name: purchase_order_detail
+      - name: work_order
+        columns:
+          - name: work_order_id
+            data_tests: [unique, not_null]
+      - name: special_offer
+        columns:
+          - name: special_offer_id
+            data_tests: [unique, not_null]
+      - name: special_offer_product
