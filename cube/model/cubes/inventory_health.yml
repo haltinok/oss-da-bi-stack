@@ -16,6 +16,7 @@ cubes:
         sql: product_key
         type: number
         primary_key: true
+        public: true   # list queries group by it so identical rows are not collapsed
       - name: product_name
         sql: product_name
         type: string

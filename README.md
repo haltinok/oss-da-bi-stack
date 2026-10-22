@@ -308,7 +308,7 @@ docker compose --profile starrocks up -d --build
 # unpause the pipeline once (new DAGs start paused), plus the simulators if they are not running:
 docker compose exec airflow-scheduler airflow dags unpause postgres_active_to_starrocks
 open http://localhost:8250        # users: admin, na_manager, de_rep -- password: TEST_USER_PASSWORD in .env
-                                  # buyer (purchasing) and marketer (marketing) use the inventory cubes via the API (panels come next)
+                                  # buyer (purchasing) and marketer (marketing) get the inventory view only
 ```
 
 An older `.env` needs the secrets this profile uses (`CUBEJS_API_SECRET`, `CUBE_DB_PASSWORD`, `AUTH_DB_PASSWORD`,
@@ -361,6 +361,15 @@ even joined to a sales cube. A Keycloak that already imported the realm keeps it
 `keycloak/sync-users.sh` to add the two roles and users. `offer_performance` is descriptive evidence (units per
 day during an offer versus the 28 days before): no control group, and one offer with a tiny baseline can show an
 enormous lift, so treat it as "what happened", not "what the discount did".
+
+**Inventory panels** (dashboard, below the sales charts): three KPI tiles (items at stockout risk, suggested
+reorders, capital tied in excess stock), a reorder list (admin, purchasing) and an overstock / dead-stock list with
+a suggested discount and what past offers of that depth did (admin, marketing), each with an Excel export. They
+ignore every sales filter and a filter change never re-queries them; they load with the page, on Refresh and on
+the 30-second poll (re-drawn only if the data changed). `buyer` and `marketer` see the inventory view only and
+the page never sends them a sales query. The "past offers" figure is the median lift (units per day during an
+offer over the 28 days before) of past offers in that discount band: descriptive, no control group, and with few
+offers it can be large.
 
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another

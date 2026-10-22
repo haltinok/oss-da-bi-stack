@@ -10,6 +10,7 @@ cubes:
         sql: special_offer_id
         type: number
         primary_key: true
+        public: true
       - name: description
         sql: description
         type: string

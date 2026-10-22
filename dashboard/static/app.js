@@ -64,6 +64,14 @@ const state = {
   polls: 0,
   timer: null,
   inflight: null,
+  timing: {},
+  // Role-dependent views: sales (filters, KPIs, charts) and the inventory lists. See initRole().
+  role: null,
+  salesView: true,
+  inv: { reorder: false, overstock: false },
+  invData: null,
+  invTimer: null,
+  invCtrl: null,
 };
 
 function readUrl() {
@@ -126,8 +134,9 @@ const PANEL_OF = {
   mix: '[data-panel="mix"]', top_products: '[data-panel="products"]', territories: '[data-panel="territories"]',
 };
 // ---- Per-panel load timers: a spinner with the running seconds while a panel waits, then "✓ 1.4s".
-const PANEL_KEY = { trend: "monthly", feed: "latest_orders", mix: "mix", products: "top_products", territories: "territories" };
+const PANEL_KEY = { trend: "monthly", feed: "latest_orders", mix: "mix", products: "top_products", territories: "territories", reorder: "reorder", overstock: "overstock" };
 const TIMED = new Set(["kpis", "monthly", "mix", "top_products", "territories", "latest_orders"]);
+const INV_KEYS = new Set(["reorder", "overstock"]); // timed by loadInventory(), not by load()
 const timerHtml = (key) => `<span class="timer" data-key="${key}"><i class="spin"></i><b></b></span>`;
 function mountTimers() {
   for (const card of document.querySelectorAll("[data-panel]")) {
@@ -139,12 +148,14 @@ function mountTimers() {
 function tick() {
   const now = performance.now();
   for (const t of document.querySelectorAll(".timer")) {
+    const inv = INV_KEYS.has(t.dataset.key);
     const done = state.timing && state.timing[t.dataset.key];
-    const running = state.t0 != null && state.timing && done == null && state.busy;
+    const running = inv ? state.invBusy && done == null : state.t0 != null && state.timing && done == null && state.busy;
+    const t0 = inv ? state.invT0 : state.t0;
     t.classList.toggle("done", done != null);
     t.classList.toggle("run", !!running);
     const b = t.querySelector("b");
-    b.textContent = done != null ? `${(done / 1000).toFixed(1)}s` : running ? `${((now - state.t0) / 1000).toFixed(1)}s` : "";
+    b.textContent = done != null ? `${(done / 1000).toFixed(1)}s` : running ? `${((now - t0) / 1000).toFixed(1)}s` : "";
   }
 }
 function startTicker() { clearInterval(state.ticker); state.ticker = setInterval(tick, 100); }
@@ -166,6 +177,7 @@ async function loadMeta() {
 
 let fullReload = false;
 async function load({ quiet = false } = {}) {
+  if (!state.salesView) return; // inventory-only roles have no sales access
   clearTimeout(state.timer);
   // A background refresh never cancels a load that is still running (a slow query would
   // otherwise never finish); a filter change always does.
@@ -188,7 +200,10 @@ async function load({ quiet = false } = {}) {
   }
   if (!quiet) {
     const feedMs = keepFeed ? state.timing?.latest_orders : null;
-    state.t0 = performance.now(); state.timing = feedMs != null ? { latest_orders: feedMs } : {}; startTicker();
+    const { reorder, overstock } = state.timing || {};
+    state.t0 = performance.now();
+    state.timing = { ...(feedMs != null ? { latest_orders: feedMs } : {}), ...(reorder != null ? { reorder } : {}), ...(overstock != null ? { overstock } : {}) };
+    startTicker();
     for (const [key, sel] of Object.entries(PANEL_OF)) if (!(keepFeed && key === "latest_orders")) pend(sel, true);
   }
   const q = new URLSearchParams(Object.entries(state.filters).filter(([, v]) => v));
@@ -223,13 +238,13 @@ async function load({ quiet = false } = {}) {
     if (state.inflight === ctrl) {
       state.busy = false;
       pendAll(false);
-      stopTicker();
+      if (state.invBusy) tick(); else stopTicker();
       state.timer = setTimeout(() => !document.hidden && load({ quiet: true }), POLL_MS);
     }
   }
 }
 
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load({ quiet: true }); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { load({ quiet: true }); loadInventory({ quiet: true }); } });
 
 function setLive(ok, message) {
   const live = $("#live");
@@ -332,7 +347,7 @@ $("#reset").addEventListener("click", () => {
   state.restore = {};
   fillFilters(); writeUrl(); load();
 });
-$("#refresh").addEventListener("click", () => { fullReload = true; load(); });
+$("#refresh").addEventListener("click", () => { fullReload = true; load(); loadInventory(); });
 $("#theme").addEventListener("click", () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -379,7 +394,54 @@ const col = (label, type, get, fmt, profit = false) => ({ label, type, get, fmt:
 const chRev = (c) => (r) => r.ch?.[c]?.revenue ?? 0;
 const margin = (r) => ratio(r.gross_profit, r.revenue);
 
+const STATUS_LABEL = { stockout: "Stockout", reorder_now: "Reorder now", overstock: "Overstock", dead_stock: "Dead stock" };
+const cover = (v) => (v == null ? "—" : v > 999 ? ">999" : String(Math.round(v)));
+const one = (v) => (v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("en-US"));
+// What past offers of about this depth did, from mart.offer_performance (descriptive, no control group).
+function evidence(pct) {
+  const d = state.invData || {};
+  const band = d.band_of?.[pct];
+  const e = band && d.offer_evidence?.[band];
+  if (!pct) return "";
+  if (!e || e.lift == null) return band ? `no past ${band} offer with a baseline` : "";
+  return `past ${band} offers (${e.offers}): median ${(Math.round(e.lift * 10) / 10)}x units/day`;
+}
+
 const DATASETS = {
+  reorder: () => ({
+    key: "reorder", name: "Reorder list", title: "Reorder list (stockouts and items about to run out)",
+    ignores: ["fy", "group", "region", "category", "subcategory"], ignoreNote: "inventory is not filtered",
+    columns: [
+      col("Product", "text", (r) => r.product),
+      col("Status", "text", (r) => STATUS_LABEL[r.status] || r.status),
+      col("On hand", "int", (r) => r.on_hand),
+      col("On order", "int", (r) => r.on_order),
+      col("Demand / day", "int", (r) => r.daily_demand, one),
+      col("Days of cover", "int", (r) => r.days_of_cover, cover),
+      col("Lead time (days)", "int", (r) => r.lead_time_days),
+      col("Suggested qty", "int", (r) => r.qty),
+      col("Suggested value", "money", (r) => r.value),
+      col("Vendor", "text", (r) => (r.type === "manufacture" ? "Make in-house" : r.vendor || "")),
+      col("Why", "text", (r) => r.reason),
+    ],
+    rows: state.invData?.reorder || [],
+  }),
+  overstock: () => ({
+    key: "overstock", name: "Overstock", title: "Overstock and dead stock",
+    ignores: ["fy", "group", "region", "category", "subcategory"], ignoreNote: "inventory is not filtered",
+    columns: [
+      col("Product", "text", (r) => r.product),
+      col("Status", "text", (r) => STATUS_LABEL[r.status] || r.status),
+      col("On hand", "int", (r) => r.on_hand),
+      col("Days of cover", "int", (r) => r.days_of_cover, cover),
+      col("Excess units", "int", (r) => r.excess_units),
+      col("Excess value", "money", (r) => r.excess_value),
+      col("Suggested discount", "int", (r) => r.discount_pct, (v) => (v ? `${v}%` : "")),
+      col("Past offers", "text", (r) => evidence(r.discount_pct)),
+      col("Why", "text", (r) => r.reason),
+    ],
+    rows: state.invData?.overstock || [],
+  }),
   kpis: () => {
     const { current: c, previous: p } = state.data.kpis;
     const fy = state.filters.fy;
@@ -517,7 +579,7 @@ function toSheet(d) {
 }
 
 function exportXlsx(keys) {
-  if (!state.data) return;
+  if (!state.data && !state.invData) return;
   const blob = window.buildXlsx(keys.map((k) => toSheet(DATASETS[k]())));
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
   const slug = keys.length === 1 ? DATASETS[keys[0]]().name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "dashboard";
@@ -531,7 +593,10 @@ function exportXlsx(keys) {
 for (const btn of document.querySelectorAll(".xls-btn")) {
   btn.addEventListener("click", () => exportXlsx([btn.closest("[data-panel]").dataset.panel]));
 }
-$("#export-all").addEventListener("click", () => exportXlsx(["kpis", "trend", "feed", "mix", "products", "territories"]));
+$("#export-all").addEventListener("click", () => exportXlsx([
+  ...(state.salesView ? ["kpis", "trend", "feed", "mix", "products", "territories"] : []),
+  ...(state.inv.reorder ? ["reorder"] : []), ...(state.inv.overstock ? ["overstock"] : []),
+]));
 
 // Monthly rows -> one entry per month (both channels), zero-filling short gaps
 // and marking long ones as breaks.
@@ -970,6 +1035,80 @@ function renderNotes() {
     ${m.fact_rows ? `${int(m.fact_rows)} fact rows. ` : ""}This page re-queries the mart every ${POLL_MS / 1000} s; Airflow rebuilds the mart every 15 min.`;
 }
 
+// ---- Inventory actions: KPI tiles and the two lists. Independent of the sales filters.
+function renderInventory() {
+  const d = state.invData;
+  if (!d) return;
+  const tiles = [];
+  if (d.reorder_kpis) {
+    const k = d.reorder_kpis;
+    tiles.push(["Items at stockout risk", int(k.at_risk), `${int(k.stockouts)} out of stock · ${int(k.reorder_now)} to reorder now`]);
+    tiles.push(["Suggested reorders", money(k.order_value), "at unit cost, for the items on the reorder list"]);
+  }
+  if (d.excess_kpis) {
+    const k = d.excess_kpis;
+    tiles.push(["Capital tied in excess stock", money(k.value), `${int(k.items)} items over target · ${int(k.dead)} with no recent sale`]);
+  }
+  $("#inv-kpis").replaceChildren(...tiles.map(([label, value, sub]) =>
+    el("div", { class: "card kpi" }, `<div class="label">${esc(label)}</div><div class="value">${esc(value)}</div><div class="sub">${esc(sub)}</div>`)));
+  for (const key of ["reorder", "overstock"]) {
+    if (!d[key]) continue;
+    const ds = DATASETS[key]();
+    $(`#${key}`).innerHTML = ds.rows.length ? table(ds) : `<div class="empty-list">Nothing to act on right now.</div>`;
+  }
+}
+
+async function loadInventory({ quiet = false } = {}) {
+  if (!state.inv.reorder && !state.inv.overstock) return;
+  clearTimeout(state.invTimer);
+  if (quiet && state.invBusy) return;
+  state.invCtrl?.abort();
+  const ctrl = new AbortController();
+  state.invCtrl = ctrl;
+  const sel = ["reorder", "overstock"].filter((k) => state.inv[k]).map((k) => `[data-panel="${k}"]`);
+  if (!quiet) {
+    state.invBusy = true; state.invT0 = performance.now();
+    for (const k of ["reorder", "overstock"]) delete state.timing[k];
+    sel.forEach((q) => pend(q, true)); startTicker();
+  }
+  try {
+    const data = await getJSON("/api/inventory", ctrl.signal);
+    const changed = JSON.stringify({ ...data, generated_at: 0 }) !== JSON.stringify({ ...(state.invData || {}), generated_at: 0 });
+    if (changed) { state.invData = data; renderInventory(); }
+    if (!quiet) {
+      const ms = performance.now() - state.invT0;
+      for (const k of ["reorder", "overstock"]) if (state.inv[k]) state.timing[k] = ms;
+    }
+    if (!state.salesView) setLive(true);
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    if (!state.salesView) setLive(false, err.message);
+    if (!state.invData) { $("#error").hidden = false; $("#error").textContent = `Could not load inventory: ${err.message}`; }
+  } finally {
+    if (state.invCtrl === ctrl) {
+      state.invBusy = false; sel.forEach((q) => pend(q, false)); tick();
+      if (!state.busy) stopTicker();
+      state.invTimer = setTimeout(() => !document.hidden && loadInventory({ quiet: true }), POLL_MS);
+    }
+  }
+}
+
+// Which views the signed-in role gets (cube/cube.js enforces the same split): sales for everyone except
+// purchasing and marketing; the reorder list for admin and purchasing; overstock for admin and marketing.
+async function initRole() {
+  if (!window.dashboardData) return; // legacy data source: sales only
+  await window.dashboardData.ready;
+  const role = window.dashboardData.role;
+  state.role = role;
+  state.salesView = role !== "purchasing" && role !== "marketing";
+  state.inv = { reorder: role === "admin" || role === "purchasing", overstock: role === "admin" || role === "marketing" };
+  document.body.classList.toggle("inv-only", !state.salesView);
+  if (!state.salesView) $(".brand h1").textContent = "AdventureWorks Inventory";
+  $("#inv").hidden = !(state.inv.reorder || state.inv.overstock);
+  if (!state.salesView) $("#inv .inv-head .hint").textContent = "Stock, demand and open orders per product, refreshed on load, on Refresh and when the data changes.";
+  for (const k of ["reorder", "overstock"]) document.querySelector(`[data-panel="${k}"]`).hidden = !state.inv[k];
+}
+
 // Re-layout width-dependent charts when the viewport changes.
 let lastW = 0;
 new ResizeObserver(() => {
@@ -979,4 +1118,4 @@ new ResizeObserver(() => {
 
 readUrl();
 mountTimers();
-load();
+initRole().then(() => { load(); loadInventory(); });

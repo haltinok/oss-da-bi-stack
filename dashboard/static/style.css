@@ -301,3 +301,14 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .timer:not(.run):not(.done) { display: none; }
 @keyframes timer-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .timer .spin { animation: none; } }
+
+/* Inventory actions: lists are tables that scroll inside their card; roles with no sales access get this view only. */
+.inv-head { margin: 22px 0 10px; }
+.inv-head h2 { font-size: 16px; margin: 0 0 2px; }
+.inv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 560px) { .inv-kpis { grid-template-columns: repeat(1, minmax(0, 1fr)); } }
+[data-panel="reorder"] .tbl-wrap, [data-panel="overstock"] .tbl-wrap { max-height: 380px; }
+.inv-kpis .kpi .sub { font-size: 12px; color: var(--ink-3, var(--ink-2)); }
+body.inv-only nav.filters, body.inv-only #kpis, body.inv-only #sales-grid, body.inv-only #notes { display: none; }
+body.inv-only .inv-head { margin-top: 6px; }
+.empty-list { padding: 18px 4px; color: var(--ink-2); font-size: 13px; }

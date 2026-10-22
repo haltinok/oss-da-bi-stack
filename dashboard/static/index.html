@@ -49,7 +49,7 @@
   <main id="main">
     <section class="kpis" id="kpis" aria-label="Key figures"></section>
 
-    <div class="grid">
+    <div class="grid" id="sales-grid">
       <section class="card span-8" data-panel="trend">
         <div class="card-h">
           <div><h2>Monthly revenue by channel</h2><div class="hint" id="trend-hint">Click a month to focus its fiscal year</div></div>
@@ -110,6 +110,32 @@
         <div id="territories"></div>
       </section>
     </div>
+
+    <section id="inv" hidden aria-label="Inventory">
+      <div class="inv-head">
+        <h2>Inventory actions</h2>
+        <div class="hint">Stock, demand and open orders per product. Ignores every filter above; refreshed on load, on Refresh and when the data changes.</div>
+      </div>
+      <section class="kpis inv-kpis" id="inv-kpis" aria-label="Inventory key figures"></section>
+      <div class="grid">
+        <section class="card span-12" data-panel="reorder" hidden>
+          <div class="card-h">
+            <div><h2>Reorder list</h2><div class="hint">Stockouts and items about to run out, with a suggested quantity · most valuable first</div></div>
+            <div class="spacer"></div>
+            <button class="tbl-toggle xls-btn" title="Download this list as an Excel file (a purchase-order draft)">Excel</button>
+          </div>
+          <div id="reorder"></div>
+        </section>
+        <section class="card span-12" data-panel="overstock" hidden>
+          <div class="card-h">
+            <div><h2>Overstock and dead stock</h2><div class="hint">Excess against 60 days of demand, with a suggested discount and what past offers did · largest first</div></div>
+            <div class="spacer"></div>
+            <button class="tbl-toggle xls-btn" title="Download this list as an Excel file">Excel</button>
+          </div>
+          <div id="overstock"></div>
+        </section>
+      </div>
+    </section>
 
     <p class="notes" id="notes"></p>
   </main>
