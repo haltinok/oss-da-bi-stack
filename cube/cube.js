@@ -39,6 +39,7 @@ const ROLE_CUBES = {
 const SUPPLIER_MEMBERS = new Set([
   'vendor_id', 'vendor_name', 'unit_cost', 'lead_time_days', 'replenishment_type',
   'suggested_order_qty', 'suggested_order_value', 'suggested_order_qty_total', 'suggested_order_value_total',
+  'min_order_qty', 'max_order_qty',
 ]);
 
 // Cube turns a thrown CubejsHandlerError into its HTTP status; any other error is a 500

@@ -56,6 +56,12 @@ cubes:
       - name: suggested_order_qty
         sql: suggested_order_qty
         type: number
+      - name: min_order_qty
+        sql: min_order_qty
+        type: number
+      - name: max_order_qty
+        sql: max_order_qty
+        type: number
       - name: suggested_order_value
         sql: suggested_order_value
         type: number

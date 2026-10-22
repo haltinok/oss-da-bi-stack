@@ -312,3 +312,15 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 body.inv-only nav.filters, body.inv-only #kpis, body.inv-only #sales-grid, body.inv-only #notes { display: none; }
 body.inv-only .inv-head { margin-top: 6px; }
 .empty-list { padding: 18px 4px; color: var(--ink-2); font-size: 13px; }
+
+/* Approve actions on the inventory lists */
+.act-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 2px 0 10px; font-size: 13px; }
+.act-bar label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.act-bar input[type="number"] { width: 72px; }
+.act-btn { border: 1px solid var(--ink); background: var(--ink); color: var(--surface); border-radius: 8px; padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.act-btn:disabled { opacity: 0.4; cursor: default; }
+.act-msg { color: var(--ink-2); }
+.act-msg.err { color: var(--bad, #c0392b); }
+.act-msg.ok { color: var(--good, #1a7f4b); }
+.qty-in { width: 76px; text-align: right; font: inherit; }
+td.act-done, .act-done { color: var(--good, #1a7f4b); white-space: nowrap; }
