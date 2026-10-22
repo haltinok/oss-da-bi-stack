@@ -230,7 +230,7 @@ def supply_factor(tier):
 
 def reconcile_supply(schema):
     """Count rows whose parent row is missing (the source is a sample, so some references dangle)."""
-    run(f"DROP TABLE IF EXISTS scale_meta.supply_orphans")
+    run("DROP TABLE IF EXISTS scale_meta.supply_orphans")
     run("CREATE TABLE scale_meta.supply_orphans (schema_name VARCHAR(64), child VARCHAR(64), child_column VARCHAR(64), "
         "parent VARCHAR(64), orphan_rows BIGINT, total_rows BIGINT) DUPLICATE KEY(schema_name) "
         "DISTRIBUTED BY HASH(schema_name) BUCKETS 1 PROPERTIES('replication_num'='1')")
@@ -260,7 +260,7 @@ def scale_supply(tier):
             print(f"  {s}.{tbl}: not in raw, skipped (ingest it first)")
             continue
         exprs = []
-        for c, t in cols(tbl):
+        for c, _ in cols(tbl):
             if c in qty:
                 exprs.append(f"cast(round(t.{c} * {factor}) as bigint) as {c}")
             elif c in dates:
