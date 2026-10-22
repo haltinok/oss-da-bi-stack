@@ -129,6 +129,8 @@ select
     daily_demand,
     days_of_cover,
     lead_time_days,
+    min_order_qty,
+    max_order_qty,
     safety_stock_level,
     reorder_point,
     safety_stock_eff as safety_stock,

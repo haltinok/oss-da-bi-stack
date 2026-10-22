@@ -376,6 +376,28 @@ the page never sends them a sales query. The "past offers" figure is the median 
 offer over the 28 days before) of past offers in that discount band: descriptive, no control group, and with few
 offers it can be large.
 
+**Inventory actions service** (`actions/`, port `ACTIONS_PORT`, profile `starrocks`; Phase 2 of
+`docs/inventory-actions-plan.md`). An approved proposal becomes a row in the simulated ERP:
+`POST /actions/purchase-orders` and `/actions/work-orders` (purchasing, admin) create approved purchase orders
+(one per vendor) and work orders; `POST /actions/campaigns` (marketing, admin) creates a special offer;
+`GET /actions/log` lists the role's own kinds. Each call carries the user's Keycloak token. Nothing but the
+product ids and the edits a role may make (a quantity, a discount, a length) comes from the client: vendor,
+unit price, lead time and the product's state are read from the current `mart.inventory_health` row, and a
+request that disagrees is refused with 422: only stockout / reorder_now products can be replenished (by the
+kind they are replenished by), a quantity must lie between the vendor minimum and the lower of the vendor
+maximum and twice the suggestion, a campaign needs overstock or dead stock, a discount of 1% up to twice the
+suggestion (at most 50%) and 7-90 days. Every approval and every refusal is written to `actions_log` (who,
+role, payload, outcome, result); the writes of one request and its audit row share a transaction, and an
+`idempotency_key` makes a retry return the first result (another user's key gets 409). The database login
+`actions_writer` can only read and INSERT into those tables: no UPDATE or DELETE, so the log is append-only
+for it. On an existing `postgres_active` volume run `postgres_active/sync-actions.sh` once (init scripts run
+only on a fresh volume); `starrocks-init` creates the read-only `actions_ro`. A new purchase-order id is the
+maximum over header and detail ids, because the sample has lines whose header is missing. The closed loop is
+the simulator receiving an approved order after its lead time (a day of lead time = 2 minutes) and the next
+pipeline cycle updating `inventory_health`: `actions/tests/loop_e2e.py` times it (a stocked-out product was no
+longer a stockout 295 s after approval, one run). Campaigns create the offer rows only: simulated sales do not
+yet pick offers up, so a campaign's effect on sales is not modelled.
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.
