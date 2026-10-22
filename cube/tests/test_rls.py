@@ -273,3 +273,67 @@ def test_auth_service_rejects_bad_keycloak_tokens():
     forged = jwt.encode({"iss": f"{KEYCLOAK}/realms/spike", "azp": "dashboard", "preferred_username": "admin",
                          "realm_access": {"roles": ["admin"]}, "exp": int(time.time()) + 600}, "x" * 32, algorithm="HS256")
     assert requests.post(f"{AUTH}/token", headers={"Authorization": f"Bearer {forged}"}, timeout=10).status_code == 401
+
+
+# --- inventory roles: purchasing, marketing, admin; managers and reps see no inventory ---------
+
+INV = {"measures": ["inventory_health.stockout_items", "inventory_health.excess_value_total"]}
+SUPPLIER = ["inventory_health.vendor_name", "inventory_health.unit_cost", "inventory_health.suggested_order_value",
+            "inventory_health.suggested_order_qty", "inventory_health.lead_time_days", "inventory_health.vendor_id"]
+
+
+def test_inventory_totals_match_sql_for_allowed_roles(tokens):
+    ((stockouts, excess),) = sql("select sum(status = 'stockout'), sum(excess_value) from mart.inventory_health")
+    for user in ("admin", "buyer", "marketer"):
+        status, body = load(INV, tokens[user])
+        assert status == 200, (user, body)
+        row = body["data"][0]
+        assert int(row["inventory_health.stockout_items"]) == int(stockouts), user
+        assert near(row["inventory_health.excess_value_total"], excess), user
+
+
+def test_inventory_is_closed_to_managers_and_reps(tokens):
+    for user in ("na_manager", "de_rep"):
+        for q in (INV, {"dimensions": ["offer_performance.description"]},
+                  # joined to a sales cube, hoping the territory filter lets it through
+                  {"measures": ["inventory_health.stockout_items", "internet_sales.revenue"]}):
+            status, body = load(q, tokens[user])
+            assert rejected(status, body), (user, q, body)
+
+
+def test_purchasing_sees_reorder_data_but_not_sales_offers_or_customers(tokens):
+    status, body = load({"measures": ["inventory_health.suggested_order_value_total"],
+                         "dimensions": ["inventory_health.vendor_name"]}, tokens["buyer"])
+    assert status == 200, body
+    for q in ({"measures": ["internet_sales.revenue"]},
+              {"dimensions": ["offer_performance.description"]},
+              {"dimensions": ["customers.last_name"]},
+              {"measures": ["inventory_health.stockout_items"], "dimensions": ["territories.region"]}):
+        status, body = load(q, tokens["buyer"])
+        assert rejected(status, body), (q, body)
+
+
+def test_marketing_sees_stock_and_offers_but_no_supplier_data(tokens):
+    status, body = load({"measures": ["inventory_health.overstock_items", "inventory_health.excess_value_total"],
+                         "dimensions": ["inventory_health.status", "inventory_health.suggested_discount_pct"]}, tokens["marketer"])
+    assert status == 200, body
+    status, body = load({"measures": ["offer_performance.avg_lift"], "dimensions": ["offer_performance.discount_band"]}, tokens["marketer"])
+    assert status == 200, body
+    for member in SUPPLIER:
+        kind = "dimensions" if member.split(".")[1] in ("vendor_name", "unit_cost", "lead_time_days", "vendor_id", "suggested_order_qty", "suggested_order_value") else "measures"
+        # asked for directly, used as a filter, and used only to order the result
+        for q in ({kind: [member]},
+                  {"measures": ["inventory_health.overstock_items"], "filters": [{"member": member, "operator": "set"}]},
+                  {"measures": ["inventory_health.overstock_items"], "dimensions": ["inventory_health.status"], "order": {member: "desc"}}):
+            status, body = load(q, tokens["marketer"])
+            assert rejected(status, body), (member, q, body)
+    for q in ({"measures": ["inventory_health.suggested_order_value_total"]}, {"measures": ["inventory_health.suggested_order_qty_total"]}):
+        status, body = load(q, tokens["marketer"])
+        assert rejected(status, body), (q, body)
+
+
+def test_inventory_roles_cannot_borrow_sales_through_the_token(tokens):
+    # purchasing/marketing tokens carry no territories; the sales cubes must stay closed, not "all regions".
+    for user in ("buyer", "marketer"):
+        status, body = load({"measures": ["reseller_sales.revenue"]}, tokens[user])
+        assert rejected(status, body), (user, body)

@@ -308,6 +308,7 @@ docker compose --profile starrocks up -d --build
 # unpause the pipeline once (new DAGs start paused), plus the simulators if they are not running:
 docker compose exec airflow-scheduler airflow dags unpause postgres_active_to_starrocks
 open http://localhost:8250        # users: admin, na_manager, de_rep -- password: TEST_USER_PASSWORD in .env
+                                  # buyer (purchasing) and marketer (marketing) use the inventory cubes via the API (panels come next)
 ```
 
 An older `.env` needs the secrets this profile uses (`CUBEJS_API_SECRET`, `CUBE_DB_PASSWORD`, `AUTH_DB_PASSWORD`,
@@ -351,6 +352,16 @@ To develop against a scaled tier without touching the live schemas:
 `dbt build --vars '{aw_source_schema: scale_25m, date_shift_years: 0, mart_suffix: _25m, apply_ro_grants: false}'`
 (`mart_suffix` now suffixes the stage, mart, rls and default schemas).
 
+**Inventory access** (Cube cubes `inventory_health` and `offer_performance`; not territory-bound, so gated by role in
+`cube/cube.js`): `admin` sees everything; `purchasing` (user `buyer`) sees `inventory_health` including vendors,
+unit costs and order quantities, but no sales, offers or customers; `marketing` (user `marketer`) sees stock,
+excess and discount tiers plus offer performance, but no vendor, unit cost, lead time or order-size member,
+whether asked for, filtered on or only used to order the result; managers and reps see no inventory at all,
+even joined to a sales cube. A Keycloak that already imported the realm keeps its old users: run
+`keycloak/sync-users.sh` to add the two roles and users. `offer_performance` is descriptive evidence (units per
+day during an offer versus the 28 days before): no control group, and one offer with a tiny baseline can show an
+enormous lift, so treat it as "what happened", not "what the discount did".
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.
@@ -369,8 +380,9 @@ To develop against a scaled tier without touching the live schemas:
 
   Two consequences of the incremental window. (1) A partition outside it is built once and never again,
   so after a `dbt build --full-refresh`, a backfill or a correction to old orders, rebuild the rollups:
-  `CUBE_PREAGG_SCHEMA=rollups_$(date +%s) docker compose --profile starrocks up -d cube` (a new schema name
-  makes Cube build every partition from scratch; the old tables are cleaned up by Cube Store). Until a
+  set `CUBE_PREAGG_SCHEMA` in `.env` to a new name and `docker compose --profile starrocks up -d cube` (a new
+  schema name makes Cube build every partition from scratch; keep it set, because going back to an old name
+  serves that schema's stale partitions again). Until a
   fresh build finishes, Cube can answer from the partitions built so far (incomplete totals). (2) Cube
   bounds a partition's build range by `max(order_date)` truncated to milliseconds, which silently
   dropped the newest order when it carried microseconds, so the facts now store `order_date` in whole

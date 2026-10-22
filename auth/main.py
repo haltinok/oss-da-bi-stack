@@ -2,8 +2,8 @@
 
 POST /token   Authorization: Bearer <Keycloak access token>
   1. verify the token's signature, issuer, expiry and client (azp) against Keycloak's JWKS
-  2. map the Keycloak realm role to a Cube role (admin > manager > rep)
-  3. look the user's territories up in mart.dim_user_territory (a dbt seed)
+  2. map the Keycloak realm role to a Cube role (admin > purchasing > marketing > manager > rep)
+  3. look the user's territories up in mart.dim_user_territory (a dbt seed); purchasing and marketing have none
   4. mint a Cube JWT {user_id, role, territories} signed with CUBEJS_API_SECRET, 15 min
 
 Cube re-verifies that signature and applies the territory filter in queryRewrite
@@ -22,7 +22,10 @@ TTL = int(os.environ.get("CUBE_JWT_TTL_SECONDS", "900"))
 ISSUER = os.environ["KEYCLOAK_ISSUER"]                 # as it appears in tokens (public URL)
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]             # reachable from this container
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
-ROLE_ORDER = ("admin", "manager", "rep")
+ROLE_ORDER = ("admin", "purchasing", "marketing", "manager", "rep")
+# Only these roles are scoped by territory. purchasing and marketing work on inventory, which is not
+# territory-bound; cube/cube.js keeps them away from the sales cubes.
+TERRITORY_ROLES = ("admin", "manager", "rep")
 # Optional: a (username, region) table to read instead of joining the mart (operator-set, not user input).
 REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE", "")
 
@@ -98,8 +101,8 @@ def token(authorization: str = Header(default="")) -> dict:
     if role is None:
         raise HTTPException(403, "no dashboard role")
     user = claims["preferred_username"]
-    territories = territories_for(user)
-    if not territories:
+    territories = territories_for(user) if role in TERRITORY_ROLES else []
+    if role in TERRITORY_ROLES and not territories:
         raise HTTPException(403, "no territories assigned")
 
     now = int(time.time())

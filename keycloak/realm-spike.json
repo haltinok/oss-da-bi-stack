@@ -14,6 +14,12 @@
       },
       {
         "name": "rep"
+      },
+      {
+        "name": "purchasing"
+      },
+      {
+        "name": "marketing"
       }
     ]
   },
@@ -90,6 +96,42 @@
       ],
       "realmRoles": [
         "rep"
+      ]
+    },
+    {
+      "username": "buyer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "buyer@spike.local",
+      "firstName": "BUYER",
+      "lastName": "Spike",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "purchasing"
+      ]
+    },
+    {
+      "username": "marketer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "marketer@spike.local",
+      "firstName": "MARKETER",
+      "lastName": "Spike",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "marketing"
       ]
     }
   ]

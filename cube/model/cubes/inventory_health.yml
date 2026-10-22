@@ -1,0 +1,108 @@
+cubes:
+  - name: inventory_health
+    sql_table: mart.inventory_health
+    data_source: default
+    # One row per product (a few hundred), so no pre-aggregation: StarRocks answers it directly.
+    # Not territory-bound; access is by role (cube/cube.js): purchasing and admin see everything,
+    # marketing sees stock and discounts but no supplier cost, vendor or order-quantity member.
+
+    joins:
+      - name: products
+        relationship: one_to_one
+        sql: "{CUBE}.product_key = {products}.product_key"
+
+    dimensions:
+      - name: key
+        sql: product_key
+        type: number
+        primary_key: true
+      - name: product_name
+        sql: product_name
+        type: string
+      - name: status
+        sql: status
+        type: string
+      - name: replenishment_type
+        sql: replenishment_type
+        type: string
+      - name: vendor_id
+        sql: vendor_id
+        type: number
+      - name: vendor_name
+        sql: vendor_name
+        type: string
+      - name: reason
+        sql: reason
+        type: string
+      - name: on_hand
+        sql: on_hand
+        type: number
+      - name: on_order
+        sql: on_order
+        type: number
+      - name: daily_demand
+        sql: daily_demand
+        type: number
+      - name: days_of_cover
+        sql: days_of_cover
+        type: number
+      - name: lead_time_days
+        sql: lead_time_days
+        type: number
+      - name: unit_cost
+        sql: unit_cost
+        type: number
+      - name: suggested_order_qty
+        sql: suggested_order_qty
+        type: number
+      - name: suggested_order_value
+        sql: suggested_order_value
+        type: number
+      - name: excess_units
+        sql: excess_units
+        type: number
+      - name: excess_value
+        sql: excess_value
+        type: number
+      - name: suggested_discount_pct
+        sql: suggested_discount_pct
+        type: number
+      - name: last_sale_date
+        sql: last_sale_date
+        type: time
+
+    measures:
+      - name: product_count
+        type: count
+      - name: stockout_items
+        type: count
+        filters:
+          - sql: "{CUBE}.status = 'stockout'"
+      - name: reorder_items
+        type: count
+        filters:
+          - sql: "{CUBE}.status = 'reorder_now'"
+      - name: items_at_risk
+        type: count
+        filters:
+          - sql: "{CUBE}.status IN ('stockout', 'reorder_now')"
+      - name: overstock_items
+        type: count
+        filters:
+          - sql: "{CUBE}.status IN ('overstock', 'dead_stock')"
+      - name: dead_stock_items
+        type: count
+        filters:
+          - sql: "{CUBE}.status = 'dead_stock'"
+      - name: suggested_order_value_total
+        sql: suggested_order_value
+        type: sum
+      - name: suggested_order_qty_total
+        sql: suggested_order_qty
+        type: sum
+      - name: excess_value_total
+        sql: excess_value
+        type: sum
+      - name: excess_units_total
+        sql: excess_units
+        type: sum

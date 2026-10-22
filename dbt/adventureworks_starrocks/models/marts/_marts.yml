@@ -98,3 +98,11 @@ models:
           - accepted_values:
               arguments:
                 values: [discontinued, not_stocked, stockout, reorder_now, dead_stock, overstock, healthy]
+
+  - name: offer_performance
+    description: >
+      One row per discount offer: units per day of the products that sold under it during the offer versus
+      the 28 days before. Descriptive evidence for campaign suggestions, not a causal estimate.
+    columns:
+      - name: special_offer_id
+        data_tests: [unique, not_null]
