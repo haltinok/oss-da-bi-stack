@@ -1,6 +1,6 @@
 """Cube vs direct SQL on the mart (Phase 4 correctness). Needs the spike stack up.
 
-  set -a; . ./.env.spike; set +a
+  set -a; . ./.env; set +a
   uv run --with pymysql --with pyjwt python -I spike/cube/check.py
 Totals must match to the cent. Prints which pre-aggregations served each query.
 """
@@ -17,7 +17,7 @@ import pymysql
 
 URL = os.environ.get("CUBE_URL", "http://localhost:4000/cubejs-api/v1/load")
 TOKEN = jwt.encode({"user_id": "check", "role": "admin", "territories": [], "exp": int(time.time()) + 6 * 3600}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
-db = pymysql.connect(host="127.0.0.1", port=9030, user="root", read_timeout=3600).cursor()
+db = pymysql.connect(host="127.0.0.1", port=int(os.environ.get("STARROCKS_MYSQL_PORT", "9030")), user="root", read_timeout=3600).cursor()
 LIVE = "order_status NOT IN (4, 6)"
 
 

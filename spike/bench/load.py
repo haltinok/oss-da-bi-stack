@@ -1,6 +1,6 @@
 """Concurrent dashboard users against Cube with row-level security on (Phase 7).
 
-  set -a; . ./.env.spike; set +a
+  set -a; . ./.env; set +a
   uv run --with pyjwt --with requests python -I spike/bench/load.py --label 500m --users 1,10,25 --duration 90
 Each virtual user signs in through Keycloak -> auth service as admin, na_manager or de_rep
 (round robin, so every run mixes all three roles and the territory filter), then loops:
@@ -27,14 +27,16 @@ from queries import CH, panel_queries
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--label", required=True)
-ap.add_argument("--cube", default="http://localhost:4000/cubejs-api/v1/load")
+ap.add_argument("--cube", default=os.environ.get("CUBE_URL", "http://localhost:4000/cubejs-api/v1/load"))
 ap.add_argument("--users", default="1,10,25")
 ap.add_argument("--duration", type=int, default=90)
 ap.add_argument("--roles", default="admin,na_manager,de_rep", help="comma list; users are assigned round robin")
 ap.add_argument("--note", default="")
 args = ap.parse_args()
 
-KEYCLOAK, AUTH, PASSWORD = "http://localhost:8180", "http://localhost:8200", os.environ["TEST_USER_PASSWORD"]
+KEYCLOAK = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
+AUTH = os.environ.get("AUTH_URL", "http://localhost:8200")
+PASSWORD = os.environ["TEST_USER_PASSWORD"]
 ROLES = args.roles.split(",")
 SKIP = {"territories_fy_category"}          # known direct-scan shape
 
@@ -63,8 +65,22 @@ QUERIES = {(u, ch): [(n, q) for n, q in panel_queries(ch, profit=(u != "de_rep")
            for u in ROLES for ch in CH}
 
 
+# What the resource sampler watches: report key -> compose service (the StarRocks backend does the work).
+WATCH = {"starrocks": "starrocks-be", "cube": "cube", "cubestore": "cubestore", "cubestore-worker": "cubestore-worker"}
+
+
+def container_names():
+    names = {}
+    for key, service in WATCH.items():
+        cid = subprocess.run(["docker", "compose", "--profile", "starrocks", "ps", "-q", service], capture_output=True, text=True).stdout.split()
+        if cid:
+            names[subprocess.run(["docker", "inspect", "-f", "{{.Name}}", cid[0]], capture_output=True, text=True).stdout.strip().lstrip("/")] = key
+    return names
+
+
 def sampler(stop, samples):
-    names = ["spike-starrocks-1", "spike-cube-1", "spike-cubestore-1", "spike-cubestore-worker-1"]
+    by_name = container_names()
+    names = list(by_name)
     while not stop.is_set():
         out = subprocess.run(["docker", "stats", "--no-stream", "--format", "{{json .}}"] + names, capture_output=True, text=True).stdout
         row = {}
@@ -73,7 +89,7 @@ def sampler(stop, samples):
             mem = d["MemUsage"].split("/")[0].strip()
             unit = {"GiB": 1024, "MiB": 1, "KiB": 1 / 1024, "B": 1 / 1048576}
             val = next(float(mem[:-len(u)]) * k for u, k in unit.items() if mem.endswith(u))
-            row[d["Name"]] = (float(d["CPUPerc"].rstrip("%")), val)
+            row[by_name[d["Name"]]] = (float(d["CPUPerc"].rstrip("%")), val)
         samples.append(row)
 
 
@@ -126,11 +142,11 @@ for n in [int(x) for x in args.users.split(",")]:
            "rps": round(len(lat) / wall, 2), "p50": round(statistics.median(lat), 3) if lat else None,
            "p95": round(q(95), 3) if lat else None, "p99": round(q(99), 3) if lat else None, "max": round(max(lat), 3) if lat else None,
            "direct_share": round(len(direct) / len(lat), 3) if lat else None, "error_sample": errs[:3]}
-    for svc in ("spike-starrocks-1", "spike-cube-1", "spike-cubestore-1", "spike-cubestore-worker-1"):
+    for svc in WATCH:
         cpu = [r[svc][0] for r in samples if svc in r]
         mem = [r[svc][1] for r in samples if svc in r]
         if cpu:
-            rec[svc.replace("spike-", "").replace("-1", "")] = {"cpu_avg": round(statistics.mean(cpu), 1), "cpu_max": round(max(cpu), 1), "mem_max_mib": round(max(mem))}
+            rec[svc] = {"cpu_avg": round(statistics.mean(cpu), 1), "cpu_max": round(max(cpu), 1), "mem_max_mib": round(max(mem))}
     out.write(json.dumps(rec) + "\n")
     out.flush()
     print(json.dumps(rec), flush=True)

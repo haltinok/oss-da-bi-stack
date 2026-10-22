@@ -9,6 +9,7 @@ Builds scale_500m from raw, then scale_100m / scale_10m as copy-index subsets
 
   uv run --with pymysql python -I spike/scale/build.py [--only 10m|100m|500m | --cust-only]
 """
+import os
 import sys
 import time
 
@@ -45,7 +46,7 @@ ORDER_KEYS_DDL = {
 CLEAN = ("sales_order_id < 75124 and sales_order_id not in "
          "(select sales_order_id from raw.recon_deleted_sales_order_header)")
 
-db = pymysql.connect(host="127.0.0.1", port=9030, user="root", autocommit=True, read_timeout=7200)
+db = pymysql.connect(host="127.0.0.1", port=int(os.environ.get("STARROCKS_MYSQL_PORT", "9030")), user="root", autocommit=True, read_timeout=7200)
 cur = db.cursor()
 
 

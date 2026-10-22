@@ -1,6 +1,6 @@
 """Per-query latency of the dashboard queries against one Cube instance (Phase 7).
 
-  set -a; . ./.env.spike; set +a
+  set -a; . ./.env; set +a
   uv run --with pyjwt --with requests python -I spike/bench/bench.py --label 500m [--runs 15] [--direct-runs 3]
               [--cube http://localhost:4000/cubejs-api/v1/load] [--skip-direct]
 For every query: `rollup` = as sent by the dashboard (served by pre-aggregations when one
