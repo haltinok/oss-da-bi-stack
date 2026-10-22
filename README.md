@@ -417,6 +417,28 @@ proposal can be approved or dismissed once. Drafting writes an audit row with ou
 `run_id` does not duplicate. A Keycloak that already imported the realm needs `keycloak/sync-users.sh` for the
 client and role, and `postgres_active/sync-actions.sh` for the table.
 
+**The proposal agent** (`agent/`, Phase 3 step 2). `python -m agent.run [--mode auto|rules|llm] [--dry-run]`
+drafts the week's reorders and campaigns and sends them to the actions service, which validates every item again
+and stores the valid ones for a person to approve. **`rules` mode** (default without a key) groups the mart's own
+suggestions: work orders by category, purchase orders by vendor, campaigns by category and discount depth, capped
+at 12 proposals, most valuable first, each with a one-line rationale and the numbers the service stores; it skips
+anything identical to a proposal still waiting. **`llm` mode** (set `ANTHROPIC_API_KEY`; `AGENT_MODEL`, default
+`claude-opus-5-5`, and `AGENT_EFFORT`, default `medium`) has Claude do the drafting through seven tools: four
+read-only (`list_at_risk`, `list_excess`, `get_offer_evidence`, `list_open_proposals`) and three that only record a
+draft (`propose_work_order`, `propose_purchase_order`, `propose_campaign`). It has no tool to approve, create or
+change anything, and the harness refuses a draft that names a product the model has not read, uses the wrong
+replenishment kind, mixes vendors, covers an item open orders already supply, or uses a quantity different from the
+mart's `suggested_order_qty` without a stated `deviation_reason` (the reason is appended to the rationale). Every run
+writes a JSONL log to `AGENT_LOG_DIR` (llm mode: the request, every assistant turn, tool call and result, token usage)
+and prints an evaluation: how many drafted quantities equal the mart's suggestion, each deviation and whether it is
+explained, the share of reorder value and of excess value covered, and what the service refused. The agent signs in as
+the service account `inventory-agent` and can read only the two inventory cubes. The Airflow DAG
+`inventory_weekly_proposals` (Mondays 06:00 UTC, paused until you turn it on) runs it in its own virtualenv with the
+repo's `agent/` mounted read-only. Demo data only: llm mode sends the inventory rows it reads to the Anthropic API, so
+do not point it at real customer or bank data. Tested: 16 unit tests (the loop against a scripted stand-in for the
+model, no network) and a live rules-mode run through the DAG; the llm path has not been run against the real API
+(no key was available).
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.

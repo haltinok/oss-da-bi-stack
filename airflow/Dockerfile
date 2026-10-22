@@ -24,3 +24,9 @@ RUN pip install --no-cache-dir -r /requirements.txt
 COPY requirements-dbt-starrocks.txt /requirements-dbt-starrocks.txt
 RUN python -m venv /home/airflow/dbt-starrocks \
     && /home/airflow/dbt-starrocks/bin/pip install --no-cache-dir -r /requirements-dbt-starrocks.txt
+
+# The weekly inventory proposal agent (agent/, mounted at /opt/airflow/agent) in its own virtualenv as well:
+# requests plus the Anthropic SDK, nothing shared with Airflow.
+COPY requirements-agent.txt /requirements-agent.txt
+RUN python -m venv /home/airflow/agent \
+    && /home/airflow/agent/bin/pip install --no-cache-dir -r /requirements-agent.txt

@@ -30,3 +30,6 @@ spike/ingest/deleted_orders.json
 spike/bench/conf-*/
 dbt/**/.venv/
 dashboard/cube/tests/screenshots/
+
+# proposal agent run logs
+agent-logs/
