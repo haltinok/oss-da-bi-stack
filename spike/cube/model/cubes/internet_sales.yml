@@ -31,6 +31,9 @@ cubes:
       - name: order_date
         sql: order_date
         type: time
+      - name: order_status
+        sql: order_status
+        type: number
 
     measures:
       - name: revenue

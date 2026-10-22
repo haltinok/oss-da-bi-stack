@@ -6,6 +6,7 @@ config-version: 2
 profile: 'spike_starrocks'
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
 test-paths: ["tests"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
@@ -28,3 +29,15 @@ vars:
   # Postgres project's macros/shift_history_date.sql). Keep 0.
   date_shift_years: 0
   date_shift_cutoff: '2015-01-01'
+
+seeds:
+  spike_starrocks:
+    +schema: mart
+
+# StarRocks table grants vanish when dbt drops and recreates a table, so re-apply
+# them after every run. Needs the users to exist: run spike/starrocks/grants.sh once first.
+on-run-end:
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL TABLES IN DATABASE mart TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL VIEWS IN DATABASE mart TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON TABLE mart.dim_user_territory TO USER 'auth_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON TABLE mart.dim_sales_territory TO USER 'auth_ro'@'%'{% else %}select 1{% endif %}"

@@ -16,7 +16,7 @@ import jwt
 import pymysql
 
 URL = os.environ.get("CUBE_URL", "http://localhost:4000/cubejs-api/v1/load")
-TOKEN = jwt.encode({"user_id": "check"}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
+TOKEN = jwt.encode({"user_id": "check", "role": "admin", "territories": [], "exp": int(time.time()) + 6 * 3600}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
 db = pymysql.connect(host="127.0.0.1", port=9030, user="root", read_timeout=3600).cursor()
 LIVE = "order_status NOT IN (4, 6)"
 

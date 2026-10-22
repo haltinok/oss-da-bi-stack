@@ -71,20 +71,27 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:${CUBE_PORT:-4000}:4000"
-      - "127.0.0.1:${CUBE_SQL_PORT:-15432}:15432"
     environment:
-      CUBEJS_DEV_MODE: ${CUBE_DEV_MODE:-true}
+      # Production mode: no Playground, no stack traces in error bodies. The schema name is
+      # pinned to the one the dev-mode run built so the existing 500M rollups are reused.
+      CUBEJS_DEV_MODE: ${CUBE_DEV_MODE:-false}
+      CUBEJS_PRE_AGGREGATIONS_SCHEMA: dev_pre_aggregations
+      CUBEJS_REFRESH_WORKER: "true"
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env.spike}
       # StarRocks speaks the MySQL protocol.
       CUBEJS_DB_TYPE: mysql
       CUBEJS_DB_HOST: starrocks
       CUBEJS_DB_PORT: "9030"
-      CUBEJS_DB_NAME: ${STARROCKS_DB:-adventureworks_dwh}
-      CUBEJS_DB_USER: ${STARROCKS_USER:-root}
-      CUBEJS_DB_PASS: ${STARROCKS_PASSWORD:-}
+      # cube_ro can only see the mart; the models use qualified mart.* names regardless.
+      CUBEJS_DB_NAME: ${CUBE_DB_NAME:-mart}
+      # Read-only user (spike/starrocks/grants.sh); the mart is all Cube needs.
+      CUBEJS_DB_USER: ${CUBE_DB_USER:-cube_ro}
+      CUBEJS_DB_PASS: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env.spike}
       CUBEJS_CUBESTORE_HOST: cubestore
       CUBEJS_SQL_PORT: "15432"
       # StarRocks (27 GB BE) OOMs on several concurrent 500M-row scans; Cube defaults to 8+.
+      # Whole-table count_distinct rollups legitimately run for many minutes (default timeout: 10).
+      CUBEJS_DB_QUERY_TIMEOUT: "7200"
       CUBEJS_CONCURRENCY: "${CUBE_CONCURRENCY:-2}"
       CUBEJS_DB_MAX_POOL: "${CUBE_CONCURRENCY:-2}"
       CUBEJS_SQL_USER: ${CUBE_SQL_USER:-cube}
@@ -102,7 +109,7 @@ services:
     <<: *restart
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.0}
     # Dev mode: embedded H2, no TLS. Spike only.
-    command: ["start-dev"]
+    command: ["start-dev", "--import-realm"]
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
     environment:
@@ -110,8 +117,14 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env.spike}
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_PORT: "8080"
+      # Tokens carry this issuer whichever URL they were fetched from, so the auth
+      # service can validate them; the backchannel stays reachable as keycloak:8080.
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:?set TEST_USER_PASSWORD in .env.spike}
     volumes:
       - keycloak_data:/opt/keycloak/data
+      - ./spike/keycloak/realm-spike.json:/opt/keycloak/data/import/realm-spike.json:ro
     healthcheck:
       # The image has no curl; probe the management port (9000) via bash.
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
@@ -131,13 +144,36 @@ services:
     environment:
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env.spike}
       CUBE_JWT_TTL_SECONDS: ${CUBE_JWT_TTL_SECONDS:-900}
-      # Issuer URL the backend validates Keycloak tokens against (Phase 5).
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/spike}
+      # Issuer as it appears in tokens (public URL), and where to fetch the keys from.
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
+      ALLOWED_ORIGINS: http://localhost:${DASHBOARD_SPIKE_PORT:-8250}
+      STARROCKS_HOST: starrocks
+      AUTH_DB_USER: ${AUTH_DB_USER:-auth_ro}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env.spike}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/healthz').status==200 else 1)"]
       interval: 10s
       timeout: 3s
       retries: 10
+
+  dashboard-spike:
+    <<: *restart
+    image: nginx:1.27-alpine
+    depends_on:
+      auth:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${DASHBOARD_SPIKE_PORT:-8250}:8250"
+    volumes:
+      - ./dashboard/static:/usr/share/nginx/html:ro
+      - ./spike/dashboard:/srv/spike:ro
+      - ./spike/dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8250/"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
 
 volumes:
   starrocks_fe:

@@ -10,7 +10,7 @@ import urllib.request
 
 import jwt
 
-TOKEN = jwt.encode({"user_id": "probe"}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
+TOKEN = jwt.encode({"user_id": "probe", "role": "admin", "territories": [], "exp": int(time.time()) + 6 * 3600}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
 
 
 def cube(q):
