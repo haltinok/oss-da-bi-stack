@@ -29,6 +29,17 @@ const SECRET = process.env.CUBEJS_API_SECRET;
 const FACT_CUBES = new Set(['internet_sales', 'reseller_sales']);
 const REFERENCE_CUBES = new Set(['products', 'dates']);       // no territory-scoped data
 const PROFIT_MEMBERS = new Set(['gross_profit', 'margin_pct', 'product_cost']);
+// Inventory data is not territory-bound, so it is gated by role instead: purchasing sees the reorder
+// side, marketing sees stock and offers but nothing about suppliers or order sizes; managers and reps see neither.
+const INVENTORY_CUBES = new Set(['inventory_health', 'offer_performance']);
+const ROLE_CUBES = {
+  purchasing: new Set(['inventory_health', 'products']),
+  marketing: new Set(['inventory_health', 'offer_performance', 'products']),
+};
+const SUPPLIER_MEMBERS = new Set([
+  'vendor_id', 'vendor_name', 'unit_cost', 'lead_time_days', 'replenishment_type',
+  'suggested_order_qty', 'suggested_order_value', 'suggested_order_qty_total', 'suggested_order_value_total',
+]);
 
 // Cube turns a thrown CubejsHandlerError into its HTTP status; any other error is a 500
 // (with a stack trace in dev mode). Messages stay generic: they go back to the caller.
@@ -82,6 +93,18 @@ function queryRewrite(query, { securityContext }) {
   }
   if (sc.role === 'admin') {
     return query;
+  }
+  if (ROLE_CUBES[sc.role]) {
+    if (![...cubes].every((c) => ROLE_CUBES[sc.role].has(c)) || ![...cubes].some((c) => INVENTORY_CUBES.has(c))) {
+      throw forbidden('Not available for your role');
+    }
+    if (sc.role === 'marketing' && members.some((m) => m.startsWith('inventory_health.') && SUPPLIER_MEMBERS.has(m.split('.')[1]))) {
+      throw forbidden('Supplier and order data are not available for your role');
+    }
+    return query;
+  }
+  if ([...cubes].some((c) => INVENTORY_CUBES.has(c))) {
+    throw forbidden('Inventory data is not available for your role');
   }
 
   const territories = Array.isArray(sc.territories) ? sc.territories : [];

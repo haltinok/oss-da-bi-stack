@@ -1,0 +1,54 @@
+cubes:
+  - name: offer_performance
+    sql_table: mart.offer_performance
+    data_source: default
+    # Descriptive evidence only: units per day of the products sold under an offer, during it versus the
+    # 28 days before. No control group, so it also carries seasonality and trend. Marketing and admin only.
+
+    dimensions:
+      - name: key
+        sql: special_offer_id
+        type: number
+        primary_key: true
+      - name: description
+        sql: description
+        type: string
+      - name: offer_type
+        sql: offer_type
+        type: string
+      - name: offer_category
+        sql: offer_category
+        type: string
+      - name: discount_band
+        sql: discount_band
+        type: string
+      - name: discount_pct
+        sql: discount_pct
+        type: number
+      - name: start_date
+        sql: start_date
+        type: time
+      - name: end_date
+        sql: end_date
+        type: time
+      - name: lift
+        sql: lift
+        type: number
+
+    measures:
+      - name: offers
+        type: count
+      - name: units_during
+        sql: units_during
+        type: sum
+      - name: units_before
+        sql: units_before
+        type: sum
+      - name: days_during
+        sql: days_during
+        type: sum
+      # Average of the per-offer lift (units/day during over units/day in the 28 days before). Offers with
+      # no baseline have a null lift and are skipped by avg. One offer with a tiny baseline can dominate it.
+      - name: avg_lift
+        sql: lift
+        type: avg
