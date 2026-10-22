@@ -164,6 +164,7 @@ async function loadMeta() {
   fillFilters();
 }
 
+let fullReload = false;
 async function load({ quiet = false } = {}) {
   clearTimeout(state.timer);
   // A background refresh never cancels a load that is still running (a slow query would
@@ -173,8 +174,26 @@ async function load({ quiet = false } = {}) {
   const ctrl = new AbortController();
   state.inflight = ctrl;
   state.busy = true;
-  if (!quiet) { state.t0 = performance.now(); state.timing = {}; startTicker(); pendAll(true); }
+  // The latest-orders feed ignores every filter and is pull-only: it is fetched on the first load,
+  // the refresh button and a page reload, or when the background poll sees that new orders landed.
+  // A filter change or a chart click never touches it.
+  let keepFeed = !fullReload && !!state.data?.latest_orders;
+  fullReload = false;
+  const probe = window.dashboardData
+    ? () => getJSON("/api/orders-version", ctrl.signal).then((r) => r.version).catch(() => null) : async () => null;
+  let version = null;
+  if (quiet && keepFeed) {
+    version = await probe();
+    keepFeed = version != null && version === state.feedVersion;
+  }
+  if (!quiet) {
+    const feedMs = keepFeed ? state.timing?.latest_orders : null;
+    state.t0 = performance.now(); state.timing = feedMs != null ? { latest_orders: feedMs } : {}; startTicker();
+    for (const [key, sel] of Object.entries(PANEL_OF)) if (!(keepFeed && key === "latest_orders")) pend(sel, true);
+  }
   const q = new URLSearchParams(Object.entries(state.filters).filter(([, v]) => v));
+  if (keepFeed) q.set("feed", "0");
+  const versionP = keepFeed ? null : version != null ? Promise.resolve(version) : probe();
   // Each panel's data lands here as soon as its query returns; a stale answer (the filters
   // have changed since) is dropped.
   const part = (patch) => {
@@ -193,6 +212,7 @@ async function load({ quiet = false } = {}) {
     // quiet refreshes apply only the final result, so a slow figure does not blink back to "…"
     const data = await getJSON(`/api/dashboard?${q}`, ctrl.signal, quiet ? null : part);
     part(data);
+    if (!keepFeed) state.feedVersion = await versionP;
     pendAll(false);
     state.polls++;
   } catch (err) {
@@ -312,7 +332,7 @@ $("#reset").addEventListener("click", () => {
   state.restore = {};
   fillFilters(); writeUrl(); load();
 });
-$("#refresh").addEventListener("click", () => load());
+$("#refresh").addEventListener("click", () => { fullReload = true; load(); });
 $("#theme").addEventListener("click", () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -398,7 +418,7 @@ const DATASETS = {
     rows: monthSeries(state.data.monthly).filter((m) => !m.break),
   }),
   feed: () => ({
-    key: "feed", name: "Latest orders", title: "Latest orders", ignores: ["fy"],
+    key: "feed", name: "Latest orders", title: "Latest orders", ignores: ["fy", "group", "region", "category", "subcategory"],
     ignoreNote: "this panel always lists the newest orders",
     columns: [
       col("Order", "text", (r) => r.sales_order_number),

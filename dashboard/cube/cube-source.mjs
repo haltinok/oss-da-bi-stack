@@ -165,7 +165,7 @@ async function staged(modes, build, emit, pending) {
   }
 }
 
-async function dashboard(f, signal, update) {
+async function dashboard(f, signal, update, skipFeed = false) {
   const chans = channels(f);
   const out = {};
   const productFilter = !!(f.category || f.subcategory);
@@ -268,14 +268,14 @@ async function dashboard(f, signal, update) {
     return { territories: [...m.values()].sort((a, b) => b.revenue - a.revenue) };
   }, emit, pending);
 
-  // Newest orders ignore the fiscal-year filter. Find the newest day from the daily rollup (without any
+  // Newest orders ignore every page filter (row-level security still applies server-side). Find the newest day from the daily rollup (without any
   // product filter, which that rollup does not carry), then read only the last week (one or two month
   // partitions) instead of aggregating every order. A product filter may leave fewer than 8 orders in
   // that week; then look back further (still only a few partitions).
   const latest = async () => {
-    const res = await perChannel(async (ch) => {
+    const res = await Promise.all(Object.keys(CH).map(async (ch) => ({ ch, rows: await (async (ch) => {
       const c = CH[ch];
-      const last = await run({ measures: [`${c}.revenue`], filters: filters(f, ["fy", "category", "subcategory"]),
+      const last = await run({ measures: [`${c}.revenue`], filters: [],
         timeDimensions: [{ dimension: `${c}.order_date`, granularity: "day" }],
         order: { [`${c}.order_date`]: "desc" }, limit: 1 }, signal);
       if (!last.length) return [];
@@ -283,13 +283,13 @@ async function dashboard(f, signal, update) {
       const window = (days) => run({
         measures: [`${c}.lines`, `${c}.revenue`],
         dimensions: [`${c}.order_number`, `${c}.order_date`, "territories.region", `${c}.order_status`],
-        filters: filters(f, ["fy"]),
+        filters: [],
         timeDimensions: [{ dimension: `${c}.order_date`, dateRange: [addDays(end, -days), end] }],
         order: { [`${c}.order_date`]: "desc", [`${c}.order_number`]: "desc" }, limit: 8,
       }, signal);
       const rows = await window(6);
-      return rows.length < 8 && productFilter ? window(120) : rows;
-    });
+      return rows;
+    })(ch) })));
     emit({ latest_orders: res.flatMap(({ ch, rows }) => rows.map((r) => ({
       sales_order_number: r[`${CH[ch]}.order_number`], channel: ch,
       order_date: r[`${CH[ch]}.order_date`].replace(/\.\d+$/, ""), region: r["territories.region"],
@@ -341,7 +341,7 @@ async function dashboard(f, signal, update) {
   // Every panel runs on its own and draws when it is ready. One failing panel must not blank the rest.
   const kp = kpis(), mp = monthly(), tp = territories();
   const late = productFilter ? Promise.all([kp, mp, tp]).then(lateOrders) : null;
-  const results = await Promise.allSettled([kp, mp, mix(), products(), tp, latest(), ...(late ? [late] : [])]);
+  const results = await Promise.allSettled([kp, mp, mix(), products(), tp, ...(skipFeed ? [] : [latest()]), ...(late ? [late] : [])]);
   const failed = results.find((r) => r.status === "rejected");
   for (const r of results) if (r.status === "rejected" && r.reason?.name !== "AbortError") console.warn("panel query failed:", r.reason?.message || r.reason);
   if (failed) {
@@ -381,9 +381,14 @@ window.__dashboardDataReady({
   async get(url, signal, update) {
     const u = new URL(url, location.origin);
     if (u.pathname === "/api/meta") return meta(signal);
+    // Cheap unfiltered probe (rollup-served): the total number of order lines changes when new orders land.
+    if (u.pathname === "/api/orders-version") {
+      const rows = await Promise.all(Object.values(CH).map((c) => run({ measures: [`${c}.lines`] }, signal)));
+      return { version: rows.reduce((n, r, i) => n + num(r[0]?.[`${Object.values(CH)[i]}.lines`] || 0), 0) };
+    }
     if (u.pathname === "/api/dashboard") {
       const f = Object.fromEntries(["fy", "channel", "group", "region", "category", "subcategory"].map((k) => [k, u.searchParams.get(k) || ""]));
-      return dashboard(f, signal, update);
+      return dashboard(f, signal, update, u.searchParams.get("feed") === "0");
     }
     throw new Error(`unknown endpoint ${u.pathname}`);
   },
