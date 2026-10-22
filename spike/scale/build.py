@@ -22,7 +22,7 @@ import time
 
 import pymysql
 
-SCALES = {"1m": 8, "10m": 83, "100m": 825, "250m": 2060, "500m": 4120}   # copies of the ~121k-line base; 1m is a smoke test
+SCALES = {"1m": 8, "10m": 83, "25m": 206, "100m": 825, "250m": 2060, "500m": 4120}   # copies of the ~121k-line base; 1m is a smoke test
 CUST_COPIES = 100
 OFF = 1_000_000
 CHUNK = 200                                        # copies per INSERT (~24M detail rows)
