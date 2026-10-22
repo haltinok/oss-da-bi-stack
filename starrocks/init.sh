@@ -8,7 +8,7 @@
 #      which persist when dbt drops and recreates tables
 #   4. global settings the 500M spike needed: long query timeout, spill to disk
 #
-# Env: STARROCKS_FE, CUBE_DB_PASSWORD, AUTH_DB_PASSWORD
+# Env: STARROCKS_FE, CUBE_DB_PASSWORD, AUTH_DB_PASSWORD, ACTIONS_SR_PASSWORD
 set -euo pipefail
 fe=${STARROCKS_FE:-starrocks-fe}
 sr() { mysql -h"$fe" -P9030 -uroot --connect-timeout=5 "$@"; }
@@ -28,11 +28,14 @@ CREATE DATABASE IF NOT EXISTS rls;
 CREATE DATABASE IF NOT EXISTS adventureworks_dwh;
 CREATE USER IF NOT EXISTS 'cube_ro'@'%' IDENTIFIED BY '${CUBE_DB_PASSWORD}';
 CREATE USER IF NOT EXISTS 'auth_ro'@'%' IDENTIFIED BY '${AUTH_DB_PASSWORD}';
+CREATE USER IF NOT EXISTS 'actions_ro'@'%' IDENTIFIED BY '${ACTIONS_SR_PASSWORD}';
 -- Wildcard (ALL TABLES IN DATABASE) grants are kept when dbt drops and recreates a table;
 -- table-level grants are not. Cube reads the whole mart; the auth service only the rls schema.
 GRANT SELECT ON ALL TABLES IN DATABASE mart TO USER 'cube_ro'@'%';
 GRANT SELECT ON ALL VIEWS IN DATABASE mart TO USER 'cube_ro'@'%';
 GRANT SELECT ON ALL TABLES IN DATABASE rls TO USER 'auth_ro'@'%';
+-- The actions service checks a request against the current mart.inventory_health row.
+GRANT SELECT ON ALL TABLES IN DATABASE mart TO USER 'actions_ro'@'%';
 SET GLOBAL query_timeout = 7200;
 SET GLOBAL enable_spill = true;
 SET GLOBAL spill_mode = 'auto';

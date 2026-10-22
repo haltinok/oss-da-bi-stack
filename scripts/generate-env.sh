@@ -45,6 +45,8 @@ CLICKHOUSE_PASSWORD=$(hex)
 CUBEJS_API_SECRET=$(hex)
 CUBE_DB_PASSWORD=$(openssl rand -hex 16)
 AUTH_DB_PASSWORD=$(openssl rand -hex 16)
+ACTIONS_DB_PASSWORD=$(openssl rand -hex 16)
+ACTIONS_SR_PASSWORD=$(openssl rand -hex 16)
 KEYCLOAK_ADMIN_PASSWORD=$(openssl rand -hex 16)
 TEST_USER_PASSWORD=$(openssl rand -hex 12)
 
@@ -61,6 +63,7 @@ CUBE_PORT=4000
 KEYCLOAK_PORT=8180
 AUTH_PORT=8200
 DASHBOARD_CUBE_PORT=8250
+ACTIONS_PORT=8300
 EOF
 chmod 600 "$env_file"
 echo "wrote $env_file"
