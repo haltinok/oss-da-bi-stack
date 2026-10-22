@@ -1083,7 +1083,10 @@ async function loadInventory({ quiet = false } = {}) {
   } catch (err) {
     if (err.name === "AbortError") return;
     if (!state.salesView) setLive(false, err.message);
-    if (!state.invData) { $("#error").hidden = false; $("#error").textContent = `Could not load inventory: ${err.message}`; }
+    if (!state.invData) {
+      // say so inside the panels: a blank card looks like "nothing to show"
+      for (const k of ["reorder", "overstock"]) if (state.inv[k]) $(`#${k}`).innerHTML = `<div class="empty-list">Could not load this list: ${esc(err.message)}</div>`;
+    }
   } finally {
     if (state.invCtrl === ctrl) {
       state.invBusy = false; sel.forEach((q) => pend(q, false)); tick();
