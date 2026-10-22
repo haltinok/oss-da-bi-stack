@@ -367,7 +367,7 @@ even joined to a sales cube. A Keycloak that already imported the realm keeps it
 day during an offer versus the 28 days before): no control group, and one offer with a tiny baseline can show an
 enormous lift, so treat it as "what happened", not "what the discount did".
 
-**Inventory panels** (dashboard, below the sales charts): three KPI tiles (items at stockout risk, suggested
+**Inventory panels** (dashboard, below the sales charts; a **Drafted proposals** card above the lists shows what the agent drafted for the role, each with its rationale, the numbers behind it, editable quantities or discount and a tick per line, and Approve (the action endpoint with `proposal_id`: one transaction creates the rows, logs it and marks the proposal approved) or Dismiss): three KPI tiles (items at stockout risk, suggested
 reorders, capital tied in excess stock), a reorder list (admin, purchasing) and an overstock / dead-stock list with
 a suggested discount and what past offers of that depth did (admin, marketing), each with an Excel export. They
 ignore every sales filter and a filter change never re-queries them; they load with the page, on Refresh and on

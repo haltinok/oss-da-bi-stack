@@ -480,7 +480,12 @@ async function inventory(signal) {
 await cubeToken(); // signs in (redirecting if needed) before the first request
 window.__dashboardDataReady({
   // Inventory actions: the page posts approvals here (the service re-checks the role and every rule).
-  actions: { log: () => actionsCall("GET", "/actions/log?limit=200"), post: (path, body) => actionsCall("POST", path, body) },
+  actions: {
+    log: () => actionsCall("GET", "/actions/log?limit=200"),
+    post: (path, body) => actionsCall("POST", path, body),
+    proposals: () => actionsCall("GET", "/proposals?status=proposed&limit=100"),
+    dismiss: (id) => actionsCall("POST", `/proposals/${id}/dismiss`, {}),
+  },
   async get(url, signal, update) {
     const u = new URL(url, location.origin);
     if (u.pathname === "/api/meta") return meta(signal);

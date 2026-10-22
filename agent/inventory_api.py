@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -105,6 +106,13 @@ class InventoryApi:
         r = requests.get(f"{self.actions}/proposals", headers=self._auth_header(), timeout=30)
         r.raise_for_status()
         return r.json()["proposals"]
+
+    def recently_approved(self, hours: int = 24) -> list[dict]:
+        """Proposals a person approved in the last `hours`: the mart may not show their orders yet."""
+        r = requests.get(f"{self.actions}/proposals", params={"status": "approved", "limit": 200}, headers=self._auth_header(), timeout=30)
+        r.raise_for_status()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        return [p for p in r.json()["proposals"] if p.get("decided_at") and datetime.fromisoformat(p["decided_at"]) >= cutoff]
 
     def submit(self, run_id: str, proposals: list[dict]) -> dict:
         r = requests.post(f"{self.actions}/proposals", json={"run_id": run_id, "proposals": proposals}, headers=self._auth_header(), timeout=60)

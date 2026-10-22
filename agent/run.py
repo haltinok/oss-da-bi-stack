@@ -43,7 +43,8 @@ def products_of(p: dict) -> tuple:
 
 
 def drop_duplicates(proposals: list[dict], open_proposals: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Proposals that repeat one still waiting for a decision (same kind, same products) are not drafted again."""
+    """Proposals that repeat one still waiting for a decision, or approved in the last day (same kind, same products),
+    are not drafted again: an approved order may not be in the mart yet."""
     waiting = {products_of(p) for p in open_proposals}
     keep = [p for p in proposals if products_of(p) not in waiting]
     return keep, [p for p in proposals if products_of(p) in waiting]
@@ -82,10 +83,10 @@ def main(argv=None) -> int:
         api = InventoryApi()
         log("start", {"run_id": run_id, "mode": mode, "dry_run": args.dry_run})
         proposals, info, at_risk, excess = build(api, mode, log, args.max_proposals)
-        proposals, repeated = drop_duplicates(proposals, api.open_proposals())
+        proposals, repeated = drop_duplicates(proposals, api.open_proposals() + api.recently_approved())
         if repeated:
             log("skipped_duplicates", {"titles": [p["title"] for p in repeated]})
-            print(f"skipped {len(repeated)} proposal(s) already waiting for a decision")
+            print(f"skipped {len(repeated)} proposal(s) already waiting for a decision or just approved")
         results = None
         if proposals and not args.dry_run:
             results = api.submit(run_id, proposals)["results"]
