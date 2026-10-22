@@ -125,6 +125,37 @@ const PANEL_OF = {
   kpis: "#kpis", monthly: '[data-panel="trend"]', latest_orders: '[data-panel="feed"]',
   mix: '[data-panel="mix"]', top_products: '[data-panel="products"]', territories: '[data-panel="territories"]',
 };
+// ---- Per-panel load timers: a spinner with the running seconds while a panel waits, then "✓ 1.4s".
+const PANEL_KEY = { trend: "monthly", feed: "latest_orders", mix: "mix", products: "top_products", territories: "territories" };
+const TIMED = new Set(["kpis", "monthly", "mix", "top_products", "territories", "latest_orders"]);
+const timerHtml = (key) => `<span class="timer" data-key="${key}"><i class="spin"></i><b></b></span>`;
+function mountTimers() {
+  for (const card of document.querySelectorAll("[data-panel]")) {
+    const head = card.querySelector(".card-h");
+    if (!head || head.querySelector(".timer")) continue;
+    head.insertBefore(el("span", { class: "timer-wrap" }, timerHtml(PANEL_KEY[card.dataset.panel])), head.querySelector(".tbl-toggle"));
+  }
+}
+function tick() {
+  const now = performance.now();
+  for (const t of document.querySelectorAll(".timer")) {
+    const done = state.timing && state.timing[t.dataset.key];
+    const running = state.t0 != null && state.timing && done == null && state.busy;
+    t.classList.toggle("done", done != null);
+    t.classList.toggle("run", !!running);
+    const b = t.querySelector("b");
+    b.textContent = done != null ? `${(done / 1000).toFixed(1)}s` : running ? `${((now - state.t0) / 1000).toFixed(1)}s` : "";
+  }
+}
+function startTicker() { clearInterval(state.ticker); state.ticker = setInterval(tick, 100); }
+function stopTicker() { clearInterval(state.ticker); tick(); }
+function recordTimes(patch) {
+  const at = performance.now() - state.t0;
+  for (const k of Object.keys(patch)) if (TIMED.has(k) && !(k in state.timing)) state.timing[k] = at;
+  // the Orders / Avg order value tiles finish when the orders figure is no longer pending
+  if (state.data.kpis && !state.data.ordersPending && !("orders" in state.timing)) state.timing.orders = at;
+}
+
 function pend(sel, on) { document.querySelectorAll(sel).forEach((n) => n.classList.toggle("pending", on)); }
 function pendAll(on) { for (const sel of Object.values(PANEL_OF)) pend(sel, on); }
 
@@ -142,7 +173,7 @@ async function load({ quiet = false } = {}) {
   const ctrl = new AbortController();
   state.inflight = ctrl;
   state.busy = true;
-  if (!quiet) pendAll(true);
+  if (!quiet) { state.t0 = performance.now(); state.timing = {}; startTicker(); pendAll(true); }
   const q = new URLSearchParams(Object.entries(state.filters).filter(([, v]) => v));
   // Each panel's data lands here as soon as its query returns; a stale answer (the filters
   // have changed since) is dropped.
@@ -150,8 +181,10 @@ async function load({ quiet = false } = {}) {
     if (ctrl.signal.aborted) return;
     state.data = { ...(state.data || {}), ...patch };
     state.noProfit = !!window.dashboardData?.noProfit;
+    if (!quiet) recordTimes(patch);
     $("#error").hidden = true;
     renderAll();
+    tick();
     for (const [key, sel] of Object.entries(PANEL_OF)) if (key in patch) pend(sel, false);
     setLive(true);
   };
@@ -170,6 +203,7 @@ async function load({ quiet = false } = {}) {
     if (state.inflight === ctrl) {
       state.busy = false;
       pendAll(false);
+      stopTicker();
       state.timer = setTimeout(() => !document.hidden && load({ quiet: true }), POLL_MS);
     }
   }
@@ -535,7 +569,7 @@ function renderKpis(months) {
     const late = state.data.ordersPending && (k.label === "Orders" || k.label === "Avg order value");
     const shown = late ? `<span title="still counting orders">…</span>` : k.fmt(v);
     const tile = el("div", { class: "card kpi" },
-      `<div class="label">${k.label}</div><div class="value">${shown}</div><div class="delta ${cls}">${delta}</div>`);
+      `<div class="label">${k.label}${timerHtml(k.label === "Orders" || k.label === "Avg order value" ? "orders" : "kpis")}</div><div class="value">${shown}</div><div class="delta ${cls}">${delta}</div>`);
     tile.append(sparkline(series.map((m) => (m.revenue ? k.get(m) : null)), series, k));
     host.append(tile);
   }
@@ -924,4 +958,5 @@ new ResizeObserver(() => {
 }).observe($("#trend"));
 
 readUrl();
+mountTimers();
 load();
