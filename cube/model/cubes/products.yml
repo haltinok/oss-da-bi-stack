@@ -1,0 +1,22 @@
+cubes:
+  - name: products
+    sql_table: mart.dim_product
+    data_source: default
+
+    dimensions:
+      - name: key
+        sql: product_key
+        type: number
+        primary_key: true
+      - name: name
+        sql: product_name
+        type: string
+      - name: category
+        sql: "COALESCE({CUBE}.product_category_name, 'Uncategorized')"
+        type: string
+      - name: subcategory
+        sql: "COALESCE({CUBE}.product_subcategory_name, 'Uncategorized')"
+        type: string
+      - name: color
+        sql: color
+        type: string

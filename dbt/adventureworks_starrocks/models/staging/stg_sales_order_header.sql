@@ -1,5 +1,10 @@
 with source as (
     select * from {{ source('adventureworks', 'sales_order_header') }}
+    {% if var('use_pk_snapshots', false) %}
+    -- A merge load never sees hard deletes. The pipeline snapshots the live primary keys
+    -- each cycle (raw.pk_sales_order_header); an order whose key is gone was deleted at the source.
+    where sales_order_id in (select sales_order_id from {{ source('adventureworks', 'pk_sales_order_header') }})
+    {% endif %}
 ),
 
 renamed as (

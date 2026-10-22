@@ -2,8 +2,8 @@
 # Start a second Cube on :4001 that reads the marts of another scale (mart_10m / mart_100m),
 # with its own pre-aggregation schema in Cube Store, so the 500M instance and its rollups are
 # untouched. Build the marts first:
-#   dbt run --profiles-dir spike/dbt --project-dir spike/dbt \
-#       --vars '{aw_source_schema: scale_10m, mart_suffix: _10m}' --full-refresh
+#   dbt run --profiles-dir dbt/adventureworks_starrocks --project-dir dbt/adventureworks_starrocks \
+#       --vars '{aw_source_schema: scale_10m, date_shift_years: 0, mart_suffix: _10m}' --full-refresh
 # Usage: spike/bench/run_scale.sh 10m|100m      (stop with: docker rm -f spike-cube-bench)
 set -euo pipefail
 cd "$(dirname "$0")/../.."

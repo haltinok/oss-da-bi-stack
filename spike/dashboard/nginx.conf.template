@@ -1,0 +1,29 @@
+# Serves the existing dashboard (dashboard/static, unchanged) and injects the Cube data source in
+# front of app.js: sign-in + Cube adapter instead of the Postgres-backed /api/*.
+# Template: the nginx image fills in ${KEYCLOAK_PORT} / ${AUTH_PORT} / ${CUBE_PORT} at start.
+server {
+    listen 8250;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Where the browser finds Keycloak, the auth service and Cube (published on localhost).
+    location = /spike/config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-cache";
+        return 200 'window.SPIKE = { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" };';
+    }
+
+    location /spike/ {
+        alias /srv/spike/;
+        default_type text/javascript;   # .mjs is not in nginx's mime.types
+        add_header Cache-Control "no-cache";
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-cache";
+        sub_filter_once on;
+        sub_filter '<script src="app.js"></script>'
+                   '<script src="spike/config.js"></script><script src="spike/boot.js"></script><script type="module" src="spike/cube-source.mjs"></script><script src="app.js"></script>';
+    }
+}

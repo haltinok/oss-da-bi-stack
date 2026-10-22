@@ -13,12 +13,12 @@ cp .env.spike.example .env.spike     # fill in (openssl rand -hex 16); MSSQL_* f
 docker compose -f docker-compose.spike.yml --env-file .env.spike up -d --build   # Phase 0 + 5 + 6 services
 spike/ingest/run.sh                                                              # Phase 1: SQL Server -> raw
 uv run --with pymysql python -I spike/scale/build.py                            # Phase 2: scale_10m/100m/500m
-cd spike/dbt && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+cd dbt/adventureworks_starrocks && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
 . .venv/bin/activate
-dbt seed --profiles-dir . --vars '{aw_source_schema: scale_500m, apply_ro_grants: false}'
-../starrocks/grants.sh                                                           # read-only users
-dbt run  --profiles-dir . --vars '{aw_source_schema: scale_500m}' --full-refresh --threads 1   # Phase 3
-dbt test --profiles-dir . --vars '{aw_source_schema: scale_500m}' --threads 1
+dbt seed --profiles-dir . --vars '{aw_source_schema: scale_500m, date_shift_years: 0, apply_ro_grants: false}'
+../../spike/starrocks/grants.sh                                                           # read-only users
+dbt run  --profiles-dir . --vars '{aw_source_schema: scale_500m, date_shift_years: 0}' --full-refresh --threads 1   # Phase 3
+dbt test --profiles-dir . --vars '{aw_source_schema: scale_500m, date_shift_years: 0}' --threads 1
 ```
 Then open http://localhost:8250 (users `admin`, `na_manager`, `de_rep`; password = `TEST_USER_PASSWORD`).
 Cube builds its rollups in the background on first start (about 2 h at 500M, on this machine).
@@ -41,7 +41,7 @@ Cube builds its rollups in the background on first start (about 2 h at 500M, on 
 | `docker-compose.spike.yml` | StarRocks, Cube + Cube Store, Keycloak, auth service, dashboard (nginx) |
 | `spike/ingest/` | ingestr runner, table list, delete reconciliation, source mutator (spike copies only) |
 | `spike/scale/` | builds the 10M / 100M / 500M-line schemas inside StarRocks |
-| `spike/dbt/` | StarRocks port of the star schema, tests, `dim_user_territory` seed |
+| `dbt/adventureworks_starrocks/` | StarRocks port of the star schema, tests, `dim_user_territory` seed |
 | `spike/cube/` | Cube model (`model/`), `cube.js` (dialect, auth, RLS), check/probe/tests |
 | `spike/keycloak/` | realm import (users, roles, `dashboard` client) |
 | `spike/auth/` | FastAPI: Keycloak token in, 15-minute Cube JWT out |

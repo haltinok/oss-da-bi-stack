@@ -23,6 +23,8 @@ ISSUER = os.environ["KEYCLOAK_ISSUER"]                 # as it appears in tokens
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]             # reachable from this container
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
 ROLE_ORDER = ("admin", "manager", "rep")
+# Optional: a (username, region) table to read instead of joining the mart (operator-set, not user input).
+REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE", "")
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="spike-auth")
@@ -35,6 +37,19 @@ app.add_middleware(
 
 
 def territories_for(username: str) -> list[str]:
+    # dbt drops and recreates the table on every build: for a split second it does not exist.
+    # Retry that (and only that) briefly instead of failing a login.
+    for attempt in range(4):
+        try:
+            return _territories_for(username)
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args[0] != 5502 or attempt == 3:  # 5502: unknown table
+                raise
+            time.sleep(0.4)
+    return []
+
+
+def _territories_for(username: str) -> list[str]:
     conn = pymysql.connect(
         host=os.environ.get("STARROCKS_HOST", "starrocks"),
         port=int(os.environ.get("STARROCKS_PORT", "9030")),
@@ -44,12 +59,17 @@ def territories_for(username: str) -> list[str]:
     )
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "select t.sales_territory_region from mart.dim_user_territory u "
-                "join mart.dim_sales_territory t on t.sales_territory_key = u.sales_territory_key "
-                "where u.username = %s order by 1",
-                (username,),
-            )
+            if REGIONS_TABLE:
+                # e.g. rls.user_regions (username, region): a schema with a wildcard grant, so it
+                # stays readable while dbt rebuilds the mart.
+                cur.execute(f"select region from {REGIONS_TABLE} where username = %s order by 1", (username,))
+            else:
+                cur.execute(
+                    "select t.sales_territory_region from mart.dim_user_territory u "
+                    "join mart.dim_sales_territory t on t.sales_territory_key = u.sales_territory_key "
+                    "where u.username = %s order by 1",
+                    (username,),
+                )
             return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()

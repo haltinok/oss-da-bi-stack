@@ -111,6 +111,23 @@ jobs:
       - name: dbt build
         run: dbt build --project-dir dbt/adventureworks_dwh --profiles-dir dbt/adventureworks_dwh
 
+  # The StarRocks dbt project: parse it (no database needed) with and without the primary-key
+  # snapshot sources, which are only enabled when the pipeline loads them.
+  dbt-starrocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: install dbt-starrocks (versions from the project's requirements.txt)
+        run: pip install -r dbt/adventureworks_starrocks/requirements.txt
+      - name: dbt parse
+        working-directory: dbt/adventureworks_starrocks
+        run: |
+          dbt parse --profiles-dir . --vars '{use_pk_snapshots: false}'
+          dbt parse --profiles-dir . --vars '{use_pk_snapshots: true}'
+
   compose:
     runs-on: ubuntu-latest
     steps:
@@ -122,6 +139,8 @@ jobs:
           docker compose --profile cdc config >/dev/null
           docker compose --profile bi config >/dev/null
           docker compose --profile cdc --profile bi config >/dev/null
+          docker compose --profile starrocks config >/dev/null
+          docker compose --profile cdc --profile bi --profile starrocks config >/dev/null
 
   # Builds the three custom images. The dags/dwh jobs install Python packages
   # directly on the runner, so without this job a Dockerfile break (or a
@@ -135,7 +154,7 @@ jobs:
       - name: fill .env (values don't matter, only that they're set)
         run: cp .env.example .env
       - name: build the images
-        run: docker compose build airflow-scheduler superset kafka-connect
+        run: docker compose --profile starrocks build airflow-scheduler superset kafka-connect auth
       - name: check the airflow image's Python environment
         run: |
           docker run --rm --entrypoint /bin/bash oss-da-bi-stack-airflow-scheduler:latest -ec '
@@ -144,6 +163,16 @@ jobs:
             # pip show exits 1 when the package is missing.
             pip show apache-airflow-providers-fab >/dev/null
             echo "airflow image checks passed"
+          '
+      - name: check ingestr and the dbt-starrocks environment in the airflow image
+        # The StarRocks pipeline runs ingestr (a pinned binary copied from its image) and dbt-starrocks
+        # from its own virtualenv; the main environment's pip check above does not cover either.
+        run: |
+          docker run --rm --entrypoint /bin/bash oss-da-bi-stack-airflow-scheduler:latest -ec '
+            ingestr --version
+            /home/airflow/dbt-starrocks/bin/pip check
+            /home/airflow/dbt-starrocks/bin/dbt --version
+            echo "ingestr + dbt-starrocks checks passed"
           '
       - name: check the superset image's drivers
         # The build only proves the pinned drivers installed; this proves they

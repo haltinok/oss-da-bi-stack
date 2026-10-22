@@ -1,11 +1,11 @@
 {{ config(table_type='PRIMARY', keys=['date_key'], distributed_by=['date_key'], buckets=1) }}
 
--- Date spine for the star schema, 2008-01-01 .. 2040-12-31 (same bounds as the
+-- Date spine for the star schema, 2008-01-01 .. 2040-12-31 inclusive (same bounds as the
 -- Postgres project). The scaled spike data runs 2011-2021 (due/ship dates a few
 -- weeks past the last order), so every fact date key lands inside it.
 with date_series as (
     select date_add(cast('2008-01-01' as date), interval n day) as date_day
-    from (select generate_series as n from table(generate_series(0, 12052))) s
+    from (select generate_series as n from table(generate_series(0, 12053))) s
 ),
 
 renamed as (

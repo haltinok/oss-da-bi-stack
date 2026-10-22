@@ -12,6 +12,14 @@ sources:
         columns:
           - name: sales_order_id
             data_tests: [unique, not_null]
+      # Live primary keys of sales_order_header, reloaded in full each pipeline cycle; only read
+      # when the var use_pk_snapshots is true (the Airflow DAG sets it).
+      - name: pk_sales_order_header
+        config:
+          enabled: "{{ var('use_pk_snapshots', false) | as_bool }}"
+        columns:
+          - name: sales_order_id
+            data_tests: [unique, not_null]
       - name: sales_order_detail
       - name: currency_rate
         columns:

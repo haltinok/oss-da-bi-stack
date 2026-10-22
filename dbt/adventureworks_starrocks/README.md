@@ -5,11 +5,11 @@ schemas (`scale_10m` / `scale_100m` / `scale_500m`, or `raw`) and builds `stage.
 views and `mart.*` tables.
 
 ```bash
-cd spike/dbt
+cd dbt/adventureworks_starrocks
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
 . .venv/bin/activate
-dbt run  --profiles-dir . --vars '{aw_source_schema: scale_10m}' --full-refresh
-dbt test --profiles-dir . --vars '{aw_source_schema: scale_10m}'
+dbt run  --profiles-dir . --vars '{aw_source_schema: scale_10m, date_shift_years: 0}' --full-refresh
+dbt test --profiles-dir . --vars '{aw_source_schema: scale_10m, date_shift_years: 0}'
 ```
 
 Connection comes from `DBT_SR_*` env vars (defaults match the spike stack: 127.0.0.1:9030, root, no password).

@@ -1,5 +1,9 @@
 with source as (
     select * from {{ source('adventureworks', 'sales_order_detail') }}
+    {% if var('use_pk_snapshots', false) %}
+    -- Lines of a deleted order go with it (see stg_sales_order_header).
+    where sales_order_id in (select sales_order_id from {{ source('adventureworks', 'pk_sales_order_header') }})
+    {% endif %}
 ),
 
 renamed as (

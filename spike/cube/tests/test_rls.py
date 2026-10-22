@@ -36,7 +36,8 @@ REGIONS = {
 
 
 def sql(q):
-    with pymysql.connect(host="127.0.0.1", port=9030, user="root", read_timeout=3600).cursor() as cur:
+    with pymysql.connect(host="127.0.0.1", port=int(os.environ.get("STARROCKS_MYSQL_PORT", "9030")), user="root",
+                         read_timeout=3600).cursor() as cur:
         cur.execute(q)
         return cur.fetchall()
 

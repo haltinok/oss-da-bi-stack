@@ -1,0 +1,51 @@
+# StarRocks port of dbt/adventureworks_dwh (the spike in spike/ proved it); the serving path of the `starrocks` compose profile.
+# The Postgres project (dbt/adventureworks_dwh) stays until parity is shown. This one reads the live
+# `raw` schema loaded by the postgres_active_to_starrocks DAG, or a benchmark scale (scale_10m/100m/500m).
+name: 'adventureworks_starrocks'
+version: '1.0.0'
+config-version: 2
+profile: 'adventureworks_starrocks'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  adventureworks_starrocks:
+    staging:
+      +schema: stage
+      +materialized: view
+    marts:
+      +schema: mart
+      +materialized: table
+    rls:
+      +schema: rls
+      +materialized: table
+
+vars:
+  # Which schema to read: raw (live, the default) | scale_10m | scale_100m | scale_500m (spike benchmarks).
+  aw_source_schema: raw
+  # true when the pipeline loads raw.pk_* snapshots (see stg_sales_order_header).
+  use_pk_snapshots: false
+  # Same as the Postgres project (see macros/shift_history_date.sql): the seeded history ends in
+  # 2014, so it is shifted forward 12 years to meet the live simulator's current dates. The
+  # benchmark schemas (scale_*) already span 2011-2021 and must run with date_shift_years: 0.
+  date_shift_years: 12
+  date_shift_cutoff: '2015-01-01'
+
+seeds:
+  adventureworks_starrocks:
+    # user -> territory mapping; read via models/rls/user_regions.sql
+    +schema: rls
+
+# Cube's read access is a wildcard grant (ALL TABLES IN DATABASE mart), which survives dbt dropping
+# and recreating tables; this hook only matters for a database granted before (e.g. the benchmark
+# schemas mart_10m / mart_100m). The auth service reads the separate `rls` schema; see models/rls.
+# Needs the users to exist (starrocks/init.sh creates them).
+on-run-end:
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL TABLES IN DATABASE mart{{ var('mart_suffix', '') }} TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL VIEWS IN DATABASE mart{{ var('mart_suffix', '') }} TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"

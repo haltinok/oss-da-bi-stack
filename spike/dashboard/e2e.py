@@ -13,7 +13,8 @@ import time
 
 from playwright.sync_api import sync_playwright
 
-URL = "http://localhost:8250/"
+URL = os.environ.get("DASHBOARD_URL", "http://localhost:8250/")
+CUBE_HOST = f":{os.environ.get('CUBE_PORT', '4000')}/"
 PASSWORD = os.environ["TEST_USER_PASSWORD"]
 OUT = pathlib.Path(__file__).parent / "screenshots"
 EXPECT_REGIONS = {
@@ -43,7 +44,7 @@ with sync_playwright() as p:
         errors, cube_calls, legacy_calls = [], [], []
         page.on("console", lambda m, errors=errors: errors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e, errors=errors: errors.append(str(e)))
-        page.on("request", lambda r, cube=cube_calls, legacy=legacy_calls: (cube if ":4000/" in r.url else legacy if "/api/" in r.url else []).append(r))
+        page.on("request", lambda r, cube=cube_calls, legacy=legacy_calls: (cube if CUBE_HOST in r.url else legacy if "/api/" in r.url else []).append(r))
         page.goto(URL)
         page.wait_for_selector("input#username", timeout=60_000)
         page.fill("input#username", user)
