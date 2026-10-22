@@ -1,13 +1,8 @@
 -- Airflow's own metadata database
 CREATE DATABASE airflow;
 
--- Superset's own metadata database (dashboards, charts, users — not the data it visualizes)
-CREATE DATABASE superset_meta;
-
--- Metabase's own metadata database (questions, dashboards, users)
-CREATE DATABASE metabase_meta;
-
--- The actual analytics warehouse dlt/dbt operate on, and what Superset visualizes
+-- Small warehouse for the dlt loads (the optional SQL Server load and `orders`). The star schema
+-- is built in StarRocks, not here.
 CREATE DATABASE analytics;
 
 \connect analytics

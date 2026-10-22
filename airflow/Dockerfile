@@ -2,7 +2,7 @@ FROM apache/airflow:3.3.2-python3.11
 
 USER root
 # No compiler toolchain: every package in requirements.txt installs from a
-# prebuilt wheel (dbt 1.11 dropped logbook, the last one that needed a build).
+# prebuilt wheel.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git libpq-dev curl gnupg \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
@@ -19,8 +19,8 @@ USER airflow
 COPY requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
 
-# dbt-starrocks in its own virtualenv: it needs a newer dbt-core than the dbt-postgres / MetricFlow
-# pins above (dbt-metricflow requires dbt-core <1.13), and the two must not constrain each other.
+# dbt-starrocks in its own virtualenv, so its dbt-core pin and the packages above (Airflow, dlt)
+# never have to agree.
 COPY requirements-dbt-starrocks.txt /requirements-dbt-starrocks.txt
 RUN python -m venv /home/airflow/dbt-starrocks \
     && /home/airflow/dbt-starrocks/bin/pip install --no-cache-dir -r /requirements-dbt-starrocks.txt

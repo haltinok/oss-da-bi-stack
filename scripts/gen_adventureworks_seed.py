@@ -2,8 +2,8 @@
 """Generate ``postgres_active/init/03_adventureworks_seed.sql.gz`` from the warehouse.
 
 Reads the AdventureWorks tables from ``analytics.raw`` and emits a ``COPY`` seed
-that is a **referentially consistent sample** of the source, so the warehouse DWH
-(``adventureworks_dwh``) can be repointed at it without its ``relationships``
+that is a **referentially consistent sample** of the source, so the star schema
+(``dbt/adventureworks_starrocks``) can be built from it without its ``relationships``
 tests failing.
 
 Why not a plain 10% per table? An independent sample per table leaves ~90% of

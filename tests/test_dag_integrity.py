@@ -15,7 +15,6 @@ from airflow.models import DagBag
 DAGS_DIR = Path(__file__).resolve().parent.parent / "airflow" / "dags"
 EXPECTED_DAGS = {
     "postgres_active_to_postgres",
-    "postgres_active_to_postgres_aw",
     "postgres_active_to_starrocks",
     "simulate_adventureworks",
     "simulate_orders",

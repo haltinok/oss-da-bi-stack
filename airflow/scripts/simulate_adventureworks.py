@@ -83,7 +83,7 @@ ORDER_CHANCE = os.environ.get("SIM_ORDER_CHANCE") or None
 
 # The dbt project whose date-shift vars mark where the seeded history ends; the
 # compose stack mounts ./dbt at /opt/airflow/dbt.
-DEFAULT_DBT_PROJECT = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/adventureworks_dwh")
+DEFAULT_DBT_PROJECT = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/adventureworks_starrocks")
 
 # Per-run chance that an eligible (in-process / approved / backordered) order
 # advances one step toward shipped. Small values spread the lifecycle over many

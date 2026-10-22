@@ -1,7 +1,7 @@
 // Data source for the existing dashboard: signs in through Keycloak (authorization code + PKCE),
 // swaps the Keycloak token for a 15-minute Cube token, and answers the page's two calls,
 // /api/meta and /api/dashboard, with Cube queries (via @cubejs-client/core) instead of SQL.
-// The shapes returned are exactly those of dashboard/app.py, so app.js is unchanged apart
+// The shapes returned are exactly those of the former Postgres-backed dashboard/app.py, so app.js is unchanged apart
 // from a one-line hook in getJSON() and null-safe handling of hidden profit figures.
 import cubejs from "./vendor/cubejs-client-core.mjs";
 

@@ -51,9 +51,10 @@ jobs:
           airflow db migrate
           pytest -q tests/test_dag_integrity.py
 
-  # End to end on the batch path: seed the postgres_active sandbox from the
-  # committed init files, replicate it with the dlt pipeline, then `dbt build`
-  # (models + snapshot + all data tests) on the result.
+  # End to end on the orders batch path: seed the postgres_active sandbox from
+  # the committed init files and replicate it into the warehouse with the dlt
+  # orders pipeline. (The star schema is built by dbt-starrocks; its project is
+  # checked by the dbt-starrocks job, and the StarRocks profile by compose/images.)
   dwh:
     runs-on: ubuntu-latest
     services:
@@ -73,27 +74,24 @@ jobs:
       PGPASSWORD: ci
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ci
-      BI_READONLY_PASSWORD: ci_ro
       DEBEZIUM_PASSWORD: ci_dbz
       # dlt: env vars override the Compose hostnames in .dlt/config.toml
       # ([stack.warehouse] / [stack.postgres_active], see stack_credentials.py).
       STACK__WAREHOUSE__HOST: localhost
       STACK__POSTGRES_ACTIVE__HOST: localhost
       STACK__POSTGRES_ACTIVE__PORT: "5432"
-      DBT_PG_HOST: localhost
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-      - name: install dlt + dbt (versions from airflow/requirements.txt)
+      - name: install dlt (versions from airflow/requirements.txt)
         run: |
-          pip install $(grep -E '^(dlt|setuptools|dbt-core|dbt-postgres)' airflow/requirements.txt \
+          pip install $(grep -E '^(dlt|setuptools)' airflow/requirements.txt \
             | sed 's/^dlt\[postgres\]/dlt[postgres,sql_database]/')
       - name: initialise the warehouse and the postgres_active sandbox
         run: |
           psql -v ON_ERROR_STOP=1 -d postgres -f postgres/init/01_init.sql
-          bash postgres/init/02_bi_readonly.sh
           psql -v ON_ERROR_STOP=1 -d postgres -c "create database active_db"
           POSTGRES_DB=active_db bash postgres_active/init/00_debezium_user.sh
           for f in 01_init.sql 02_adventureworks_schema.sql; do
@@ -102,14 +100,9 @@ jobs:
           gunzip -c postgres_active/init/03_adventureworks_seed.sql.gz \
             | psql -q -v ON_ERROR_STOP=1 -d active_db >/dev/null
           psql -v ON_ERROR_STOP=1 -d active_db -f postgres_active/init/04_debezium_signal.sql
-      - name: dlt postgres_active -> raw_active
-        working-directory: dlt/pipelines/postgres_active_to_postgres_aw
-        run: python aw_pipeline.py
       - name: dlt postgres_active -> raw.orders
         working-directory: dlt/pipelines/postgres_active_to_postgres
         run: python orders_pipeline.py
-      - name: dbt build
-        run: dbt build --project-dir dbt/adventureworks_dwh --profiles-dir dbt/adventureworks_dwh
 
   # The StarRocks dbt project: parse it (no database needed) with and without the primary-key
   # snapshot sources, which are only enabled when the pipeline loads them.
@@ -137,16 +130,14 @@ jobs:
           cp .env.example .env
           docker compose config >/dev/null
           docker compose --profile cdc config >/dev/null
-          docker compose --profile bi config >/dev/null
-          docker compose --profile cdc --profile bi config >/dev/null
           docker compose --profile starrocks config >/dev/null
-          docker compose --profile cdc --profile bi --profile starrocks config >/dev/null
+          docker compose --profile cdc --profile starrocks config >/dev/null
 
-  # Builds the three custom images. The dags/dwh jobs install Python packages
+  # Builds the custom images. The dags/dwh jobs install Python packages
   # directly on the runner, so without this job a Dockerfile break (or a
   # requirements change that breaks the image build) can pass CI. Building is
   # also the only real test of the base-image bumps Dependabot proposes for
-  # the airflow, superset and debezium-connect Dockerfiles.
+  # the airflow and debezium-connect Dockerfiles.
   images:
     runs-on: ubuntu-latest
     steps:
@@ -154,12 +145,12 @@ jobs:
       - name: fill .env (values don't matter, only that they're set)
         run: cp .env.example .env
       - name: build the images
-        run: docker compose --profile starrocks build airflow-scheduler superset kafka-connect auth
+        run: docker compose --profile starrocks build airflow-scheduler kafka-connect auth
       - name: check the airflow image's Python environment
         run: |
           docker run --rm --entrypoint /bin/bash oss-da-bi-stack-airflow-scheduler:latest -ec '
             pip check
-            python -c "import dlt, dbt; print(\"dlt\", dlt.__version__)"
+            python -c "import dlt; print(\"dlt\", dlt.__version__)"
             # pip show exits 1 when the package is missing.
             pip show apache-airflow-providers-fab >/dev/null
             echo "airflow image checks passed"
@@ -174,12 +165,6 @@ jobs:
             /home/airflow/dbt-starrocks/bin/dbt --version
             echo "ingestr + dbt-starrocks checks passed"
           '
-      - name: check the superset image's drivers
-        # The build only proves the pinned drivers installed; this proves they
-        # import in Superset's venv.
-        run: |
-          docker run --rm --entrypoint /app/.venv/bin/python oss-da-bi-stack-superset:latest \
-            -c "import psycopg2, clickhouse_connect, fastmcp; print('superset drivers import')"
 
   # End to end on the CDC path, which nothing else in CI touches: bring up the
   # cdc profile from the compose file, wait for the connector's initial

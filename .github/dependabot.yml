@@ -20,7 +20,7 @@ updates:
       actions:
         patterns: ["*"]
 
-  # Airflow image dependencies (dlt, dbt, faker, ...). Versions must stay
+  # Airflow image dependencies (dlt, faker, dbt-starrocks, ...). Versions must stay
   # compatible with the Airflow constraints for the base image.
   - package-ecosystem: pip
     directory: /airflow
@@ -30,21 +30,18 @@ updates:
       python:
         patterns: ["*"]
     ignore:
-      # dbt-core must track the dbt-postgres adapter: the adapter lags core, so
-      # a group bump can pair core 1.12.x with postgres 1.11.x, which breaks
-      # `dbt build` (snapshot: "Not a directory" in target/run). Upgrade the
-      # pair together, by hand.
+      # dbt-core must track the dbt-starrocks adapter (the adapter lags core), so a
+      # group bump can pair a newer core with an older adapter and break `dbt build`.
+      # Upgrade the pair together, by hand (requirements-dbt-starrocks.txt and
+      # dbt/adventureworks_starrocks/requirements.txt).
       - dependency-name: "dbt-core"
-        versions: [">=1.12"]
 
-  # Base images of the custom builds. Major bumps (Airflow, Superset,
+  # Base images of the custom builds. Major bumps (Airflow,
   # Confluent) usually need code changes, so they are left to a human.
   - package-ecosystem: docker
     directories:
       - /airflow
-      - /superset
       - /debezium-connect
-      - /dashboard
     schedule:
       interval: monthly
     groups:
@@ -54,17 +51,8 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # The live dashboard's single Python dependency (psycopg).
-  - package-ecosystem: pip
-    directory: /dashboard
-    schedule:
-      interval: monthly
-    groups:
-      dashboard:
-        patterns: ["*"]
-
   # Images referenced directly in docker-compose.yml (postgres, clickhouse,
-  # kafka, metabase, kafka-ui).
+  # kafka, kafka-ui, keycloak, cube, nginx, starrocks).
   - package-ecosystem: docker-compose
     directory: /
     schedule:

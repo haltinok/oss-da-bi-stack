@@ -19,20 +19,19 @@ public issue.
   Compose's `${VAR:?}` syntax, so the stack refuses to start rather than run
   with a guessable default.
 * **Nothing sensitive in tracked files.**
-  * dbt (`profiles.yml`), Superset (`superset_config.py`) and the dlt
-    pipelines read their credentials from the environment.
+  * dbt (`profiles.yml`), ingestr (via environment variables, so passwords never
+    appear in a process list) and the dlt pipelines read their credentials from
+    the environment.
   * The Debezium connector config references `${env:DEBEZIUM_PASSWORD}`, which
     Kafka Connect resolves at runtime, so the password is not stored in
     Connect's config topic or returned by its REST API.
   * ClickHouse creates its user from `CLICKHOUSE_PASSWORD`; there is no
     committed `users.xml`.
-  * The Superset dashboard export carries a masked password, restored from
-    `BI_READONLY_PASSWORD` by `superset/set_bi_database.py`.
 * **Only the optional SQL Server load needs a secrets file:**
   `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml`, created from
   `secrets.toml.example` and git-ignored.
-* **Least privilege for BI.** Superset, Metabase and the ClickHouse mart sync
-  read the warehouse as the `bi_ro` role, which can only `SELECT` from `mart`.
+* **Least privilege for reads.** Cube and the auth service read StarRocks as
+  read-only users (`cube_ro`, `auth_ro`; see the `starrocks` profile below).
 * **The `starrocks` profile** adds sign-in and row-level security, which the rest of the stack does not
   have: users log in through Keycloak, a small service (`spike/auth`) turns the login into a 15-minute
   Cube token carrying the user's territories, and Cube (`cube/cube.js`) adds the territory filter to
@@ -43,7 +42,7 @@ public issue.
   there is no audit log or TLS. A real deployment needs the organisation's identity provider, TLS,
   secrets management and a security review of `cube/cube.js` (see `spike/results.md`).
 * **Local-only ports.** Every published port binds to `127.0.0.1`. Several
-  services are unauthenticated by design (Superset MCP server, Kafka UI, Kafka
+  services are unauthenticated by design (Kafka UI, Kafka
   Connect REST); never publish them on a public interface.
 
 ## Guard rails
