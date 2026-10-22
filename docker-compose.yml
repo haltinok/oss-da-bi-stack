@@ -448,7 +448,7 @@ services:
       # Production mode: no Playground, no stack traces in error bodies. The model and
       # cube.js (dialect fix, auth, row-level security) are in ./cube.
       CUBEJS_DEV_MODE: "false"
-      CUBEJS_PRE_AGGREGATIONS_SCHEMA: dev_pre_aggregations
+      CUBEJS_PRE_AGGREGATIONS_SCHEMA: ${CUBE_PREAGG_SCHEMA:-dev_pre_aggregations}
       CUBEJS_REFRESH_WORKER: "true"
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env}
       # StarRocks speaks the MySQL protocol. cube_ro can only SELECT on the mart.

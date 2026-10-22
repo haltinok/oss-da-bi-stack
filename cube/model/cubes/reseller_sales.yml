@@ -83,15 +83,15 @@ cubes:
           - dates.fiscal_year
         time_dimension: order_date
         granularity: month
+        partition_granularity: year
         refresh_key:
-          # Change-driven: rebuild when the mart was rebuilt (dbt model data_version, written at the end
-          # of every pipeline cycle), checked every minute. NOT partitioned on purpose: Cube answers from
-          # the partitions that are ready, so a rollup that rebuilds partition by partition returns
-          # incomplete totals mid-rebuild (seen: only the newest year). One table is swapped in whole.
-          # Fine at demo volume; at 500M use partitions with time-based incremental windows
-          # (spike/cube/model), where only the recent partition changes.
-          sql: SELECT built_at FROM mart.data_version
-          every: 1 minute
+          # Time-based, incremental: each tick rebuilds only the partitions that touch the last 5 week,
+          # so older partitions are never rescanned. Measured at ~500M lines: no dip in the totals while a
+          # partition rebuilds (spike/results.md).
+          # (A SQL refresh key such as mart.data_version cannot be combined with `incremental`.)
+          every: 5 minute
+          incremental: true
+          update_window: 5 week
 
       # Product-level slices (top products table, product filter), additive.
       - name: monthly_product
@@ -105,15 +105,15 @@ cubes:
           - dates.fiscal_year
         time_dimension: order_date
         granularity: month
+        partition_granularity: year
         refresh_key:
-          # Change-driven: rebuild when the mart was rebuilt (dbt model data_version, written at the end
-          # of every pipeline cycle), checked every minute. NOT partitioned on purpose: Cube answers from
-          # the partitions that are ready, so a rollup that rebuilds partition by partition returns
-          # incomplete totals mid-rebuild (seen: only the newest year). One table is swapped in whole.
-          # Fine at demo volume; at 500M use partitions with time-based incremental windows
-          # (spike/cube/model), where only the recent partition changes.
-          sql: SELECT built_at FROM mart.data_version
-          every: 1 minute
+          # Time-based, incremental: each tick rebuilds only the partitions that touch the last 5 week,
+          # so older partitions are never rescanned. Measured at ~500M lines: no dip in the totals while a
+          # partition rebuilds (spike/results.md).
+          # (A SQL refresh key such as mart.data_version cannot be combined with `incremental`.)
+          every: 5 minute
+          incremental: true
+          update_window: 5 week
 
       # Exact orders per product category/subcategory (distinct orders containing it) is not
       # additive, so a rollup serves it only when its dimensions match the query exactly,
@@ -163,12 +163,12 @@ cubes:
           - territories.region
         time_dimension: order_date
         granularity: day
+        partition_granularity: month
         refresh_key:
-          # Change-driven: rebuild when the mart was rebuilt (dbt model data_version, written at the end
-          # of every pipeline cycle), checked every minute. NOT partitioned on purpose: Cube answers from
-          # the partitions that are ready, so a rollup that rebuilds partition by partition returns
-          # incomplete totals mid-rebuild (seen: only the newest year). One table is swapped in whole.
-          # Fine at demo volume; at 500M use partitions with time-based incremental windows
-          # (spike/cube/model), where only the recent partition changes.
-          sql: SELECT built_at FROM mart.data_version
-          every: 1 minute
+          # Time-based, incremental: each tick rebuilds only the partitions that touch the last 1 week,
+          # so older partitions are never rescanned. Measured at ~500M lines: no dip in the totals while a
+          # partition rebuilds (spike/results.md).
+          # (A SQL refresh key such as mart.data_version cannot be combined with `incremental`.)
+          every: 5 minute
+          incremental: true
+          update_window: 1 week

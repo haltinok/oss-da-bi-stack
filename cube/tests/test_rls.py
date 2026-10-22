@@ -22,6 +22,7 @@ import requests
 
 KEYCLOAK = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
 AUTH = os.environ.get("AUTH_URL", "http://localhost:8200")
+SETTLE = int(os.environ.get("CUBE_SETTLE_SECONDS", "420"))  # rollups refresh every 5 minutes
 CUBE = os.environ.get("CUBE_URL", "http://localhost:4000/cubejs-api/v1/load")
 SECRET = os.environ["CUBEJS_API_SECRET"]
 PASSWORD = os.environ["TEST_USER_PASSWORD"]
@@ -112,15 +113,23 @@ def regions_sql(user):
 @pytest.mark.parametrize("user", list(REGIONS))
 @pytest.mark.parametrize("channel", ["internet", "reseller"])
 def test_totals_match_sql_for_user_territories(tokens, user, channel):
-    status, body = load({"measures": [f"{channel}_sales.revenue", f"{channel}_sales.units"]}, tokens[user])
-    assert status == 200, body
-    (rev, units), = sql(
-        f"select sum(f.sales_amount), sum(f.order_quantity) from mart.fact_{channel}_sales f "
-        f"join mart.dim_sales_territory t on t.sales_territory_key = f.sales_territory_key "
-        f"where {LIVE} and t.sales_territory_region in {regions_sql(user)}")
-    row = body["data"][0]
-    assert near(row[f"{channel}_sales.revenue"], rev)
-    assert int(row[f"{channel}_sales.units"]) == int(units)
+    # The rollups refresh on a clock (every 5 minutes), so while the pipeline is writing, Cube can lag
+    # the mart by up to one tick. Compare again until they agree, for at most SETTLE seconds.
+    deadline = time.time() + SETTLE
+    while True:
+        status, body = load({"measures": [f"{channel}_sales.revenue", f"{channel}_sales.units"]}, tokens[user])
+        assert status == 200, body
+        (rev, units), = sql(
+            f"select sum(f.sales_amount), sum(f.order_quantity) from mart.fact_{channel}_sales f "
+            f"join mart.dim_sales_territory t on t.sales_territory_key = f.sales_territory_key "
+            f"where {LIVE} and t.sales_territory_region in {regions_sql(user)}")
+        row = body["data"][0]
+        if near(row[f"{channel}_sales.revenue"], rev) and int(row[f"{channel}_sales.units"]) == int(units):
+            return
+        if time.time() > deadline:
+            assert near(row[f"{channel}_sales.revenue"], rev)
+            assert int(row[f"{channel}_sales.units"]) == int(units)
+        time.sleep(10)
 
 
 @pytest.mark.parametrize("user", list(REGIONS))
