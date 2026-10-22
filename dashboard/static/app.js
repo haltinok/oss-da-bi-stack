@@ -164,6 +164,7 @@ async function loadMeta() {
   fillFilters();
 }
 
+let fullReload = false;
 async function load({ quiet = false } = {}) {
   clearTimeout(state.timer);
   // A background refresh never cancels a load that is still running (a slow query would
@@ -173,8 +174,17 @@ async function load({ quiet = false } = {}) {
   const ctrl = new AbortController();
   state.inflight = ctrl;
   state.busy = true;
-  if (!quiet) { state.t0 = performance.now(); state.timing = {}; startTicker(); pendAll(true); }
+  // The latest-orders feed ignores every filter, so a filter change leaves it alone; only the
+  // first load, the refresh button and the background poll fetch it.
+  const keepFeed = !quiet && !fullReload && !!state.data?.latest_orders;
+  fullReload = false;
+  if (!quiet) {
+    const feedMs = keepFeed ? state.timing?.latest_orders : null;
+    state.t0 = performance.now(); state.timing = feedMs != null ? { latest_orders: feedMs } : {}; startTicker();
+    for (const [key, sel] of Object.entries(PANEL_OF)) if (!(keepFeed && key === "latest_orders")) pend(sel, true);
+  }
   const q = new URLSearchParams(Object.entries(state.filters).filter(([, v]) => v));
+  if (keepFeed) q.set("feed", "0");
   // Each panel's data lands here as soon as its query returns; a stale answer (the filters
   // have changed since) is dropped.
   const part = (patch) => {
@@ -312,7 +322,7 @@ $("#reset").addEventListener("click", () => {
   state.restore = {};
   fillFilters(); writeUrl(); load();
 });
-$("#refresh").addEventListener("click", () => load());
+$("#refresh").addEventListener("click", () => { fullReload = true; load(); });
 $("#theme").addEventListener("click", () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -398,7 +408,7 @@ const DATASETS = {
     rows: monthSeries(state.data.monthly).filter((m) => !m.break),
   }),
   feed: () => ({
-    key: "feed", name: "Latest orders", title: "Latest orders", ignores: ["fy"],
+    key: "feed", name: "Latest orders", title: "Latest orders", ignores: ["fy", "group", "region", "category", "subcategory"],
     ignoreNote: "this panel always lists the newest orders",
     columns: [
       col("Order", "text", (r) => r.sales_order_number),
