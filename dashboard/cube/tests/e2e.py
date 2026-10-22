@@ -22,6 +22,10 @@ OUT.mkdir(parents=True, exist_ok=True)
 EXPECT_REGIONS = {
     "admin": 10, "na_manager": 6, "de_rep": 1,
 }
+# Inventory views per role: (reorder list, overstock list, KPI tiles). purchasing and marketing get no sales view at all.
+INVENTORY = {"admin": (True, True, 3), "na_manager": (False, False, 0), "de_rep": (False, False, 0),
+             "buyer": (True, False, 2), "marketer": (False, True, 1)}
+INV_ONLY = ("buyer", "marketer")
 failures = []
 
 
@@ -39,7 +43,7 @@ def wait_live(page, timeout=300_000):
 
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
-    for user, n_regions in EXPECT_REGIONS.items():
+    for user, n_regions in {**EXPECT_REGIONS, "buyer": 0, "marketer": 0}.items():
         print(f"--- {user}")
         ctx = browser.new_context(viewport={"width": 1500, "height": 1300})
         page = ctx.new_page()
@@ -56,6 +60,33 @@ with sync_playwright() as p:
         wait_live(page)
         first_render = time.time() - t0
         check(True, f"signed in and rendered in {first_render:.1f}s")
+
+        reorder, overstock, tiles = INVENTORY[user]
+        inv_calls = [r for r in cube_calls if "inventory_health" in r.url + (r.post_data or "")]
+        check(page.locator("#inv").is_visible() == (reorder or overstock), f"inventory section {'shown' if reorder or overstock else 'hidden'} for {user}")
+        check(page.locator('[data-panel="reorder"]').is_visible() == reorder, f"reorder list {'shown' if reorder else 'hidden'}")
+        check(page.locator('[data-panel="overstock"]').is_visible() == overstock, f"overstock list {'shown' if overstock else 'hidden'}")
+        check(page.locator("#inv-kpis .kpi").count() == tiles, f"{page.locator('#inv-kpis .kpi').count()} inventory KPI tiles (expected {tiles})")
+        check(bool(inv_calls) == bool(reorder or overstock), f"inventory queried only when the role has it ({len(inv_calls)} calls)")
+        if reorder:
+            check(page.locator('[data-panel="reorder"] tbody tr').count() > 0, "reorder list has rows")
+            check("Vendor" in page.locator('[data-panel="reorder"]').inner_text(), "reorder list shows the vendor column")
+        if overstock:
+            check(page.locator('[data-panel="overstock"] tbody tr').count() > 0, "overstock list has rows")
+            check("Suggested discount" in page.locator('[data-panel="overstock"]').inner_text(), "overstock list shows suggested discounts")
+        if user == "marketer":
+            leaked = [r for r in cube_calls if any(m in (r.url + (r.post_data or "")) for m in ("vendor_name", "unit_cost", "suggested_order", "lead_time"))]
+            check(not leaked, "marketing page never asks for supplier or order members")
+        if user in INV_ONLY:
+            sales = [r for r in cube_calls if any(m in (r.url + (r.post_data or "")) for m in ("internet_sales", "reseller_sales", "territories", "customers"))]
+            check(not sales and not page.locator("#kpis").is_visible() and not page.locator("nav.filters").is_visible(),
+                  f"no sales queries and no sales view for {user} ({len(sales)} sales calls)")
+            check(page.locator("#who").count() == 1, "user badge shown")
+            page.screenshot(path=str(OUT / f"{user}.png"), full_page=True)
+            bad = [e for e in errors if "favicon" not in e]
+            check(not bad, f"no console errors {bad[:2]}")
+            ctx.close()
+            continue
 
         regions = page.eval_on_selector_all("#f-region option", "o => o.map(x => x.textContent).filter(t => !t.startsWith('All'))")
         check(len(regions) == n_regions, f"region dropdown has {len(regions)} regions (expected {n_regions}): {regions}")
@@ -81,6 +112,8 @@ with sync_playwright() as p:
             page.select_option("#f-category", cat_opts[0])
             wait_live(page)
             check(bool(fy) and "No orders match" not in page.locator("#main").inner_text(), f"FY {fy} + {cat_opts[0]} filters render data")
+            check(len([r for r in cube_calls if "inventory_health" in r.url + (r.post_data or "")]) == len(inv_calls),
+                  "changing filters does not re-query inventory")
             page.screenshot(path=str(OUT / "admin-filtered.png"), full_page=True)
 
         bad = [e for e in errors if "favicon" not in e]

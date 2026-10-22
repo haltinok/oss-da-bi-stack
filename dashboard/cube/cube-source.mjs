@@ -75,6 +75,7 @@ async function cubeToken(force = false) {
   const t = await res.json();
   session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, territories: t.territories };
   window.dashboardData.noProfit = t.role === "rep"; // profit/margin are not available to reps
+  window.dashboardData.role = t.role;
   showWho();
   return session.token;
 }
@@ -375,12 +376,94 @@ async function meta(signal) {
   };
 }
 
-// ------------------------------------------------------------------ the two endpoints the page calls
+
+// ------------------------------------------------------------------ inventory (reorders and overstock)
+// Not territory-bound and not filtered: it ignores every page filter, and the role decides what is asked
+// for (cube/cube.js enforces the same split, so a tampered page cannot see more than its role allows).
+const INV = "inventory_health";
+const BAND_OF = { 10: "1-10%", 20: "11-20%", 30: "21-30%", 40: "over 30%" };
+
+async function inventory(signal) {
+  const role = session.role;
+  const out = {};
+  const q = [];
+  if (role === "admin" || role === "purchasing") {
+    q.push(run({
+      measures: [`${INV}.items_at_risk`, `${INV}.stockout_items`, `${INV}.reorder_items`, `${INV}.suggested_order_value_total`],
+    }, signal).then((r) => {
+      const x = r[0] || {};
+      out.reorder_kpis = { at_risk: num(x[`${INV}.items_at_risk`]) || 0, stockouts: num(x[`${INV}.stockout_items`]) || 0,
+        reorder_now: num(x[`${INV}.reorder_items`]) || 0, order_value: num(x[`${INV}.suggested_order_value_total`]) || 0 };
+    }));
+    const dims = ["key", "product_name", "status", "replenishment_type", "vendor_name", "on_hand", "on_order", "daily_demand",
+      "days_of_cover", "lead_time_days", "suggested_order_qty", "suggested_order_value", "reason"].map((d) => `${INV}.${d}`);
+    q.push(run({
+      dimensions: dims,
+      filters: [{ member: `${INV}.status`, operator: "equals", values: ["stockout", "reorder_now"] }],
+      order: [[`${INV}.suggested_order_value`, "desc"], [`${INV}.days_of_cover`, "asc"]], limit: 500,
+    }, signal).then((rows) => {
+      out.reorder = rows.map((r) => ({
+        product: r[`${INV}.product_name`], status: r[`${INV}.status`], type: r[`${INV}.replenishment_type`],
+        vendor: r[`${INV}.vendor_name`], on_hand: num(r[`${INV}.on_hand`]), on_order: num(r[`${INV}.on_order`]),
+        daily_demand: num(r[`${INV}.daily_demand`]), days_of_cover: num(r[`${INV}.days_of_cover`]),
+        lead_time_days: num(r[`${INV}.lead_time_days`]), qty: num(r[`${INV}.suggested_order_qty`]),
+        value: num(r[`${INV}.suggested_order_value`]), reason: r[`${INV}.reason`],
+      }));
+    }));
+  }
+  if (role === "admin" || role === "marketing") {
+    q.push(run({
+      measures: [`${INV}.overstock_items`, `${INV}.dead_stock_items`, `${INV}.excess_value_total`, `${INV}.excess_units_total`],
+    }, signal).then((r) => {
+      const x = r[0] || {};
+      out.excess_kpis = { items: num(x[`${INV}.overstock_items`]) || 0, dead: num(x[`${INV}.dead_stock_items`]) || 0,
+        value: num(x[`${INV}.excess_value_total`]) || 0, units: num(x[`${INV}.excess_units_total`]) || 0 };
+    }));
+    const dims = ["key", "product_name", "status", "on_hand", "days_of_cover", "excess_units", "excess_value", "suggested_discount_pct", "reason"]
+      .map((d) => `${INV}.${d}`);
+    q.push(run({
+      dimensions: dims,
+      filters: [{ member: `${INV}.status`, operator: "equals", values: ["overstock", "dead_stock"] }],
+      order: [[`${INV}.excess_value`, "desc"]], limit: 500,
+    }, signal).then((rows) => {
+      out.overstock = rows.map((r) => ({
+        product: r[`${INV}.product_name`], status: r[`${INV}.status`], on_hand: num(r[`${INV}.on_hand`]),
+        days_of_cover: num(r[`${INV}.days_of_cover`]), excess_units: num(r[`${INV}.excess_units`]),
+        excess_value: num(r[`${INV}.excess_value`]), discount_pct: num(r[`${INV}.suggested_discount_pct`]),
+        reason: r[`${INV}.reason`],
+      }));
+    }));
+    // Evidence per discount band: how past offers at that depth moved the products sold under them. One row
+    // per offer, reduced to the median per band here: a single offer with a tiny baseline can show a 60x lift
+    // that would swamp an average.
+    q.push(run({
+      dimensions: ["offer_performance.key", "offer_performance.discount_band", "offer_performance.lift"], limit: 500,
+    }, signal).then((rows) => {
+      const by = {};
+      for (const r of rows) {
+        const e = (by[r["offer_performance.discount_band"]] ||= { offers: 0, lifts: [] });
+        const lift = num(r["offer_performance.lift"]);
+        if (lift != null) { e.offers++; e.lifts.push(lift); }
+      }
+      out.offer_evidence = Object.fromEntries(Object.entries(by).map(([band, e]) => {
+        const l = e.lifts.sort((x, y) => x - y), m = Math.floor(l.length / 2);
+        return [band, { offers: e.offers, lift: l.length ? (l.length % 2 ? l[m] : (l[m - 1] + l[m]) / 2) : null }];
+      }));
+    }));
+  }
+  await Promise.all(q);
+  out.band_of = BAND_OF;
+  out.generated_at = new Date().toISOString();
+  return out;
+}
+
+// ------------------------------------------------------------------ the endpoints the page calls
 await cubeToken(); // signs in (redirecting if needed) before the first request
 window.__dashboardDataReady({
   async get(url, signal, update) {
     const u = new URL(url, location.origin);
     if (u.pathname === "/api/meta") return meta(signal);
+    if (u.pathname === "/api/inventory") return inventory(signal);
     // Cheap unfiltered probe (rollup-served): the total number of order lines changes when new orders land.
     if (u.pathname === "/api/orders-version") {
       const rows = await Promise.all(Object.values(CH).map((c) => run({ measures: [`${c}.lines`] }, signal)));
