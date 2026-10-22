@@ -324,3 +324,13 @@ body.inv-only .inv-head { margin-top: 6px; }
 .act-msg.ok { color: var(--good, #1a7f4b); }
 .qty-in { width: 76px; text-align: right; font: inherit; }
 td.act-done, .act-done { color: var(--good, #1a7f4b); white-space: nowrap; }
+
+/* Drafted proposals */
+.prop { border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; }
+.prop h3 { margin: 0; font-size: 14px; }
+.prop .meta { color: var(--ink-2); font-size: 12px; margin: 2px 0 6px; }
+.prop .why { margin: 0 0 8px; font-size: 13px; }
+.prop .kind { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; margin-right: 8px; color: var(--ink-2); }
+.prop .tbl-wrap { max-height: 220px; margin-bottom: 8px; }
+.prop .act-bar { margin: 6px 0 0; }
+.btn-quiet { border: 1px solid var(--border, rgba(127,127,127,.4)); background: transparent; color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }

@@ -29,6 +29,9 @@ class FakeApi:
     def open_proposals(self):
         return self._open
 
+    def recently_approved(self, hours=24):
+        return []
+
     def submit(self, run_id, proposals):
         self.submitted = (run_id, proposals)
         return {"run_id": run_id, "results": [{"seq": i, "ok": True, "id": i + 1} for i in range(len(proposals))]}

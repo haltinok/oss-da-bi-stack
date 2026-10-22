@@ -75,6 +75,7 @@ const state = {
   // Approve actions (Phase 2): selected product ids per list, edited quantities, the audit log from the
   // actions service, and the campaign form.
   actions: null,
+  proposals: [],
   actionLog: [],
   actionsError: null,
   sel: { reorder: new Set(), overstock: new Set() },
@@ -142,9 +143,9 @@ const PANEL_OF = {
   mix: '[data-panel="mix"]', top_products: '[data-panel="products"]', territories: '[data-panel="territories"]',
 };
 // ---- Per-panel load timers: a spinner with the running seconds while a panel waits, then "✓ 1.4s".
-const PANEL_KEY = { trend: "monthly", feed: "latest_orders", mix: "mix", products: "top_products", territories: "territories", reorder: "reorder", overstock: "overstock" };
+const PANEL_KEY = { trend: "monthly", feed: "latest_orders", mix: "mix", products: "top_products", territories: "territories", reorder: "reorder", overstock: "overstock", proposals: "proposals" };
 const TIMED = new Set(["kpis", "monthly", "mix", "top_products", "territories", "latest_orders"]);
-const INV_KEYS = new Set(["reorder", "overstock"]); // timed by loadInventory(), not by load()
+const INV_KEYS = new Set(["reorder", "overstock", "proposals"]); // timed by loadInventory(), not by load()
 const timerHtml = (key) => `<span class="timer" data-key="${key}"><i class="spin"></i><b></b></span>`;
 function mountTimers() {
   for (const card of document.querySelectorAll("[data-panel]")) {
@@ -1066,6 +1067,68 @@ function renderInventory() {
     if (ds.rows.length) decorate(key, ds);
     renderBar(key);
   }
+  renderProposals();
+}
+
+// ---- Drafted proposals (from the weekly agent): approve as drafted or after an edit, or dismiss. The service
+// checks the role and every rule again, and the proposal is decided once.
+const KIND_LABEL = { work_order: "Work order", purchase_order: "Purchase order", campaign: "Campaign" };
+const ENDPOINT = { work_order: "/actions/work-orders", purchase_order: "/actions/purchase-orders", campaign: "/actions/campaigns" };
+
+async function refreshProposals() {
+  if (!state.actions) return;
+  try { state.proposals = (await state.actions.proposals()).proposals; } catch (e) { state.proposals = []; state.proposalsError = e.message; }
+}
+
+function renderProposals() {
+  const host = $("#proposals");
+  if (!host || !state.actions) return;
+  if (!state.proposals.length) { host.innerHTML = `<div class="empty-list">${state.proposalsError ? `Could not load proposals: ${esc(state.proposalsError)}` : "No proposals waiting. The agent drafts them weekly."}</div>`; return; }
+  host.replaceChildren(...state.proposals.map(proposalCard));
+}
+
+function proposalCard(p) {
+  const nums = new Map((p.numbers?.products || []).map((n) => [n.product_id, n]));
+  const isCamp = p.kind === "campaign";
+  const lines = isCamp ? p.payload.product_ids.map((id) => ({ product_id: id })) : p.payload.lines;
+  const rows = lines.map((l) => {
+    const n = nums.get(l.product_id) || {};
+    return isCamp
+      ? `<tr><td><input type="checkbox" checked data-pid="${l.product_id}" aria-label="Include"></td><td>${esc(n.product_name ?? l.product_id)}</td><td>${esc(STATUS_LABEL[n.status] || n.status || "")}</td><td class="n">${int(n.on_hand ?? 0)}</td><td class="n">${cover(n.days_of_cover)}</td><td class="n">${money(n.excess_value ?? 0)}</td></tr>`
+      : `<tr><td><input type="checkbox" checked data-pid="${l.product_id}" aria-label="Include"></td><td>${esc(n.product_name ?? l.product_id)}</td><td>${esc(STATUS_LABEL[n.status] || n.status || "")}</td><td class="n">${int(n.on_hand ?? 0)}</td><td class="n">${int(n.on_order ?? 0)}</td><td class="n">${one(n.daily_demand)}</td><td class="n">${int(n.suggested_order_qty ?? 0)}</td><td class="n"><input class="qty-in" type="number" min="1" step="1" value="${l.qty}" data-qty="${l.product_id}" aria-label="Quantity"></td></tr>`;
+  }).join("");
+  const head = isCamp ? `<th></th><th>Product</th><th>Status</th><th class="n">On hand</th><th class="n">Days of cover</th><th class="n">Excess value</th>`
+    : `<th></th><th>Product</th><th>Status</th><th class="n">On hand</th><th class="n">On order</th><th class="n">Demand / day</th><th class="n">Suggested</th><th class="n">Draft qty</th>`;
+  const camp = isCamp ? `<label>Discount % <input type="number" data-discount min="1" max="50" value="${p.payload.discount_pct}"></label><label>Days <input type="number" data-days min="7" max="90" value="${p.payload.days}"></label>` : "";
+  const card = el("div", { class: "prop" },
+    `<h3><span class="kind">${esc(KIND_LABEL[p.kind] || p.kind)}</span>${esc(p.title)}</h3>
+     <div class="meta">drafted ${esc(ago(p.created_at))} by ${esc(p.created_by.replace("service-account-", ""))} · run ${esc(p.run_id)}</div>
+     <p class="why">${esc(p.rationale)}</p>
+     <div class="tbl-wrap"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+     <div class="act-bar">${camp}<button class="act-btn" data-approve>Approve</button><button class="btn-quiet" data-dismiss>Dismiss</button><span class="act-msg"></span></div>`);
+  const say_ = (text, cls = "") => { const m = card.querySelector(".act-msg"); m.textContent = text; m.className = `act-msg ${cls}`; };
+  const busy = (on) => card.querySelectorAll("button").forEach((b) => { b.disabled = on; });
+  card.querySelector("[data-approve]").addEventListener("click", async () => {
+    const keep = [...card.querySelectorAll("input[data-pid]:checked")].map((c) => Number(c.dataset.pid));
+    if (!keep.length) return say_("Tick at least one line.", "err");
+    const body = isCamp
+      ? { product_ids: keep, discount_pct: Number(card.querySelector("[data-discount]").value), days: Number(card.querySelector("[data-days]").value) }
+      : { lines: keep.map((id) => ({ product_id: id, qty: Number(card.querySelector(`[data-qty="${id}"]`).value) })) };
+    const what = isCamp ? `a ${body.discount_pct}% campaign for ${keep.length} product${keep.length === 1 ? "" : "s"}` : `${KIND_LABEL[p.kind].toLowerCase()} with ${keep.length} line${keep.length === 1 ? "" : "s"}`;
+    if (!confirm(`Create ${what}? It is written to the ERP as approved.`)) return;
+    busy(true); say_("Sending…");
+    try {
+      await state.actions.post(ENDPOINT[p.kind], { idempotency_key: newKey(), proposal_id: p.id, ...body });
+      await Promise.all([refreshProposals(), refreshLog()]);
+      renderInventory();
+    } catch (e) { busy(false); say_(`Refused: ${e.message}`, "err"); }
+  });
+  card.querySelector("[data-dismiss]").addEventListener("click", async () => {
+    if (!confirm("Dismiss this proposal?")) return;
+    busy(true);
+    try { await state.actions.dismiss(p.id); await refreshProposals(); renderProposals(); } catch (e) { busy(false); say_(`Could not dismiss: ${e.message}`, "err"); }
+  });
+  return card;
 }
 
 // ---- Approve actions. The page picks rows and edits a quantity or a discount; the actions service
@@ -1190,21 +1253,22 @@ async function loadInventory({ quiet = false } = {}) {
   state.invCtrl?.abort();
   const ctrl = new AbortController();
   state.invCtrl = ctrl;
-  const sel = ["reorder", "overstock"].filter((k) => state.inv[k]).map((k) => `[data-panel="${k}"]`);
+  const panels = ["reorder", "overstock", ...(state.inv.reorder || state.inv.overstock ? ["proposals"] : [])].filter((k) => k === "proposals" || state.inv[k]);
+  const sel = panels.map((k) => `[data-panel="${k}"]`);
   if (!quiet) {
     state.invBusy = true; state.invT0 = performance.now();
-    for (const k of ["reorder", "overstock"]) delete state.timing[k];
+    for (const k of panels) delete state.timing[k];
     sel.forEach((q) => pend(q, true)); startTicker();
   }
   try {
-    const [data] = await Promise.all([getJSON("/api/inventory", ctrl.signal), refreshLog()]);
-    const logKey = JSON.stringify(state.actionLog.map((e) => e.id));
+    const [data] = await Promise.all([getJSON("/api/inventory", ctrl.signal), refreshLog(), refreshProposals()]);
+    const logKey = JSON.stringify([state.actionLog.map((e) => e.id), state.proposals.map((p) => [p.id, p.status])]);
     const changed = JSON.stringify({ ...data, generated_at: 0 }) !== JSON.stringify({ ...(state.invData || {}), generated_at: 0 }) || logKey !== state.logKey;
     state.logKey = logKey;
     if (changed) { state.invData = data; renderInventory(); }
     if (!quiet) {
       const ms = performance.now() - state.invT0;
-      for (const k of ["reorder", "overstock"]) if (state.inv[k]) state.timing[k] = ms;
+      for (const k of panels) state.timing[k] = ms;
     }
     if (!state.salesView) setLive(true);
   } catch (err) {
@@ -1238,6 +1302,7 @@ async function initRole() {
   $("#inv").hidden = !(state.inv.reorder || state.inv.overstock);
   if (!state.salesView) $("#inv .inv-head .hint").textContent = "Stock, demand and open orders per product, refreshed on load, on Refresh and when the data changes.";
   for (const k of ["reorder", "overstock"]) document.querySelector(`[data-panel="${k}"]`).hidden = !state.inv[k];
+  document.querySelector('[data-panel="proposals"]').hidden = !(state.actions && (state.inv.reorder || state.inv.overstock));
 }
 
 // Re-layout width-dependent charts when the viewport changes.
