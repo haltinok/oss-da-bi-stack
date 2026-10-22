@@ -381,6 +381,11 @@ window.__dashboardDataReady({
   async get(url, signal, update) {
     const u = new URL(url, location.origin);
     if (u.pathname === "/api/meta") return meta(signal);
+    // Cheap unfiltered probe (rollup-served): the total number of order lines changes when new orders land.
+    if (u.pathname === "/api/orders-version") {
+      const rows = await Promise.all(Object.values(CH).map((c) => run({ measures: [`${c}.lines`] }, signal)));
+      return { version: rows.reduce((n, r, i) => n + num(r[0]?.[`${Object.values(CH)[i]}.lines`] || 0), 0) };
+    }
     if (u.pathname === "/api/dashboard") {
       const f = Object.fromEntries(["fy", "channel", "group", "region", "category", "subcategory"].map((k) => [k, u.searchParams.get(k) || ""]));
       return dashboard(f, signal, update, u.searchParams.get("feed") === "0");

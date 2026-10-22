@@ -31,7 +31,7 @@ with sync_playwright() as p:
     group = page.eval_on_selector_all("#f-group option", "o => o.map(x => x.value).filter(Boolean)")[0]
     page.select_option("#f-group", group)
     page.wait_for_function("!document.querySelector('#kpis').classList.contains('pending')", timeout=300_000)
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(35_000)  # covers one background poll: with no new orders it must not re-query the feed
     ok = len(feed_queries) == first and not dimmed and page.inner_text('[data-panel="feed"]') == rows_before
     print(f"feed queries on load: {first}; after filter: {len(feed_queries) - first}; dimmed: {len(dimmed)}; unchanged: {ok}")
     print(feed_queries[first:][:2])
