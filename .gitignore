@@ -31,3 +31,4 @@ spike/ingest/deleted_orders.json
 spike/dbt/.venv/
 spike/dbt/target/
 spike/dbt/logs/
+spike/bench/conf-*/

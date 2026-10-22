@@ -101,13 +101,24 @@ for ch in ("internet", "reseller"):
         f"where {LIVE} and d.fiscal_year=2013 group by 1,2")}
     check(f"{ch} FY2013 revenue + units by category x month ({len(want)} cells)", got, want, b)
 
-    # count_distinct: served by its own exact-grain rollup.
+    # orders_placed (first line of each order) must equal the true distinct-order count for
+    # order-level groupings, including a multi-region (IN list) filter.
     t0 = time.time()
-    b = cube({"measures": [f"{ch}_sales.orders"], "timeDimensions": [{"dimension": f"{ch}_sales.order_date", "granularity": "month"}]})
-    got = {d[f"{ch}_sales.order_date.month"][:7]: int(d[f"{ch}_sales.orders"]) for d in b["data"]}
+    b = cube({"measures": [f"{ch}_sales.orders_placed"], "timeDimensions": [{"dimension": f"{ch}_sales.order_date", "granularity": "month"}]})
+    got = {d[f"{ch}_sales.order_date.month"][:7]: int(d[f"{ch}_sales.orders_placed"]) for d in b["data"]}
     want = {r[0].strftime("%Y-%m"): int(r[1]) for r in sql(
         f"select date_trunc('month', order_date), count(distinct sales_order_number) from mart.fact_{ch}_sales where {LIVE} group by 1")}
-    check(f"{ch} orders by month ({len(want)} months) {time.time()-t0:.1f}s", got, want, b)
+    check(f"{ch} orders_placed == distinct orders, by month ({len(want)} months) {time.time()-t0:.1f}s", got, want, b)
+
+    regions = ["Canada", "Central", "Northeast", "Northwest", "Southeast", "Southwest"]
+    b = cube({"measures": [f"{ch}_sales.orders_placed"], "dimensions": ["dates.fiscal_year"],
+              "filters": [{"member": "territories.region", "operator": "equals", "values": regions}]})
+    got = {int(d["dates.fiscal_year"]): int(d[f"{ch}_sales.orders_placed"]) for d in b["data"]}
+    inlist = ",".join(f"'{r}'" for r in regions)
+    want = {int(r[0]): int(r[1]) for r in sql(
+        f"select d.fiscal_year, count(distinct f.sales_order_number) from mart.fact_{ch}_sales f join mart.dim_date d on d.date_key=f.order_date_key "
+        f"join mart.dim_sales_territory t on t.sales_territory_key=f.sales_territory_key where {LIVE} and t.sales_territory_region in ({inlist}) group by 1")}
+    check(f"{ch} orders_placed == distinct orders, North America IN-list x fiscal year ({len(want)} years)", got, want, b)
 
 # Drill-across: both facts by product category, vs each fact aggregated separately.
 t0 = time.time()

@@ -5,19 +5,22 @@
               [--cube http://localhost:4000/cubejs-api/v1/load] [--skip-direct]
 For every query: `rollup` = as sent by the dashboard (served by pre-aggregations when one
 matches), `direct` = the same query with a filter no rollup carries (answered by StarRocks).
-renewQuery forces Cube to ignore its own result cache, so every run is a real execution.
+Every run is different SQL (varied limit / dummy filter value) so Cube's result cache never answers;
+renewQuery is also set. Every run is a real execution.
 Appends one JSON line per query to spike/bench/results.jsonl.
 """
 import argparse
 import json
 import os
 import statistics
+import sys
 import time
 
 import jwt
 import requests
 
-from queries import CH, defeat_rollups, panel_queries
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
+from queries import CH, defeat_rollups, panel_queries, vary
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--label", required=True)
@@ -54,13 +57,14 @@ def pct(xs, p):
 out = open(os.path.join(os.path.dirname(__file__), "results.jsonl"), "a")
 for ch in CH:
     for name, q in panel_queries(ch, fy=args.fy).items():
-        for mode, query, runs in (("rollup", q, args.runs), ("direct", defeat_rollups(q), 0 if args.skip_direct else args.direct_runs)):
+        for mode, make, runs in (("rollup", lambda i: vary(q, i), args.runs),
+                                 ("direct", lambda i: vary(defeat_rollups(q, i), i), 0 if args.skip_direct else args.direct_runs)):
             if not runs:
                 continue
-            timed(query)  # warm-up (also builds anything missing)
+            timed(make(1000))  # warm-up (also builds anything missing); never reused below
             times, used, err = [], None, None
-            for _ in range(runs):
-                dt, used, err = timed(query)
+            for i in range(runs):
+                dt, used, err = timed(make(i))
                 if err:
                     break
                 times.append(dt)

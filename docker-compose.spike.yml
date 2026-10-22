@@ -76,7 +76,7 @@ services:
       # pinned to the one the dev-mode run built so the existing 500M rollups are reused.
       CUBEJS_DEV_MODE: ${CUBE_DEV_MODE:-false}
       CUBEJS_PRE_AGGREGATIONS_SCHEMA: dev_pre_aggregations
-      CUBEJS_REFRESH_WORKER: "true"
+      CUBEJS_REFRESH_WORKER: "${CUBE_REFRESH_WORKER:-true}"
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env.spike}
       # StarRocks speaks the MySQL protocol.
       CUBEJS_DB_TYPE: mysql

@@ -73,7 +73,7 @@ async function cubeToken(force = false) {
   if (res.status === 401) { store.del("kc"); return login(); }
   if (!res.ok) throw new Error(res.status === 403 ? "Your account has no access to this dashboard" : `Sign-in failed (${res.status})`);
   const t = await res.json();
-  session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role };
+  session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, territories: t.territories };
   window.dashboardData.noProfit = t.role === "rep"; // profit/margin are not available to reps
   showWho();
   return session.token;
@@ -109,16 +109,22 @@ async function run(query, signal) {
 
 const channels = (f) => (f.channel ? [f.channel] : Object.keys(CH));
 const profit = () => !window.dashboardData.noProfit;
-const measures = (ch, extra = []) => [
-  `${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.orders`, `${CH[ch]}.units`, ...extra,
+// Orders: `orders_placed` (each order once, on its first line) is exact for any grouping or filter on
+// order-level attributes and is additive, so a plain rollup serves it even under a multi-region
+// security filter. It is wrong as soon as products are involved (an order has several categories),
+// so product filters switch to the exact distinct count, which only a direct scan can answer.
+const ordersOf = (f) => (f && (f.category || f.subcategory) ? "orders" : "orders_placed");
+const measures = (ch, f, orders = ordersOf(f)) => [
+  `${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.${orders}`, `${CH[ch]}.units`,
 ];
 const figures = (ch, r) => ({
   revenue: num(r[`${CH[ch]}.revenue`]), gross_profit: profit() ? num(r[`${CH[ch]}.gross_profit`]) : null,
-  orders: num(r[`${CH[ch]}.orders`]), units: num(r[`${CH[ch]}.units`]),
+  orders: num(r[`${CH[ch]}.orders`] ?? r[`${CH[ch]}.orders_placed`]), units: num(r[`${CH[ch]}.units`]),
 });
+const nz = (a, b) => (a == null || b == null ? null : a + b);
 const add = (a, b) => ({
-  revenue: a.revenue + b.revenue, gross_profit: a.gross_profit == null || b.gross_profit == null ? null : a.gross_profit + b.gross_profit,
-  orders: a.orders + b.orders, units: a.units + b.units,
+  revenue: a.revenue + b.revenue, gross_profit: nz(a.gross_profit, b.gross_profit),
+  orders: nz(a.orders, b.orders), units: a.units + b.units,
 });
 const ZERO = { revenue: 0, gross_profit: 0, orders: 0, units: 0 };
 
@@ -142,18 +148,22 @@ async function dashboard(f, signal) {
   const perChannel = (fn) => Promise.all(chans.map((ch) => fn(ch).then((rows) => ({ ch, rows }))));
 
   const kpiQ = perChannel((ch) => run({
-    measures: measures(ch),
+    measures: measures(ch, f),
     dimensions: f.fy ? ["dates.fiscal_year"] : [],
     filters: [...filters(f, ["fy"]),
       ...(f.fy ? [{ member: "dates.fiscal_year", operator: "equals", values: [String(f.fy), String(f.fy - 1)] }] : [])],
   }, signal));
   const monthlyQ = perChannel((ch) => run({
-    measures: measures(ch), filters: filters(f),
+    measures: measures(ch, f), filters: filters(f),
     timeDimensions: [{ dimension: `${CH[ch]}.order_date`, granularity: "month" }],
     order: { [`${CH[ch]}.order_date`]: "asc" },
   }, signal));
+  // Orders per category = distinct orders containing it (not additive): a rollup answers that for admins
+  // and single-territory users only; for a multi-territory user the column is left empty rather than slow.
+  const exactMix = session.role === "admin" || (session.territories || []).length === 1;
   const mixQ = perChannel((ch) => run({
-    measures: measures(ch), dimensions: ["products.category", "products.subcategory"],
+    measures: exactMix ? measures(ch, f, "orders") : measures(ch, f, "orders").filter((m) => !m.endsWith(".orders")),
+    dimensions: ["products.category", "products.subcategory"],
     filters: filters(f, ["category", "subcategory"]),
   }, signal));
   const productsQ = perChannel((ch) => run({
@@ -161,7 +171,7 @@ async function dashboard(f, signal) {
     dimensions: ["products.name", "products.category"], filters: filters(f),
   }, signal));
   const territoriesQ = perChannel((ch) => run({
-    measures: [`${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.orders`],
+    measures: [`${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.${ordersOf(f)}`],
     dimensions: ["territories.group_name", "territories.region"], filters: filters(f, ["group", "region"]),
   }, signal));
   // Newest orders ignore the fiscal-year filter. Find the newest day from the daily rollup, then
@@ -234,7 +244,7 @@ async function dashboard(f, signal) {
       terrMap.set(key, {
         ...cur, revenue: cur.revenue + rev, [ch.toLowerCase()]: cur[ch.toLowerCase()] + rev,
         gross_profit: gp == null || cur.gross_profit == null ? null : cur.gross_profit + gp,
-        orders: cur.orders + num(r[`${CH[ch]}.orders`]),
+        orders: cur.orders + num(r[`${CH[ch]}.orders`] ?? r[`${CH[ch]}.orders_placed`]),
       });
     }
   }

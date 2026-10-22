@@ -37,7 +37,7 @@ seeds:
 # StarRocks table grants vanish when dbt drops and recreates a table, so re-apply
 # them after every run. Needs the users to exist: run spike/starrocks/grants.sh once first.
 on-run-end:
-  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL TABLES IN DATABASE mart TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
-  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL VIEWS IN DATABASE mart TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
-  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON TABLE mart.dim_user_territory TO USER 'auth_ro'@'%'{% else %}select 1{% endif %}"
-  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON TABLE mart.dim_sales_territory TO USER 'auth_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL TABLES IN DATABASE mart{{ var('mart_suffix', '') }} TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) %}GRANT SELECT ON ALL VIEWS IN DATABASE mart{{ var('mart_suffix', '') }} TO USER 'cube_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) and var('mart_suffix', '') == '' %}GRANT SELECT ON TABLE mart.dim_user_territory TO USER 'auth_ro'@'%'{% else %}select 1{% endif %}"
+  - "{% if var('apply_ro_grants', true) and var('mart_suffix', '') == '' %}GRANT SELECT ON TABLE mart.dim_sales_territory TO USER 'auth_ro'@'%'{% else %}select 1{% endif %}"
