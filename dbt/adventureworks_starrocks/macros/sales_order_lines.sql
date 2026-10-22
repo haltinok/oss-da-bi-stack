@@ -1,17 +1,36 @@
-{{ config(materialized='ephemeral') }}
+{#-
+  Per-order-line grain shared by fact_internet_sales and fact_reseller_sales. A macro rather
+  than an ephemeral model so that is_incremental() is evaluated in the calling fact.
 
--- Per-order-line grain shared by fact_internet_sales and fact_reseller_sales.
---
--- Both facts used to carry byte-identical copies of the `order_lines` and
--- `product_cost` logic; the only real differences are the channel filter and
--- two key columns, which stay in the mart models. Keeping this ephemeral means
--- no extra object is created and the mart surface is unchanged.
+  Incremental runs only rebuild the orders touched since the fact's own watermark, so the
+  line-number window and the joins scan a few orders instead of every line. The upsert is
+  keyed on the line, so the lookback overlap is harmless.
+-#}
+{% macro incremental_orders_filter(which) %}
+    {% if is_incremental() %}
+    where sales_order_id in (
+        select sales_order_id from {{ ref('stg_sales_order_header') }}
+        where modified_date >= {{ incremental_watermark() }}
+        union
+        select sales_order_id from {{ ref('stg_sales_order_detail') }}
+        where modified_date >= {{ incremental_watermark() }}
+    )
+    {% endif %}
+{% endmacro %}
+
+{% macro incremental_watermark() -%}
+    (select date_sub(coalesce(max(source_modified_date), '1970-01-01'), interval {{ var('incremental_lookback_minutes', 60) }} minute) from {{ this }})
+{%- endmacro %}
+
+{% macro sales_order_lines(channel) %}
 with header as (
     select * from {{ ref('stg_sales_order_header') }}
+    {{ incremental_orders_filter('header') }}
 ),
 
 detail as (
     select * from {{ ref('stg_sales_order_detail') }}
+    {{ incremental_orders_filter('detail') }}
 ),
 
 -- The line number is numbered over the two key columns only. Numbering it inside
@@ -57,6 +76,7 @@ order_lines as (
         h.revision_number,
         h.purchase_order_number,
         h.status as order_status,
+        greatest(h.modified_date, d.modified_date) as source_modified_date,
         h.sub_total,
         h.tax_amt,
         h.freight,
@@ -112,6 +132,7 @@ final as (
         pc.standard_cost as product_standard_cost,
         (pc.standard_cost * ol.order_qty) as total_product_cost,
         ol.order_status,
+        ol.source_modified_date,
         -- Header-level tax/freight are allocated across the order's lines by share
         -- of sub_total, so SUM() over the fact matches the order. Previously the
         -- full header amount was copied onto every line, overstating the total by
@@ -127,3 +148,13 @@ final as (
 )
 
 select * from final
+where channel = '{{ channel }}'
+{% endmacro %}
+
+{# A merge load never sees deleted orders. Drop fact rows whose order is gone from staging
+   (which already anti-joins the PK snapshot when use_pk_snapshots is on). #}
+{% macro delete_removed_orders() %}
+    {% if is_incremental() %}
+    delete from {{ this }} where sales_order_number not in (select sales_order_number from {{ ref('stg_sales_order_header') }})
+    {% endif %}
+{% endmacro %}
