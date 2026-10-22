@@ -404,6 +404,19 @@ purchase-order path is covered by the unit tests. `scripts/demo_stock_scenario.p
 best-selling in-house products so the reorder list has something to approve (stock covers ~1000 days otherwise,
 and an approved order empties the list again).
 
+**Proposals and the proposal agent** (Phase 3 of `docs/inventory-actions-plan.md`, step 1: the plumbing). The agent
+is a Keycloak service account (client `inventory-agent`, client-credentials grant, realm role `agent`) and can do
+exactly two things: read both inventory cubes in full through Cube (`auth` mints it a Cube token with the role
+`agent`, no territories, so no sales, customers or territories), and `POST /proposals` to the actions service.
+The service runs every drafted proposal through the same rules as an action (stockout / reorder_now only, the
+replenishment kind, quantity bounds, one vendor per purchase-order proposal, campaign limits), stores the valid
+ones in `proposals` with the numbers as the mart showed them, and reports each refused item with its reason. The
+agent cannot create, approve or dismiss anything; a person approves by calling the normal action endpoint with
+`proposal_id` (the same transaction marks the proposal approved and links the audit row), or dismisses it. A
+proposal can be approved or dismissed once. Drafting writes an audit row with outcome `drafted`; re-sending a
+`run_id` does not duplicate. A Keycloak that already imported the realm needs `keycloak/sync-users.sh` for the
+client and role, and `postgres_active/sync-actions.sh` for the table.
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.

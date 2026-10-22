@@ -493,6 +493,7 @@ services:
       KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:?set TEST_USER_PASSWORD in .env}
+      AGENT_CLIENT_SECRET: ${AGENT_CLIENT_SECRET:?set AGENT_CLIENT_SECRET in .env}
       # The dashboard's address, for the realm's redirect URIs (see realm-spike.json).
       DASHBOARD_CUBE_PORT: ${DASHBOARD_CUBE_PORT:-8250}
     volumes:

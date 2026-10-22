@@ -20,6 +20,9 @@
       },
       {
         "name": "marketing"
+      },
+      {
+        "name": "agent"
       }
     ]
   },
@@ -41,6 +44,16 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:${DASHBOARD_CUBE_PORT:8250}/*"
       }
+    }    ,
+    {
+      "clientId": "inventory-agent",
+      "name": "Inventory proposal agent (service account, read-only data + draft proposals)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${AGENT_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
   "users": [
@@ -132,6 +145,14 @@
       ],
       "realmRoles": [
         "marketing"
+      ]
+    },
+    {
+      "username": "service-account-inventory-agent",
+      "enabled": true,
+      "serviceAccountClientId": "inventory-agent",
+      "realmRoles": [
+        "agent"
       ]
     }
   ]

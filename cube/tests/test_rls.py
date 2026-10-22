@@ -338,3 +338,37 @@ def test_inventory_roles_cannot_borrow_sales_through_the_token(tokens):
     for user in ("buyer", "marketer"):
         status, body = load({"measures": ["reseller_sales.revenue"]}, tokens[user])
         assert rejected(status, body), (user, body)
+
+
+# --- the proposal agent: a service account with read access to both inventory cubes and nothing else --------
+
+def agent_token():
+    kc = requests.post(f"{KEYCLOAK}/realms/spike/protocol/openid-connect/token", timeout=30,
+                       data={"grant_type": "client_credentials", "client_id": "inventory-agent", "client_secret": os.environ["AGENT_CLIENT_SECRET"]})
+    kc.raise_for_status()
+    r = requests.post(f"{AUTH}/token", headers={"Authorization": f"Bearer {kc.json()['access_token']}"}, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def test_agent_gets_the_agent_role_and_no_territories():
+    t = agent_token()
+    assert t["role"] == "agent" and t["territories"] == []
+
+
+def test_agent_reads_inventory_in_full_but_nothing_else():
+    tok = agent_token()["token"]
+    status, body = load({"measures": ["inventory_health.suggested_order_value_total"], "dimensions": ["inventory_health.vendor_name", "inventory_health.unit_cost"]}, tok)
+    assert status == 200, body
+    status, body = load({"measures": ["offer_performance.avg_lift"]}, tok)
+    assert status == 200, body
+    for q in ({"measures": ["internet_sales.revenue"]}, {"measures": ["reseller_sales.lines"]}, {"dimensions": ["customers.last_name"]},
+              {"measures": ["inventory_health.stockout_items"], "dimensions": ["territories.region"]}):
+        status, body = load(q, tok)
+        assert rejected(status, body), (q, body)
+
+
+def test_a_dashboard_token_cannot_be_turned_into_the_agent(tokens):
+    # a person's token maps to a person's role, never to agent
+    claims = jwt.decode(tokens["na_manager"], options={"verify_signature": False})
+    assert claims["role"] == "manager"

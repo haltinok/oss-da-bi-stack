@@ -47,6 +47,7 @@ CUBE_DB_PASSWORD=$(openssl rand -hex 16)
 AUTH_DB_PASSWORD=$(openssl rand -hex 16)
 ACTIONS_DB_PASSWORD=$(openssl rand -hex 16)
 ACTIONS_SR_PASSWORD=$(openssl rand -hex 16)
+AGENT_CLIENT_SECRET=$(openssl rand -hex 16)
 KEYCLOAK_ADMIN_PASSWORD=$(openssl rand -hex 16)
 TEST_USER_PASSWORD=$(openssl rand -hex 12)
 

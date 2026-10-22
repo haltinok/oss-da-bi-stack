@@ -2,7 +2,7 @@
 # Add the roles and users that keycloak/realm-spike.json defines to a Keycloak that already imported the
 # realm. `--import-realm` only runs when the realm does not exist yet, so an existing Keycloak volume keeps
 # its old users and misses later additions (here: the purchasing and marketing roles and the buyer and
-# marketer users). Idempotent; nothing is deleted or overwritten. Reads secrets from .env.
+# marketer users, and the proposal agent's `inventory-agent` client and `agent` role). Idempotent; nothing is deleted or overwritten. Reads secrets from .env.
 #
 #   keycloak/sync-users.sh
 set -euo pipefail
@@ -13,7 +13,7 @@ kc() { docker compose --profile starrocks exec -T keycloak /opt/keycloak/bin/kca
 kc config credentials --server http://localhost:8080 --realm master \
   --user "${KEYCLOAK_ADMIN:-admin}" --password "${KEYCLOAK_ADMIN_PASSWORD:?}" >/dev/null
 
-for role in purchasing marketing; do
+for role in purchasing marketing agent; do
   kc create roles -r spike -s "name=$role" >/dev/null 2>&1 && echo "role $role: created" || echo "role $role: exists"
 done
 for pair in buyer:purchasing marketer:marketing; do
@@ -28,3 +28,15 @@ for pair in buyer:purchasing marketer:marketing; do
     echo "user $user: created with role $role"
   fi
 done
+
+# The proposal agent: a confidential client with a service account that holds only the `agent` role.
+cid=$(kc get clients -r spike -q clientId=inventory-agent --fields id --format csv --noquotes)
+if [ -z "$cid" ]; then
+  kc create clients -r spike -s clientId=inventory-agent -s publicClient=false -s serviceAccountsEnabled=true \
+    -s standardFlowEnabled=false -s directAccessGrantsEnabled=false -s "secret=${AGENT_CLIENT_SECRET:?}" >/dev/null
+  echo "client inventory-agent: created"
+else
+  kc update "clients/$cid" -r spike -s "secret=${AGENT_CLIENT_SECRET:?}" >/dev/null
+  echo "client inventory-agent: exists (secret refreshed)"
+fi
+kc add-roles -r spike --uusername service-account-inventory-agent --rolename agent >/dev/null 2>&1 && echo "service account: agent role set" || echo "service account: role not set"
