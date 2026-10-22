@@ -27,7 +27,7 @@ models:
       +materialized: table
 
 vars:
-  # Which schema to read: raw (live, the default) | scale_10m | scale_100m | scale_500m (spike benchmarks).
+  # Which schema to read: raw (live, the default) | scale_10m | scale_100m | scale_250m | scale_500m (spike benchmarks).
   aw_source_schema: raw
   # true when the pipeline loads raw.pk_* snapshots (see stg_sales_order_header).
   use_pk_snapshots: false

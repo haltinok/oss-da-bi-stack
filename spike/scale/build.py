@@ -4,10 +4,17 @@ For copy k in [0, K):
   order ids        sales_order_id + k * 1_000_000            (bigint); sales_order_number = 'SO' || id
   customer-side    key + (k % 100) * 1_000_000               (customer/person/address/email/bea, x100)
   dates            + (k % 8) years  (order/due/ship/modified)
-Builds scale_500m from raw, then scale_100m / scale_10m as copy-index subsets
-(copy index = sales_order_id div 1_000_000). Unscaled tables are views over raw.
+Each tier is cross-joined straight from raw (`--only 250m` builds just that tier). A tier smaller than one
+that is already built is copied from it as a copy-index subset (copy index = sales_order_id div 1_000_000),
+which is much faster than another cross join. Unscaled tables are views over raw.
 
-  uv run --with pymysql python -I spike/scale/build.py [--only 10m|100m|500m | --cust-only]
+Supply side (`--supply`): sales are multiplied, but inventory, purchase orders and work orders are not, so
+unscaled every product would look out of stock. `--supply` measures how much more was sold in the scaled
+tier (units in the trailing 90 days, each anchored at its own latest order date) and multiplies the
+quantity columns of the supply tables by that factor, shifts their dates to sit with the scaled data, and
+records it in scale_meta.supply_factor. Tables that are not in raw yet are skipped with a notice.
+
+  uv run --with pymysql python -I spike/scale/build.py [--only 1m|10m|100m|250m|500m | --cust-only | --supply [tier]]
 """
 import os
 import sys
@@ -15,7 +22,7 @@ import time
 
 import pymysql
 
-SCALES = {"10m": 83, "100m": 825, "500m": 4120}   # copies of the ~121k-line base
+SCALES = {"1m": 8, "10m": 83, "100m": 825, "250m": 2060, "500m": 4120}   # copies of the ~121k-line base; 1m is a smoke test
 CUST_COPIES = 100
 OFF = 1_000_000
 CHUNK = 200                                        # copies per INSERT (~24M detail rows)
@@ -103,15 +110,15 @@ def sel_cust(table):
     return f"SELECT {', '.join(exprs)} FROM raw.{table} t CROSS JOIN scale_meta.nums n WHERE n.k < {CUST_COPIES}"
 
 
-def build_500m():
-    s = "scale_500m"
+def build_tier(name):
+    """Cross-join `raw` straight up to SCALES[name] copies."""
+    s, K = f"scale_{name}", SCALES[name]
     run(f"DROP DATABASE IF EXISTS {s} FORCE")
     run(f"CREATE DATABASE {s}")
     base = {
         "sales_order_header": f"select * from raw.sales_order_header where {CLEAN}",
         "sales_order_detail": f"select * from raw.sales_order_detail where {CLEAN}",
     }
-    K = SCALES["500m"]
     for tbl in ("sales_order_header", "sales_order_detail"):
         run(ddl(s, tbl))
         for a in range(0, K, CHUNK):
@@ -124,27 +131,42 @@ def build_500m():
         print(f"  {s}.{tbl}: {secs:.0f}s", flush=True)
 
 
-def build_subset(name):
-    s, K = f"scale_{name}", SCALES[name]
+def built_tiers():
+    cur.execute("select schema_name from information_schema.schemata where schema_name like 'scale\\_%' and schema_name <> 'scale_meta'")
+    return [n.removeprefix("scale_") for (n,) in cur.fetchall() if n.removeprefix("scale_") in SCALES]
+
+
+def build_subset(name, parent):
+    s, K, src = f"scale_{name}", SCALES[name], f"scale_{parent}"
     run(f"DROP DATABASE IF EXISTS {s} FORCE")
     run(f"CREATE DATABASE {s}")
     for tbl in list(KEYS) + list(CUST_KEYS):
         run(ddl(s, tbl))
         where = f" WHERE sales_order_id < {K * OFF}" if tbl in KEYS else ""
-        secs = run(f"INSERT INTO {s}.{tbl} SELECT * FROM scale_500m.{tbl}{where}")
+        secs = run(f"INSERT INTO {s}.{tbl} SELECT * FROM {src}.{tbl}{where}")
         print(f"  {s}.{tbl}: {secs:.0f}s", flush=True)
+
+
+def build(name):
+    """A tier from the smallest already-built larger tier, else straight from raw."""
+    parents = sorted((SCALES[t], t) for t in built_tiers() if SCALES[t] > SCALES[name])
+    if parents:
+        build_subset(name, parents[0][1])
+    else:
+        build_tier(name)
 
 
 def build_cust_only():
     """Rebuild just the customer-side tables in all scales (no 15-minute fact rebuild)."""
     for tbl in CUST_KEYS:
-        for s in ("scale_500m", "scale_100m", "scale_10m"):
+        tiers = [f"scale_{t}" for t in sorted(built_tiers(), key=SCALES.get, reverse=True)]
+        for s in tiers:
             cur.execute("select table_type from information_schema.tables where table_schema=%s and table_name=%s", (s, tbl))
             row = cur.fetchone()
             if row:
                 run(f"DROP {'VIEW' if row[0] == 'VIEW' else 'TABLE'} {s}.{tbl}")
             run(ddl(s, tbl))
-            src = sel_cust(tbl) if s == "scale_500m" else f"SELECT * FROM scale_500m.{tbl}"
+            src = sel_cust(tbl) if s == tiers[0] else f"SELECT * FROM {tiers[0]}.{tbl}"
             secs = run(f"INSERT INTO {s}.{tbl} {src}")
             print(f"  {s}.{tbl}: {secs:.0f}s", flush=True)
 
@@ -158,22 +180,121 @@ def views(schema):
             run(f"CREATE VIEW IF NOT EXISTS {schema}.{t} AS SELECT * FROM raw.{t}")
 
 
+# --- supply side ---------------------------------------------------------------------------
+# table -> (quantity columns multiplied by the factor, date columns shifted with the scaled data)
+SUPPLY = {
+    "product": (["safety_stock_level", "reorder_point"], []),
+    "product_inventory": (["quantity"], ["modified_date"]),
+    "product_vendor": (["min_order_qty", "max_order_qty", "on_order_qty"], ["last_receipt_date", "modified_date"]),
+    "purchase_order_header": ([], ["order_date", "ship_date", "modified_date"]),
+    "purchase_order_detail": (["order_qty", "received_qty", "rejected_qty", "stocked_qty"], ["due_date", "modified_date"]),
+    "work_order": (["order_qty", "stocked_qty", "scrapped_qty"], ["start_date", "end_date", "due_date", "modified_date"]),
+}
+# (table, column, parent table, parent column): rows whose parent is missing are counted, not dropped.
+FKS = [
+    ("product_inventory", "product_id", "product", "product_id"),
+    ("product_vendor", "product_id", "product", "product_id"),
+    ("product_vendor", "business_entity_id", "vendor", "business_entity_id"),
+    ("purchase_order_header", "vendor_id", "vendor", "business_entity_id"),
+    ("purchase_order_detail", "purchase_order_id", "purchase_order_header", "purchase_order_id"),
+    ("purchase_order_detail", "product_id", "product", "product_id"),
+    ("work_order", "product_id", "product", "product_id"),
+    ("special_offer_product", "special_offer_id", "special_offer", "special_offer_id"),
+    ("special_offer_product", "product_id", "product", "product_id"),
+]
+
+
+def exists(schema, table):
+    cur.execute("select count(*) from information_schema.tables where table_schema=%s and table_name=%s", (schema, table))
+    return cur.fetchone()[0] > 0
+
+
+def trailing_units(header, detail):
+    """(as-of date, units sold in the 90 days up to it); header/detail are table names or subselects."""
+    cur.execute(f"select max(order_date) from {header} h")
+    as_of = cur.fetchone()[0]
+    cur.execute(f"select sum(d.order_qty) from {detail} d join {header} h on h.sales_order_id = d.sales_order_id "
+                "where h.order_date > date_sub(%s, interval 90 day) and h.order_date <= %s", (as_of, as_of))
+    return as_of, cur.fetchone()[0] or 0
+
+
+def supply_factor(tier):
+    s = f"scale_{tier}"
+    raw_asof, raw_units = trailing_units(f"(select * from raw.sales_order_header where {CLEAN})",
+                                         f"(select * from raw.sales_order_detail where {CLEAN})")
+    as_of, units = trailing_units(f"{s}.sales_order_header", f"{s}.sales_order_detail")
+    if not raw_units:
+        raise SystemExit("no sales in the last 90 days of the unscaled base: cannot derive a supply factor")
+    return as_of, raw_asof, units / raw_units
+
+
+def reconcile_supply(schema):
+    """Count rows whose parent row is missing (the source is a sample, so some references dangle)."""
+    run(f"DROP TABLE IF EXISTS scale_meta.supply_orphans")
+    run("CREATE TABLE scale_meta.supply_orphans (schema_name VARCHAR(64), child VARCHAR(64), child_column VARCHAR(64), "
+        "parent VARCHAR(64), orphan_rows BIGINT, total_rows BIGINT) DUPLICATE KEY(schema_name) "
+        "DISTRIBUTED BY HASH(schema_name) BUCKETS 1 PROPERTIES('replication_num'='1')")
+    for child, col, parent, pcol in FKS:
+        if not (exists(schema, child) and exists(schema, parent)):
+            print(f"  reconcile {child}.{col}: skipped ({child} or {parent} not in {schema})")
+            continue
+        cur.execute(f"select count(*), sum(case when p.{pcol} is null then 1 else 0 end) from {schema}.{child} c "
+                    f"left join (select distinct {pcol} from {schema}.{parent}) p on p.{pcol} = c.{col}")
+        total, orphans = cur.fetchone()
+        run(f"INSERT INTO scale_meta.supply_orphans VALUES ('{schema}', '{child}', '{col}', '{parent}', {int(orphans or 0)}, {int(total)})")
+        print(f"  reconcile {child}.{col} -> {parent}: {int(orphans or 0)} of {total} rows have no parent", flush=True)
+
+
+def scale_supply(tier):
+    s = f"scale_{tier}"
+    as_of, raw_asof, factor = supply_factor(tier)
+    shift_days = (as_of - raw_asof).days
+    print(f"{s}: as-of {as_of:%Y-%m-%d} (base {raw_asof:%Y-%m-%d}), supply factor {factor:.1f}, date shift {shift_days} days", flush=True)
+    run("CREATE DATABASE IF NOT EXISTS scale_meta")
+    run("CREATE TABLE IF NOT EXISTS scale_meta.supply_factor (tier VARCHAR(16), factor DOUBLE, as_of DATETIME, "
+        "shift_days INT, computed_at DATETIME) DUPLICATE KEY(tier) DISTRIBUTED BY HASH(tier) BUCKETS 1 PROPERTIES('replication_num'='1')")
+    run(f"DELETE FROM scale_meta.supply_factor WHERE tier = '{tier}'")
+    run(f"INSERT INTO scale_meta.supply_factor VALUES ('{tier}', {factor}, '{as_of:%Y-%m-%d %H:%M:%S}', {shift_days}, now())")
+    for tbl, (qty, dates) in SUPPLY.items():
+        if not exists("raw", tbl):
+            print(f"  {s}.{tbl}: not in raw, skipped (ingest it first)")
+            continue
+        exprs = []
+        for c, t in cols(tbl):
+            if c in qty:
+                exprs.append(f"cast(round(t.{c} * {factor}) as bigint) as {c}")
+            elif c in dates:
+                exprs.append(f"date_add(t.{c}, interval {shift_days} day) as {c}")
+            else:
+                exprs.append(f"t.{c} as {c}")
+        cur.execute("select table_type from information_schema.tables where table_schema=%s and table_name=%s", (s, tbl))
+        row = cur.fetchone()
+        if row:
+            run(f"DROP {'VIEW' if row[0] == 'VIEW' else 'TABLE'} {s}.{tbl}")
+        run(f"CREATE TABLE {s}.{tbl} PROPERTIES('replication_num'='1') AS SELECT {', '.join(exprs)} FROM raw.{tbl} t")
+        print(f"  {s}.{tbl}: quantities x{factor:.1f} ({', '.join(qty) or 'none'}), dates {shift_days:+d} days", flush=True)
+    reconcile_supply(s)
+
+
 if __name__ == "__main__":
     if "--cust-only" in sys.argv:
         build_cust_only()
         print("done")
         sys.exit(0)
+    if "--supply" in sys.argv:
+        k = sys.argv.index("--supply")
+        tiers = [sys.argv[k + 1]] if k + 1 < len(sys.argv) and sys.argv[k + 1] in SCALES else built_tiers()
+        for t in tiers:
+            scale_supply(t)
+        print("done")
+        sys.exit(0)
     only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
+    wanted = [n for n in sorted(SCALES, key=SCALES.get, reverse=True) if only in (None, n) and not (only is None and n == "1m")]
     run("CREATE DATABASE IF NOT EXISTS scale_meta")
     run("DROP TABLE IF EXISTS scale_meta.nums")
     run("CREATE TABLE scale_meta.nums (k BIGINT) DUPLICATE KEY(k) DISTRIBUTED BY HASH(k) BUCKETS 1 PROPERTIES('replication_num'='1')")
     run(f"INSERT INTO scale_meta.nums SELECT generate_series FROM TABLE(generate_series(0, {max(SCALES.values()) - 1}))")
-    if only in (None, "500m"):
-        build_500m()
-    for n in ("100m", "10m"):
-        if only in (None, n):
-            build_subset(n)
-    for n in SCALES:
-        if only in (None, n):
-            views(f"scale_{n}")
+    for n in wanted:   # largest first, so smaller tiers are copied from it
+        build(n)
+        views(f"scale_{n}")
     print("done")

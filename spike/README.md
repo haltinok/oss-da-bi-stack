@@ -19,7 +19,9 @@ To re-run the 500M benchmark on the profile (memory is the constraint: the spike
 STARROCKS_MEM_LIMIT=40g docker compose --profile starrocks up -d --build
 # SQL Server source (optional, Phase 1): MSSQL_HOST/PORT/DB/USER/PASSWORD in .env, then
 spike/ingest/run.sh                                                              # SQL Server -> raw
-STARROCKS_MYSQL_PORT=9030 uv run --with pymysql python -I spike/scale/build.py   # scale_10m/100m/500m (STARROCKS_MYSQL_PORT as in .env)
+STARROCKS_MYSQL_PORT=9030 uv run --with pymysql python -I spike/scale/build.py   # all tiers, largest first (STARROCKS_MYSQL_PORT as in .env)
+#   --only 250m   builds one tier straight from raw (10m 83 copies, 100m 825, 250m 2060, 500m 4120; 1m = 8-copy smoke test)
+#   --supply      then scales inventory/purchase/work-order quantities by the measured sales factor (scale_meta.supply_factor)
 cd dbt/adventureworks_starrocks && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
 . .venv/bin/activate
 dbt run  --profiles-dir . --vars '{aw_source_schema: scale_500m, date_shift_years: 0}' --full-refresh --threads 1
