@@ -4,7 +4,7 @@
   update N    touch N existing orders (Comment + ModifiedDate)
   delete N    hard-delete N orders (+ lines); original rows saved to deleted_orders.json
 Run with: uv run --with pymssql python -I spike/ingest/mutate_source.py <cmd> <N>
-Reads MSSQL_* from the environment (source .env.spike first).
+Reads MSSQL_* from the environment (source .env first).
 """
 import json
 import os

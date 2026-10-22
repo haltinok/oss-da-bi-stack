@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # SQL Server -> StarRocks (raw schema) via ingestr, one run per table.
 # Usage: spike/ingest/run.sh [--full-refresh] [table ...]   (default: all in tables.csv)
-# Needs .env.spike (MSSQL_*) and the spike stack up. Appends timings to
-# spike/ingest/timings.csv.
+# Needs MSSQL_* in .env (see .env.example) and the `starrocks` compose profile up
+# (docker compose --profile starrocks up -d). Appends timings to spike/ingest/timings.csv.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-set -a; . ./.env.spike; set +a
+set -a; . ./.env; set +a
+: "${MSSQL_HOST:?set MSSQL_HOST, MSSQL_PORT, MSSQL_DB, MSSQL_USER, MSSQL_PASSWORD in .env}"
 
 IMAGE=${INGESTR_IMAGE:-ghcr.io/bruin-data/ingestr:latest}
-# StarRocks hands Stream Load clients its BE address as 127.0.0.1 (allin1), so
-# share the container's network namespace instead of using the compose network.
-NET=container:spike-starrocks-1
+# Join the compose network of the StarRocks frontend: the backend registers by hostname, so
+# Stream Load redirects are reachable from here.
+FE=$(docker compose --profile starrocks ps -q starrocks-fe)
+NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$FE")
 SRC="mssql://${MSSQL_USER}:${MSSQL_PASSWORD}@${MSSQL_HOST}:${MSSQL_PORT}/${MSSQL_DB}?TrustServerCertificate=yes"
-DEST="starrocks://root:@127.0.0.1:9030/raw"
+DEST="starrocks://root:@starrocks-fe:9030/raw"
 TIMINGS=spike/ingest/timings.csv
 [ -f "$TIMINGS" ] || echo "ts,table,strategy,seconds,status" > "$TIMINGS"
 

@@ -1,6 +1,6 @@
 """Which pre-aggregation serves each dashboard-shaped query, and how fast (warm).
 
-  set -a; . ./.env.spike; set +a; uv run --with pyjwt python -I spike/cube/probe.py
+  set -a; . ./.env; set +a; uv run --with pyjwt python -I spike/cube/probe.py
 """
 import json
 import os

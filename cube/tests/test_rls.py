@@ -1,6 +1,6 @@
 """Row-level security + auth tests against the live spike stack (Phase 5).
 
-  set -a; . ./.env.spike; set +a
+  set -a; . ./.env; set +a
   uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest cube/tests -v
 
 Users (Keycloak realm `spike`, territories from dbt seed dim_user_territory):
