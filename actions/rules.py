@@ -89,4 +89,3 @@ def check_line_count(n: int) -> None:
         raise Refused("no lines")
     if n > MAX_LINES:
         raise Refused(f"at most {MAX_LINES} lines per request")
-
