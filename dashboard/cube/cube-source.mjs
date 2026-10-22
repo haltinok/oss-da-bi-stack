@@ -5,7 +5,7 @@
 // from a one-line hook in getJSON() and null-safe handling of hidden profit figures.
 import cubejs from "./vendor/cubejs-client-core.mjs";
 
-const C = window.SPIKE;
+const C = window.STACK;
 const KC = `${C.keycloak.url}/realms/${C.keycloak.realm}/protocol/openid-connect`;
 const REDIRECT = `${location.origin}/`;
 const store = {

@@ -28,9 +28,9 @@ Cube builds its rollups in the background on first start (about 2 h at 500M, on 
 |---|---|
 | Cube == direct SQL (totals, margin, drill-across) | `uv run --with pymysql --with pyjwt python -I spike/cube/check.py` |
 | Which rollup serves which dashboard query | `uv run --with pyjwt python -I spike/cube/probe.py` |
-| RLS + auth (29 tests) | `uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest spike/cube/tests -v` |
-| Dashboard in a real browser, per role | `uv run --with playwright python -I spike/dashboard/e2e.py` |
-| Progressive rendering + cancel on filter change | `uv run --with playwright python -I spike/dashboard/progressive.py na_manager "Mountain Bikes"` |
+| RLS + auth (29 tests) | `uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest cube/tests -v` |
+| Dashboard in a real browser, per role | `uv run --with playwright python -I dashboard/cube/tests/e2e.py` |
+| Progressive rendering + cancel on filter change | `uv run --with playwright python -I dashboard/cube/tests/progressive.py na_manager "Mountain Bikes"` |
 | Latency per dashboard query, rollup vs direct | `uv run --with pyjwt --with requests python -I spike/bench/bench.py --label 500m` |
 | Concurrent users with RLS | `uv run --with pyjwt --with requests python -I spike/bench/load.py --label 500m --users 1,10,25` |
 (all after `set -a; . ./.env.spike; set +a`)
@@ -42,10 +42,9 @@ Cube builds its rollups in the background on first start (about 2 h at 500M, on 
 | `spike/ingest/` | ingestr runner, table list, delete reconciliation, source mutator (spike copies only) |
 | `spike/scale/` | builds the 10M / 100M / 500M-line schemas inside StarRocks |
 | `dbt/adventureworks_starrocks/` | StarRocks port of the star schema, tests, `dim_user_territory` seed |
-| `spike/cube/` | Cube model (`model/`), `cube.js` (dialect, auth, RLS), check/probe/tests |
-| `spike/keycloak/` | realm import (users, roles, `dashboard` client) |
-| `spike/auth/` | FastAPI: Keycloak token in, 15-minute Cube JWT out |
-| `spike/dashboard/` | nginx config + Cube data source injected into the unchanged dashboard, browser e2e |
+| `spike/cube/` | the 500M-tuned Cube model (time-based incremental refresh) and the check/probe scripts; `cube.js` and the security tests are in `cube/` |
+| `auth/`, `keycloak/`, `dashboard/cube/` | no longer spike-only: the auth service, the realm import and the dashboard's Cube data source (+ browser tests), shared with the `starrocks` compose profile |
+| `spike/screenshots/` | evidence screenshots from the 500M run |
 | `spike/bench/` | latency and load benchmarks, per-scale Cube launcher |
 
 ## Security notes

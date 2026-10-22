@@ -13,7 +13,7 @@ set -a; . ./.env.spike; set +a
 conf=spike/bench/conf-$scale
 rm -rf "$conf"; mkdir -p "$conf"
 cp -r spike/cube/model "$conf/model"
-cp spike/cube/cube.js "$conf/cube.js"
+cp cube/cube.js "$conf/cube.js"
 # same model, pointed at this scale's mart schema
 grep -rl 'mart\.' "$conf/model" | xargs sed -i "s/\bmart\./mart_${scale}./g"
 

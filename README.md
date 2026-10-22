@@ -261,7 +261,7 @@ live feed of the latest orders. It is served by the `dashboard-cube` service
   ignores), and the rows are the same ones the chart's table view shows. The
   `.xlsx` is generated in the browser by `static/xlsx.js` (no dependency).
 - **Data source:** `static/app.js` asks `window.dashboardData` for `/api/meta` and `/api/dashboard`. The
-  Cube adapter (`spike/dashboard/cube-source.mjs`, injected by nginx in front of `app.js`) answers them
+  Cube adapter (`dashboard/cube/cube-source.mjs`, injected by nginx in front of `app.js`) answers them
   with Cube queries; the page itself knows nothing about Cube.
 
 **Continuous dates.** The AdventureWorks sample's business dates end in mid-2014,
@@ -300,7 +300,7 @@ postgres_active --(ingestr, every 5 min, Airflow)--> StarRocks raw --(dbt-starro
 |---|---|
 | `starrocks-fe`, `starrocks-be`, `starrocks-init` | StarRocks (separate frontend and backend; the init job registers the backend by hostname, creates the schemas and the read-only users) |
 | `cube`, `cubestore`, `cubestore-worker` | the semantic layer (`cube/`), pre-aggregations, and row-level security in `cube/cube.js` |
-| `keycloak`, `auth` | sign-in (demo realm in `spike/keycloak/`), and the service that turns a Keycloak login into a 15-minute Cube token carrying the user's territories |
+| `keycloak`, `auth` | sign-in (demo realm in `keycloak/`; the realm is still named `spike`, renaming it would orphan existing Keycloak volumes), and the service (`auth/`) that turns a Keycloak login into a 15-minute Cube token carrying the user's territories |
 | `dashboard-cube` | the same dashboard UI as `dashboard`, with the Cube data source injected in front of `app.js` |
 
 ```bash
@@ -342,8 +342,8 @@ bound is one 5-minute cycle + ~35 s of pipeline + ~1 min for Cube, about 6.5 min
 
 ```bash
 # with CUBE_URL / KEYCLOAK_URL / AUTH_URL / STARROCKS_MYSQL_PORT pointing at this stack (see spike/README.md):
-uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest spike/cube/tests
-uv run --with playwright python -I spike/dashboard/e2e.py                           # each role, in a real browser
+uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest cube/tests
+uv run --with playwright python -I dashboard/cube/tests/e2e.py                      # each role, in a real browser
 ```
 
 ## Folder structure

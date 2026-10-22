@@ -33,7 +33,7 @@ public issue.
 * **Least privilege for reads.** Cube and the auth service read StarRocks as
   read-only users (`cube_ro`, `auth_ro`; see the `starrocks` profile below).
 * **The `starrocks` profile** adds sign-in and row-level security, which the rest of the stack does not
-  have: users log in through Keycloak, a small service (`spike/auth`) turns the login into a 15-minute
+  have: users log in through Keycloak, a small service (`auth/`) turns the login into a 15-minute
   Cube token carrying the user's territories, and Cube (`cube/cube.js`) adds the territory filter to
   every query and refuses profit/margin and customer data to roles that may not see them. Cube and the
   auth service read StarRocks as read-only users (`cube_ro`: the mart; `auth_ro`: only the `rls` schema).

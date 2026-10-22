@@ -1,10 +1,11 @@
-"""Browser end-to-end for the re-pointed dashboard (Phase 6). Needs the spike stack up.
+"""Browser end-to-end for the re-pointed dashboard (Phase 6). Needs the stack up (`starrocks` profile, or the spike stack).
 
-  set -a; . ./.env.spike; set +a
-  uv run --with playwright python -I spike/dashboard/e2e.py
+  set -a; . ./.env; set +a
+  DASHBOARD_URL=http://localhost:8250/ CUBE_PORT=4000 \
+  uv run --with playwright python -I dashboard/cube/tests/e2e.py
 Drives the system Chrome: signs in through Keycloak as each test user, waits for the
 page to render, checks what each role can and cannot see, applies cross-filters, and
-saves screenshots to spike/dashboard/screenshots/.
+saves screenshots to $SCREENSHOT_DIR (default: dashboard/cube/tests/screenshots/, git-ignored).
 """
 import os
 import pathlib
@@ -16,7 +17,8 @@ from playwright.sync_api import sync_playwright
 URL = os.environ.get("DASHBOARD_URL", "http://localhost:8250/")
 CUBE_HOST = f":{os.environ.get('CUBE_PORT', '4000')}/"
 PASSWORD = os.environ["TEST_USER_PASSWORD"]
-OUT = pathlib.Path(__file__).parent / "screenshots"
+OUT = pathlib.Path(os.environ.get("SCREENSHOT_DIR", pathlib.Path(__file__).parent / "screenshots"))
+OUT.mkdir(parents=True, exist_ok=True)
 EXPECT_REGIONS = {
     "admin": 10, "na_manager": 6, "de_rep": 1,
 }

@@ -494,7 +494,7 @@ services:
       DASHBOARD_CUBE_PORT: ${DASHBOARD_CUBE_PORT:-8250}
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./spike/keycloak/realm-spike.json:/opt/keycloak/data/import/realm-spike.json:ro
+      - ./keycloak/realm-spike.json:/opt/keycloak/data/import/realm-spike.json:ro
     healthcheck:
       # The image has no curl; probe the management port (9000) via bash.
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
@@ -504,7 +504,7 @@ services:
       start_period: 45s
 
   auth:
-    build: ./spike/auth
+    build: ./auth
     profiles: [starrocks]
     restart: unless-stopped
     depends_on:
@@ -541,8 +541,8 @@ services:
       - "127.0.0.1:${DASHBOARD_CUBE_PORT:-8250}:8250"
     volumes:
       - ./dashboard/static:/usr/share/nginx/html:ro
-      - ./spike/dashboard:/srv/spike:ro
-      - ./spike/dashboard/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./dashboard/cube:/srv/cube:ro
+      - ./dashboard/cube/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     environment:
       KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}
       AUTH_PORT: ${AUTH_PORT:-8200}

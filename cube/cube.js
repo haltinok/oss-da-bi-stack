@@ -22,7 +22,7 @@ class StarRocksQuery extends MysqlQuery {
 }
 
 // --- Security --------------------------------------------------------------
-// Tokens are minted by spike/auth after Keycloak login: {user_id, role, territories, exp}.
+// Tokens are minted by auth/ after Keycloak login: {user_id, role, territories, exp}.
 // checkAuth verifies them itself (rather than relying on dev-mode defaults) so a missing,
 // expired or tampered token is always rejected.
 const SECRET = process.env.CUBEJS_API_SECRET;
