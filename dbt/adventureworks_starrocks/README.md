@@ -1,18 +1,23 @@
-# dbt-starrocks star schema (spike Phase 3)
+# dbt-starrocks star schema
 
-StarRocks port of `dbt/adventureworks_dwh` (which stays Postgres). Reads the Phase 2
-schemas (`scale_10m` / `scale_100m` / `scale_500m`, or `raw`) and builds `stage.*`
-views and `mart.*` tables.
+StarRocks port of `dbt/adventureworks_dwh` (which stays until parity is shown: `scripts/parity_check.py`).
+By default it reads the live `raw` schema loaded by the `postgres_active_to_starrocks` DAG and builds
+`stage.*` views, `mart.*` tables and the small `rls.*` schema the auth service reads. It can also read the
+benchmark schemas of the spike (`scale_10m` / `scale_100m` / `scale_500m`, built by `spike/scale`).
+
+The pipeline runs it as `dbt build --vars '{aw_source_schema: raw, use_pk_snapshots: true}'`. By hand
+(StarRocks reachable on the host, e.g. `STARROCKS_MYSQL_PORT` from `.env`):
 
 ```bash
-cd spike/dbt
+cd dbt/adventureworks_starrocks
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
 . .venv/bin/activate
-dbt run  --profiles-dir . --vars '{aw_source_schema: scale_10m}' --full-refresh
-dbt test --profiles-dir . --vars '{aw_source_schema: scale_10m}'
+DBT_SR_PORT=9030 dbt build --profiles-dir . --vars '{aw_source_schema: raw, use_pk_snapshots: true}'
+# a benchmark scale instead (their dates already span 2011-2021, so no history shift):
+dbt run --profiles-dir . --vars '{aw_source_schema: scale_10m, date_shift_years: 0}' --full-refresh
 ```
 
-Connection comes from `DBT_SR_*` env vars (defaults match the spike stack: 127.0.0.1:9030, root, no password).
+Connection comes from `DBT_SR_*` env vars (defaults: 127.0.0.1:9030, root, no password).
 
 ## Marts
 Dims are Primary Key tables; facts are duplicate-key tables partitioned by month on
@@ -35,7 +40,11 @@ Not ported (the dashboard does not read them): `dim_promotion`, `dim_currency`,
   product x date cross product, instead of `distinct on` over the whole fact.
 - `sales_order_line_number` is numbered in a two-column subquery. Numbering it inside the
   wide `order_lines` CTE ran StarRocks out of memory at 10M lines.
-- `date_shift_years: 0`: the scaled data already spans 2011-2021.
+- `date_shift_years: 12` (as in the Postgres project) so the seeded history meets the live orders; the
+  benchmark schemas must pass `date_shift_years: 0`.
+- `data_version` (one row, rewritten every build) lets Cube refresh its rollups when the mart changed;
+  `models/rls/user_regions` is the auth service's table (see `starrocks/init.sh` for why it is its own schema).
+- `use_pk_snapshots: true` drops orders deleted at the source (a merge load never sees deletes).
 - `dbt snapshot` is replaced by `product_versions` (see findings).
 
 ## Findings

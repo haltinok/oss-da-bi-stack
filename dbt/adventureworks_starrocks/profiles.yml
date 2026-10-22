@@ -1,5 +1,5 @@
 # No credentials in git: connection settings come from the environment.
-spike_starrocks:
+adventureworks_starrocks:
   target: dev
   outputs:
     dev:

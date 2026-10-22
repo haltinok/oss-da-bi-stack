@@ -28,7 +28,5 @@ __pycache__/
 spike/ingest/deleted_orders.json
 
 # --- dbt (spike) ---
-spike/dbt/.venv/
-spike/dbt/target/
-spike/dbt/logs/
 spike/bench/conf-*/
+dbt/**/.venv/

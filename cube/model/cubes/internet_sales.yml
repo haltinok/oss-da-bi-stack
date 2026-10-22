@@ -1,0 +1,177 @@
+cubes:
+  - name: internet_sales
+    # Rejected (4) and cancelled (6) orders are not revenue; the dashboard leaves
+    # them out everywhere, so the cube does too.
+    sql: >
+      SELECT * FROM mart.fact_internet_sales WHERE order_status NOT IN (4, 6)
+    data_source: default
+
+    joins:
+      - name: products
+        relationship: many_to_one
+        sql: "{CUBE}.product_key = {products}.product_key"
+      - name: dates
+        relationship: many_to_one
+        sql: "{CUBE}.order_date_key = {dates}.date_key"
+      - name: territories
+        relationship: many_to_one
+        sql: "{CUBE}.sales_territory_key = {territories}.sales_territory_key"
+      - name: customers
+        relationship: many_to_one
+        sql: "{CUBE}.customer_key = {customers}.customer_key"
+
+    dimensions:
+      - name: order_line_id
+        sql: "CONCAT({CUBE}.sales_order_number, '-', {CUBE}.sales_order_line_number)"
+        type: string
+        primary_key: true
+      - name: order_number
+        sql: sales_order_number
+        type: string
+      - name: order_date
+        sql: order_date
+        type: time
+      - name: order_status
+        sql: order_status
+        type: number
+
+    measures:
+      - name: revenue
+        sql: sales_amount
+        type: sum
+      - name: product_cost
+        sql: "COALESCE({CUBE}.total_product_cost, 0)"
+        type: sum
+      - name: gross_profit
+        sql: "{CUBE}.sales_amount - COALESCE({CUBE}.total_product_cost, 0)"
+        type: sum
+      - name: margin_pct
+        sql: "100 * {gross_profit} / NULLIF({revenue}, 0)"
+        type: number
+      - name: units
+        sql: order_quantity
+        type: sum
+      - name: discount
+        sql: discount_amount
+        type: sum
+      - name: lines
+        type: count
+      # Exact distinct orders. Not additive, so only a rollup with exactly the query's dimensions
+      # can serve it (see orders_mix* below); everything else scans the fact.
+      - name: orders
+        sql: sales_order_number
+        type: count_distinct
+      # Orders counted once, on their first line. An order has one territory, date and channel,
+      # so this is exact -- and additive -- for any grouping/filter on those (KPIs, monthly,
+      # territory, multi-region security filters). It is NOT the number of orders containing a
+      # given product: use `orders` when a product category/subcategory is involved.
+      - name: orders_placed
+        sql: "CASE WHEN {CUBE}.sales_order_line_number = 1 THEN 1 ELSE 0 END"
+        type: sum
+      - name: aov
+        sql: "{revenue} / NULLIF({orders_placed}, 0)"
+        type: number
+
+    pre_aggregations:
+      # Additive measures, monthly, by everything the dashboard slices on. Every
+      # rollup carries the territory dimensions (Phase 5 row-level security filters on them).
+      - name: monthly
+        measures: [revenue, product_cost, gross_profit, units, discount, lines, orders_placed]
+        dimensions:
+          - territories.key
+          - territories.region
+          - territories.group_name
+          - products.category
+          - products.subcategory
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        refresh_key:
+          # Change-driven: rebuild when the mart was rebuilt (dbt model data_version, written at the end
+          # of every pipeline cycle), checked every minute. NOT partitioned on purpose: Cube answers from
+          # the partitions that are ready, so a rollup that rebuilds partition by partition returns
+          # incomplete totals mid-rebuild (seen: only the newest year). One table is swapped in whole.
+          # Fine at demo volume; at 500M use partitions with time-based incremental windows
+          # (spike/cube/model), where only the recent partition changes.
+          sql: SELECT built_at FROM mart.data_version
+          every: 1 minute
+
+      # Product-level slices (top products table, product filter), additive.
+      - name: monthly_product
+        measures: [revenue, product_cost, gross_profit, units]
+        dimensions:
+          - products.name
+          - products.category
+          - products.subcategory
+          - territories.region
+          - territories.group_name
+          - dates.fiscal_year
+        time_dimension: order_date
+        granularity: month
+        refresh_key:
+          # Change-driven: rebuild when the mart was rebuilt (dbt model data_version, written at the end
+          # of every pipeline cycle), checked every minute. NOT partitioned on purpose: Cube answers from
+          # the partitions that are ready, so a rollup that rebuilds partition by partition returns
+          # incomplete totals mid-rebuild (seen: only the newest year). One table is swapped in whole.
+          # Fine at demo volume; at 500M use partitions with time-based incremental windows
+          # (spike/cube/model), where only the recent partition changes.
+          sql: SELECT built_at FROM mart.data_version
+          every: 1 minute
+
+      # Exact orders per product category/subcategory (distinct orders containing it) is not
+      # additive, so a rollup serves it only when its dimensions match the query exactly,
+      # and not at all for a multi-region security filter (an IN list). Kept for the mix
+      # table; admin and single-territory users hit these, others scan the fact.
+      - name: orders_mix
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+        refresh_key:
+          every: 1 hour   # whole-table distinct counts: not rebuilt on every 5-minute cycle
+
+      - name: orders_mix_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 hour   # whole-table distinct counts: not rebuilt on every 5-minute cycle
+
+      - name: orders_mix_region
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - territories.region
+        refresh_key:
+          every: 1 hour   # whole-table distinct counts: not rebuilt on every 5-minute cycle
+
+      - name: orders_mix_region_fy
+        measures: [orders, revenue, gross_profit, units, product_cost, discount, lines]
+        dimensions:
+          - products.category
+          - products.subcategory
+          - territories.region
+          - dates.fiscal_year
+        refresh_key:
+          every: 1 hour   # whole-table distinct counts: not rebuilt on every 5-minute cycle
+
+      # Daily totals for the live strip.
+      - name: daily
+        measures: [revenue, units, lines]
+        dimensions:
+          - territories.key
+          - territories.region
+        time_dimension: order_date
+        granularity: day
+        refresh_key:
+          # Change-driven: rebuild when the mart was rebuilt (dbt model data_version, written at the end
+          # of every pipeline cycle), checked every minute. NOT partitioned on purpose: Cube answers from
+          # the partitions that are ready, so a rollup that rebuilds partition by partition returns
+          # incomplete totals mid-rebuild (seen: only the newest year). One table is swapped in whole.
+          # Fine at demo volume; at 500M use partitions with time-based incremental windows
+          # (spike/cube/model), where only the recent partition changes.
+          sql: SELECT built_at FROM mart.data_version
+          every: 1 minute

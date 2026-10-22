@@ -23,8 +23,8 @@ with sync_playwright() as p:
     b = p.chromium.launch(channel="chrome", headless=True)
     page = b.new_page(viewport={"width": 1500, "height": 1300})
     aborted = []
-    page.on("requestfailed", lambda r: aborted.append(r.url) if ":4000/" in r.url and "ERR_ABORTED" in (r.failure or "") else None)
-    page.goto("http://localhost:8250/")
+    page.on("requestfailed", lambda r: aborted.append(r.url) if f":{os.environ.get('CUBE_PORT', '4000')}/" in r.url and "ERR_ABORTED" in (r.failure or "") else None)
+    page.goto(os.environ.get("DASHBOARD_URL", "http://localhost:8250/"))
     page.wait_for_selector("input#username", timeout=60_000)
     page.fill("input#username", user)
     page.fill("input#password", os.environ["TEST_USER_PASSWORD"])

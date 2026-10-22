@@ -26,14 +26,14 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "redirectUris": [
-        "http://localhost:8250/*"
+        "http://localhost:${DASHBOARD_CUBE_PORT:8250}/*"
       ],
       "webOrigins": [
-        "http://localhost:8250"
+        "http://localhost:${DASHBOARD_CUBE_PORT:8250}"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8250/*"
+        "post.logout.redirect.uris": "http://localhost:${DASHBOARD_CUBE_PORT:8250}/*"
       }
     }
   ],

@@ -1,2 +1,0 @@
-dbt-starrocks
-mysql-connector-python==8.4.0  # newer releases break the adapter ("server_version has no setter")

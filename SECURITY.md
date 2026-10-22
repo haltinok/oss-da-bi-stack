@@ -33,6 +33,15 @@ public issue.
   `secrets.toml.example` and git-ignored.
 * **Least privilege for BI.** Superset, Metabase and the ClickHouse mart sync
   read the warehouse as the `bi_ro` role, which can only `SELECT` from `mart`.
+* **The `starrocks` profile** adds sign-in and row-level security, which the rest of the stack does not
+  have: users log in through Keycloak, a small service (`spike/auth`) turns the login into a 15-minute
+  Cube token carrying the user's territories, and Cube (`cube/cube.js`) adds the territory filter to
+  every query and refuses profit/margin and customer data to roles that may not see them. Cube and the
+  auth service read StarRocks as read-only users (`cube_ro`: the mart; `auth_ro`: only the `rls` schema).
+  **Demo posture, not production:** Keycloak runs in `start-dev` (embedded H2, plain HTTP, direct password
+  grants for the tests), the StarRocks `root` user has no password on the internal Docker network, and
+  there is no audit log or TLS. A real deployment needs the organisation's identity provider, TLS,
+  secrets management and a security review of `cube/cube.js` (see `spike/results.md`).
 * **Local-only ports.** Every published port binds to `127.0.0.1`. Several
   services are unauthenticated by design (Superset MCP server, Kafka UI, Kafka
   Connect REST); never publish them on a public interface.

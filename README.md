@@ -361,6 +361,69 @@ docker compose exec airflow-scheduler \
   python /opt/airflow/scripts/backfill_adventureworks_orders.py --start 2026-07-01
 ```
 
+## StarRocks + Cube serving path (`starrocks` profile)
+
+The new serving path, replacing `analytics.mart` in Postgres as what end users read. It was proven in
+[`spike/`](spike/) (results, benchmarks and the go/no-go in [`spike/results.md`](spike/results.md));
+this is the same stack running as part of the repo, fed by the live simulator.
+
+```
+postgres_active --(ingestr, every 5 min, Airflow)--> StarRocks raw --(dbt-starrocks)--> mart
+   mart --> Cube (+ Cube Store rollups, row-level security) --> dashboard, behind Keycloak sign-in
+```
+
+| Service | Role |
+|---|---|
+| `starrocks-fe`, `starrocks-be`, `starrocks-init` | StarRocks (separate frontend and backend; the init job registers the backend by hostname, creates the schemas and the read-only users) |
+| `cube`, `cubestore`, `cubestore-worker` | the semantic layer (`cube/`), pre-aggregations, and row-level security in `cube/cube.js` |
+| `keycloak`, `auth` | sign-in (demo realm in `spike/keycloak/`), and the service that turns a Keycloak login into a 15-minute Cube token carrying the user's territories |
+| `dashboard-cube` | the same dashboard UI as `dashboard`, with the Cube data source injected in front of `app.js` |
+
+```bash
+docker compose --profile starrocks up -d --build
+# unpause the pipeline once (new DAGs start paused):
+docker compose exec airflow-scheduler airflow dags unpause postgres_active_to_starrocks
+open http://localhost:8250        # users: admin, na_manager, de_rep -- password: TEST_USER_PASSWORD in .env
+```
+
+An older `.env` needs the new secrets first (`CUBEJS_API_SECRET`, `CUBE_DB_PASSWORD`, `AUTH_DB_PASSWORD`,
+`KEYCLOAK_ADMIN_PASSWORD`, `TEST_USER_PASSWORD`; see `.env.example`), because Compose requires every
+secret even for profiles that are not started. `./scripts/generate-env.sh --force` writes all of them
+(and replaces your other secrets). The profile only adds services, so the existing paths, including the
+CDC -> Kafka -> ClickHouse one, run exactly as before.
+
+**Pipeline** (`airflow/dags/postgres_active_to_starrocks_dag.py`, every 5 minutes, one minute after the
+simulator): `airflow/scripts/ingest_starrocks.py` loads each table dbt reads with ingestr (incremental
+merge on `modified_date`, primary keys read from the source catalog, four tables at a time) and snapshots
+the live order keys; then `dbt build` (in its own virtualenv, `dbt/adventureworks_starrocks`) rebuilds and
+tests the star. A merge load never sees hard deletes, so the staging models drop orders whose key left
+the snapshot. A cycle takes about 35 seconds at this volume; if one overruns, the next waits.
+
+**Freshness.** A change in `postgres_active` is on the dashboard within one cycle plus about a minute:
+the last step of every build rewrites `mart.data_version`, which Cube's rollup refresh keys watch (checked
+every minute). Measured end to end with `spike/bench/freshness.py` (random insert times over 6 cycles):
+median 126 s, fastest 86 s, slowest 276 s, none missed (a small sample; the design
+bound is one 5-minute cycle + ~35 s of pipeline + ~1 min for Cube, about 6.5 minutes).
+
+**Things that cost a day to find** (all fixed in the code, noted so they are not undone):
+- The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
+  container fails; hence separate FE/BE containers.
+- dbt drops and recreates tables on every build, and StarRocks drops table-level grants with the table.
+  Read access is therefore a wildcard grant on a schema (`ALL TABLES IN DATABASE`), and the auth service
+  reads its own small `rls` schema.
+- Cube answers from whichever rollup partitions are built, so a rollup that rebuilds partition by
+  partition returns incomplete totals mid-rebuild. The live rollups are unpartitioned (rebuilt whole and
+  swapped in); at 500M rows, use partitions with incremental windows as in `spike/cube/model`.
+
+**Checks:**
+
+```bash
+uv run --with psycopg2-binary --with pymysql python -I scripts/parity_check.py   # old Postgres mart == new StarRocks mart
+# with CUBE_URL / KEYCLOAK_URL / AUTH_URL / STARROCKS_MYSQL_PORT pointing at this stack (see spike/README.md):
+uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest spike/cube/tests
+uv run --with playwright python -I spike/dashboard/e2e.py                           # each role, in a real browser
+```
+
 ## Folder structure
 
 ```
@@ -499,6 +562,7 @@ oss-da-bi-stack/
    | *(default / core)* | `postgres`, `postgres_active`, the Airflow services |
    | `cdc` | `kafka`, `kafka-connect`, `kafka-ui`, `debezium-register`, `clickhouse` |
    | `bi` | `superset-init`, `superset`, `superset-mcp`, `metabase`, `clickhouse` |
+| `starrocks` | `starrocks-fe`, `starrocks-be`, `starrocks-init`, `cube`, `cubestore`, `cubestore-worker`, `keycloak`, `auth`, `dashboard-cube` |
 
    ```bash
    # everything (batch + CDC + BI)
