@@ -274,3 +274,51 @@ jobs:
           docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" \
             -q "select source_table, op, count() from cdc.aw_events group by 1, 2" >&2 || true
           exit 1
+
+  # Boots the StarRocks serving path for real: the source database, StarRocks, the pipeline (ingestr then
+  # dbt, run twice so the second build exercises the incremental facts), then Cube, Keycloak and the auth
+  # service, and the row-level-security tests against them. Demo data only.
+  starrocks-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # The hosted runner has 16 GB; leave room for Cube, Keycloak and the rest.
+      STARROCKS_MEM_LIMIT: 7g
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: generate .env (random secrets)
+        run: ./scripts/generate-env.sh
+      - name: build the images
+        run: docker compose --profile starrocks build airflow-scheduler auth
+      - name: start the source and StarRocks
+        run: |
+          docker compose --profile starrocks up -d postgres_active starrocks-fe starrocks-be
+          docker compose --profile starrocks up --no-deps --exit-code-from starrocks-init starrocks-init
+          docker compose --profile starrocks run --rm --no-deps airflow-perm-fix
+      - name: pipeline, full build then incremental build
+        # The same two commands as the postgres_active_to_starrocks DAG.
+        run: |
+          cycle() {
+            docker compose --profile starrocks run --rm --no-deps --entrypoint bash airflow-scheduler -ec '
+              python /opt/airflow/scripts/ingest_starrocks.py
+              cd /opt/airflow/dbt/adventureworks_starrocks
+              /home/airflow/dbt-starrocks/bin/dbt build --profiles-dir . \
+                --vars "{aw_source_schema: raw, use_pk_snapshots: true}" --threads 4
+            '
+          }
+          cycle
+          cycle
+      - name: start Cube, Keycloak and the auth service
+        run: |
+          docker compose --profile starrocks up -d --wait --wait-timeout 600 cubestore cubestore-worker cube keycloak auth dashboard-cube
+      - name: row-level security tests
+        run: |
+          set -a; . ./.env; set +a
+          pip install pytest requests pymysql pyjwt cryptography
+          python -m pytest cube/tests -q
+      - name: logs on failure
+        if: failure()
+        run: |
+          for c in $(docker compose --profile starrocks ps -a --format '{{.Name}}'); do
+            echo "::group::$c"; docker logs --tail 60 "$c" 2>&1 || true; echo "::endgroup::"
+          done
