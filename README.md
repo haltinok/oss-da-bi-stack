@@ -188,11 +188,16 @@ Server required.
   order with probability `SIM_ORDER_CHANCE` — by default derived from the seeded
   history's last 365 days (~0.017, 4.8 orders/day) so the live series continues the
   history rather than stepping off it; set it to pin a livelier rate (0.05 ≈ 14
-  orders/day) — inserts work orders, transaction history,
-  reviews and cart items; advances order statuses forward through the lifecycle
+  orders/day) — inserts transaction history,
+  reviews and cart items; takes sold units out of inventory; receives approved purchase
+  orders and open work orders once their lead time has passed (a lead time of N days
+  takes N × `SIM_LEAD_TIME_MINUTES_PER_DAY` = 2 real minutes, at most `SIM_RECEIPTS_PER_RUN` = 25
+  receipts per run), adding the quantity to inventory; advances order statuses forward through the lifecycle
   (in process → approved → shipped, with occasional backordered / rejected /
-  cancelled); updates prices, inventory and names; and deletes leaf rows — always
-  bumping `modified_date`.
+  cancelled); updates prices and names; and deletes leaf rows — always
+  bumping `modified_date`. The old random work orders and ±5 stock drift are off by default
+  (`SIM_RANDOM_WORK_ORDERS=1`, `SIM_INVENTORY_DRIFT=<span>` bring them back): they made every stockout
+  look already on order, so an approved action had nothing to change.
 - **CDC** — the nine tables the simulator touches are also streamed through
   Debezium → Kafka → ClickHouse; see
   [AdventureWorks CDC stream](#adventureworks-cdc-stream).

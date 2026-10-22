@@ -95,6 +95,19 @@ STATUS_ADVANCE_CHANCE = float(os.environ.get("STATUS_ADVANCE_CHANCE", "0.25"))
 # rejected/cancelled" filter applies to live data too.
 STATUS_CANCEL_CHANCE = float(os.environ.get("STATUS_CANCEL_CHANCE", "0.05"))
 
+# --- Supply side (docs/inventory-actions-plan.md, Phase 2) ---------------------------------------
+# Stock now moves with the business instead of drifting at random: simulated sales take units out of
+# inventory, and approved purchase orders and open work orders are received once their lead time has
+# passed. A lead time of N days is received after N * SIM_LEAD_TIME_MINUTES_PER_DAY real minutes, so a
+# demo can show an order arriving and the item leaving the reorder list within the hour.
+LEAD_TIME_MINUTES_PER_DAY = float(os.environ.get("SIM_LEAD_TIME_MINUTES_PER_DAY", "2"))
+RECEIPTS_PER_RUN = int(os.environ.get("SIM_RECEIPTS_PER_RUN", "25"))
+# The old behaviour, off by default: random work orders and random ±5 stock drift made every stockout
+# look "already on order" and gave an approved action nothing to change.
+RANDOM_WORK_ORDERS = os.environ.get("SIM_RANDOM_WORK_ORDERS", "0") == "1"
+INVENTORY_DRIFT = int(os.environ.get("SIM_INVENTORY_DRIFT", "0"))
+DEFAULT_RECEIVING_LOCATION = 6   # "Miscellaneous Storage": where a product with no inventory row is stocked
+
 fake = Faker()
 
 
@@ -252,7 +265,7 @@ def _pick(values, default=None):
     return random.choice(values) if values else default
 
 
-def insert_sales_order(cur, keys, order_date=None, status=None):
+def insert_sales_order(cur, keys, order_date=None, status=None, consume_stock=False):
     """Insert one sales order with its lines. Returns (order_id, line_ids).
 
     ``order_date`` and ``status`` default to now and a new-order status; the
@@ -344,8 +357,110 @@ def insert_sales_order(cur, keys, order_date=None, status=None):
             ),
         )
         line_ids.append(line_no)
+        if consume_stock:
+            add_stock(cur, product_id, -qty)
 
     return order_id, line_ids
+
+
+def add_stock(cur, product_id, qty):
+    """Add (or, with a negative qty, remove) units at the product's best-stocked location; stock never goes
+    below zero. A product with no inventory row is stocked at the default receiving location."""
+    now = datetime.now(timezone.utc)
+    cur.execute(
+        """
+        UPDATE public.product_inventory
+        SET quantity = greatest(0, quantity + %s), modified_date = %s
+        WHERE (product_id, location_id) = (
+            SELECT product_id, location_id FROM public.product_inventory
+            WHERE product_id = %s ORDER BY quantity DESC, location_id LIMIT 1
+        )
+        """,
+        (qty, now, product_id),
+    )
+    if cur.rowcount == 0 and qty > 0:
+        cur.execute(
+            """
+            INSERT INTO public.product_inventory (rowguid, product_id, location_id, shelf, bin, quantity, modified_date)
+            VALUES (%s, %s, %s, 'A', 0, %s, %s)
+            """,
+            (str(uuid.uuid4()), product_id, DEFAULT_RECEIVING_LOCATION, qty, now),
+        )
+
+
+def receive_orders(cur):
+    """Receive approved purchase-order lines and open work orders whose (accelerated) lead time has passed.
+
+    A purchase-order line is received in full once now >= order_date + lead_days * SIM_LEAD_TIME_MINUTES_PER_DAY
+    minutes (lead_days = due_date - order_date); the header completes (status 4) when its last line arrives.
+    Work orders work the same way from start_date to due_date and get an end_date. Each receipt adds the
+    quantity to inventory, so the next pipeline cycle sees stock up and on-order down. At most
+    SIM_RECEIPTS_PER_RUN receipts per run, so a backlog drains instead of landing at once.
+    """
+    now = datetime.now(timezone.utc)
+    per_day = timedelta(minutes=LEAD_TIME_MINUTES_PER_DAY)
+    received = 0
+
+    cur.execute(
+        """
+        SELECT d.purchase_order_id, d.purchase_order_detail_id, d.product_id, d.order_qty, h.order_date, d.due_date
+        FROM public.purchase_order_detail d
+        JOIN public.purchase_order_header h ON h.purchase_order_id = d.purchase_order_id
+        WHERE h.status = 2 AND coalesce(d.received_qty, 0) < d.order_qty
+        ORDER BY h.order_date
+        """
+    )
+    touched = set()
+    for po_id, line_id, product_id, qty, order_date, due_date in cur.fetchall():
+        if received >= RECEIPTS_PER_RUN:
+            break
+        lead_days = max((due_date - order_date).days, 1)
+        if now < order_date + lead_days * per_day:
+            continue
+        cur.execute(
+            """
+            UPDATE public.purchase_order_detail
+            SET received_qty = order_qty, stocked_qty = order_qty, modified_date = %s
+            WHERE purchase_order_id = %s AND purchase_order_detail_id = %s
+            """,
+            (now, po_id, line_id),
+        )
+        add_stock(cur, product_id, qty)
+        touched.add(po_id)
+        received += 1
+    for po_id in touched:
+        cur.execute(
+            """
+            UPDATE public.purchase_order_header h
+            SET status = 4, ship_date = %s, modified_date = %s
+            WHERE purchase_order_id = %s AND NOT EXISTS (
+                SELECT 1 FROM public.purchase_order_detail d
+                WHERE d.purchase_order_id = h.purchase_order_id AND coalesce(d.received_qty, 0) < d.order_qty)
+            """,
+            (now, now, po_id),
+        )
+
+    cur.execute(
+        """
+        SELECT work_order_id, product_id, order_qty, start_date, due_date
+        FROM public.work_order
+        WHERE end_date IS NULL AND coalesce(stocked_qty, 0) < order_qty
+        ORDER BY start_date
+        """
+    )
+    for wo_id, product_id, qty, start_date, due_date in cur.fetchall():
+        if received >= RECEIPTS_PER_RUN:
+            break
+        lead_days = max((due_date - start_date).days, 1)
+        if now < start_date + lead_days * per_day:
+            continue
+        cur.execute(
+            "UPDATE public.work_order SET stocked_qty = order_qty, end_date = %s, modified_date = %s WHERE work_order_id = %s",
+            (now, now, wo_id),
+        )
+        add_stock(cur, product_id, qty)
+        received += 1
+    return received
 
 
 def insert_work_order(cur, keys):
@@ -435,19 +550,20 @@ def update_rows(cur, exclude_ids=None):
     )
     changed += cur.rowcount
 
-    cur.execute(
-        """
-        UPDATE public.product_inventory
-        SET quantity = greatest(0, quantity + (random() * 10 - 5)::int),
-            modified_date = %s
-        WHERE (product_id, location_id) IN (
-            SELECT product_id, location_id FROM public.product_inventory
-            ORDER BY random() LIMIT 5
+    if INVENTORY_DRIFT:
+        cur.execute(
+            """
+            UPDATE public.product_inventory
+            SET quantity = greatest(0, quantity + (random() * %(span)s - %(span)s / 2.0)::int),
+                modified_date = %(now)s
+            WHERE (product_id, location_id) IN (
+                SELECT product_id, location_id FROM public.product_inventory
+                ORDER BY random() LIMIT 5
+            )
+            """,
+            {"span": INVENTORY_DRIFT, "now": now},
         )
-        """,
-        (now,),
-    )
-    changed += cur.rowcount
+        changed += cur.rowcount
 
     # Forward-only, probabilistic lifecycle for orders the simulator created
     # (recent order_date). Only in-process (1), approved (2) and backordered (3)
@@ -488,18 +604,19 @@ def update_rows(cur, exclude_ids=None):
     )
     changed += cur.rowcount
 
-    cur.execute(
-        """
-        UPDATE public.work_order
-        SET stocked_qty = least(order_qty, stocked_qty + (random() * 5)::int),
-            modified_date = %s
-        WHERE work_order_id IN (
-            SELECT work_order_id FROM public.work_order ORDER BY random() LIMIT 5
+    if RANDOM_WORK_ORDERS:
+        cur.execute(
+            """
+            UPDATE public.work_order
+            SET stocked_qty = least(order_qty, stocked_qty + (random() * 5)::int),
+                modified_date = %s
+            WHERE work_order_id IN (
+                SELECT work_order_id FROM public.work_order ORDER BY random() LIMIT 5
+            )
+            """,
+            (now,),
         )
-        """,
-        (now,),
-    )
-    changed += cur.rowcount
+        changed += cur.rowcount
 
     cur.execute(
         """
@@ -579,19 +696,21 @@ def main():
                 inserted = 0
                 created_order_ids = []
                 if random.random() < order_chance:
-                    order_id, line_ids = insert_sales_order(cur, keys)
+                    order_id, line_ids = insert_sales_order(cur, keys, consume_stock=True)
                     insert_transaction_history(cur, keys, order_id, line_ids)
                     inserted += 1 + len(line_ids)
                     created_order_ids.append(order_id)
-                for _ in range(random.randint(0, 2)):
-                    insert_work_order(cur, keys)
-                    inserted += 1
+                if RANDOM_WORK_ORDERS:
+                    for _ in range(random.randint(0, 2)):
+                        insert_work_order(cur, keys)
+                        inserted += 1
                 for _ in range(random.randint(1, 3)):
                     insert_product_review(cur, keys)
                     insert_shopping_cart_item(cur, keys)
                     inserted += 2
 
                 updated = update_rows(cur, exclude_ids=created_order_ids)
+                received = receive_orders(cur)
                 deleted = delete_leaf_rows(cur)
 
         with conn.cursor() as cur:
@@ -604,7 +723,7 @@ def main():
 
     print(
         f"simulate_adventureworks: inserted={inserted} updated={updated} "
-        f"deleted={deleted} sales_orders={orders} products={products}"
+        f"deleted={deleted} received={received} sales_orders={orders} products={products}"
     )
 
 
