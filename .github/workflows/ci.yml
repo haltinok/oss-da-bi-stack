@@ -163,7 +163,7 @@ jobs:
             ingestr --version
             /home/airflow/dbt-starrocks/bin/pip check
             /home/airflow/dbt-starrocks/bin/dbt --version
-            # the weekly proposal agent's own environment
+            # the weekly proposal agent: its own environment
             /home/airflow/agent/bin/pip check
             /home/airflow/agent/bin/python -c "import anthropic, requests; print(\"anthropic\", anthropic.__version__)"
             echo "ingestr + dbt-starrocks + agent checks passed"
@@ -302,12 +302,20 @@ jobs:
         # The same two commands as the postgres_active_to_starrocks DAG.
         run: |
           cycle() {
-            docker compose --profile starrocks run --rm --no-deps --entrypoint bash airflow-scheduler -ec '
-              python /opt/airflow/scripts/ingest_starrocks.py
-              cd /opt/airflow/dbt/adventureworks_starrocks
-              /home/airflow/dbt-starrocks/bin/dbt build --profiles-dir . \
-                --vars "{aw_source_schema: raw, use_pk_snapshots: true}" --threads 4
-            '
+            # dbt (Python with the MySQL connector) has segfaulted about once in a dozen runs, always at start-up
+            # of an invocation and before any model ran (exit 139). PYTHONFAULTHANDLER prints the Python stack when
+            # it happens; the run is retried once on that exit code only, so a real failure still fails the job.
+            for attempt in 1 2; do
+              rc=0
+              docker compose --profile starrocks run --rm --no-deps -e PYTHONFAULTHANDLER=1 --entrypoint bash airflow-scheduler -ec '
+                python /opt/airflow/scripts/ingest_starrocks.py
+                cd /opt/airflow/dbt/adventureworks_starrocks
+                /home/airflow/dbt-starrocks/bin/dbt build --profiles-dir . \
+                  --vars "{aw_source_schema: raw, use_pk_snapshots: true}" --threads 4
+              ' || rc=$?
+              [ "$rc" -eq 139 ] && [ "$attempt" -eq 1 ] && { echo "::warning::dbt segfaulted (139), retrying once"; continue; }
+              return "$rc"
+            done
           }
           cycle
           cycle
