@@ -1,11 +1,12 @@
 ---
 name: oss-da-bi-stack
 description: >-
-  Work with the OSS data & analytics stack in this repository: the dlt/dbt ELT into
-  Postgres, the Debezium → Kafka → ClickHouse CDC path, the AdventureWorks OLTP
-  sandbox in postgres_active, its simulators, and the Airflow orchestration. Use when
-  regenerating the AdventureWorks sandbox, applying init scripts, running or debugging
-  a pipeline/DAG, querying the warehouse/CDC databases, or extending the stack.
+  Work with the OSS data & analytics stack in this repository: the ingestr/dbt pipeline
+  into StarRocks served through Cube behind Keycloak sign-in, the Debezium → Kafka →
+  ClickHouse CDC path, the AdventureWorks OLTP sandbox in postgres_active, its
+  simulators, and the Airflow orchestration. Use when regenerating the AdventureWorks
+  sandbox, applying init scripts, running or debugging a pipeline/DAG, querying the
+  StarRocks/CDC databases, or extending the stack.
 ---
 
 # OSS data & analytics stack
@@ -15,24 +16,23 @@ this skill is the operator's shortcut for the common tasks.
 
 ## Architecture in one breath
 
-- **Warehouse** `postgres` (`localhost:5433`, db `analytics`, schemas `raw`/`stage`/`mart`).
-- **CDC source / OLTP sandbox** `postgres_active` (`localhost:5434`, db `active_db`).
-- **Streaming** Debezium → Kafka (`localhost:8081` UI) → ClickHouse (`localhost:8123`, db `cdc`).
-- **Orchestration** Airflow (`localhost:8080`).
-- **BI** Superset (`localhost:8089`), Metabase (`localhost:3001`) and the live sales dashboard (`localhost:8050`, `dashboard/`).
+- **OLTP sandbox / CDC source** `postgres_active` (`localhost:5434`, db `active_db`).
+- **Serving path** (compose profile `starrocks`): `postgres_active` → ingestr (DAG
+  `postgres_active_to_starrocks`, every 5 min) → StarRocks `raw` → dbt-starrocks → `mart`
+  → Cube (`cube/`, rollups + row-level security) → dashboard (`localhost:8250`, Keycloak sign-in).
+- **Streaming** Debezium → Kafka (`localhost:8081` UI) → ClickHouse (`localhost:8123`, db `cdc`): independent of the serving path.
+- **Orchestration** Airflow (`localhost:8080`); **metadata / small warehouse** `postgres` (`localhost:5433`: `airflow`, and `analytics.raw` for the optional SQL Server load and `orders`).
 
-Three data paths: SQL Server → `analytics.raw` (dlt, one-time static load, now a
-fallback); `postgres_active.orders` → Kafka → ClickHouse and → `analytics.raw.orders`
-(dlt); AdventureWorks sandbox in `postgres_active` → `analytics.raw_active` (dlt) → the
-`adventureworks_dwh` star, and the nine mutated tables → Kafka → ClickHouse.
+The Postgres serving path (dbt-postgres mart, Superset, Metabase, `dashboard/app.py`, the ClickHouse mart
+copy, MetricFlow) was retired; it is in git history. Don't look for it.
 
 ## Rules of engagement
 
 - **Never commit secrets.** Everything sensitive is in `.env` (git-ignored). Copy
   `scripts/generate-env.sh` output; never paste values into tracked files.
 - **`docker compose down -v` is destructive and forbidden here.** It wipes the
-  warehouse and ClickHouse volumes, and the AdventureWorks SQL Server source is not
-  reachable, so `analytics.raw` cannot be rebuilt. Apply schema changes in place.
+  warehouse, StarRocks and ClickHouse volumes, and the AdventureWorks SQL Server
+  source is not reachable, so `analytics.raw` cannot be rebuilt. Apply schema changes in place.
 - The container-internal port for `postgres_active` is **5434**, not 5432. Use
   `-p 5434` for `psql` inside that container.
 - The AdventureWorks sandbox files (`postgres_active/init/02_*.sql`, `03_*.sql.gz`) are
@@ -46,7 +46,7 @@ Load the env first:
 set -a && . ./.env && set +a
 ```
 
-**Regenerate the AdventureWorks sandbox** (from the warehouse `analytics.raw`):
+**Regenerate the AdventureWorks sandbox** (from Postgres `analytics.raw`, the SQL Server load):
 
 ```bash
 python3 scripts/gen_adventureworks_schema.py   # -> postgres_active/init/02_adventureworks_schema.sql
@@ -71,22 +71,22 @@ docker exec oss_airflow_scheduler python /opt/airflow/scripts/simulate_orders.py
 
 ```bash
 psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5434/active_db" -c '\dt public.*'
-psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5433/analytics" -c 'select count(*) from raw.sales_order_header'
+psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5433/analytics" -c 'select count(*) from raw.orders'
+mysql -h127.0.0.1 -P${STARROCKS_MYSQL_PORT:-9030} -uroot -e 'select count(*) from mart.fact_internet_sales'   # StarRocks
 docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" -q 'select count() from cdc.orders'
 ```
 
-**dbt** (runs in the Airflow image; project at `/opt/airflow/dbt/adventureworks_dwh`):
+**dbt** (dbt-starrocks lives in its own virtualenv in the Airflow image; project `dbt/adventureworks_starrocks`):
 
 ```bash
-docker exec oss_airflow_scheduler dbt build \
-  --project-dir /opt/airflow/dbt/adventureworks_dwh \
-  --profiles-dir /opt/airflow/dbt/adventureworks_dwh
+docker exec oss_airflow_scheduler bash -c 'cd /opt/airflow/dbt/adventureworks_starrocks && \
+  /home/airflow/dbt-starrocks/bin/dbt build --project-dir . --profiles-dir . \
+  --vars "{aw_source_schema: raw, use_pk_snapshots: true}"'
 ```
 
-**Airflow DAGs:** `sqlserver_to_postgres_elt` (manual, dlt load only), `postgres_active_to_postgres`
-(orders, 15 min), `postgres_active_to_postgres_aw` (AdventureWorks → `raw_active`, `dbt source freshness`,
-`dbt build` (incl. the product snapshot), then the star → ClickHouse; 15 min),
-`simulate_orders` (5 min), `simulate_adventureworks` (5 min).
+**Airflow DAGs:** `postgres_active_to_starrocks` (ingestr → `dbt build`; 5 min), `sqlserver_to_postgres_elt`
+(manual, dlt load only), `postgres_active_to_postgres` (orders → Postgres `analytics.raw.orders`, 15 min),
+`simulate_orders` (5 min), `simulate_adventureworks` (5 min). New DAGs start paused: unpause them.
 
 **Wire the AdventureWorks tables into CDC** (existing stack; non-destructive):
 
@@ -126,53 +126,32 @@ Nine simulator-mutated tables stream through Debezium → Kafka → ClickHouse:
   `cdc.aw_kafka`'s `kafka_topic_list`, and (optionally) add a typed MV. No other
   ClickHouse DDL is needed.
 
-## ClickHouse mart (star copy)
+## StarRocks serving path
 
-The dbt star is copied into ClickHouse `mart` by `airflow/scripts/sync_mart_to_clickhouse.py`
-(the last task of the `postgres_active_to_postgres_aw` DAG) using ClickHouse's
-`postgresql()` table function — a full `CREATE OR REPLACE TABLE … AS SELECT` per table.
-It reads the mart as the read-only `bi_ro` role. Query it like Postgres:
-
-```bash
-docker exec clickhouse clickhouse-client --password "$CLICKHOUSE_PASSWORD" -q \
-  "select p.product_category_name, round(sum(f.sales_amount),2) revenue \
-   from mart.fact_internet_sales f join mart.dim_product p on f.product_key=p.product_key \
-   group by 1 order by revenue desc"
-```
-
-Refresh by hand: `docker exec oss_airflow_scheduler python /opt/airflow/scripts/sync_mart_to_clickhouse.py`.
-Note: dlt's ClickHouse destination works on dlt 1.30 (re-tested; native port 9000 +
-`http_port` 8123), but it needs `dlt[clickhouse]`, which the Airflow image does **not**
-install, so it fails inside Airflow with a missing-dependency error. The mart sync uses
-the `postgresql()` script, which needs no extra driver.
-
-## Warehouse DWH (fed live from the sandbox)
-
-The dbt project `adventureworks_dwh` reads **`analytics.raw_active`**, not the static
-`analytics.raw`. The pipeline `postgres_active_to_postgres_aw`
-(`dlt/pipelines/postgres_active_to_postgres_aw/aw_pipeline.py`, DAG
-`postgres_active_to_postgres_aw`, every 15 min) replicates every sandbox table into
-`raw_active` (incremental on `modified_date` + `merge` on the reflected PKs) and then
-runs `dbt build`.
-
-- **Repoint the source:** the `aw_source_schema` dbt var (default `raw_active`).
-  `dbt build --vars '{aw_source_schema: raw}'` builds from the static SQL Server load.
-- **Regenerate `raw_active` from scratch** (e.g. after re-seeding the sandbox): drop
-  the schema and re-run the pipeline —
-  `psql ... -c "drop schema if exists raw_active cascade"` then
-  `docker exec -w /opt/airflow/dlt/pipelines/postgres_active_to_postgres_aw oss_airflow_scheduler python aw_pipeline.py`.
-  dlt's cursor lives in the dropped schema, so this also resets the incremental state.
-- **`dim_date` runs to 2040** because the simulator stamps new rows with `now()`.
-- The seed is referentially consistent, so `dbt build` should pass 168/168. If a
-  relationship test fails, check `scripts/gen_adventureworks_seed.py`'s closure
-  (`SELECTION_SETS` / `TABLE_PREDICATES`) rather than the dbt models.
+- **Ingest by hand:** `docker exec oss_airflow_scheduler python /opt/airflow/scripts/ingest_starrocks.py [--full-refresh] [table ...]`.
+  Tables come from the dbt project's sources; primary keys and the `modified_date` cursor from the source catalog.
+- **Reset raw** (e.g. after re-seeding the sandbox): `drop database raw force; create database raw` in StarRocks,
+  then run the ingest. ingestr's incremental state lives with the destination tables.
+- **dbt drops and recreates tables each build**, and StarRocks drops table-level grants with them. Don't
+  grant on tables: `starrocks/init.sh` gives `cube_ro` a wildcard grant on `mart` and `auth_ro` one on
+  `rls` (whose table is `rls.user_regions`), and wildcard grants survive.
+- **Cube** (`cube/`): rollups refresh when `mart.data_version` changes (rewritten every build). Rollups are
+  deliberately **unpartitioned**: Cube answers from whichever partitions are built, so a partitioned
+  rollup returns incomplete totals while rebuilding. Restart Cube after editing the model.
+- **Row-level security** lives in `cube/cube.js` (`checkAuth`, `queryRewrite`); users and territories are
+  `dbt/adventureworks_starrocks/seeds/dim_user_territory.csv`. After changing either, run the security
+  tests (`spike/cube/tests`, see `spike/README.md`) and the browser test `spike/dashboard/e2e.py`.
+- **StarRocks needs a split FE/BE** here: the all-in-one image advertises its backend as `127.0.0.1`, which
+  breaks Stream Load from other containers. Memory is the constraint at scale (`spike/results.md`).
+- **`dim_date` runs to 2040** because the simulator stamps new rows with `now()`. `date_shift_years: 12`
+  moves the seeded history onto live dates (the simulator and backfill read it from the dbt project).
 
 ## Extending the sandbox
 
-- **Add a table to the DWH:** append it to `TABLE_PREDICATES` in
+- **Add a table to the star:** append it to `TABLE_PREDICATES` in
   `scripts/gen_adventureworks_seed.py` (closure) or let it default to a 10% sample,
-  regenerate the seed, re-apply, and re-run the pipeline. dlt picks up new sandbox
-  tables automatically; only `_sources.yml` + a staging model need adding.
+  regenerate the seed, re-apply. The ingest picks up any source listed in the dbt project's
+  `_sources.yml`, so add the source and a staging model there.
 
 ## Gotchas
 

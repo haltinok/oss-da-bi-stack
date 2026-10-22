@@ -1,5 +1,5 @@
-# StarRocks port of dbt/adventureworks_dwh (the spike in spike/ proved it); the serving path of the `starrocks` compose profile.
-# The Postgres project (dbt/adventureworks_dwh) stays until parity is shown. This one reads the live
+# The star schema on StarRocks (it replaced the dbt-postgres project dbt/adventureworks_dwh; the spike in
+# spike/ proved it). Serving path of the `starrocks` compose profile. It reads the live
 # `raw` schema loaded by the postgres_active_to_starrocks DAG, or a benchmark scale (scale_10m/100m/500m).
 name: 'adventureworks_starrocks'
 version: '1.0.0'

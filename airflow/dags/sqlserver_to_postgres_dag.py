@@ -14,7 +14,7 @@ DLT_PROJECT_DIR = "/opt/airflow/dlt/pipelines/sqlserver_to_postgres"
     dag_id="sqlserver_to_postgres_elt",
     description=(
         "One-time load of AdventureWorks2016 from SQL Server into Postgres raw via dlt "
-        "(static alternative source; the DWH is built from raw_active, see README)."
+        "(optional static load; the star schema is built in StarRocks from postgres_active, see README)."
     ),
     # The AdventureWorks source is static, so this DAG runs manually: the dlt step
     # skips itself once the raw dataset is populated (trigger with --force to reload).
@@ -26,11 +26,8 @@ DLT_PROJECT_DIR = "/opt/airflow/dlt/pipelines/sqlserver_to_postgres"
 )
 def sqlserver_to_postgres_elt():
 
-    # Load only. The DWH is built by `postgres_active_to_postgres_aw` from
-    # `raw_active`; a dbt step here used to rebuild those same mart tables (from
-    # `raw_active`, not the `raw` this DAG loads) and could race that DAG's build.
-    # To build the star from this static load instead, run dbt by hand with
-    # `--vars '{aw_source_schema: raw}'`.
+    # Load only. The star schema is built by `postgres_active_to_starrocks` from the live
+    # postgres_active tables; this static load only feeds `gen_adventureworks_*` (the sandbox seed).
     BashOperator(
         task_id="dlt_ingest_raw",
         bash_command=f"cd {DLT_PROJECT_DIR} && python sqlserver_pipeline.py",

@@ -10,12 +10,5 @@ pyodbc==5.3.0
 # Simulation / data generation
 faker==40.41.0
 
-# Transformation
-dbt-core==1.11.15
-dbt-postgres==1.11.0
-
-# Semantic layer CLI (`mf query`) over the metrics in models/semantic/.
-# Requires dbt-core>=1.11,<1.13, so it holds the pin above rather than
-# dragging dbt forward. The [dbt-postgres] extra is already covered by
-# dbt-postgres above, so the bare package is enough.
-dbt-metricflow==0.15.0
+# dbt is not here: dbt-starrocks lives in its own virtualenv (requirements-dbt-starrocks.txt,
+# see the Dockerfile) so it does not constrain, or get constrained by, this environment.

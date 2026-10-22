@@ -1,6 +1,6 @@
 # dbt-starrocks star schema
 
-StarRocks port of `dbt/adventureworks_dwh` (which stays until parity is shown: `scripts/parity_check.py`).
+The star schema on StarRocks (it replaced the dbt-postgres project `dbt/adventureworks_dwh`, now in git history).
 By default it reads the live `raw` schema loaded by the `postgres_active_to_starrocks` DAG and builds
 `stage.*` views, `mart.*` tables and the small `rls.*` schema the auth service reads. It can also read the
 benchmark schemas of the spike (`scale_10m` / `scale_100m` / `scale_500m`, built by `spike/scale`).

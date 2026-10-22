@@ -14,7 +14,7 @@ last day:
   distributions, unit price at the history's ~59% of list, and an occasional
   special-offer discount.
 
-Rows get `modified_date = now()`, so the incremental `postgres_active_to_postgres_aw`
+Rows get `modified_date = now()`, so the incremental `postgres_active_to_starrocks`
 pipeline picks them up on its next run like any other change.
 
 Idempotent: a day (internet) or month (reseller, ~11 orders/month) that already
