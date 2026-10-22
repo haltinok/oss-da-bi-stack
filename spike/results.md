@@ -41,7 +41,7 @@ p95 per dashboard query, worst of the internet and reseller channels. "Rollup" =
 Reading it:
 - **At 10M rows a rollup buys nothing.** StarRocks answers most of these in 100-300 ms on its own, and an early run with a month-partitioned rollup was slower than StarRocks for several queries. Pre-aggregation starts paying at ~100M and is decisive at 500M.
 - **The expensive shapes are whole-table aggregations** (KPI totals, monthly series, region cross-filters). Filtering by fiscal year makes StarRocks fast on its own because it prunes partitions.
-- A full dashboard page load in the browser (a dozen queries in parallel, signed in through Keycloak) rendered in 1.0 s for the admin, 6.5 s for `de_rep` and 18.6 s for `na_manager` on first load. We did not profile why the last two are slower than the admin (cold caches and the few queries that miss a rollup are the likely causes).
+- A full dashboard page load in the browser (a dozen queries in parallel, signed in through Keycloak), with panels now drawing as they arrive, had every panel drawn in 5.9 s for the admin, 4.6 s for `na_manager` and 7.0 s for `de_rep` (including the Keycloak round trips).
 
 ### Concurrent users (500M, rollups, row-level security on)
 
@@ -88,7 +88,8 @@ StarRocks memory peaked at ~10 GB. The ~3% of requests not served by a rollup ar
 
 **Dashboard**
 - The existing `dashboard/static/app.js` changed by a data-source hook in `getJSON()` plus null-safe handling of profit figures (reps never receive profit, so tiles, columns and the margin chart are hidden). The Cube adapter, sign-in and nginx injection live in `spike/dashboard/`; the legacy Postgres server and page are unaffected.
-- Panels the adapter cannot serve cheaply are degraded on purpose: for a multi-territory user the "Orders" column of the product-mix table is left empty rather than waiting minutes for a scan.
+- **Panels render independently, as their query returns.** Each panel (KPIs, monthly trend, product mix, top products, territories, latest orders) runs its own query and redraws when it is ready; waiting panels are dimmed on their own, and a filter change cancels the in-flight requests (measured: 8-14 requests cancelled per change, no error). The one figure that cannot be quick is the **exact order count under a product filter** (a distinct count over a product subset; no rollup can serve it). Those panels draw at once without it, the Orders and Avg-order-value tiles show "…", and the figure fills in later from two scans (one per channel) instead of eight. Measured as admin with a subcategory filter: panels 1-8 s, exact orders 8-61 s depending on how warm StarRocks is; as the multi-region manager on a cold subcategory: panels 2.7-4.1 s, latest orders 7.9 s, exact orders 20 s, with Cube's concurrency at 6 (at 4, the fast "latest orders" queries sat behind the slow scans for ~100 s). A background refresh no longer cancels a load that is still running.
+- The product-mix table's Orders column is the same exact count (a late stage); it is served by rollups for admin and single-territory users, and by a scan otherwise.
 
 ## Not done / not proven
 

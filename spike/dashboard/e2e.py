@@ -30,7 +30,9 @@ def check(ok, msg):
 
 
 def wait_live(page, timeout=300_000):
+    """Live, and every panel drawn (panels render one by one as their queries return)."""
     page.wait_for_function("document.querySelector('#live-text')?.textContent.includes('Live')", timeout=timeout)
+    page.wait_for_function("document.querySelectorAll('.pending').length === 0", timeout=timeout)
 
 
 with sync_playwright() as p:

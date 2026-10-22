@@ -109,13 +109,16 @@ async function run(query, signal) {
 
 const channels = (f) => (f.channel ? [f.channel] : Object.keys(CH));
 const profit = () => !window.dashboardData.noProfit;
-// Orders: `orders_placed` (each order once, on its first line) is exact for any grouping or filter on
-// order-level attributes and is additive, so a plain rollup serves it even under a multi-region
-// security filter. It is wrong as soon as products are involved (an order has several categories),
-// so product filters switch to the exact distinct count, which only a direct scan can answer.
-const ordersOf = (f) => (f && (f.category || f.subcategory) ? "orders" : "orders_placed");
-const measures = (ch, f, orders = ordersOf(f)) => [
-  `${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.${orders}`, `${CH[ch]}.units`,
+// Orders. `orders_placed` (each order counted once, on its first line) is exact for any grouping or
+// filter on order-level attributes and additive, so a plain rollup serves it even under a multi-region
+// security filter. It is wrong as soon as products are involved (an order has several categories), so
+// then the exact distinct count is needed, which only a scan of the fact can answer: slow. Panels that
+// need it therefore run in two stages: first everything except orders (fast, drawn at once), then the
+// same query with the exact count, which redraws the panel when it finally returns.
+const orderMeasure = { placed: "orders_placed", exact: "orders", none: null };
+const measures = (ch, mode) => [
+  `${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []),
+  ...(orderMeasure[mode] ? [`${CH[ch]}.${orderMeasure[mode]}`] : []), `${CH[ch]}.units`,
 ];
 const figures = (ch, r) => ({
   revenue: num(r[`${CH[ch]}.revenue`]), gross_profit: profit() ? num(r[`${CH[ch]}.gross_profit`]) : null,
@@ -143,123 +146,209 @@ function filters(f, skip = []) {
 const day = (iso) => iso.slice(0, 10);
 const addDays = (iso, n) => { const d = new Date(`${day(iso)}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
-async function dashboard(f, signal) {
+// Run `build(mode)` once per mode and hand each result to emit() the moment it arrives. With two modes
+// the second (exact orders) is a late refinement: its failure leaves the first result in place.
+async function staged(modes, build, emit, pending) {
+  for (let i = 0; i < modes.length; i++) {
+    const last = i === modes.length - 1;
+    if (i === 0 && modes.length > 1) pending.n++;
+    let patch;
+    try {
+      patch = await build(modes[i]);
+    } catch (e) {
+      if (i > 0 && e?.name !== "AbortError") { pending.n--; emit({}); return; } // late stage failed: keep the quick result
+      if (modes.length > 1 && i === 0) pending.n--;
+      throw e;
+    }
+    if (last && modes.length > 1) pending.n--;
+    emit(patch);
+  }
+}
+
+async function dashboard(f, signal, update) {
   const chans = channels(f);
-  const perChannel = (fn) => Promise.all(chans.map((ch) => fn(ch).then((rows) => ({ ch, rows }))));
-
-  const kpiQ = perChannel((ch) => run({
-    measures: measures(ch, f),
-    dimensions: f.fy ? ["dates.fiscal_year"] : [],
-    filters: [...filters(f, ["fy"]),
-      ...(f.fy ? [{ member: "dates.fiscal_year", operator: "equals", values: [String(f.fy), String(f.fy - 1)] }] : [])],
-  }, signal));
-  const monthlyQ = perChannel((ch) => run({
-    measures: measures(ch, f), filters: filters(f),
-    timeDimensions: [{ dimension: `${CH[ch]}.order_date`, granularity: "month" }],
-    order: { [`${CH[ch]}.order_date`]: "asc" },
-  }, signal));
-  // Orders per category = distinct orders containing it (not additive): a rollup answers that for admins
-  // and single-territory users only; for a multi-territory user the column is left empty rather than slow.
-  const exactMix = session.role === "admin" || (session.territories || []).length === 1;
-  const mixQ = perChannel((ch) => run({
-    measures: exactMix ? measures(ch, f, "orders") : measures(ch, f, "orders").filter((m) => !m.endsWith(".orders")),
-    dimensions: ["products.category", "products.subcategory"],
-    filters: filters(f, ["category", "subcategory"]),
-  }, signal));
-  const productsQ = perChannel((ch) => run({
-    measures: [`${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.units`],
-    dimensions: ["products.name", "products.category"], filters: filters(f),
-  }, signal));
-  const territoriesQ = perChannel((ch) => run({
-    measures: [`${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.${ordersOf(f)}`],
-    dimensions: ["territories.group_name", "territories.region"], filters: filters(f, ["group", "region"]),
-  }, signal));
-  // Newest orders ignore the fiscal-year filter. Find the newest day from the daily rollup, then
-  // read only the last week (one or two month partitions) instead of aggregating every order.
-  const latestQ = perChannel(async (ch) => {
-    const c = CH[ch];
-    const last = await run({ measures: [`${c}.revenue`], filters: filters(f, ["fy"]),
-      timeDimensions: [{ dimension: `${c}.order_date`, granularity: "day" }],
-      order: { [`${c}.order_date`]: "desc" }, limit: 1 }, signal);
-    if (!last.length) return [];
-    const end = day(last[0][`${c}.order_date.day`]);
-    return run({
-      measures: [`${c}.lines`, `${c}.revenue`],
-      dimensions: [`${c}.order_number`, `${c}.order_date`, "territories.region", `${c}.order_status`],
-      filters: filters(f, ["fy"]),
-      timeDimensions: [{ dimension: `${c}.order_date`, dateRange: [addDays(end, -6), end] }],
-      order: { [`${c}.order_date`]: "desc", [`${c}.order_number`]: "desc" }, limit: 8,
-    }, signal);
-  });
-
-  const [kpi, monthly, mix, products, territories, latest] =
-    await Promise.all([kpiQ, monthlyQ, mixQ, productsQ, territoriesQ, latestQ]);
-
-  // KPIs: current (the picked fiscal year, or everything) vs previous year.
-  let current = null, previous = null;
-  for (const { ch, rows } of kpi) {
-    for (const r of rows) {
-      const fig = figures(ch, r);
-      const isPrev = f.fy && Number(r["dates.fiscal_year"]) === Number(f.fy) - 1;
-      if (isPrev) previous = add(previous || ZERO, fig); else current = add(current || ZERO, fig);
-    }
-  }
-  const monthlyRows = monthly.flatMap(({ ch, rows }) => rows.map((r) => ({
-    month: day(r[`${CH[ch]}.order_date.month`]), channel: ch, ...figures(ch, r),
-  }))).sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : a.channel < b.channel ? -1 : 1));
-
-  const mixMap = new Map();
-  for (const { ch, rows } of mix) {
-    for (const r of rows) {
-      const key = `${r["products.category"]}\u0000${r["products.subcategory"]}`;
-      const cur = mixMap.get(key) || { category: r["products.category"], subcategory: r["products.subcategory"], ...ZERO };
-      mixMap.set(key, { ...cur, ...add(cur, figures(ch, r)) });
-    }
-  }
-  const mixRows = [...mixMap.values()].sort((a, b) => b.revenue - a.revenue);
-
-  const prodMap = new Map();
-  for (const { ch, rows } of products) {
-    for (const r of rows) {
-      const name = r["products.name"];
-      const cur = prodMap.get(name) || { product_name: name, category: r["products.category"], revenue: 0, internet: 0, reseller: 0, gross_profit: 0, units: 0 };
-      const rev = num(r[`${CH[ch]}.revenue`]);
-      const gp = profit() ? num(r[`${CH[ch]}.gross_profit`]) : null;
-      prodMap.set(name, {
-        ...cur, revenue: cur.revenue + rev, [ch.toLowerCase()]: cur[ch.toLowerCase()] + rev,
-        gross_profit: gp == null || cur.gross_profit == null ? null : cur.gross_profit + gp,
-        units: cur.units + num(r[`${CH[ch]}.units`]),
-      });
-    }
-  }
-  const topProducts = [...prodMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-
-  const terrMap = new Map();
-  for (const { ch, rows } of territories) {
-    for (const r of rows) {
-      const key = r["territories.region"];
-      const cur = terrMap.get(key) || { grp: r["territories.group_name"], region: key, revenue: 0, internet: 0, reseller: 0, gross_profit: 0, orders: 0 };
-      const rev = num(r[`${CH[ch]}.revenue`]);
-      const gp = profit() ? num(r[`${CH[ch]}.gross_profit`]) : null;
-      terrMap.set(key, {
-        ...cur, revenue: cur.revenue + rev, [ch.toLowerCase()]: cur[ch.toLowerCase()] + rev,
-        gross_profit: gp == null || cur.gross_profit == null ? null : cur.gross_profit + gp,
-        orders: cur.orders + num(r[`${CH[ch]}.orders`] ?? r[`${CH[ch]}.orders_placed`]),
-      });
-    }
-  }
-  const territoryRows = [...terrMap.values()].sort((a, b) => b.revenue - a.revenue);
-
-  const latestOrders = latest.flatMap(({ ch, rows }) => rows.map((r) => ({
-    sales_order_number: r[`${CH[ch]}.order_number`], channel: ch,
-    order_date: r[`${CH[ch]}.order_date`].replace(/\.\d+$/, ""), region: r["territories.region"],
-    order_status: num(r[`${CH[ch]}.order_status`]), lines: num(r[`${CH[ch]}.lines`]), revenue: num(r[`${CH[ch]}.revenue`]),
-  }))).sort((a, b) => (a.order_date === b.order_date ? (a.sales_order_number < b.sales_order_number ? 1 : -1) : a.order_date < b.order_date ? 1 : -1)).slice(0, 8);
-
-  return {
-    kpis: { current, previous }, monthly: monthlyRows, mix: mixRows, top_products: topProducts,
-    territories: territoryRows, latest_orders: latestOrders, generated_at: new Date().toISOString(),
+  const out = {};
+  const productFilter = !!(f.category || f.subcategory);
+  // `pending.n` > 0 shows "…" on the Orders / Avg order value tiles: with a product filter they wait for lateOrders().
+  const pending = { n: productFilter ? 1 : 0 };
+  const emit = (patch) => {
+    if (signal?.aborted) return;
+    Object.assign(out, patch, { ordersPending: pending.n > 0 });
+    update?.({ ...patch, ordersPending: pending.n > 0 });
   };
+  const perChannel = (fn) => Promise.all(chans.map((ch) => fn(ch).then((rows) => ({ ch, rows }))));
+  // With a product filter the order count needs the exact distinct count: kpis, monthly and territories
+  // draw without it at once, and lateOrders() fills it in from ONE scan per channel (below).
+  const orderModes = productFilter ? ["none"] : ["placed"];
+
+  const kpis = () => staged(orderModes, async (mode) => {
+    const res = await perChannel((ch) => run({
+      measures: measures(ch, mode),
+      dimensions: f.fy ? ["dates.fiscal_year"] : [],
+      filters: [...filters(f, ["fy"]),
+        ...(f.fy ? [{ member: "dates.fiscal_year", operator: "equals", values: [String(f.fy), String(f.fy - 1)] }] : [])],
+    }, signal));
+    let current = null, previous = null;
+    for (const { ch, rows } of res) {
+      for (const r of rows) {
+        const fig = figures(ch, r);
+        if (f.fy && Number(r["dates.fiscal_year"]) === Number(f.fy) - 1) previous = add(previous || ZERO, fig);
+        else current = add(current || ZERO, fig);
+      }
+    }
+    return { kpis: { current, previous } };
+  }, emit, pending);
+
+  const monthly = () => staged(orderModes, async (mode) => {
+    const res = await perChannel((ch) => run({
+      measures: measures(ch, mode), filters: filters(f),
+      timeDimensions: [{ dimension: `${CH[ch]}.order_date`, granularity: "month" }],
+      order: { [`${CH[ch]}.order_date`]: "asc" },
+    }, signal));
+    return { monthly: res.flatMap(({ ch, rows }) => rows.map((r) => ({
+      month: day(r[`${CH[ch]}.order_date.month`]), channel: ch, ...figures(ch, r),
+    }))).sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : a.channel < b.channel ? -1 : 1)) };
+  }, emit, pending);
+
+  // Orders per category = distinct orders containing it, never additive: always two stages.
+  const mixLate = { n: 0 };   // the mix table's own late stage; it must not put "…" on the KPI tiles
+  const mix = () => staged(["none", "exact"], async (mode) => {
+    const res = await perChannel((ch) => run({
+      measures: measures(ch, mode), dimensions: ["products.category", "products.subcategory"],
+      filters: filters(f, ["category", "subcategory"]),
+    }, signal));
+    const m = new Map();
+    for (const { ch, rows } of res) {
+      for (const r of rows) {
+        const key = `${r["products.category"]}\u0000${r["products.subcategory"]}`;
+        const cur = m.get(key) || { category: r["products.category"], subcategory: r["products.subcategory"], ...ZERO };
+        m.set(key, { ...cur, ...add(cur, figures(ch, r)) });
+      }
+    }
+    return { mix: [...m.values()].sort((a, b) => b.revenue - a.revenue) };
+  }, emit, mixLate);
+
+  const products = async () => {
+    const res = await perChannel((ch) => run({
+      measures: [`${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []), `${CH[ch]}.units`],
+      dimensions: ["products.name", "products.category"], filters: filters(f),
+    }, signal));
+    const m = new Map();
+    for (const { ch, rows } of res) {
+      for (const r of rows) {
+        const name = r["products.name"];
+        const cur = m.get(name) || { product_name: name, category: r["products.category"], revenue: 0, internet: 0, reseller: 0, gross_profit: 0, units: 0 };
+        const rev = num(r[`${CH[ch]}.revenue`]);
+        const gp = profit() ? num(r[`${CH[ch]}.gross_profit`]) : null;
+        m.set(name, { ...cur, revenue: cur.revenue + rev, [ch.toLowerCase()]: cur[ch.toLowerCase()] + rev,
+          gross_profit: nz(cur.gross_profit, gp), units: cur.units + num(r[`${CH[ch]}.units`]) });
+      }
+    }
+    emit({ top_products: [...m.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 10) });
+  };
+
+  const territories = () => staged(orderModes, async (mode) => {
+    const res = await perChannel((ch) => run({
+      measures: [`${CH[ch]}.revenue`, ...(profit() ? [`${CH[ch]}.gross_profit`] : []),
+        ...(orderMeasure[mode] ? [`${CH[ch]}.${orderMeasure[mode]}`] : [])],
+      dimensions: ["territories.group_name", "territories.region"], filters: filters(f, ["group", "region"]),
+    }, signal));
+    const m = new Map();
+    for (const { ch, rows } of res) {
+      for (const r of rows) {
+        const key = r["territories.region"];
+        const cur = m.get(key) || { grp: r["territories.group_name"], region: key, revenue: 0, internet: 0, reseller: 0, gross_profit: 0, orders: 0 };
+        const rev = num(r[`${CH[ch]}.revenue`]);
+        const gp = profit() ? num(r[`${CH[ch]}.gross_profit`]) : null;
+        m.set(key, { ...cur, revenue: cur.revenue + rev, [ch.toLowerCase()]: cur[ch.toLowerCase()] + rev,
+          gross_profit: nz(cur.gross_profit, gp),
+          orders: nz(cur.orders, num(r[`${CH[ch]}.orders`] ?? r[`${CH[ch]}.orders_placed`])) });
+      }
+    }
+    return { territories: [...m.values()].sort((a, b) => b.revenue - a.revenue) };
+  }, emit, pending);
+
+  // Newest orders ignore the fiscal-year filter. Find the newest day from the daily rollup (without any
+  // product filter, which that rollup does not carry), then read only the last week (one or two month
+  // partitions) instead of aggregating every order. A product filter may leave fewer than 8 orders in
+  // that week; then look back further (still only a few partitions).
+  const latest = async () => {
+    const res = await perChannel(async (ch) => {
+      const c = CH[ch];
+      const last = await run({ measures: [`${c}.revenue`], filters: filters(f, ["fy", "category", "subcategory"]),
+        timeDimensions: [{ dimension: `${c}.order_date`, granularity: "day" }],
+        order: { [`${c}.order_date`]: "desc" }, limit: 1 }, signal);
+      if (!last.length) return [];
+      const end = day(last[0][`${c}.order_date.day`]);
+      const window = (days) => run({
+        measures: [`${c}.lines`, `${c}.revenue`],
+        dimensions: [`${c}.order_number`, `${c}.order_date`, "territories.region", `${c}.order_status`],
+        filters: filters(f, ["fy"]),
+        timeDimensions: [{ dimension: `${c}.order_date`, dateRange: [addDays(end, -days), end] }],
+        order: { [`${c}.order_date`]: "desc", [`${c}.order_number`]: "desc" }, limit: 8,
+      }, signal);
+      const rows = await window(6);
+      return rows.length < 8 && productFilter ? window(120) : rows;
+    });
+    emit({ latest_orders: res.flatMap(({ ch, rows }) => rows.map((r) => ({
+      sales_order_number: r[`${CH[ch]}.order_number`], channel: ch,
+      order_date: r[`${CH[ch]}.order_date`].replace(/\.\d+$/, ""), region: r["territories.region"],
+      order_status: num(r[`${CH[ch]}.order_status`]), lines: num(r[`${CH[ch]}.lines`]), revenue: num(r[`${CH[ch]}.revenue`]),
+    }))).sort((a, b) => (a.order_date === b.order_date ? (a.sales_order_number < b.sales_order_number ? 1 : -1) : a.order_date < b.order_date ? 1 : -1)).slice(0, 8) });
+  };
+
+  // An order has exactly one month, territory and channel, so exact orders (product filter only) grouped by
+  // month x region are additive over any of them: one query per channel feeds the KPI tile, the monthly
+  // series and the territory table, each summed under its own page filters. Eight scans become two.
+  const lateOrders = async () => {
+    try {
+      const res = await perChannel((ch) => run({
+        measures: [`${CH[ch]}.orders`],
+        dimensions: ["territories.group_name", "territories.region"],
+        timeDimensions: [{ dimension: `${CH[ch]}.order_date`, granularity: "month" }],
+        filters: filters({ category: f.category, subcategory: f.subcategory }),
+      }, signal));
+      const fyOf = (iso) => { const [y, m] = iso.split("-").map(Number); return m >= 7 ? y + 1 : y; };
+      const rows = res.flatMap(({ ch, rows: rs }) => rs.map((r) => ({
+        ch, month: day(r[`${CH[ch]}.order_date.month`]), grp: r["territories.group_name"], region: r["territories.region"],
+        orders: num(r[`${CH[ch]}.orders`]),
+      })));
+      const sum = (pred) => rows.filter(pred).reduce((s, r) => s + r.orders, 0);
+      const region = (r) => (!f.group || r.grp === f.group) && (!f.region || r.region === f.region);
+      const patch = {};
+      if (out.kpis) {
+        const cur = out.kpis.current, prev = out.kpis.previous;
+        patch.kpis = {
+          current: cur && { ...cur, orders: sum((r) => region(r) && (!f.fy || fyOf(r.month) === Number(f.fy))) },
+          previous: prev && { ...prev, orders: sum((r) => region(r) && fyOf(r.month) === Number(f.fy) - 1) },
+        };
+      }
+      if (out.monthly) {
+        patch.monthly = out.monthly.map((m) => ({ ...m, orders: sum((r) => region(r) && r.ch === m.channel && r.month === m.month) }));
+      }
+      if (out.territories) {
+        patch.territories = out.territories.map((t) => ({ ...t, orders: sum((r) => r.region === t.region && (!f.fy || fyOf(r.month) === Number(f.fy))) }));
+      }
+      pending.n--;
+      emit(patch);
+    } catch (e) {
+      pending.n--;
+      if (e?.name === "AbortError") throw e;
+      emit({}); // the orders figures stay "—"; the rest of the page is unaffected
+    }
+  };
+
+  // Every panel runs on its own and draws when it is ready. One failing panel must not blank the rest.
+  const kp = kpis(), mp = monthly(), tp = territories();
+  const late = productFilter ? Promise.all([kp, mp, tp]).then(lateOrders) : null;
+  const results = await Promise.allSettled([kp, mp, mix(), products(), tp, latest(), ...(late ? [late] : [])]);
+  const failed = results.find((r) => r.status === "rejected");
+  for (const r of results) if (r.status === "rejected" && r.reason?.name !== "AbortError") console.warn("panel query failed:", r.reason?.message || r.reason);
+  if (failed) {
+    if (failed.reason?.name === "AbortError" || signal?.aborted) throw failed.reason;
+    if (!Object.keys(out).length) throw failed.reason;      // nothing at all loaded: show the error
+  }
+  return { ...out, ordersPending: false, generated_at: new Date().toISOString() };
 }
 
 async function meta(signal) {
@@ -289,12 +378,12 @@ async function meta(signal) {
 // ------------------------------------------------------------------ the two endpoints the page calls
 await cubeToken(); // signs in (redirecting if needed) before the first request
 window.__dashboardDataReady({
-  async get(url, signal) {
+  async get(url, signal, update) {
     const u = new URL(url, location.origin);
     if (u.pathname === "/api/meta") return meta(signal);
     if (u.pathname === "/api/dashboard") {
       const f = Object.fromEntries(["fy", "channel", "group", "region", "category", "subcategory"].map((k) => [k, u.searchParams.get(k) || ""]));
-      return dashboard(f, signal);
+      return dashboard(f, signal, update);
     }
     throw new Error(`unknown endpoint ${u.pathname}`);
   },

@@ -3,7 +3,7 @@
 window.dashboardData = {
   noProfit: false,
   ready: new Promise((resolve) => { window.__dashboardDataReady = resolve; }),
-  async get(url, signal) {
-    return (await this.ready).get(url, signal);
+  async get(url, signal, onPartial) {
+    return (await this.ready).get(url, signal, onPartial);
   },
 };

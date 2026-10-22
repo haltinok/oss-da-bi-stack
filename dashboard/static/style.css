@@ -155,6 +155,8 @@ button, select { font: inherit; color: inherit; }
   transition: opacity 0.2s;
 }
 .loading .card { opacity: 0.55; }
+/* a panel whose data is still being fetched (the rest of the page is already live) */
+.card.pending, .kpis.pending .card { opacity: 0.55; }
 .card-h { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
 .card-h h2 { font-size: 14.5px; font-weight: 620; margin: 0; }
 .card-h .hint { color: var(--muted); font-size: 12.5px; margin-top: 2px; }

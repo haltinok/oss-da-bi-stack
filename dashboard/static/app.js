@@ -110,14 +110,23 @@ document.addEventListener("focusout", () => tip.classList.remove("on"));
 document.addEventListener("scroll", () => tip.classList.remove("on"), { passive: true });
 
 // --------------------------------------------------------------------- data
-async function getJSON(url, signal) {
-  // An alternative data source (e.g. the Cube adapter) can answer /api/* itself.
-  if (window.dashboardData) return window.dashboardData.get(url, signal);
+async function getJSON(url, signal, onPartial) {
+  // An alternative data source (e.g. the Cube adapter) can answer /api/* itself, and may call
+  // onPartial(patch) as each panel's query finishes, before the whole answer is ready.
+  if (window.dashboardData) return window.dashboardData.get(url, signal, onPartial);
   const res = await fetch(url, { signal, cache: "no-store" });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
 }
+
+// Which on-screen panel each key of the dashboard data feeds; panels waiting for their data are dimmed.
+const PANEL_OF = {
+  kpis: "#kpis", monthly: '[data-panel="trend"]', latest_orders: '[data-panel="feed"]',
+  mix: '[data-panel="mix"]', top_products: '[data-panel="products"]', territories: '[data-panel="territories"]',
+};
+function pend(sel, on) { document.querySelectorAll(sel).forEach((n) => n.classList.toggle("pending", on)); }
+function pendAll(on) { for (const sel of Object.values(PANEL_OF)) pend(sel, on); }
 
 async function loadMeta() {
   state.meta = await getJSON("/api/meta");
@@ -126,26 +135,41 @@ async function loadMeta() {
 
 async function load({ quiet = false } = {}) {
   clearTimeout(state.timer);
+  // A background refresh never cancels a load that is still running (a slow query would
+  // otherwise never finish); a filter change always does.
+  if (quiet && state.busy) { state.timer = setTimeout(() => !document.hidden && load({ quiet: true }), POLL_MS); return; }
   state.inflight?.abort();
   const ctrl = new AbortController();
   state.inflight = ctrl;
-  if (!quiet) document.body.classList.add("loading");
+  state.busy = true;
+  if (!quiet) pendAll(true);
   const q = new URLSearchParams(Object.entries(state.filters).filter(([, v]) => v));
-  try {
-    if (!state.meta || state.polls % META_EVERY === 0) await loadMeta();
-    state.data = await getJSON(`/api/dashboard?${q}`, ctrl.signal);
+  // Each panel's data lands here as soon as its query returns; a stale answer (the filters
+  // have changed since) is dropped.
+  const part = (patch) => {
+    if (ctrl.signal.aborted) return;
+    state.data = { ...(state.data || {}), ...patch };
     state.noProfit = !!window.dashboardData?.noProfit;
-    state.polls++;
     $("#error").hidden = true;
     renderAll();
+    for (const [key, sel] of Object.entries(PANEL_OF)) if (key in patch) pend(sel, false);
     setLive(true);
+  };
+  try {
+    if (!state.meta || state.polls % META_EVERY === 0) await loadMeta();
+    // quiet refreshes apply only the final result, so a slow figure does not blink back to "…"
+    const data = await getJSON(`/api/dashboard?${q}`, ctrl.signal, quiet ? null : part);
+    part(data);
+    pendAll(false);
+    state.polls++;
   } catch (err) {
     if (err.name === "AbortError") return;
     setLive(false, err.message);
     if (!state.data) { $("#error").hidden = false; $("#error").textContent = `Could not load the dashboard: ${err.message}`; }
   } finally {
     if (state.inflight === ctrl) {
-      document.body.classList.remove("loading");
+      state.busy = false;
+      pendAll(false);
       state.timer = setTimeout(() => !document.hidden && load({ quiet: true }), POLL_MS);
     }
   }
@@ -277,14 +301,15 @@ for (const btn of document.querySelectorAll(".tbl-toggle")) {
 function renderAll() {
   if (!state.data) return;
   tips.clear();
-  const months = monthSeries(state.data.monthly);
-  renderKpis(months);
-  renderTrend(months);
+  const d = state.data;
+  const months = d.monthly ? monthSeries(d.monthly) : [];
+  if (d.kpis) renderKpis(months);
+  if (d.monthly) renderTrend(months);
   if (state.noProfit) { const mh = $("#margin"); mh.hidden = true; mh.previousElementSibling.hidden = true; }
-  renderFeed();
-  renderMix();
-  renderProducts();
-  renderTerritories();
+  if (d.latest_orders) renderFeed();
+  if (d.mix) renderMix();
+  if (d.top_products) renderProducts();
+  if (d.territories) renderTerritories();
   renderNotes();
 }
 
@@ -461,7 +486,7 @@ function monthSeries(rows) {
   for (const r of rows) {
     const m = by.get(r.month) || { month: r.month, revenue: 0, gross_profit: 0, orders: 0, units: 0, ch: {} };
     m.ch[r.channel] = r;
-    m.revenue += r.revenue; m.gross_profit = r.gross_profit == null || m.gross_profit == null ? null : m.gross_profit + r.gross_profit; m.orders += r.orders; m.units += r.units;
+    m.revenue += r.revenue; m.gross_profit = r.gross_profit == null || m.gross_profit == null ? null : m.gross_profit + r.gross_profit; m.orders = r.orders == null || m.orders == null ? null : m.orders + r.orders; m.units += r.units;
     by.set(r.month, m);
   }
   const keys = [...by.keys()].sort();
@@ -506,8 +531,11 @@ function renderKpis(months) {
       const txt = k.points ? `${Math.abs(d).toFixed(1)} pp` : pct(Math.abs(d));
       delta = `<span role="img" aria-label="${d >= 0 ? "up" : "down"}">${d >= 0 ? "▲" : "▼"}</span>${txt} <span class="vs">vs FY${fy - 1}</span>`;
     }
+    // Orders / average order value can arrive after the rest (the exact count is a slow query).
+    const late = state.data.ordersPending && (k.label === "Orders" || k.label === "Avg order value");
+    const shown = late ? `<span title="still counting orders">…</span>` : k.fmt(v);
     const tile = el("div", { class: "card kpi" },
-      `<div class="label">${k.label}</div><div class="value">${k.fmt(v)}</div><div class="delta ${cls}">${delta}</div>`);
+      `<div class="label">${k.label}</div><div class="value">${shown}</div><div class="delta ${cls}">${delta}</div>`);
     tile.append(sparkline(series.map((m) => (m.revenue ? k.get(m) : null)), series, k));
     host.append(tile);
   }

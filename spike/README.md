@@ -30,6 +30,7 @@ Cube builds its rollups in the background on first start (about 2 h at 500M, on 
 | Which rollup serves which dashboard query | `uv run --with pyjwt python -I spike/cube/probe.py` |
 | RLS + auth (29 tests) | `uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest spike/cube/tests -v` |
 | Dashboard in a real browser, per role | `uv run --with playwright python -I spike/dashboard/e2e.py` |
+| Progressive rendering + cancel on filter change | `uv run --with playwright python -I spike/dashboard/progressive.py na_manager "Mountain Bikes"` |
 | Latency per dashboard query, rollup vs direct | `uv run --with pyjwt --with requests python -I spike/bench/bench.py --label 500m` |
 | Concurrent users with RLS | `uv run --with pyjwt --with requests python -I spike/bench/load.py --label 500m --users 1,10,25` |
 (all after `set -a; . ./.env.spike; set +a`)
