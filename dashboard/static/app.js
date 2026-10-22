@@ -34,7 +34,7 @@ const pct = (v, d = 1) => {
   const txt = Math.abs(v * 100).toFixed(d);
   return (v < 0 && +txt !== 0 ? "−" : "") + txt + "%"; // no "−0%" for tiny negatives
 };
-const ratio = (a, b) => (b ? a / b : null);
+const ratio = (a, b) => (b && a != null ? a / b : null);
 const fyOf = (iso) => { const [y, m] = iso.split("-").map(Number); return m >= 7 ? y + 1 : y; };
 const fyRange = (fy) => `Jul ${String(fy - 1).slice(2)} – Jun ${String(fy).slice(2)}`;
 const monthLabel = (iso, withYear = true) => {
@@ -110,12 +110,54 @@ document.addEventListener("focusout", () => tip.classList.remove("on"));
 document.addEventListener("scroll", () => tip.classList.remove("on"), { passive: true });
 
 // --------------------------------------------------------------------- data
-async function getJSON(url, signal) {
+async function getJSON(url, signal, onPartial) {
+  // An alternative data source (e.g. the Cube adapter) can answer /api/* itself, and may call
+  // onPartial(patch) as each panel's query finishes, before the whole answer is ready.
+  if (window.dashboardData) return window.dashboardData.get(url, signal, onPartial);
   const res = await fetch(url, { signal, cache: "no-store" });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
 }
+
+// Which on-screen panel each key of the dashboard data feeds; panels waiting for their data are dimmed.
+const PANEL_OF = {
+  kpis: "#kpis", monthly: '[data-panel="trend"]', latest_orders: '[data-panel="feed"]',
+  mix: '[data-panel="mix"]', top_products: '[data-panel="products"]', territories: '[data-panel="territories"]',
+};
+// ---- Per-panel load timers: a spinner with the running seconds while a panel waits, then "✓ 1.4s".
+const PANEL_KEY = { trend: "monthly", feed: "latest_orders", mix: "mix", products: "top_products", territories: "territories" };
+const TIMED = new Set(["kpis", "monthly", "mix", "top_products", "territories", "latest_orders"]);
+const timerHtml = (key) => `<span class="timer" data-key="${key}"><i class="spin"></i><b></b></span>`;
+function mountTimers() {
+  for (const card of document.querySelectorAll("[data-panel]")) {
+    const head = card.querySelector(".card-h");
+    if (!head || head.querySelector(".timer")) continue;
+    head.insertBefore(el("span", { class: "timer-wrap" }, timerHtml(PANEL_KEY[card.dataset.panel])), head.querySelector(".tbl-toggle"));
+  }
+}
+function tick() {
+  const now = performance.now();
+  for (const t of document.querySelectorAll(".timer")) {
+    const done = state.timing && state.timing[t.dataset.key];
+    const running = state.t0 != null && state.timing && done == null && state.busy;
+    t.classList.toggle("done", done != null);
+    t.classList.toggle("run", !!running);
+    const b = t.querySelector("b");
+    b.textContent = done != null ? `${(done / 1000).toFixed(1)}s` : running ? `${((now - state.t0) / 1000).toFixed(1)}s` : "";
+  }
+}
+function startTicker() { clearInterval(state.ticker); state.ticker = setInterval(tick, 100); }
+function stopTicker() { clearInterval(state.ticker); tick(); }
+function recordTimes(patch) {
+  const at = performance.now() - state.t0;
+  for (const k of Object.keys(patch)) if (TIMED.has(k) && !(k in state.timing)) state.timing[k] = at;
+  // the Orders / Avg order value tiles finish when the orders figure is no longer pending
+  if (state.data.kpis && !state.data.ordersPending && !("orders" in state.timing)) state.timing.orders = at;
+}
+
+function pend(sel, on) { document.querySelectorAll(sel).forEach((n) => n.classList.toggle("pending", on)); }
+function pendAll(on) { for (const sel of Object.values(PANEL_OF)) pend(sel, on); }
 
 async function loadMeta() {
   state.meta = await getJSON("/api/meta");
@@ -124,25 +166,44 @@ async function loadMeta() {
 
 async function load({ quiet = false } = {}) {
   clearTimeout(state.timer);
+  // A background refresh never cancels a load that is still running (a slow query would
+  // otherwise never finish); a filter change always does.
+  if (quiet && state.busy) { state.timer = setTimeout(() => !document.hidden && load({ quiet: true }), POLL_MS); return; }
   state.inflight?.abort();
   const ctrl = new AbortController();
   state.inflight = ctrl;
-  if (!quiet) document.body.classList.add("loading");
+  state.busy = true;
+  if (!quiet) { state.t0 = performance.now(); state.timing = {}; startTicker(); pendAll(true); }
   const q = new URLSearchParams(Object.entries(state.filters).filter(([, v]) => v));
-  try {
-    if (!state.meta || state.polls % META_EVERY === 0) await loadMeta();
-    state.data = await getJSON(`/api/dashboard?${q}`, ctrl.signal);
-    state.polls++;
+  // Each panel's data lands here as soon as its query returns; a stale answer (the filters
+  // have changed since) is dropped.
+  const part = (patch) => {
+    if (ctrl.signal.aborted) return;
+    state.data = { ...(state.data || {}), ...patch };
+    state.noProfit = !!window.dashboardData?.noProfit;
+    if (!quiet) recordTimes(patch);
     $("#error").hidden = true;
     renderAll();
+    tick();
+    for (const [key, sel] of Object.entries(PANEL_OF)) if (key in patch) pend(sel, false);
     setLive(true);
+  };
+  try {
+    if (!state.meta || state.polls % META_EVERY === 0) await loadMeta();
+    // quiet refreshes apply only the final result, so a slow figure does not blink back to "…"
+    const data = await getJSON(`/api/dashboard?${q}`, ctrl.signal, quiet ? null : part);
+    part(data);
+    pendAll(false);
+    state.polls++;
   } catch (err) {
     if (err.name === "AbortError") return;
     setLive(false, err.message);
     if (!state.data) { $("#error").hidden = false; $("#error").textContent = `Could not load the dashboard: ${err.message}`; }
   } finally {
     if (state.inflight === ctrl) {
-      document.body.classList.remove("loading");
+      state.busy = false;
+      pendAll(false);
+      stopTicker();
       state.timer = setTimeout(() => !document.hidden && load({ quiet: true }), POLL_MS);
     }
   }
@@ -274,13 +335,15 @@ for (const btn of document.querySelectorAll(".tbl-toggle")) {
 function renderAll() {
   if (!state.data) return;
   tips.clear();
-  const months = monthSeries(state.data.monthly);
-  renderKpis(months);
-  renderTrend(months);
-  renderFeed();
-  renderMix();
-  renderProducts();
-  renderTerritories();
+  const d = state.data;
+  const months = d.monthly ? monthSeries(d.monthly) : [];
+  if (d.kpis) renderKpis(months);
+  if (d.monthly) renderTrend(months);
+  if (state.noProfit) { const mh = $("#margin"); mh.hidden = true; mh.previousElementSibling.hidden = true; }
+  if (d.latest_orders) renderFeed();
+  if (d.mix) renderMix();
+  if (d.top_products) renderProducts();
+  if (d.territories) renderTerritories();
   renderNotes();
 }
 
@@ -292,7 +355,7 @@ const SHOW = {
   date: (v) => (v ? new Date(v).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : ""),
   auto: (c) => (c?.v == null ? "—" : SHOW[c.t](c.v)), // a { v, t } cell
 };
-const col = (label, type, get, fmt) => ({ label, type, get, fmt: fmt || SHOW[type] });
+const col = (label, type, get, fmt, profit = false) => ({ label, type, get, fmt: fmt || SHOW[type], profit });
 const chRev = (c) => (r) => r.ch?.[c]?.revenue ?? 0;
 const margin = (r) => ratio(r.gross_profit, r.revenue);
 
@@ -301,7 +364,7 @@ const DATASETS = {
     const { current: c, previous: p } = state.data.kpis;
     const fy = state.filters.fy;
     // Mixed units per row, so each value cell carries its own type.
-    const rows = KPIS.map((k) => {
+    const rows = KPIS.filter((k) => !(k.profit && state.noProfit)).map((k) => {
       const v = c ? k.get(c) : null, pv = p ? k.get(p) : null;
       const type = k.points ? "pct" : k.fmt === money ? "money" : "int";
       const change = v == null || pv == null || !pv ? null : k.points ? v - pv : (v - pv) / Math.abs(pv);
@@ -327,8 +390,8 @@ const DATASETS = {
       col("Internet", "money", chRev("Internet")),
       col("Reseller", "money", chRev("Reseller")),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Orders", "int", (r) => r.orders),
       col("Units", "int", (r) => r.units),
     ],
@@ -355,8 +418,8 @@ const DATASETS = {
       col("Category", "text", (r) => r.category),
       col("Subcategory", "text", (r) => r.subcategory),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Orders", "int", (r) => r.orders),
       col("Units", "int", (r) => r.units),
     ],
@@ -370,8 +433,8 @@ const DATASETS = {
       col("Internet", "money", (r) => r.internet ?? 0),
       col("Reseller", "money", (r) => r.reseller ?? 0),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Units", "int", (r) => r.units),
     ],
     rows: state.data.top_products,
@@ -385,8 +448,8 @@ const DATASETS = {
       col("Internet", "money", (r) => r.internet ?? 0),
       col("Reseller", "money", (r) => r.reseller ?? 0),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Orders", "int", (r) => r.orders),
     ],
     rows: state.data.territories,
@@ -394,6 +457,7 @@ const DATASETS = {
 };
 
 function table({ columns, rows }) {
+  if (state.noProfit) columns = columns.filter((c) => !c.profit);
   const num = (c) => (c.type !== "text" && c.type !== "date" ? "n" : "");
   const head = columns.map((c) => `<th class="${num(c)}">${esc(c.label)}</th>`).join("");
   const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="${num(c)}">${esc(c.fmt(c.get(r)))}</td>`).join("")}</tr>`).join("");
@@ -422,6 +486,7 @@ function filterSummary(ignores, note) {
 }
 
 function toSheet(d) {
+  if (state.noProfit) d = { ...d, columns: d.columns.filter((c) => !c.profit) };
   return {
     name: d.name,
     title: d.title,
@@ -455,7 +520,7 @@ function monthSeries(rows) {
   for (const r of rows) {
     const m = by.get(r.month) || { month: r.month, revenue: 0, gross_profit: 0, orders: 0, units: 0, ch: {} };
     m.ch[r.channel] = r;
-    m.revenue += r.revenue; m.gross_profit += r.gross_profit; m.orders += r.orders; m.units += r.units;
+    m.revenue += r.revenue; m.gross_profit = r.gross_profit == null || m.gross_profit == null ? null : m.gross_profit + r.gross_profit; m.orders = r.orders == null || m.orders == null ? null : m.orders + r.orders; m.units += r.units;
     by.set(r.month, m);
   }
   const keys = [...by.keys()].sort();
@@ -476,8 +541,8 @@ function monthSeries(rows) {
 // ---- KPI tiles
 const KPIS = [
   { label: "Revenue", get: (r) => r.revenue, fmt: money },
-  { label: "Gross profit", get: (r) => r.gross_profit, fmt: money },
-  { label: "Gross margin", get: (r) => ratio(r.gross_profit, r.revenue), fmt: (v) => pct(v), points: true },
+  { label: "Gross profit", get: (r) => r.gross_profit, fmt: money, profit: true },
+  { label: "Gross margin", get: (r) => ratio(r.gross_profit, r.revenue), fmt: (v) => pct(v), points: true, profit: true },
   { label: "Orders", get: (r) => r.orders, fmt: int },
   { label: "Avg order value", get: (r) => ratio(r.revenue, r.orders), fmt: money },
   { label: "Units sold", get: (r) => r.units, fmt: int },
@@ -489,7 +554,7 @@ function renderKpis(months) {
   const host = $("#kpis");
   host.innerHTML = "";
   const series = months.filter((m) => !m.break);
-  for (const k of KPIS) {
+  for (const k of KPIS.filter((x) => !(x.profit && state.noProfit))) {
     const v = current ? k.get(current) : null;
     const p = previous ? k.get(previous) : null;
     let delta = `<span class="vs">${fy ? `No FY${fy - 1} data to compare` : "All fiscal years"}</span>`;
@@ -500,8 +565,11 @@ function renderKpis(months) {
       const txt = k.points ? `${Math.abs(d).toFixed(1)} pp` : pct(Math.abs(d));
       delta = `<span role="img" aria-label="${d >= 0 ? "up" : "down"}">${d >= 0 ? "▲" : "▼"}</span>${txt} <span class="vs">vs FY${fy - 1}</span>`;
     }
+    // Orders / average order value can arrive after the rest (the exact count is a slow query).
+    const late = state.data.ordersPending && (k.label === "Orders" || k.label === "Avg order value");
+    const shown = late ? `<span title="still counting orders">…</span>` : k.fmt(v);
     const tile = el("div", { class: "card kpi" },
-      `<div class="label">${k.label}</div><div class="value">${k.fmt(v)}</div><div class="delta ${cls}">${delta}</div>`);
+      `<div class="label">${k.label}${timerHtml(k.label === "Orders" || k.label === "Avg order value" ? "orders" : "kpis")}</div><div class="value">${shown}</div><div class="delta ${cls}">${delta}</div>`);
     tile.append(sparkline(series.map((m) => (m.revenue ? k.get(m) : null)), series, k));
     host.append(tile);
   }
@@ -635,7 +703,7 @@ function renderTrend(months) {
 function renderMargin(months, W, L, R, band, pos) {
   const host = $("#margin");
   const H = 120, T = 8, B = 8;
-  const vals = months.map((m) => (m.break || !m.revenue ? null : m.gross_profit / m.revenue));
+  const vals = months.map((m) => (m.break || !m.revenue || m.gross_profit == null ? null : m.gross_profit / m.revenue));
   const real = vals.filter((v) => v != null);
   if (!real.length) { host.innerHTML = ""; return; }
   const ticks = niceTicks(Math.min(0, ...real), Math.max(0.05, ...real), 3);
@@ -752,7 +820,7 @@ function renderMix() {
   const cats = new Map();
   for (const r of rows) {
     const c = cats.get(r.category) || { name: r.category, value: 0, gp: 0, subs: [] };
-    c.value += r.revenue; c.gp += r.gross_profit; c.subs.push(r); cats.set(r.category, c);
+    c.value += r.revenue; c.gp = r.gross_profit == null || c.gp == null ? null : c.gp + r.gross_profit; c.subs.push(r); cats.set(r.category, c);
   }
   for (const c of squarify([...cats.values()], 0, 0, W, H)) {
     // Selection is drawn as an outline + check mark, never by fading the rest.
@@ -774,7 +842,7 @@ function renderMix() {
     const big = c.subs.filter((s) => s.revenue / total >= 0.012);
     const small = c.subs.filter((s) => s.revenue / total < 0.012);
     if (small.length > 1) {
-      const agg = (k) => small.reduce((a, s) => a + s[k], 0);
+      const agg = (k) => (small.some((s) => s[k] == null) ? null : small.reduce((a, s) => a + s[k], 0));
       big.push({ category: c.name, subcategory: `Other (${small.length})`, revenue: agg("revenue"), gross_profit: agg("gross_profit"), units: agg("units") });
     } else big.push(...small);
     const inner = squarify(big.map((s) => ({ ...s, value: s.revenue })), c.x, c.y + HEAD, c.w, Math.max(0, c.h - HEAD));
@@ -890,4 +958,5 @@ new ResizeObserver(() => {
 }).observe($("#trend"));
 
 readUrl();
+mountTimers();
 load();

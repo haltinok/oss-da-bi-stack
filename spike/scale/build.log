@@ -1,0 +1,62 @@
+  scale_500m.sales_order_header copies 0-199: 8s
+  scale_500m.sales_order_header copies 200-399: 10s
+  scale_500m.sales_order_header copies 400-599: 12s
+  scale_500m.sales_order_header copies 600-799: 9s
+  scale_500m.sales_order_header copies 800-999: 12s
+  scale_500m.sales_order_header copies 1000-1199: 12s
+  scale_500m.sales_order_header copies 1200-1399: 13s
+  scale_500m.sales_order_header copies 1400-1599: 10s
+  scale_500m.sales_order_header copies 1600-1799: 11s
+  scale_500m.sales_order_header copies 1800-1999: 11s
+  scale_500m.sales_order_header copies 2000-2199: 11s
+  scale_500m.sales_order_header copies 2200-2399: 14s
+  scale_500m.sales_order_header copies 2400-2599: 13s
+  scale_500m.sales_order_header copies 2600-2799: 15s
+  scale_500m.sales_order_header copies 2800-2999: 15s
+  scale_500m.sales_order_header copies 3000-3199: 17s
+  scale_500m.sales_order_header copies 3200-3399: 18s
+  scale_500m.sales_order_header copies 3400-3599: 32s
+  scale_500m.sales_order_header copies 3600-3799: 27s
+  scale_500m.sales_order_header copies 3800-3999: 19s
+  scale_500m.sales_order_header copies 4000-4119: 9s
+  scale_500m.sales_order_detail copies 0-199: 35s
+  scale_500m.sales_order_detail copies 200-399: 27s
+  scale_500m.sales_order_detail copies 400-599: 30s
+  scale_500m.sales_order_detail copies 600-799: 32s
+  scale_500m.sales_order_detail copies 800-999: 27s
+  scale_500m.sales_order_detail copies 1000-1199: 27s
+  scale_500m.sales_order_detail copies 1200-1399: 34s
+  scale_500m.sales_order_detail copies 1400-1599: 28s
+  scale_500m.sales_order_detail copies 1600-1799: 24s
+  scale_500m.sales_order_detail copies 1800-1999: 25s
+  scale_500m.sales_order_detail copies 2000-2199: 24s
+  scale_500m.sales_order_detail copies 2200-2399: 26s
+  scale_500m.sales_order_detail copies 2400-2599: 27s
+  scale_500m.sales_order_detail copies 2600-2799: 28s
+  scale_500m.sales_order_detail copies 2800-2999: 31s
+  scale_500m.sales_order_detail copies 3000-3199: 34s
+  scale_500m.sales_order_detail copies 3200-3399: 40s
+  scale_500m.sales_order_detail copies 3400-3599: 41s
+  scale_500m.sales_order_detail copies 3600-3799: 30s
+  scale_500m.sales_order_detail copies 3800-3999: 32s
+  scale_500m.sales_order_detail copies 4000-4119: 18s
+  scale_500m.customer: 2s
+  scale_500m.person: 7s
+  scale_500m.email_address: 2s
+  scale_500m.business_entity_address: 2s
+  scale_500m.address: 2s
+  scale_100m.sales_order_header: 48s
+  scale_100m.sales_order_detail: 89s
+  scale_100m.customer: 1s
+  scale_100m.person: 7s
+  scale_100m.email_address: 1s
+  scale_100m.business_entity_address: 1s
+  scale_100m.address: 2s
+  scale_10m.sales_order_header: 5s
+  scale_10m.sales_order_detail: 10s
+  scale_10m.customer: 2s
+  scale_10m.person: 8s
+  scale_10m.email_address: 2s
+  scale_10m.business_entity_address: 1s
+  scale_10m.address: 3s
+done

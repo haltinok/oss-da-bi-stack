@@ -1,0 +1,182 @@
+# Spike stack: StarRocks + Cube (+ Cube Store) + Keycloak + auth service.
+# Separate from docker-compose.yml; run with:
+#   docker compose -f docker-compose.spike.yml --env-file .env.spike up -d
+# See starrocks-cube-spike.md. Host ports bind to 127.0.0.1 only and avoid the
+# ports used by the main stack.
+
+name: spike
+
+x-healthy: &restart
+  restart: unless-stopped
+
+services:
+  starrocks:
+    <<: *restart
+    image: starrocks/allin1-ubuntu:${STARROCKS_VERSION:-3.3-latest}
+    # FE + BE in one container; give the Docker VM / host >= 32 GB for the 500M scale (16 GB OOMs on count(distinct)).
+    mem_limit: ${STARROCKS_MEM_LIMIT:-32g}
+    ports:
+      - "127.0.0.1:${STARROCKS_MYSQL_PORT:-9030}:9030"
+      - "127.0.0.1:${STARROCKS_HTTP_PORT:-8030}:8030"
+    volumes:
+      - starrocks_fe:/data/deploy/starrocks/fe/meta
+      - starrocks_be:/data/deploy/starrocks/be/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8030/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  starrocks-init:
+    image: starrocks/allin1-ubuntu:${STARROCKS_VERSION:-3.3-latest}
+    depends_on:
+      starrocks:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["mysql", "-hstarrocks", "-P9030", "-uroot", "-e", "CREATE DATABASE IF NOT EXISTS ${STARROCKS_DB:-adventureworks_dwh}"]
+
+  cubestore:
+    <<: *restart
+    image: cubejs/cubestore:${CUBE_VERSION:-latest}
+    environment:
+      CUBESTORE_SERVER_NAME: cubestore:9999
+      CUBESTORE_META_PORT: "9999"
+      CUBESTORE_WORKERS: cubestore-worker:10001
+      CUBESTORE_REMOTE_DIR: /cube/data
+    volumes:
+      - cubestore_data:/cube/data
+
+  cubestore-worker:
+    <<: *restart
+    image: cubejs/cubestore:${CUBE_VERSION:-latest}
+    depends_on:
+      - cubestore
+    environment:
+      CUBESTORE_SERVER_NAME: cubestore-worker:10001
+      CUBESTORE_WORKER_PORT: "10001"
+      CUBESTORE_WORKERS: cubestore-worker:10001
+      CUBESTORE_META_ADDR: cubestore:9999
+      CUBESTORE_REMOTE_DIR: /cube/data
+    volumes:
+      - cubestore_data:/cube/data
+
+  cube:
+    <<: *restart
+    image: cubejs/cube:${CUBE_VERSION:-latest}
+    depends_on:
+      starrocks-init:
+        condition: service_completed_successfully
+      cubestore:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${CUBE_PORT:-4000}:4000"
+    environment:
+      # Production mode: no Playground, no stack traces in error bodies. The schema name is
+      # pinned to the one the dev-mode run built so the existing 500M rollups are reused.
+      CUBEJS_DEV_MODE: ${CUBE_DEV_MODE:-false}
+      CUBEJS_PRE_AGGREGATIONS_SCHEMA: dev_pre_aggregations
+      CUBEJS_REFRESH_WORKER: "${CUBE_REFRESH_WORKER:-true}"
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env.spike}
+      # StarRocks speaks the MySQL protocol.
+      CUBEJS_DB_TYPE: mysql
+      CUBEJS_DB_HOST: starrocks
+      CUBEJS_DB_PORT: "9030"
+      # cube_ro can only see the mart; the models use qualified mart.* names regardless.
+      CUBEJS_DB_NAME: ${CUBE_DB_NAME:-mart}
+      # Read-only user (spike/starrocks/grants.sh); the mart is all Cube needs.
+      CUBEJS_DB_USER: ${CUBE_DB_USER:-cube_ro}
+      CUBEJS_DB_PASS: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env.spike}
+      CUBEJS_CUBESTORE_HOST: cubestore
+      CUBEJS_SQL_PORT: "15432"
+      # StarRocks (27 GB BE) OOMs on several concurrent 500M-row scans; Cube defaults to 8+.
+      # Whole-table count_distinct rollups legitimately run for many minutes (default timeout: 10).
+      CUBEJS_DB_QUERY_TIMEOUT: "7200"
+      CUBEJS_CONCURRENCY: "${CUBE_CONCURRENCY:-2}"
+      CUBEJS_DB_MAX_POOL: "${CUBE_CONCURRENCY:-2}"
+      CUBEJS_SQL_USER: ${CUBE_SQL_USER:-cube}
+      CUBEJS_SQL_PASSWORD: ${CUBE_SQL_PASSWORD:?set CUBE_SQL_PASSWORD in .env.spike}
+    volumes:
+      - ./spike/cube:/cube/conf
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  keycloak:
+    <<: *restart
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.0}
+    # Dev mode: embedded H2, no TLS. Spike only.
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env.spike}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      # Tokens carry this issuer whichever URL they were fetched from, so the auth
+      # service can validate them; the backchannel stays reachable as keycloak:8080.
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:?set TEST_USER_PASSWORD in .env.spike}
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./spike/keycloak/realm-spike.json:/opt/keycloak/data/import/realm-spike.json:ro
+    healthcheck:
+      # The image has no curl; probe the management port (9000) via bash.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  auth:
+    <<: *restart
+    build: ./spike/auth
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${AUTH_PORT:-8200}:8200"
+    environment:
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env.spike}
+      CUBE_JWT_TTL_SECONDS: ${CUBE_JWT_TTL_SECONDS:-900}
+      # Issuer as it appears in tokens (public URL), and where to fetch the keys from.
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
+      ALLOWED_ORIGINS: http://localhost:${DASHBOARD_SPIKE_PORT:-8250}
+      STARROCKS_HOST: starrocks
+      AUTH_DB_USER: ${AUTH_DB_USER:-auth_ro}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env.spike}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  dashboard-spike:
+    <<: *restart
+    image: nginx:1.27-alpine
+    depends_on:
+      auth:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${DASHBOARD_SPIKE_PORT:-8250}:8250"
+    volumes:
+      - ./dashboard/static:/usr/share/nginx/html:ro
+      - ./spike/dashboard:/srv/spike:ro
+      - ./spike/dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8250/"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  starrocks_fe:
+  starrocks_be:
+  cubestore_data:
+  keycloak_data:

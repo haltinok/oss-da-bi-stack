@@ -1,0 +1,22 @@
+cubes:
+  - name: dates
+    sql_table: mart.dim_date
+    data_source: default
+
+    dimensions:
+      - name: key
+        sql: date_key
+        type: number
+        primary_key: true
+      - name: full_date
+        sql: full_date
+        type: time
+      - name: fiscal_year
+        sql: fiscal_year
+        type: number
+      - name: calendar_year
+        sql: calendar_year
+        type: number
+      - name: month_name
+        sql: month_name
+        type: string

@@ -1,0 +1,17 @@
+cubes:
+  - name: customers
+    sql_table: mart.dim_customer
+    data_source: default
+
+    dimensions:
+      - name: key
+        sql: customer_key
+        type: number
+        primary_key: true
+      - name: last_name
+        sql: last_name
+        type: string
+
+    measures:
+      - name: count
+        type: count
