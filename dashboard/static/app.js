@@ -34,7 +34,7 @@ const pct = (v, d = 1) => {
   const txt = Math.abs(v * 100).toFixed(d);
   return (v < 0 && +txt !== 0 ? "−" : "") + txt + "%"; // no "−0%" for tiny negatives
 };
-const ratio = (a, b) => (b ? a / b : null);
+const ratio = (a, b) => (b && a != null ? a / b : null);
 const fyOf = (iso) => { const [y, m] = iso.split("-").map(Number); return m >= 7 ? y + 1 : y; };
 const fyRange = (fy) => `Jul ${String(fy - 1).slice(2)} – Jun ${String(fy).slice(2)}`;
 const monthLabel = (iso, withYear = true) => {
@@ -111,6 +111,8 @@ document.addEventListener("scroll", () => tip.classList.remove("on"), { passive:
 
 // --------------------------------------------------------------------- data
 async function getJSON(url, signal) {
+  // An alternative data source (e.g. the Cube adapter) can answer /api/* itself.
+  if (window.dashboardData) return window.dashboardData.get(url, signal);
   const res = await fetch(url, { signal, cache: "no-store" });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -132,6 +134,7 @@ async function load({ quiet = false } = {}) {
   try {
     if (!state.meta || state.polls % META_EVERY === 0) await loadMeta();
     state.data = await getJSON(`/api/dashboard?${q}`, ctrl.signal);
+    state.noProfit = !!window.dashboardData?.noProfit;
     state.polls++;
     $("#error").hidden = true;
     renderAll();
@@ -277,6 +280,7 @@ function renderAll() {
   const months = monthSeries(state.data.monthly);
   renderKpis(months);
   renderTrend(months);
+  if (state.noProfit) { const mh = $("#margin"); mh.hidden = true; mh.previousElementSibling.hidden = true; }
   renderFeed();
   renderMix();
   renderProducts();
@@ -292,7 +296,7 @@ const SHOW = {
   date: (v) => (v ? new Date(v).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : ""),
   auto: (c) => (c?.v == null ? "—" : SHOW[c.t](c.v)), // a { v, t } cell
 };
-const col = (label, type, get, fmt) => ({ label, type, get, fmt: fmt || SHOW[type] });
+const col = (label, type, get, fmt, profit = false) => ({ label, type, get, fmt: fmt || SHOW[type], profit });
 const chRev = (c) => (r) => r.ch?.[c]?.revenue ?? 0;
 const margin = (r) => ratio(r.gross_profit, r.revenue);
 
@@ -301,7 +305,7 @@ const DATASETS = {
     const { current: c, previous: p } = state.data.kpis;
     const fy = state.filters.fy;
     // Mixed units per row, so each value cell carries its own type.
-    const rows = KPIS.map((k) => {
+    const rows = KPIS.filter((k) => !(k.profit && state.noProfit)).map((k) => {
       const v = c ? k.get(c) : null, pv = p ? k.get(p) : null;
       const type = k.points ? "pct" : k.fmt === money ? "money" : "int";
       const change = v == null || pv == null || !pv ? null : k.points ? v - pv : (v - pv) / Math.abs(pv);
@@ -327,8 +331,8 @@ const DATASETS = {
       col("Internet", "money", chRev("Internet")),
       col("Reseller", "money", chRev("Reseller")),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Orders", "int", (r) => r.orders),
       col("Units", "int", (r) => r.units),
     ],
@@ -355,8 +359,8 @@ const DATASETS = {
       col("Category", "text", (r) => r.category),
       col("Subcategory", "text", (r) => r.subcategory),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Orders", "int", (r) => r.orders),
       col("Units", "int", (r) => r.units),
     ],
@@ -370,8 +374,8 @@ const DATASETS = {
       col("Internet", "money", (r) => r.internet ?? 0),
       col("Reseller", "money", (r) => r.reseller ?? 0),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Units", "int", (r) => r.units),
     ],
     rows: state.data.top_products,
@@ -385,8 +389,8 @@ const DATASETS = {
       col("Internet", "money", (r) => r.internet ?? 0),
       col("Reseller", "money", (r) => r.reseller ?? 0),
       col("Revenue", "money", (r) => r.revenue),
-      col("Gross profit", "money", (r) => r.gross_profit),
-      col("Gross margin", "pct", margin),
+      col("Gross profit", "money", (r) => r.gross_profit, null, true),
+      col("Gross margin", "pct", margin, null, true),
       col("Orders", "int", (r) => r.orders),
     ],
     rows: state.data.territories,
@@ -394,6 +398,7 @@ const DATASETS = {
 };
 
 function table({ columns, rows }) {
+  if (state.noProfit) columns = columns.filter((c) => !c.profit);
   const num = (c) => (c.type !== "text" && c.type !== "date" ? "n" : "");
   const head = columns.map((c) => `<th class="${num(c)}">${esc(c.label)}</th>`).join("");
   const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="${num(c)}">${esc(c.fmt(c.get(r)))}</td>`).join("")}</tr>`).join("");
@@ -422,6 +427,7 @@ function filterSummary(ignores, note) {
 }
 
 function toSheet(d) {
+  if (state.noProfit) d = { ...d, columns: d.columns.filter((c) => !c.profit) };
   return {
     name: d.name,
     title: d.title,
@@ -455,7 +461,7 @@ function monthSeries(rows) {
   for (const r of rows) {
     const m = by.get(r.month) || { month: r.month, revenue: 0, gross_profit: 0, orders: 0, units: 0, ch: {} };
     m.ch[r.channel] = r;
-    m.revenue += r.revenue; m.gross_profit += r.gross_profit; m.orders += r.orders; m.units += r.units;
+    m.revenue += r.revenue; m.gross_profit = r.gross_profit == null || m.gross_profit == null ? null : m.gross_profit + r.gross_profit; m.orders += r.orders; m.units += r.units;
     by.set(r.month, m);
   }
   const keys = [...by.keys()].sort();
@@ -476,8 +482,8 @@ function monthSeries(rows) {
 // ---- KPI tiles
 const KPIS = [
   { label: "Revenue", get: (r) => r.revenue, fmt: money },
-  { label: "Gross profit", get: (r) => r.gross_profit, fmt: money },
-  { label: "Gross margin", get: (r) => ratio(r.gross_profit, r.revenue), fmt: (v) => pct(v), points: true },
+  { label: "Gross profit", get: (r) => r.gross_profit, fmt: money, profit: true },
+  { label: "Gross margin", get: (r) => ratio(r.gross_profit, r.revenue), fmt: (v) => pct(v), points: true, profit: true },
   { label: "Orders", get: (r) => r.orders, fmt: int },
   { label: "Avg order value", get: (r) => ratio(r.revenue, r.orders), fmt: money },
   { label: "Units sold", get: (r) => r.units, fmt: int },
@@ -489,7 +495,7 @@ function renderKpis(months) {
   const host = $("#kpis");
   host.innerHTML = "";
   const series = months.filter((m) => !m.break);
-  for (const k of KPIS) {
+  for (const k of KPIS.filter((x) => !(x.profit && state.noProfit))) {
     const v = current ? k.get(current) : null;
     const p = previous ? k.get(previous) : null;
     let delta = `<span class="vs">${fy ? `No FY${fy - 1} data to compare` : "All fiscal years"}</span>`;
@@ -635,7 +641,7 @@ function renderTrend(months) {
 function renderMargin(months, W, L, R, band, pos) {
   const host = $("#margin");
   const H = 120, T = 8, B = 8;
-  const vals = months.map((m) => (m.break || !m.revenue ? null : m.gross_profit / m.revenue));
+  const vals = months.map((m) => (m.break || !m.revenue || m.gross_profit == null ? null : m.gross_profit / m.revenue));
   const real = vals.filter((v) => v != null);
   if (!real.length) { host.innerHTML = ""; return; }
   const ticks = niceTicks(Math.min(0, ...real), Math.max(0.05, ...real), 3);
@@ -752,7 +758,7 @@ function renderMix() {
   const cats = new Map();
   for (const r of rows) {
     const c = cats.get(r.category) || { name: r.category, value: 0, gp: 0, subs: [] };
-    c.value += r.revenue; c.gp += r.gross_profit; c.subs.push(r); cats.set(r.category, c);
+    c.value += r.revenue; c.gp = r.gross_profit == null || c.gp == null ? null : c.gp + r.gross_profit; c.subs.push(r); cats.set(r.category, c);
   }
   for (const c of squarify([...cats.values()], 0, 0, W, H)) {
     // Selection is drawn as an outline + check mark, never by fading the rest.
@@ -774,7 +780,7 @@ function renderMix() {
     const big = c.subs.filter((s) => s.revenue / total >= 0.012);
     const small = c.subs.filter((s) => s.revenue / total < 0.012);
     if (small.length > 1) {
-      const agg = (k) => small.reduce((a, s) => a + s[k], 0);
+      const agg = (k) => (small.some((s) => s[k] == null) ? null : small.reduce((a, s) => a + s[k], 0));
       big.push({ category: c.name, subcategory: `Other (${small.length})`, revenue: agg("revenue"), gross_profit: agg("gross_profit"), units: agg("units") });
     } else big.push(...small);
     const inner = squarify(big.map((s) => ({ ...s, value: s.revenue })), c.x, c.y + HEAD, c.w, Math.max(0, c.h - HEAD));
