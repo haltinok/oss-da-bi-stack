@@ -8,7 +8,6 @@ saves screenshots to spike/dashboard/screenshots/.
 """
 import os
 import pathlib
-import re
 import sys
 import time
 
@@ -42,9 +41,9 @@ with sync_playwright() as p:
         ctx = browser.new_context(viewport={"width": 1500, "height": 1300})
         page = ctx.new_page()
         errors, cube_calls, legacy_calls = [], [], []
-        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.on("request", lambda r: (cube_calls if ":4000/" in r.url else legacy_calls if "/api/" in r.url else []).append(r))
+        page.on("console", lambda m, errors=errors: errors.append(m.text) if m.type == "error" else None)
+        page.on("pageerror", lambda e, errors=errors: errors.append(str(e)))
+        page.on("request", lambda r, cube=cube_calls, legacy=legacy_calls: (cube if ":4000/" in r.url else legacy if "/api/" in r.url else []).append(r))
         page.goto(URL)
         page.wait_for_selector("input#username", timeout=60_000)
         page.fill("input#username", user)

@@ -66,7 +66,7 @@ def same(a, b):
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
     if isinstance(a, tuple) and isinstance(b, tuple):
-        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b, strict=True))
     if isinstance(a, Decimal) and isinstance(b, Decimal):
         return abs(a - b) <= Decimal("0.011")
     return a == b

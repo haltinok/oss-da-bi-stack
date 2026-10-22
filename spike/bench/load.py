@@ -119,7 +119,9 @@ for n in [int(x) for x in args.users.split(",")]:
     stop.set()
     s.join(timeout=15)
     srt = sorted(lat)
-    q = lambda p: srt[min(len(srt) - 1, int(p / 100 * (len(srt) - 1)))] if srt else None  # noqa: E731
+    def q(p, srt=srt):
+        return srt[min(len(srt) - 1, int(p / 100 * (len(srt) - 1)))] if srt else None
+
     rec = {"label": args.label, "note": args.note, "roles": ROLES, "users": n, "duration_s": round(wall), "requests": len(lat) + len(errs), "ok": len(lat), "errors": len(errs),
            "rps": round(len(lat) / wall, 2), "p50": round(statistics.median(lat), 3) if lat else None,
            "p95": round(q(95), 3) if lat else None, "p99": round(q(99), 3) if lat else None, "max": round(max(lat), 3) if lat else None,

@@ -61,7 +61,7 @@ elif cmd == "delete":
     for t in ("Sales.SalesOrderHeaderSalesReason", "Sales.SalesOrderDetail", "Sales.SalesOrderHeader"):
         cur.execute(f"select * from {t} where SalesOrderID in ({inlist})")
         cols = [d[0] for d in cur.description]
-        saved[t] = [dict(zip(cols, map(str, r))) for r in cur.fetchall()]
+        saved[t] = [dict(zip(cols, map(str, r), strict=True)) for r in cur.fetchall()]
         cur.execute(f"delete from {t} where SalesOrderID in ({inlist})")
     conn.commit()
     json.dump(saved, open("spike/ingest/deleted_orders.json", "w"), indent=1)

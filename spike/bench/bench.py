@@ -57,8 +57,8 @@ def pct(xs, p):
 out = open(os.path.join(os.path.dirname(__file__), "results.jsonl"), "a")
 for ch in CH:
     for name, q in panel_queries(ch, fy=args.fy).items():
-        for mode, make, runs in (("rollup", lambda i: vary(q, i), args.runs),
-                                 ("direct", lambda i: vary(defeat_rollups(q, i), i), 0 if args.skip_direct else args.direct_runs)):
+        for mode, make, runs in (("rollup", lambda i, q=q: vary(q, i), args.runs),
+                                 ("direct", lambda i, q=q: vary(defeat_rollups(q, i), i), 0 if args.skip_direct else args.direct_runs)):
             if not runs:
                 continue
             timed(make(1000))  # warm-up (also builds anything missing); never reused below
