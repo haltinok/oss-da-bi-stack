@@ -43,6 +43,17 @@ Reading it:
 - **The expensive shapes are whole-table aggregations** (KPI totals, monthly series, region cross-filters). Filtering by fiscal year makes StarRocks fast on its own because it prunes partitions.
 - A full dashboard page load in the browser (a dozen queries in parallel, signed in through Keycloak), with panels now drawing as they arrive, had every panel drawn in 5.9 s for the admin, 4.6 s for `na_manager` and 7.0 s for `de_rep` (including the Keycloak round trips).
 
+### Demo server at 250M (Contabo: 12 vCPU, 48 GB, NVMe)
+
+The 250M tier (124M internet lines, as reported) built on the demo server with the steps in `spike/README.md` (copy of `raw`, `build.py --only 250m`, dbt into `mart_250m`), served by a second Cube from `spike/bench/run_scale.sh 250m` with the same 500M-tuned model (year-partitioned rollups). Figures as reported from the run on that server:
+
+| | 500M tier, workstation (table above) | 250M tier, demo server |
+|---|---|---|
+| Rollup-served dashboard queries, p95 | 177-463 ms (every query except the one not served by a rollup) | **15-52 ms** (every rollup-served query) |
+| Direct StarRocks, one year aggregated over the internet fact | 1.9-7.8 s for the fiscal-year queries (both channels, 500M) | **0.28 s** over 124M internet lines |
+
+How to read it: the 250M tier has half the rows and runs on different hardware, so the gap to the 500M column is partly size and partly machine, and this run does not separate the two; the two direct figures are not the same query (the 500M ones aggregate both channels), so do not read a ratio into them. What the 250M numbers do show is that rollup-served queries stay far below 100 ms and that a partition-pruned year aggregation straight on StarRocks takes a fraction of a second at 124M lines. Not recorded here, because it was not reported: the number of runs behind each p95, the per-query breakdown, concurrent-user results, and StarRocks memory during the benchmark. The raw files are not in the repository; add them under `bench/` with the label `250m` when available.
+
 ### Concurrent users (500M, rollups, row-level security on)
 
 Virtual users sign in through Keycloak and the auth service as admin / `na_manager` / `de_rep` (round robin) and loop over the dashboard's panel queries with 0.5-1.5 s think time, 90 s per level.
