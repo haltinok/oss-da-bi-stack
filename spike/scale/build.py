@@ -48,10 +48,16 @@ ORDER_KEYS_DDL = {
     "business_entity_address": ("business_entity_id", "address_id", "address_type_id"), "address": ("address_id",),
 }
 
+# The schema holding the unscaled base tables (and the recon_deleted_* views). `raw` on the spike stack, where nothing
+# else uses it. On a server that also runs the live pipeline, `raw` IS the live schema, so there the copy lives in
+# another schema (copy_raw.py --dst-schema raw_spike) and this points at it: SCALE_RAW_SCHEMA=raw_spike.
+RAW = os.environ.get("SCALE_RAW_SCHEMA", "raw")
+
 # Base = the original AdventureWorks orders: drop Phase 1's cloned test orders
 # (ids >= 75124, dated "now") and hard-deleted ones, so shifted dates stay in the past.
 CLEAN = ("sales_order_id < 75124 and sales_order_id not in "
-         "(select sales_order_id from raw.recon_deleted_sales_order_header)")
+         f"(select sales_order_id from {RAW}.recon_deleted_sales_order_header)")
+
 
 db = pymysql.connect(host="127.0.0.1", port=int(os.environ.get("STARROCKS_MYSQL_PORT", "9030")), user="root", autocommit=True, read_timeout=7200)
 cur = db.cursor()
@@ -64,8 +70,8 @@ def run(sql):
 
 
 def cols(table):
-    cur.execute("select column_name, column_type from information_schema.columns where table_schema='raw' "
-                "and table_name=%s and column_name not like '\\_ingestr%%' order by ordinal_position", (table,))
+    cur.execute("select column_name, column_type from information_schema.columns where table_schema=%s "
+                "and table_name=%s and column_name not like '\\_ingestr%%' order by ordinal_position", (RAW, table))
     return cur.fetchall()
 
 
@@ -107,7 +113,7 @@ def sel_cust(table):
     for c, _ in cols(table):
         e = (f"if(t.{c} is null, null, cast(t.{c} as bigint) + n.k * {OFF})" if c in ks else f"t.{c}")
         exprs.append(f"{e} as {c}")
-    return f"SELECT {', '.join(exprs)} FROM raw.{table} t CROSS JOIN scale_meta.nums n WHERE n.k < {CUST_COPIES}"
+    return f"SELECT {', '.join(exprs)} FROM {RAW}.{table} t CROSS JOIN scale_meta.nums n WHERE n.k < {CUST_COPIES}"
 
 
 def build_tier(name):
@@ -116,8 +122,8 @@ def build_tier(name):
     run(f"DROP DATABASE IF EXISTS {s} FORCE")
     run(f"CREATE DATABASE {s}")
     base = {
-        "sales_order_header": f"select * from raw.sales_order_header where {CLEAN}",
-        "sales_order_detail": f"select * from raw.sales_order_detail where {CLEAN}",
+        "sales_order_header": f"select * from {RAW}.sales_order_header where {CLEAN}",
+        "sales_order_detail": f"select * from {RAW}.sales_order_detail where {CLEAN}",
     }
     for tbl in ("sales_order_header", "sales_order_detail"):
         run(ddl(s, tbl))
@@ -173,11 +179,11 @@ def build_cust_only():
 
 def views(schema):
     scaled = set(KEYS) | set(CUST_KEYS)
-    cur.execute("select table_name from information_schema.tables where table_schema='raw' "
-                "and table_name not like 'pk\\_%' and table_name not like 'recon\\_%'")
+    cur.execute("select table_name from information_schema.tables where table_schema=%s "
+                "and table_name not like 'pk\\_%%' and table_name not like 'recon\\_%%'", (RAW,))
     for (t,) in cur.fetchall():
         if t not in scaled:
-            run(f"CREATE VIEW IF NOT EXISTS {schema}.{t} AS SELECT * FROM raw.{t}")
+            run(f"CREATE VIEW IF NOT EXISTS {schema}.{t} AS SELECT * FROM {RAW}.{t}")
 
 
 # --- supply side ---------------------------------------------------------------------------
@@ -220,8 +226,8 @@ def trailing_units(header, detail):
 
 def supply_factor(tier):
     s = f"scale_{tier}"
-    raw_asof, raw_units = trailing_units(f"(select * from raw.sales_order_header where {CLEAN})",
-                                         f"(select * from raw.sales_order_detail where {CLEAN})")
+    raw_asof, raw_units = trailing_units(f"(select * from {RAW}.sales_order_header where {CLEAN})",
+                                         f"(select * from {RAW}.sales_order_detail where {CLEAN})")
     as_of, units = trailing_units(f"{s}.sales_order_header", f"{s}.sales_order_detail")
     if not raw_units:
         raise SystemExit("no sales in the last 90 days of the unscaled base: cannot derive a supply factor")
@@ -256,8 +262,8 @@ def scale_supply(tier):
     run(f"DELETE FROM scale_meta.supply_factor WHERE tier = '{tier}'")
     run(f"INSERT INTO scale_meta.supply_factor VALUES ('{tier}', {factor}, '{as_of:%Y-%m-%d %H:%M:%S}', {shift_days}, now())")
     for tbl, (qty, dates) in SUPPLY.items():
-        if not exists("raw", tbl):
-            print(f"  {s}.{tbl}: not in raw, skipped (ingest it first)")
+        if not exists(RAW, tbl):
+            print(f"  {s}.{tbl}: not in {RAW}, skipped (ingest it first)")
             continue
         exprs = []
         for c, _ in cols(tbl):
@@ -271,7 +277,7 @@ def scale_supply(tier):
         row = cur.fetchone()
         if row:
             run(f"DROP {'VIEW' if row[0] == 'VIEW' else 'TABLE'} {s}.{tbl}")
-        run(f"CREATE TABLE {s}.{tbl} PROPERTIES('replication_num'='1') AS SELECT {', '.join(exprs)} FROM raw.{tbl} t")
+        run(f"CREATE TABLE {s}.{tbl} PROPERTIES('replication_num'='1') AS SELECT {', '.join(exprs)} FROM {RAW}.{tbl} t")
         print(f"  {s}.{tbl}: quantities x{factor:.1f} ({', '.join(qty) or 'none'}), dates {shift_days:+d} days", flush=True)
     reconcile_supply(s)
 
