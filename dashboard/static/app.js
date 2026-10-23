@@ -90,6 +90,8 @@ function readUrl() {
 function writeUrl() {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(state.filters)) if (v) q.set(k, v);
+  const ds = window.dashboardData?.dataset;
+  if (ds && ds.id !== window.dashboardData.datasets?.[0]?.id) q.set("dataset", ds.id);   // keep a non-default dataset in the URL
   history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
 }
 
@@ -1289,10 +1291,35 @@ async function loadInventory({ quiet = false } = {}) {
 
 // Which views the signed-in role gets (cube/cube.js enforces the same split): sales for everyone except
 // purchasing and marketing; the reorder list for admin and purchasing; overstock for admin and marketing.
+// The dataset switch: shown only when the stack offers more than one. Changing it reloads the page on the other mart
+// (a clean start: filters, caches and in-flight queries all belong to one dataset).
+function initDataset() {
+  const { dataset, datasets = [] } = window.dashboardData;
+  if (!dataset) return;
+  $("#mart-name").textContent = dataset.mart;
+  if (dataset.readOnly) {
+    const banner = $("#dataset-banner");
+    banner.innerHTML = `<b>Benchmark dataset</b> <code>${esc(dataset.mart)}</code>: scaled AdventureWorks (the order history multiplied, not live data), read by its own Cube. Dates end in 2021 and nothing refreshes. Inventory is read-only: approving actions is switched off because these product ids are not the live ERP's.`;
+    banner.hidden = false;
+  }
+  if (datasets.length < 2) return;
+  const sel = $("#f-dataset");
+  sel.replaceChildren(...datasets.map((d) => el("option", { value: d.id }, esc(d.label))));
+  sel.value = dataset.id;
+  $("#dataset-field").hidden = false;
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem("dataset", sel.value); } catch { /* ignore */ }
+    const q = new URLSearchParams(location.search);
+    if (sel.value === datasets[0].id) q.delete("dataset"); else q.set("dataset", sel.value);   // the default needs no parameter
+    location.assign(q.toString() ? `${location.pathname}?${q}` : location.pathname);
+  });
+}
+
 async function initRole() {
   if (!window.dashboardData) return; // legacy data source: sales only
   const source = await window.dashboardData.ready;
   state.actions = source.actions || null;
+  initDataset();
   const role = window.dashboardData.role;
   state.role = role;
   state.salesView = role !== "purchasing" && role !== "marketing";

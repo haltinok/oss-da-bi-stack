@@ -95,7 +95,16 @@ function showWho() {
 }
 
 // ------------------------------------------------------------------ Cube queries
-const api = cubejs(() => cubeToken(), { apiUrl: C.cube });
+// Which mart the page reads: the live one, or (when the stack offers it, see nginx.conf.template) the 250M benchmark
+// copy. Chosen with ?dataset=250m, remembered per browser; a benchmark dataset is read-only (no inventory actions).
+const DATASETS = C.datasets || [{ id: "live", label: "Live (simulator)", mart: "mart", cube: C.cube }];
+const keep = { get: () => { try { return localStorage.getItem("dataset"); } catch { return null; } }, set: (v) => { try { localStorage.setItem("dataset", v); } catch { /* ignore */ } } };
+const wanted = new URLSearchParams(location.search).get("dataset") || keep.get();
+const dataset = DATASETS.find((d) => d.id === wanted) || DATASETS[0];
+keep.set(dataset.id);
+window.dashboardData.dataset = dataset;
+window.dashboardData.datasets = DATASETS;
+const api = cubejs(() => cubeToken(), { apiUrl: dataset.cube });
 const CH = { Internet: "internet_sales", Reseller: "reseller_sales" };
 const num = (v) => (v == null ? null : Number(v));
 
@@ -480,7 +489,8 @@ async function inventory(signal) {
 await cubeToken(); // signs in (redirecting if needed) before the first request
 window.__dashboardDataReady({
   // Inventory actions: the page posts approvals here (the service re-checks the role and every rule).
-  actions: {
+  // A benchmark dataset has other product ids than the live ERP: nothing may be approved against it.
+  actions: dataset.readOnly ? null : {
     log: () => actionsCall("GET", "/actions/log?limit=200"),
     post: (path, body) => actionsCall("POST", path, body),
     proposals: () => actionsCall("GET", "/proposals?status=proposed&limit=100"),
