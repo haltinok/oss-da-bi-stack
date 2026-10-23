@@ -80,7 +80,7 @@ button, select { font: inherit; color: inherit; }
    on the right. One row from ~1100px up; below that the tools wrap onto their own right-aligned row, never past the viewport. */
 .top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 24px; margin-bottom: 16px; }
 .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
-.brand h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.brand h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
 .brand .sub { color: var(--muted); font-size: 12.5px; }
 /* The tools sit on the title's line (the subtitle hangs below the title only); every control is 32px tall so they share one centre line. */
 .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; margin-left: auto; min-width: 0; min-height: 32px; }
@@ -150,14 +150,12 @@ button, select { font: inherit; color: inherit; }
   border: 0; background: none; color: var(--focus); cursor: pointer; padding: 6px 4px; font-size: 13px;
 }
 .reset[hidden] { display: none; }
-/* Below ~1500px the six filters no longer fit on one line with their labels beside them, which left "Subcategory" alone on a second
-   line. They become an even grid with the label above each select (never taller than the two lines it replaces). */
-@media (max-width: 1499px) {
-  .filters { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); align-items: end; gap: 6px 10px; }
-  .filters .field { flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; font-size: 11.5px; }
-  .filters .field select { width: 100%; max-width: none; }
-  .filters .reset { grid-column: 1 / -1; justify-self: start; }
-}
+/* The six filters are an even grid with the label above each select at every width: with the labels beside them they did not fit on one
+   line from ~1280 up to ~1560 px and "Subcategory" sat alone on a second line. */
+.filters { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); align-items: end; gap: 6px 10px; }
+.filters .field { flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; font-size: 11.5px; }
+.filters .field select { width: 100%; max-width: none; }
+.filters .reset { grid-column: 1 / -1; justify-self: start; }
 @media (max-width: 1099px) {
   .filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .filters .seg { grid-column: 1 / -1; justify-self: start; }
@@ -366,5 +364,5 @@ td.act-done, .act-done { color: var(--good, #1a7f4b); white-space: nowrap; }
 .link-btn { border: 0; background: none; padding: 0; font: inherit; color: var(--focus, #2a78d6); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 #dataset-banner-more { margin-top: 6px; line-height: 1.45; }
 
-.dataset-badge { display: inline-block; vertical-align: middle; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; border: 1px solid var(--border, rgba(127,127,127,.4)); color: var(--ink-2); }
-.dataset-badge.ro { color: var(--warn, #b45309); border-color: currentColor; }
+.dataset-static { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13.5px; color: var(--ink); white-space: nowrap; }
+.field.ro .dataset-static, .field.ro select { color: var(--warn, #b45309); }
