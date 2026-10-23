@@ -40,7 +40,9 @@ GEOMETRY = """() => {
   const r = (s) => { const e = document.querySelector(s); if (!e || e.hidden || e.offsetParent === null) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, h: b.height }; };
   return {
     header: r("header.top"), brand: r(".brand"), badge: r("#dataset-badge"), sel: r("#dataset-field"), live: r("#live"), export: r("#export-all"),
-    refresh: r("#refresh"), theme: r("#theme"), who: r("#who"), banner: r("#dataset-banner"),
+    refresh: r("#refresh"), theme: r("#theme"), who: r("#who"), banner: r("#dataset-banner"), title: r(".brand h1"),
+    sel2: r("#f-dataset"),
+    filters: [...document.querySelectorAll("nav.filters > :not([hidden])")].map((e) => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width }; }),
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     liveText: document.querySelector("#live-text").textContent, bannerText: document.querySelector("#dataset-banner").innerText,
   };
@@ -69,6 +71,15 @@ with sync_playwright() as p:
                     check(max(centers) - min(centers) <= 14, f"{tag}: the header is not one row (tool centres differ by {max(centers) - min(centers):.0f}px)")
                     check(g["header"]["h"] <= 80, f"{tag}: the header is {g['header']['h']:.0f}px tall")
                     check(g["brand"]["right"] < g["live"]["left"] - 8, f"{tag}: the brand runs into the status")
+                    # the controls share one centre line (and it is the title's), and are the same height
+                    heights = [g[k]["h"] for k in ("live", "export", "refresh", "theme") + (("sel2",) if g["sel2"] else ())]
+                    check(max(heights) - min(heights) <= 1.5, f"{tag}: control heights differ: {[round(h) for h in heights]}")
+                    check(max(centers) - min(centers) <= 2, f"{tag}: controls are not on one centre line ({max(centers) - min(centers):.1f}px apart)")
+                    tcenter = (g["title"]["top"] + g["title"]["bottom"]) / 2
+                    check(abs(tcenter - centers[0]) <= 4, f"{tag}: the tools are {abs(tcenter - centers[0]):.0f}px off the title's line")
+                    # the six filters sit on ONE row (no orphan on a second line)
+                    bottoms = [f["bottom"] for f in g["filters"]]          # bottoms: a label above a select makes those taller than the channel buttons
+                    check(max(bottoms) - min(bottoms) <= 3 and all(f["right"] <= w for f in g["filters"]), f"{tag}: the filters wrap onto a second line (bottoms {sorted(set(round(x) for x in bottoms))})")
                 if dataset == "live":
                     check(g["liveText"].startswith("Live · updated"), f"{tag}: status says {g['liveText']!r}")
                     check(g["banner"] is None and g["sel"] is not None, f"{tag}: no banner, switch shown")
