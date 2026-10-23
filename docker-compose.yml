@@ -57,6 +57,47 @@ x-airflow-common: &airflow-common
     postgres:
       condition: service_healthy
 
+# The Cube service(s): the live one and, with DATASET=both, a second for the 250M tier (below, under services).
+x-cube: &cube
+  image: cubejs/cube:${CUBE_VERSION:-latest}
+  profiles: [starrocks]
+  restart: unless-stopped
+  depends_on:
+    starrocks-init:
+      condition: service_completed_successfully
+    cubestore:
+      condition: service_started
+  volumes:
+    - ./cube:/cube/conf
+    # the 500M-tuned model, read by cube.js when DATASET is not live (re-pointed at mart_<dataset> at load time)
+    - ./spike/cube/model:/cube/spike-model:ro
+  healthcheck:
+    test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+    interval: 15s
+    timeout: 5s
+    retries: 20
+    start_period: 30s
+
+x-cube-env: &cube-env
+  # Production mode: no Playground, no stack traces in error bodies. The model and
+  # cube.js (dialect fix, auth, row-level security) are in ./cube.
+  CUBEJS_DEV_MODE: "false"
+  CUBEJS_PRE_AGGREGATIONS_SCHEMA: ${CUBE_PREAGG_SCHEMA:-dev_pre_aggregations}
+  CUBEJS_REFRESH_WORKER: "true"
+  CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env}
+  # StarRocks speaks the MySQL protocol. cube_ro can only SELECT on the mart.
+  CUBEJS_DB_TYPE: mysql
+  CUBEJS_DB_HOST: starrocks-fe
+  CUBEJS_DB_PORT: "9030"
+  CUBEJS_DB_NAME: mart
+  CUBEJS_DB_USER: cube_ro
+  CUBEJS_DB_PASS: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env}
+  CUBEJS_CUBESTORE_HOST: cubestore
+  # Several concurrent big scans overload StarRocks; whole-table rollups run for minutes.
+  CUBEJS_CONCURRENCY: "${CUBE_CONCURRENCY:-6}"
+  CUBEJS_DB_MAX_POOL: "${CUBE_CONCURRENCY:-6}"
+  CUBEJS_DB_QUERY_TIMEOUT: "7200"
+
 # Every published port is overridable from .env so this stack can run next to
 # another one on the same host (the defaults below are the historical values).
 services:
@@ -448,47 +489,25 @@ services:
       - cubestore_data:/cube/data
 
   cube:
-    image: cubejs/cube:${CUBE_VERSION:-latest}
-    profiles: [starrocks]
-    restart: unless-stopped
-    depends_on:
-      starrocks-init:
-        condition: service_completed_successfully
-      cubestore:
-        condition: service_started
+    <<: *cube
     ports:
       - "127.0.0.1:${CUBE_PORT:-4000}:4000"
     environment:
-      # Production mode: no Playground, no stack traces in error bodies. The model and
-      # cube.js (dialect fix, auth, row-level security) are in ./cube.
-      CUBEJS_DEV_MODE: "false"
-      CUBEJS_PRE_AGGREGATIONS_SCHEMA: ${CUBE_PREAGG_SCHEMA:-dev_pre_aggregations}
-      CUBEJS_REFRESH_WORKER: "true"
-      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env}
-      # Which mart is served: live (cube/model on mart) or 250m (the 500M-tuned model on mart_250m, its own rollup schema). See cube/cube.js.
+      <<: *cube-env
+      # Which mart this Cube serves: live (cube/model on mart) or 250m (the 500M-tuned model on mart_250m, its own rollup schema; see
+      # cube/cube.js). `both` is live here: the 250m side is the cube-250m service.
       DATASET: ${DATASET:-live}
-      # StarRocks speaks the MySQL protocol. cube_ro can only SELECT on the mart.
-      CUBEJS_DB_TYPE: mysql
-      CUBEJS_DB_HOST: starrocks-fe
-      CUBEJS_DB_PORT: "9030"
-      CUBEJS_DB_NAME: mart
-      CUBEJS_DB_USER: cube_ro
-      CUBEJS_DB_PASS: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env}
-      CUBEJS_CUBESTORE_HOST: cubestore
-      # Several concurrent big scans overload StarRocks; whole-table rollups run for minutes.
-      CUBEJS_CONCURRENCY: "${CUBE_CONCURRENCY:-6}"
-      CUBEJS_DB_MAX_POOL: "${CUBE_CONCURRENCY:-6}"
-      CUBEJS_DB_QUERY_TIMEOUT: "7200"
-    volumes:
-      - ./cube:/cube/conf
-      # the 500M-tuned model, read by cube.js when DATASET is not live (re-pointed at mart_<dataset> at load time)
-      - ./spike/cube/model:/cube/spike-model:ro
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 15s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
+
+  # The second Cube of DATASET=both (profile `dual`): the 250M tier on mart_250m next to the live one, from the same model files and
+  # the same Cube Store, in its own rollup schema. The dashboard switches between the two; Caddy serves it at /cubejs-250m.
+  cube-250m:
+    <<: *cube
+    profiles: [dual]
+    ports:
+      - "127.0.0.1:${CUBE_250M_PORT:-4001}:4000"
+    environment:
+      <<: *cube-env
+      DATASET: 250m
 
   keycloak:
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.0}

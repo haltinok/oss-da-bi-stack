@@ -135,6 +135,8 @@ jobs:
           # the public (HTTPS front door) overlay needs PUBLIC_URL
           export PUBLIC_URL=https://demo.example.test
           docker compose -f docker-compose.yml -f docker-compose.public.yml --profile starrocks config >/dev/null
+          # DATASET=both adds the second Cube (profile dual)
+          DATASET=both docker compose -f docker-compose.yml -f docker-compose.public.yml --profile starrocks --profile dual config | grep -q 'cube-250m:'
       - name: the dashboard's browser config (local / public, live / 250m)
         run: scripts/check-config-js.sh
       - name: Cube's 250m model loader

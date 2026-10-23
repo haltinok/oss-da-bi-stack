@@ -33,6 +33,10 @@ def test_live_reads_the_live_territories(load):
     assert load("live").REGIONS_TABLE == "rls.user_regions"
 
 
+def test_both_keeps_the_live_territories(load):
+    assert load("both").REGIONS_TABLE == "rls.user_regions"
+
+
 def test_a_benchmark_dataset_reads_its_own_schema(load):
     assert load("250m").REGIONS_TABLE == "rls_250m.user_regions"
 

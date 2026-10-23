@@ -58,8 +58,10 @@ KINDS = {"admin": ("purchase_order", "work_order", "campaign"), "purchasing": ("
 DATASET = os.environ.get("DATASET", "live").lower()
 if not re.fullmatch(r"[a-z0-9]+", DATASET):
     raise SystemExit(f"DATASET must be letters and digits, got {DATASET!r}")
-MART = "mart" if DATASET == "live" else f"mart_{DATASET}"
-READ_ONLY = DATASET != "live"
+# `both` (the live Cube and a 250m Cube side by side): the actions service stays the live one; the dashboard never calls it
+# while the 250m dataset is shown.
+MART = "mart" if DATASET in ("live", "both") else f"mart_{DATASET}"
+READ_ONLY = DATASET not in ("live", "both")
 READ_ONLY_MESSAGE = (f"Read-only: this deployment serves the {DATASET} dataset, a scaled copy with no ERP behind it. Approved actions are written to "
                      "postgres_active, which only feeds the live mart. Set DATASET=live to approve.")
 

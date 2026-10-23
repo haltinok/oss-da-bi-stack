@@ -136,8 +136,9 @@ function queryRewrite(query, { securityContext }) {
 // rollups, hourly refresh: the data does not move) from spike/cube/model plus the two inventory cubes of cube/model, all
 // read from mart_250m instead of mart, into their own pre-aggregation schema so the live rollups are kept.
 // The files are re-pointed at load time (mart. -> mart_250m.), so there is no second copy of any model to keep in sync.
+// `both` (two Cubes, see docker-compose.yml) makes this one the live Cube; the 250m one is started with DATASET=250m.
 const DATASET = (process.env.DATASET || 'live').toLowerCase();
-const SUFFIX = DATASET === 'live' ? '' : `_${DATASET}`;
+const SUFFIX = (DATASET === 'live' || DATASET === 'both') ? '' : `_${DATASET}`;
 
 function datasetRepository() {
   const fs = require('fs');

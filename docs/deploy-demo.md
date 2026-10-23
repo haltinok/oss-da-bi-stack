@@ -55,11 +55,12 @@ curl -s -o /dev/null -w '%{http_code}\n' http://demo.eloha-da.com/              
 ```
 Then open `https://demo.eloha-da.com/` and sign in. The browser contacts only that one host.
 
-## Serving the 250M dataset instead of the live mart (`DATASET`)
+## Serving the 250M dataset (`DATASET`)
 
-The deployment serves one dataset at a time, chosen by `DATASET` in `.env`: `live` (the default: the live mart, fed by the
-simulator and the 5-minute pipeline) or `250m` (the 250M tier built into `mart_250m`, `rls_250m` and `adventureworks_dwh_250m`
-by the steps in `spike/README.md`). What the setting changes:
+`DATASET` in `.env` chooses what the deployment serves: `live` (the default: the live mart, fed by the simulator and the 5-minute
+pipeline), `250m` (only the 250M tier, built into `mart_250m`, `rls_250m` and `adventureworks_dwh_250m` by the steps in
+`spike/README.md`) or `both` (the live mart and the 250M tier, with a **Dataset switch in the page header**; see below). What
+`live` and `250m` change:
 
 | Service | `DATASET=live` | `DATASET=250m` |
 |---|---|---|
@@ -81,13 +82,30 @@ scripts/grant-dataset.sh 250m
 sed -i 's/^DATASET=.*/DATASET=250m/' .env || echo 'DATASET=250m' >> .env   # set it (replacing an existing line)
 docker compose up -d cube auth actions dashboard-cube      # recreate the four services that read it
 ```
-Optionally pause the weekly agent (`inventory_weekly_proposals`): it would read the 250m Cube and its drafts would be refused.
+Optionally pause the weekly agent (`inventory_weekly_proposals`): it would read the 250m Cube and its drafts would be refused. (With `both` the agent keeps reading the live Cube.)
 
 **The first rollup build on 250M takes a few minutes.** Cube builds the 250m rollups on the first queries (and then refreshes them
 hourly, only the partitions inside the update window). Until a rollup exists the dashboard panels wait (Cube answers "continue
 wait"), and the heavy rollups can use several GB of StarRocks memory while they build: do it with the live DAG idle if memory is
 tight. Watch `docker compose logs -f cube`; to warm it, open the dashboard once as `admin` and let every panel finish. Later page
 loads are served from the rollups (the demo-server benchmark: p95 15-52 ms).
+
+### Both at once: `DATASET=both` (the header switch)
+Two Cubes run side by side, from the same model files and the same Cube Store: the usual `cube` (live, rollups in
+`dev_pre_aggregations`) and `cube-250m` (the 250M tier on `mart_250m`, rollups in `dev_pre_aggregations_250m`, 127.0.0.1:`CUBE_250M_PORT`,
+default 4001), which belongs to the compose profile `dual`. Caddy serves it at `/cubejs-250m/`. The page opens on Live and offers
+the switch (`?dataset=250m`, remembered in the browser): Live keeps the full actions flow (Approve, proposals), the 250M dataset is
+read-only with a banner that says to switch back to Live to approve. Auth and the actions service stay the live ones (the users and
+territories are the same).
+```bash
+scripts/grant-dataset.sh 250m                       # once, after the 250m dbt build
+sed -i 's/^DATASET=.*/DATASET=both/' .env || echo 'DATASET=both' >> .env
+docker compose --profile starrocks --profile dual up -d     # starts cube-250m, recreates cube, auth, actions, dashboard-cube
+```
+Costs: a second Cube container and the 250M rollups next to the live ones in StarRocks and Cube Store. The first 250M query builds
+its rollups (a few minutes, as above) while the live 5-minute refresh keeps running, so watch StarRocks memory
+(`docker stats`, `STARROCKS_MEM_LIMIT`). Both Cubes use the same `CUBEJS_API_SECRET`, so one sign-in token works for both.
+Go back to a single dataset with `DATASET=live`/`250m` and `docker compose --profile starrocks up -d --remove-orphans`.
 
 **Switch back to live**
 ```bash
