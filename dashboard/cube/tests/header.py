@@ -18,7 +18,7 @@ from mock_stack import BENCH, PORT, SEED  # noqa: E402
 
 SHOTS = pathlib.Path(__file__).parent / "screenshots"
 KEEP = "--shots" in sys.argv
-WIDTHS = [1920, 1600, 1440, 1280, 1024, 768, 390]
+WIDTHS = [1920, 1700, 1600, 1536, 1500, 1440, 1366, 1280, 1100, 1024, 768, 390]
 failures = []
 
 
@@ -39,7 +39,7 @@ INJECT = """() => {
 GEOMETRY = """() => {
   const r = (s) => { const e = document.querySelector(s); if (!e || e.hidden || e.offsetParent === null) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, h: b.height }; };
   return {
-    header: r("header.top"), brand: r(".brand"), badge: r("#dataset-badge"), sel: r("#dataset-field"), live: r("#live"), export: r("#export-all"),
+    header: r("header.top"), brand: r(".brand"), sel: r("#dataset-field"), live: r("#live"), export: r("#export-all"),
     refresh: r("#refresh"), theme: r("#theme"), who: r("#who"), banner: r("#dataset-banner"), title: r(".brand h1"),
     sel2: r("#f-dataset"),
     filters: [...document.querySelectorAll("nav.filters > :not([hidden])")].map((e) => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width }; }),
@@ -89,7 +89,7 @@ with sync_playwright() as p:
                     if w >= 1280:
                         check(g["banner"]["h"] <= 44, f"{tag}: the banner is {g['banner']['h']:.0f}px tall (one line expected)")
                     check("postgres_active" not in g["bannerText"], f"{tag}: the full explanation shows before Details is opened")
-                if w in (1920, 1280, 390) or KEEP:
+                if w in (1920, 1536, 1280, 390) or KEEP:
                     SHOTS.mkdir(exist_ok=True)
                     page.screenshot(path=str(SHOTS / f"header-{dataset}-{theme}-{w}.png"), clip={"x": 0, "y": 0, "width": w, "height": 330})
                 if dataset == "250m" and w == 1440 and theme == "light":
