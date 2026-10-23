@@ -447,6 +447,11 @@ or Approve controls (its product ids are not the live ERP's), and a banner says 
 Both Cubes must share `CUBEJS_API_SECRET` (the benchmark Cube is started with the one from `.env`), and the browser must
 be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests the switch against mock services.
 
+**Serving it on the internet.** `docker-compose.public.yml` (with `PUBLIC_URL` and `COMPOSE_FILE` in `.env`) adds a Caddy front
+door with a Let's Encrypt certificate and serves Keycloak (`/kc`), the auth and actions services, Cube and the dashboard at one
+address; only Caddy publishes ports (80 and 443). Local runs are unchanged. Steps, the update for an existing Keycloak volume
+(`keycloak/update-public-url.sh`) and the caveats: [`docs/deploy-demo.md`](docs/deploy-demo.md).
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.

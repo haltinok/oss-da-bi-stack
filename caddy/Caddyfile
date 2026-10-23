@@ -1,0 +1,47 @@
+# Public front door of the starrocks profile (see docker-compose.public.yml and docs/deploy-demo.md).
+#
+# {$PUBLIC_URL} is the site address: an https:// URL gets a Let's Encrypt certificate (needs ports 80 and 443 reachable)
+# and http:// is redirected to it; an http://host:port URL (used in tests) is served as plain HTTP.
+# Paths: /kc/* Keycloak, /auth-api/* the auth service, /actions-api/* the actions service, /cubejs-api/* Cube,
+# everything else the dashboard. Only this container publishes ports; everything behind it stays on the compose network.
+{
+	# Let's Encrypt production by default. For a dry run set ACME_CA to the staging directory
+	# (https://acme-staging-v02.api.letsencrypt.org/directory): no rate limits, certificates browsers do not trust.
+	acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+}
+
+{$PUBLIC_URL} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Keycloak keeps its /kc prefix (KC_HTTP_RELATIVE_PATH). Only the realm's login and token endpoints are reachable from
+	# the internet: the admin console and the master realm are not (administer with `docker compose exec keycloak kcadm.sh`,
+	# see keycloak/update-public-url.sh).
+	handle /kc/* {
+		@admin path /kc/admin /kc/admin/* /kc/realms/master /kc/realms/master/*
+		respond @admin 404
+		reverse_proxy keycloak:8080
+	}
+
+	# The auth and actions services serve at their root: the prefix is stripped.
+	handle_path /auth-api/* {
+		reverse_proxy auth:8200
+	}
+	handle_path /actions-api/* {
+		reverse_proxy actions:8300
+	}
+
+	# Cube keeps its /cubejs-api prefix. Production mode: no playground; every call needs the signed token (cube/cube.js).
+	handle /cubejs-api/* {
+		reverse_proxy cube:4000
+	}
+
+	handle {
+		reverse_proxy dashboard-cube:8250
+	}
+}

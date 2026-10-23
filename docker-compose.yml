@@ -505,8 +505,9 @@ services:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:?set TEST_USER_PASSWORD in .env}
       AGENT_CLIENT_SECRET: ${AGENT_CLIENT_SECRET:?set AGENT_CLIENT_SECRET in .env}
-      # The dashboard's address, for the realm's redirect URIs (see realm-spike.json).
-      DASHBOARD_CUBE_PORT: ${DASHBOARD_CUBE_PORT:-8250}
+      # The dashboard's public address, for the realm's redirect URIs, web origins and post-logout URIs (see
+      # realm-spike.json; imported on the first start only: keycloak/update-public-url.sh changes it on an existing volume).
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./keycloak/realm-spike.json:/opt/keycloak/data/import/realm-spike.json:ro
@@ -532,7 +533,7 @@ services:
       CUBE_JWT_TTL_SECONDS: ${CUBE_JWT_TTL_SECONDS:-900}
       KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
-      ALLOWED_ORIGINS: http://localhost:${DASHBOARD_CUBE_PORT:-8250}
+      ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
       STARROCKS_HOST: starrocks-fe
       AUTH_DB_USER: auth_ro
       AUTH_REGIONS_TABLE: rls.user_regions
@@ -559,7 +560,7 @@ services:
     environment:
       KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
-      ALLOWED_ORIGINS: http://localhost:${DASHBOARD_CUBE_PORT:-8250}
+      ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
       ACTIONS_PG_HOST: postgres_active
       ACTIONS_PG_PORT: "5434"
       ACTIONS_DB_PASSWORD: ${ACTIONS_DB_PASSWORD:?set ACTIONS_DB_PASSWORD in .env}
@@ -594,6 +595,10 @@ services:
       ACTIONS_PORT: ${ACTIONS_PORT:-8300}
       # Optional second dataset in the dashboard: the port of the 250M benchmark Cube (spike/bench/run_scale.sh 250m).
       CUBE_250M_PORT: ${CUBE_250M_PORT:-}
+      # How the browser reaches Keycloak, the auth and actions services and Cube. Empty (the default): each on its own
+      # localhost port. PATH_ROUTING=1 (set by docker-compose.public.yml): all under PUBLIC_URL, routed by path by Caddy.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
+      PATH_ROUTING: ${PATH_ROUTING:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8250/"]
       interval: 15s
