@@ -23,3 +23,9 @@ js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=live CUBE_250
 check "local, live + the second Cube (switch)" "$js" 'S.datasets.length === 2 && S.datasets[1].id === "250m" && S.datasets[1].readOnly === true'
 js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=250m CUBE_250M_PORT=4001)
 check "250m deployment ignores the second Cube" "$js" 'S.datasets.length === 1'
+js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=both CUBE_250M_PORT=)
+check "local, both (default second port 4001)" "$js" 'S.datasets.length === 2 && S.datasets[0].id === "live" && !S.datasets[0].readOnly && S.datasets[0].cube === "http://localhost:4000/cubejs-api/v1" && S.datasets[1].id === "250m" && S.datasets[1].readOnly === true && S.datasets[1].cube === "http://localhost:4001/cubejs-api/v1"'
+js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=both CUBE_250M_PORT=4101)
+check "local, both, second port from CUBE_250M_PORT" "$js" 'S.datasets[1].cube === "http://localhost:4101/cubejs-api/v1"'
+js=$(render PUBLIC_URL=https://demo.example.test PATH_ROUTING=1 DATASET=both CUBE_250M_PORT=)
+check "public, both (Caddy paths)" "$js" 'S.datasets[0].cube === "https://demo.example.test/cubejs-api/v1" && S.datasets[1].cube === "https://demo.example.test/cubejs-250m/v1" && S.datasets[1].mart === "mart_250m"'

@@ -35,4 +35,12 @@ const cfg = require('../cube.js');
   assert.strictEqual(live.repositoryFactory, undefined);
   assert.strictEqual(live.preAggregationsSchema, undefined);
   console.log('live: default repository and rollup schema');
+
+  // both: this Cube is the live one (the 250m side is a second Cube started with DATASET=250m)
+  delete require.cache[require.resolve('../cube.js')];
+  process.env.DATASET = 'both';
+  const both = require('../cube.js');
+  assert.strictEqual(both.repositoryFactory, undefined);
+  assert.strictEqual(both.preAggregationsSchema, undefined);
+  console.log('both: the main Cube stays live');
 })().catch((e) => { console.error(e); process.exit(1); });

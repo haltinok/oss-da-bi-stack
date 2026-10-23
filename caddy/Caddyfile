@@ -41,6 +41,13 @@
 		reverse_proxy cube:4000
 	}
 
+	# DATASET=both: the second Cube (profile `dual`) serves the 250M tier. Its API lives at /cubejs-api inside the container, so the
+	# prefix is swapped. Without that Cube running this path answers 502; nothing else is affected.
+	handle_path /cubejs-250m/* {
+		rewrite * /cubejs-api{uri}
+		reverse_proxy cube-250m:4000
+	}
+
 	handle {
 		reverse_proxy dashboard-cube:8250
 	}

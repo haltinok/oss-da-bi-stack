@@ -451,7 +451,8 @@ be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests
 `spike/cube/model` (year-partitioned rollups, hourly refresh) plus the inventory cubes re-pointed at `mart_250m` into its own
 rollup schema (the live rollups are kept), the auth service reads `rls_250m`, the actions service reads `mart_250m` and refuses every
 write (approvals go to the live ERP, which only feeds the live mart), and the page header names the dataset and says Approve is
-disabled. Run `scripts/grant-dataset.sh 250m` once after the tier's dbt build. See `docs/deploy-demo.md`.
+disabled. `DATASET=both` runs a second Cube (profile `dual`, `/cubejs-250m` behind Caddy) so the page header can switch between the
+live mart and the 250M tier; Approve stays live-only. Run `scripts/grant-dataset.sh 250m` once after the tier's dbt build. See `docs/deploy-demo.md`.
 
 **Serving it on the internet.** `docker-compose.public.yml` (with `PUBLIC_URL` and `COMPOSE_FILE` in `.env`) adds a Caddy front
 door with a Let's Encrypt certificate and serves Keycloak (`/kc`), the auth and actions services, Cube and the dashboard at one

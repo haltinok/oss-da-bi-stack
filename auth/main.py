@@ -35,7 +35,8 @@ TERRITORY_ROLES = ("admin", "manager", "rep")   # the agent has none either
 DATASET = os.environ.get("DATASET", "live").lower()
 if not re.fullmatch(r"[a-z0-9]+", DATASET):
     raise SystemExit(f"DATASET must be letters and digits, got {DATASET!r}")
-DATASET_SUFFIX = "" if DATASET == "live" else f"_{DATASET}"
+# `both` (the live Cube and a 250m Cube side by side): this deployment's users and territories are the live ones for both.
+DATASET_SUFFIX = "" if DATASET in ("live", "both") else f"_{DATASET}"
 REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE") or f"rls{DATASET_SUFFIX}.user_regions"
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)

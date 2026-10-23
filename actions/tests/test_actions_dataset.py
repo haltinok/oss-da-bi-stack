@@ -42,6 +42,11 @@ def test_live_is_untouched(load):
     assert main.READ_ONLY is False and main.MART == "mart"
 
 
+def test_both_is_the_live_service(load):
+    main = load("both")
+    assert main.READ_ONLY is False and main.MART == "mart"
+
+
 def test_250m_reads_its_own_mart_and_refuses_every_write(load):
     main = load("250m")
     assert main.READ_ONLY is True and main.MART == "mart_250m"

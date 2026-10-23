@@ -1306,7 +1306,7 @@ function initDataset() {
     const banner = $("#dataset-banner");
     banner.innerHTML = `<b>${esc(dataset.label)} dataset</b> <code>${esc(dataset.mart)}</code>: scaled AdventureWorks (the order history multiplied, not live data). Dates end in 2021 and nothing refreshes.
       <b>Approve is disabled here:</b> approved actions are written to the live ERP (<code>postgres_active</code>), which only feeds the live mart, and this dataset has no ERP behind it.
-      Inventory is shown read-only; ask for <code>DATASET=live</code> to approve.`;
+      Inventory is shown read-only; ${datasets.length > 1 ? "switch the Dataset (top right) to Live to approve" : "ask for <code>DATASET=live</code> to approve"}.`;
     banner.hidden = false;
     const hint = $("#inv .inv-head .hint");
     if (hint) hint.textContent += " Approve is disabled on this dataset (see the note at the top).";
