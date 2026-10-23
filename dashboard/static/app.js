@@ -262,9 +262,16 @@ function setLive(ok, message) {
   live.classList.toggle("stale", !ok);
   const t = new Date().toLocaleTimeString("en-GB");
   const last = state.data?.latest_orders?.[0]?.order_date;
-  $("#live-text").innerHTML = ok
-    ? `<strong>Live</strong> · updated ${t}${last ? ` · last order ${esc(ago(last))}` : ""}`
-    : `<strong>Stale</strong> · ${esc(message || "unavailable")} · retrying`;
+  // A benchmark dataset does not move: say what it is (a snapshot up to its newest order), not "Live".
+  const snapshot = !!window.dashboardData?.dataset?.readOnly;
+  live.classList.toggle("snapshot", snapshot && ok);
+  const upTo = last ? new Date(last).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  $("#live-text").innerHTML = !ok
+    ? `<strong>Stale</strong> · ${esc(message || "unavailable")} · retrying`
+    : snapshot
+      ? `<strong>Static snapshot</strong>${upTo ? ` · data to ${esc(upTo)}` : ""}`
+      : `<strong>Live</strong> · updated ${t}${last ? `<span class="last"> · last order ${esc(ago(last))}</span>` : ""}`;
+  live.title = !ok ? "" : snapshot ? `A fixed copy: nothing refreshes${upTo ? `. Newest order ${upTo}` : ""}. Checked ${t}.` : `Updated ${t}${last ? `, last order ${ago(last)}` : ""}`;
 }
 
 // ------------------------------------------------------------------ filters
@@ -1297,16 +1304,26 @@ function initDataset() {
   const { dataset, datasets = [] } = window.dashboardData;
   if (!dataset) return;
   $("#mart-name").textContent = dataset.mart;
+  $("#brand-sub").title = `Reads ${dataset.mart}`;
   const badge = $("#dataset-badge");
+  badge.title = `Dataset: ${dataset.label} (${dataset.mart})`;
   badge.textContent = dataset.label;
   badge.classList.toggle("ro", !!dataset.readOnly);
   badge.hidden = false;
   document.title = `AdventureWorks Sales · ${dataset.label}`;
   if (dataset.readOnly) {
     const banner = $("#dataset-banner");
-    banner.innerHTML = `<b>${esc(dataset.label)} dataset</b> <code>${esc(dataset.mart)}</code>: scaled AdventureWorks (the order history multiplied, not live data). Dates end in 2021 and nothing refreshes.
+    const canSwitch = datasets.length > 1;
+    $("#dataset-banner-line").innerHTML = `<b>Benchmark data, read-only:</b> ${canSwitch ? "Approve is available in Live" : "Approve needs a Live deployment"}`;
+    $("#dataset-banner-more").innerHTML = `<code>${esc(dataset.mart)}</code> is scaled AdventureWorks (the order history multiplied, not live data); dates end in 2021 and nothing refreshes.
       <b>Approve is disabled here:</b> approved actions are written to the live ERP (<code>postgres_active</code>), which only feeds the live mart, and this dataset has no ERP behind it.
-      Inventory is shown read-only; ${datasets.length > 1 ? "switch the Dataset (top right) to Live to approve" : "ask for <code>DATASET=live</code> to approve"}.`;
+      Inventory is shown read-only; ${canSwitch ? "switch the Dataset (top right) to Live to approve" : "ask for <code>DATASET=live</code> to approve"}.`;
+    const toggle = $("#dataset-banner-toggle"), more = $("#dataset-banner-more");
+    toggle.addEventListener("click", () => {
+      more.hidden = !more.hidden;
+      toggle.setAttribute("aria-expanded", String(!more.hidden));
+      toggle.textContent = more.hidden ? "Details" : "Hide details";
+    });
     banner.hidden = false;
     const hint = $("#inv .inv-head .hint");
     if (hint) hint.textContent += " Approve is disabled on this dataset (see the note at the top).";

@@ -84,9 +84,10 @@ function showWho() {
   if (document.getElementById("who")) return;
   const who = document.createElement("div");
   who.id = "who";
-  who.style.cssText = "margin-left:auto;font-size:12px;opacity:.8;white-space:nowrap";
-  who.innerHTML = `${session.user} (${session.role}) · <a href="#" id="signout">Sign out</a>`;
-  document.querySelector("header.top")?.append(who);
+  who.className = "who";
+  who.title = `Signed in as ${session.user}, role ${session.role}`;
+  who.innerHTML = `${session.user} · <a href="#" id="signout">Sign out</a>`;
+  (document.querySelector("header.top .tools") || document.querySelector("header.top"))?.append(who);
   document.getElementById("signout").addEventListener("click", (e) => {
     e.preventDefault();
     store.del("kc");
