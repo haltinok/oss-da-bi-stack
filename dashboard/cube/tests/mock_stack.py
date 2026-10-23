@@ -7,7 +7,7 @@ import json
 import pathlib
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 PORT = 19350
@@ -36,6 +36,11 @@ class Handler(BaseHTTPRequestHandler):
         for prefix in ("/cube-live", "/cube-bench", "/actions", "/auth"):
             if path.startswith(prefix):
                 hits[prefix] = hits.get(prefix, 0) + 1
+        if path == "/_seed":      # open this once in a normal browser: it fakes the sign-in session, then goes to ?to=
+            to = parse_qs(urlparse(self.path).query).get("to", ["/"])[0]
+            page = ('<!doctype html><script>sessionStorage.setItem("kc", JSON.stringify({access: "a", refresh: "r", expires: Date.now() + 3.6e6}));'
+                    f'location.replace({json.dumps(to)});</script>')
+            return self._send(page.encode(), "text/html")
         if path == "/auth/token":
             return self._send(json.dumps({"token": "t", "expires_in": 900, "user": "admin", "role": "admin", "territories": ["Canada"]}).encode())
         if path.startswith("/cube-"):
@@ -56,6 +61,9 @@ class Handler(BaseHTTPRequestHandler):
                 f = base / rel
                 if f.is_file():
                     page = f.read_bytes()
+                    if rel == "index.html" and "demo=1" in self.path:
+                        # no data behind the mock: put the status line in the state a working page shows (until the next poll)
+                        page = page.replace(b"</body>", b"<script>addEventListener('load', () => setTimeout(() => { if (typeof state !== 'undefined') { state.data = { latest_orders: [{ order_date: '2021-06-30T10:00:00' }] }; setLive(true); const e = document.querySelector('#error'); if (e) e.hidden = true; } }, 1800));</script></body>")
                     if rel == "index.html":
                         page = page.replace(b'<script src="app.js"></script>', b'<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script src="app.js"></script>')
                     ctype = "text/html" if rel.endswith(".html") else "text/javascript" if rel.endswith((".js", ".mjs")) else "text/css" if rel.endswith(".css") else "application/octet-stream"
@@ -71,3 +79,17 @@ def start(port=PORT):
 
 
 SEED = 'sessionStorage.setItem("kc", JSON.stringify({access: "a", refresh: "r", expires: Date.now() + 3.6e6}));'
+
+
+if __name__ == "__main__":
+    import sys
+    port = int(next((a for a in sys.argv[1:] if a.isdigit()), PORT))
+    BENCH["on"] = "--single" not in sys.argv
+    start(port)
+    base = f"http://localhost:{port}/_seed?to="
+    print("Mock dashboard (no data behind it: the header, banner and filters are real, the charts are empty). Open in your browser:")
+    print(f"  live            {base}%2F%3Fdemo%3D1")
+    if BENCH["on"]:
+        print(f"  250M benchmark  {base}%2F%3Fdataset%3D250m%26demo%3D1")
+    print("Ctrl-C to stop. The status line is put into its normal state a moment after load and flips to 'Stale' at the next 30 s poll.")
+    threading.Event().wait()
