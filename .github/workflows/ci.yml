@@ -132,6 +132,13 @@ jobs:
           docker compose --profile cdc config >/dev/null
           docker compose --profile starrocks config >/dev/null
           docker compose --profile cdc --profile starrocks config >/dev/null
+          # the public (HTTPS front door) overlay needs PUBLIC_URL
+          export PUBLIC_URL=https://demo.example.test
+          docker compose -f docker-compose.yml -f docker-compose.public.yml --profile starrocks config >/dev/null
+      - name: validate the Caddyfile
+        run: |
+          docker run --rm -e PUBLIC_URL=https://demo.example.test -v "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.8-alpine caddy validate --config /etc/caddy/Caddyfile
 
   # Builds the custom images. The dags/dwh jobs install Python packages
   # directly on the runner, so without this job a Dockerfile break (or a
@@ -345,3 +352,49 @@ jobs:
           python-version: "3.12"
       - run: pip install pytest requests
       - run: python -m pytest actions/tests/test_rules.py agent/tests -q
+
+  # The public overlay (docker-compose.public.yml): Keycloak under /kc, the auth service and the dashboard behind Caddy at one
+  # address. Plain HTTP on a local port stands in for the HTTPS front door; the routing, issuer, admin-console block and browser
+  # config are the same. (The certificate itself needs a real domain and ports 80/443: see docs/deploy-demo.md.)
+  public-routing:
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_URL: http://localhost:8088
+      COMPOSE_FILE: docker-compose.yml:docker-compose.public.yml:ci-public.yml
+      CADDY_HTTP_PORT: "8080"
+      CADDY_HTTPS_PORT: "8443"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: generate .env and publish Caddy on a test port
+        run: |
+          ./scripts/generate-env.sh
+          printf 'services:\n  caddy:\n    ports:\n      - "127.0.0.1:8088:8088"\n' > ci-public.yml
+      - name: start Keycloak, the auth service, the dashboard and Caddy
+        run: |
+          docker compose --profile starrocks build auth
+          docker compose --profile starrocks up -d --no-deps keycloak
+          for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile starrocks ps -q keycloak)")" = healthy ] && break; sleep 3; done
+          docker compose --profile starrocks up -d --no-deps auth dashboard-cube caddy
+          for i in $(seq 40); do curl -sf http://localhost:8088/auth-api/healthz >/dev/null && break; sleep 3; done
+      - name: routing, issuer, admin console block, browser config
+        run: |
+          set -euo pipefail
+          B=http://localhost:8088
+          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(code $B/)" = 200
+          curl -s $B/cube/config.js | grep -q 'keycloak: { url: "http://localhost:8088/kc"'
+          issuer=$(curl -s $B/kc/realms/spike/.well-known/openid-configuration | jq -r .issuer)
+          test "$issuer" = "$B/kc/realms/spike"
+          for p in /kc/admin/ /kc/realms/master /kc/realms/master/.well-known/openid-configuration; do test "$(code $B$p)" = 404; done
+          test "$(code -X POST $B/auth-api/token -H 'Authorization: Bearer x.y.z')" = 401
+          test "$(code $B/cubejs-api/v1/meta)" != 200      # no Cube is running here: 502 from Caddy, never an unauthenticated 200
+          set -a; . ./.env; set +a
+          iss=$(curl -s -X POST $B/kc/realms/spike/protocol/openid-connect/token -d grant_type=password -d client_id=dashboard \
+                  -d username=admin -d "password=$TEST_USER_PASSWORD" | jq -r .access_token \
+                | python3 -c "import sys,base64,json;s=sys.stdin.read().split('.')[1];print(json.loads(base64.urlsafe_b64decode(s+'='*(-len(s)%4)))['iss'])")
+          test "$iss" = "$B/kc/realms/spike"
+          echo "public routing checks passed"
+      - name: logs on failure
+        if: failure()
+        run: |
+          for c in $(docker compose --profile starrocks ps -a --format '{{.Name}}'); do echo "::group::$c"; docker logs --tail 40 "$c" 2>&1 || true; echo "::endgroup::"; done

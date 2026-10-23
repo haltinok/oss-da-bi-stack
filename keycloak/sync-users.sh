@@ -7,11 +7,9 @@
 #   keycloak/sync-users.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-set -a; . ./.env; set +a
-kc() { docker compose --profile starrocks exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@"; }
-
-kc config credentials --server http://localhost:8080 --realm master \
-  --user "${KEYCLOAK_ADMIN:-admin}" --password "${KEYCLOAK_ADMIN_PASSWORD:?}" >/dev/null
+set -a; . "${ENV_FILE:-./.env}"; set +a
+. keycloak/lib.sh
+kc_login
 
 for role in purchasing marketing agent; do
   kc create roles -r spike -s "name=$role" >/dev/null 2>&1 && echo "role $role: created" || echo "role $role: exists"

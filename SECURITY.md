@@ -44,6 +44,13 @@ public issue.
 * **Local-only ports.** Every published port binds to `127.0.0.1`. Several
   services are unauthenticated by design (Kafka UI, Kafka
   Connect REST); never publish them on a public interface.
+* **The one exception, on purpose: the public overlay** (`docker-compose.public.yml`, [`docs/deploy-demo.md`](docs/deploy-demo.md)).
+  A Caddy container publishes 80 and 443 and nothing else does. It terminates TLS (Let's Encrypt) and forwards only
+  `/kc/*` (Keycloak), `/auth-api/*`, `/actions-api/*`, `/cubejs-api/*` and the dashboard. Every one of those services
+  checks the caller's token itself; Keycloak's admin console and master realm are answered with 404 at the proxy, and
+  `keycloak/update-public-url.sh` switches off the dashboard client's direct password grant on a public host. Keycloak is still
+  `start-dev` (embedded H2) and the stack runs simulated data under demo user passwords: **public does not mean production**, and
+  no customer or bank data belongs on it.
 
 ## Guard rails
 

@@ -1,6 +1,8 @@
 # Serves the existing dashboard (dashboard/static, unchanged) and injects the Cube data source in
 # front of app.js: sign-in + Cube adapter instead of the Postgres-backed /api/*.
-# Template: the nginx image fills in ${KEYCLOAK_PORT} / ${AUTH_PORT} / ${CUBE_PORT} / ${ACTIONS_PORT} / ${CUBE_250M_PORT} at start.
+# Template: the nginx image fills in ${KEYCLOAK_PORT} / ${AUTH_PORT} / ${CUBE_PORT} / ${ACTIONS_PORT} / ${CUBE_250M_PORT} /
+# ${PUBLIC_URL} / ${PATH_ROUTING} at start. Without PATH_ROUTING the browser talks to each service on its own localhost port;
+# with it (docker-compose.public.yml) everything goes through PUBLIC_URL: /kc, /auth-api, /actions-api, /cubejs-api (Caddy).
 # CUBE_250M_PORT (optional) adds a second dataset: the 250M benchmark Cube from spike/bench/run_scale.sh 250m.
 server {
     listen 8250;
@@ -11,7 +13,7 @@ server {
     location = /cube/config.js {
         default_type application/javascript;
         add_header Cache-Control "no-cache";
-        return 200 'window.STACK = { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", actions: "http://localhost:${ACTIONS_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" }; window.STACK.datasets = [{ id: "live", label: "Live (simulator)", mart: "mart", cube: window.STACK.cube }]; if ("${CUBE_250M_PORT}") window.STACK.datasets.push({ id: "250m", label: "250M benchmark", mart: "mart_250m", cube: "http://localhost:${CUBE_250M_PORT}/cubejs-api/v1", readOnly: true });';
+        return 200 'window.STACK = ("${PATH_ROUTING}") ? { keycloak: { url: "${PUBLIC_URL}/kc", realm: "spike", clientId: "dashboard" }, auth: "${PUBLIC_URL}/auth-api", actions: "${PUBLIC_URL}/actions-api", cube: "${PUBLIC_URL}/cubejs-api/v1" } : { keycloak: { url: "http://localhost:${KEYCLOAK_PORT}", realm: "spike", clientId: "dashboard" }, auth: "http://localhost:${AUTH_PORT}", actions: "http://localhost:${ACTIONS_PORT}", cube: "http://localhost:${CUBE_PORT}/cubejs-api/v1" }; window.STACK.datasets = [{ id: "live", label: "Live (simulator)", mart: "mart", cube: window.STACK.cube }]; if ("${CUBE_250M_PORT}" && !"${PATH_ROUTING}") window.STACK.datasets.push({ id: "250m", label: "250M benchmark", mart: "mart_250m", cube: "http://localhost:${CUBE_250M_PORT}/cubejs-api/v1", readOnly: true });';
     }
 
     location /cube/ {
