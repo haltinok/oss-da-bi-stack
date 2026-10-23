@@ -10,6 +10,7 @@ Cube re-verifies that signature and applies the territory filter in queryRewrite
 (cube/cube.js), so a client can neither widen its territories nor extend the token.
 """
 import os
+import re
 import time
 
 import jwt
@@ -29,8 +30,13 @@ AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
 # Only these roles are scoped by territory. purchasing and marketing work on inventory, which is not
 # territory-bound; cube/cube.js keeps them away from the sales cubes.
 TERRITORY_ROLES = ("admin", "manager", "rep")   # the agent has none either
-# Optional: a (username, region) table to read instead of joining the mart (operator-set, not user input).
-REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE", "")
+# DATASET picks the schema the territories come from: rls (live) or rls_<dataset> (e.g. rls_250m, built by dbt with
+# mart_suffix _250m). AUTH_REGIONS_TABLE overrides it. Operator-set, not user input, and checked before it reaches SQL.
+DATASET = os.environ.get("DATASET", "live").lower()
+if not re.fullmatch(r"[a-z0-9]+", DATASET):
+    raise SystemExit(f"DATASET must be letters and digits, got {DATASET!r}")
+DATASET_SUFFIX = "" if DATASET == "live" else f"_{DATASET}"
+REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE") or f"rls{DATASET_SUFFIX}.user_regions"
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="spike-auth")

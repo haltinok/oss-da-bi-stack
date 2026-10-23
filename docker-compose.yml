@@ -465,6 +465,8 @@ services:
       CUBEJS_PRE_AGGREGATIONS_SCHEMA: ${CUBE_PREAGG_SCHEMA:-dev_pre_aggregations}
       CUBEJS_REFRESH_WORKER: "true"
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env}
+      # Which mart is served: live (cube/model on mart) or 250m (the 500M-tuned model on mart_250m, its own rollup schema). See cube/cube.js.
+      DATASET: ${DATASET:-live}
       # StarRocks speaks the MySQL protocol. cube_ro can only SELECT on the mart.
       CUBEJS_DB_TYPE: mysql
       CUBEJS_DB_HOST: starrocks-fe
@@ -479,6 +481,8 @@ services:
       CUBEJS_DB_QUERY_TIMEOUT: "7200"
     volumes:
       - ./cube:/cube/conf
+      # the 500M-tuned model, read by cube.js when DATASET is not live (re-pointed at mart_<dataset> at load time)
+      - ./spike/cube/model:/cube/spike-model:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -536,7 +540,8 @@ services:
       ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
       STARROCKS_HOST: starrocks-fe
       AUTH_DB_USER: auth_ro
-      AUTH_REGIONS_TABLE: rls.user_regions
+      # The territory table follows DATASET: rls.user_regions (live) or rls_250m.user_regions. Set AUTH_REGIONS_TABLE to override.
+      DATASET: ${DATASET:-live}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/healthz').status==200 else 1)"]
@@ -566,6 +571,8 @@ services:
       ACTIONS_DB_PASSWORD: ${ACTIONS_DB_PASSWORD:?set ACTIONS_DB_PASSWORD in .env}
       STARROCKS_HOST: starrocks-fe
       ACTIONS_SR_USER: actions_ro
+      # DATASET=250m: reads mart_250m and refuses every write (postgres_active only feeds the live mart).
+      DATASET: ${DATASET:-live}
       ACTIONS_SR_PASSWORD: ${ACTIONS_SR_PASSWORD:?set ACTIONS_SR_PASSWORD in .env}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8300/healthz').status==200 else 1)"]
@@ -599,6 +606,8 @@ services:
       # localhost port. PATH_ROUTING=1 (set by docker-compose.public.yml): all under PUBLIC_URL, routed by path by Caddy.
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
       PATH_ROUTING: ${PATH_ROUTING:-}
+      # The dataset this deployment serves (live | 250m): shown in the page header; a non-live dataset is read-only.
+      DATASET: ${DATASET:-live}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8250/"]
       interval: 15s

@@ -131,8 +131,36 @@ function queryRewrite(query, { securityContext }) {
   return query;
 }
 
+// --- Dataset ---------------------------------------------------------------
+// DATASET=live (the default) serves cube/model on the live mart. DATASET=250m serves the 500M-tuned model (year-partitioned
+// rollups, hourly refresh: the data does not move) from spike/cube/model plus the two inventory cubes of cube/model, all
+// read from mart_250m instead of mart, into their own pre-aggregation schema so the live rollups are kept.
+// The files are re-pointed at load time (mart. -> mart_250m.), so there is no second copy of any model to keep in sync.
+const DATASET = (process.env.DATASET || 'live').toLowerCase();
+const SUFFIX = DATASET === 'live' ? '' : `_${DATASET}`;
+
+function datasetRepository() {
+  const fs = require('fs');
+  const path = require('path');
+  const spike = path.join(process.env.SPIKE_MODEL_DIR || '/cube/spike-model', 'cubes');
+  const own = path.join(__dirname, 'model', 'cubes');
+  const retarget = (text) => text.replace(/\bmart\./g, `mart${SUFFIX}.`);
+  const read = (dir, names) => names.map((n) => ({ fileName: `cubes/${n}`, content: retarget(fs.readFileSync(path.join(dir, n), 'utf8')) }));
+  return {
+    localPath: () => __dirname,
+    dataSchemaFiles: async () => [
+      ...read(spike, fs.readdirSync(spike).filter((n) => n.endsWith('.yml'))),
+      ...read(own, ['inventory_health.yml', 'offer_performance.yml']),
+    ],
+  };
+}
+
 module.exports = {
   dialectFactory: () => StarRocksQuery,
   checkAuth,
   queryRewrite,
+  ...(SUFFIX && {
+    repositoryFactory: datasetRepository,
+    preAggregationsSchema: `${process.env.CUBEJS_PRE_AGGREGATIONS_SCHEMA || 'dev_pre_aggregations'}${SUFFIX}`,
+  }),
 };

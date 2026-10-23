@@ -55,6 +55,50 @@ curl -s -o /dev/null -w '%{http_code}\n' http://demo.eloha-da.com/              
 ```
 Then open `https://demo.eloha-da.com/` and sign in. The browser contacts only that one host.
 
+## Serving the 250M dataset instead of the live mart (`DATASET`)
+
+The deployment serves one dataset at a time, chosen by `DATASET` in `.env`: `live` (the default: the live mart, fed by the
+simulator and the 5-minute pipeline) or `250m` (the 250M tier built into `mart_250m`, `rls_250m` and `adventureworks_dwh_250m`
+by the steps in `spike/README.md`). What the setting changes:
+
+| Service | `DATASET=live` | `DATASET=250m` |
+|---|---|---|
+| Cube | `cube/model` on `mart`, rollups in `dev_pre_aggregations` | the 500M-tuned model (`spike/cube/model`: year-partitioned incremental rollups, hourly refresh) plus the two inventory cubes, read from `mart_250m`, rollups in their **own** schema `dev_pre_aggregations_250m` |
+| auth | territories from `rls.user_regions` | from `rls_250m.user_regions` |
+| actions | reads `mart.inventory_health`, writes `postgres_active` | reads `mart_250m.inventory_health` and **refuses every write** (409); the log and proposals are empty |
+| dashboard | header badge *Live (simulator)* | header badge *250M benchmark*, a banner, **Approve disabled** with the reason |
+
+Approvals are written to `postgres_active`, which only feeds the live mart (through the simulator and the 5-minute pipeline), so
+approving against another dataset would put nonsense into the live ERP: that is why 250m is read-only. The model files are not
+copied: `cube/cube.js` loads `spike/cube/model` and re-points `mart.` at `mart_250m.` when it reads them, so the 250m model cannot
+drift from the one that was benchmarked.
+
+**Switch to 250m**
+```bash
+# once, after the 250m dbt build (it makes mart_250m and rls_250m; the stack's read-only users get nothing on them by default):
+scripts/grant-dataset.sh 250m
+# then:
+sed -i 's/^DATASET=.*/DATASET=250m/' .env || echo 'DATASET=250m' >> .env   # set it (replacing an existing line)
+docker compose up -d cube auth actions dashboard-cube      # recreate the four services that read it
+```
+Optionally pause the weekly agent (`inventory_weekly_proposals`): it would read the 250m Cube and its drafts would be refused.
+
+**The first rollup build on 250M takes a few minutes.** Cube builds the 250m rollups on the first queries (and then refreshes them
+hourly, only the partitions inside the update window). Until a rollup exists the dashboard panels wait (Cube answers "continue
+wait"), and the heavy rollups can use several GB of StarRocks memory while they build: do it with the live DAG idle if memory is
+tight. Watch `docker compose logs -f cube`; to warm it, open the dashboard once as `admin` and let every panel finish. Later page
+loads are served from the rollups (the demo-server benchmark: p95 15-52 ms).
+
+**Switch back to live**
+```bash
+sed -i 's/^DATASET=.*/DATASET=live/' .env && docker compose up -d cube auth actions dashboard-cube
+```
+It is immediate: the live rollups (`dev_pre_aggregations`) were never touched. The 250m ones stay in their schema for the next switch.
+
+Checks: `curl -s https://demo.eloha-da.com/cube/config.js | grep -o 'mart_250m'`; the page header shows the badge; in `docker compose logs cube`
+the rollup tables are `dev_pre_aggregations_250m.*`. A value of `DATASET` other than letters and digits makes the auth and actions
+services refuse to start (it ends up in a schema name).
+
 ## An existing Keycloak volume (a server that ran with localhost first, or a PUBLIC_URL that changed)
 Keycloak imports `keycloak/realm-spike.json` only when the realm does not exist yet, so on a volume that already holds it the
 redirect URIs stay at the old address and login fails with *Invalid parameter: redirect_uri*. After setting `PUBLIC_URL` and
@@ -73,8 +117,8 @@ run them on a local stack, or against the server before the script, or with the 
   If issuance fails, `docker compose logs caddy` says why (DNS not pointing here, port 80 or 443 blocked, the DNS record proxied).
 - **Only Caddy publishes ports.** `docker compose ps` / `docker compose config | grep -B1 published` show 80 and 443 on `0.0.0.0` and
   everything else on `127.0.0.1`. Airflow, StarRocks and the databases are reached through `ssh -L`.
-- **The Dataset switch** (live / 250M benchmark) is not offered on a public host: the benchmark Cube is published on the server's
-  localhost only.
+- **The Dataset switch** (live / 250M benchmark in the header, two Cubes) is a local feature and is not offered on a public host: the
+  benchmark Cube from `run_scale.sh` is published on the server's localhost only. On a public host use `DATASET` above instead.
 - **Keycloak admin.** The admin console is blocked at the proxy. Administer with `docker compose exec keycloak /opt/keycloak/bin/kcadm.sh`
   (what the scripts do), or temporarily through `ssh -L 8180:localhost:8180 demo` (the console then redirects to the public host, so
   prefer `kcadm.sh`).

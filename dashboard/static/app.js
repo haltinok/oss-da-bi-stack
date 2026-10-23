@@ -1297,10 +1297,19 @@ function initDataset() {
   const { dataset, datasets = [] } = window.dashboardData;
   if (!dataset) return;
   $("#mart-name").textContent = dataset.mart;
+  const badge = $("#dataset-badge");
+  badge.textContent = dataset.label;
+  badge.classList.toggle("ro", !!dataset.readOnly);
+  badge.hidden = false;
+  document.title = `AdventureWorks Sales · ${dataset.label}`;
   if (dataset.readOnly) {
     const banner = $("#dataset-banner");
-    banner.innerHTML = `<b>Benchmark dataset</b> <code>${esc(dataset.mart)}</code>: scaled AdventureWorks (the order history multiplied, not live data), read by its own Cube. Dates end in 2021 and nothing refreshes. Inventory is read-only: approving actions is switched off because these product ids are not the live ERP's.`;
+    banner.innerHTML = `<b>${esc(dataset.label)} dataset</b> <code>${esc(dataset.mart)}</code>: scaled AdventureWorks (the order history multiplied, not live data). Dates end in 2021 and nothing refreshes.
+      <b>Approve is disabled here:</b> approved actions are written to the live ERP (<code>postgres_active</code>), which only feeds the live mart, and this dataset has no ERP behind it.
+      Inventory is shown read-only; ask for <code>DATASET=live</code> to approve.`;
     banner.hidden = false;
+    const hint = $("#inv .inv-head .hint");
+    if (hint) hint.textContent += " Approve is disabled on this dataset (see the note at the top).";
   }
   if (datasets.length < 2) return;
   const sel = $("#f-dataset");

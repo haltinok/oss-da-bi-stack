@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -50,6 +51,23 @@ ROLE_ORDER = ("admin", "purchasing", "marketing")
 # What each role may create. The agent creates none: it only drafts proposals.
 KINDS = {"admin": ("purchase_order", "work_order", "campaign"), "purchasing": ("purchase_order", "work_order"),
          "marketing": ("campaign",), "agent": ()}
+
+# DATASET=live (default): the live mart and the live ERP. Anything else (250m): a scaled benchmark copy that has no ERP behind it.
+# It reads that dataset's mart for validation but refuses every write, and shows no proposals or log: approved actions go to
+# postgres_active, which only feeds the live mart, so they would be nonsense for products of another dataset.
+DATASET = os.environ.get("DATASET", "live").lower()
+if not re.fullmatch(r"[a-z0-9]+", DATASET):
+    raise SystemExit(f"DATASET must be letters and digits, got {DATASET!r}")
+MART = "mart" if DATASET == "live" else f"mart_{DATASET}"
+READ_ONLY = DATASET != "live"
+READ_ONLY_MESSAGE = (f"Read-only: this deployment serves the {DATASET} dataset, a scaled copy with no ERP behind it. Approved actions are written to "
+                     "postgres_active, which only feeds the live mart. Set DATASET=live to approve.")
+
+
+def writable() -> None:
+    if READ_ONLY:
+        raise HTTPException(409, READ_ONLY_MESSAGE)
+
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="actions")
@@ -109,7 +127,7 @@ def inventory_rows(product_ids: list[int]) -> dict[int, dict]:
     marks = ", ".join(["%s"] * len(product_ids))
     sql = ("select product_key, product_name, status, replenishment_type, vendor_id, vendor_name, lead_time_days, unit_cost, "
            "suggested_order_qty, min_order_qty, max_order_qty, suggested_discount_pct, on_hand, on_order, daily_demand, "
-           "days_of_cover, excess_units, excess_value, reason from mart.inventory_health "
+           f"days_of_cover, excess_units, excess_value, reason from {MART}.inventory_health "
            f"where product_key in ({marks})")
     for attempt in range(4):
         try:
@@ -224,6 +242,7 @@ def healthz() -> dict:
 
 @app.post("/actions/purchase-orders")
 def purchase_orders(req: Replenish, user: Annotated[User, Depends(current_user)]) -> dict:
+    writable()
     need(user, "purchase_order")
     checked = _lines(req)
 
@@ -260,6 +279,7 @@ def purchase_orders(req: Replenish, user: Annotated[User, Depends(current_user)]
 
 @app.post("/actions/work-orders")
 def work_orders(req: Replenish, user: Annotated[User, Depends(current_user)]) -> dict:
+    writable()
     need(user, "work_order")
     checked = _lines(req)
 
@@ -281,6 +301,7 @@ def work_orders(req: Replenish, user: Annotated[User, Depends(current_user)]) ->
 
 @app.post("/actions/campaigns")
 def campaigns(req: Campaign, user: Annotated[User, Depends(current_user)]) -> dict:
+    writable()
     need(user, "campaign")
     rules.check_line_count(len(req.product_ids))
 
@@ -313,6 +334,8 @@ def _lines(req: Replenish) -> list[Line]:
 
 @app.get("/actions/log")
 def log(user: Annotated[User, Depends(current_user)], limit: int = 100) -> dict:
+    if READ_ONLY:
+        return {"entries": []}
     with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             "select id, ts, username, action, outcome, product_ids, result, reason from public.actions_log "
@@ -374,6 +397,7 @@ def validate_proposal(p: ProposalIn, rows: dict[int, dict]) -> tuple[dict, list[
 
 @app.post("/proposals")
 def create_proposals(batch: ProposalBatch, user: Annotated[User, Depends(current_user)]) -> dict:
+    writable()
     if user.role != "agent":
         raise HTTPException(403, "only the proposal agent drafts proposals")
     wanted: list[int] = []
@@ -422,6 +446,8 @@ READ_KINDS = {**KINDS, "agent": ("purchase_order", "work_order", "campaign")}
 def list_proposals(user: Annotated[User, Depends(current_user)], status: str = "proposed", limit: int = 100) -> dict:
     if status not in ("proposed", "approved", "dismissed", "all"):
         raise HTTPException(422, "status must be proposed, approved, dismissed or all")
+    if READ_ONLY:
+        return {"proposals": []}
     with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             "select id, created_at, run_id, seq, created_by, kind, title, rationale, payload, numbers, status, decided_by, decided_at "
@@ -436,6 +462,7 @@ def list_proposals(user: Annotated[User, Depends(current_user)], status: str = "
 
 @app.post("/proposals/{proposal_id}/dismiss")
 def dismiss(proposal_id: int, user: Annotated[User, Depends(current_user)]) -> dict:
+    writable()
     with pg() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("select kind, status from public.proposals where id = %s", (proposal_id,))
         row = cur.fetchone()
