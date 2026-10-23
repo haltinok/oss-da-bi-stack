@@ -340,7 +340,8 @@ jobs:
           set -a; . ./.env; set +a
           pip install pytest requests pymysql pyjwt cryptography psycopg2-binary
           python -m pytest cube/tests -q
-          python -m pytest actions/tests -q
+          # the dataset-handling unit tests need fastapi and run in the actions-rules job
+          python -m pytest actions/tests -q --ignore=actions/tests/test_actions_dataset.py
       - name: logs on failure
         if: failure()
         run: |
