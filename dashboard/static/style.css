@@ -336,3 +336,6 @@ td.act-done, .act-done { color: var(--good, #1a7f4b); white-space: nowrap; }
 .btn-quiet { border: 1px solid var(--border, rgba(127,127,127,.4)); background: transparent; color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
 
 .dataset-banner { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--border, rgba(127,127,127,.35)); border-radius: 8px; font-size: 13px; color: var(--ink-2); background: var(--surface-2, transparent); }
+
+.dataset-badge { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; border: 1px solid var(--border, rgba(127,127,127,.4)); color: var(--ink-2); }
+.dataset-badge.ro { color: var(--warn, #b45309); border-color: currentColor; }

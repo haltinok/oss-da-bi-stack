@@ -102,6 +102,7 @@ with sync_playwright() as p:
     BENCH["on"] = False
     ctx, page = load(browser, base)
     check(page.locator("#dataset-field").is_hidden(), "one dataset offered: no switch")
+    check(page.text_content("#dataset-badge") == "Live (simulator)" and "read" not in (page.get_attribute("#dataset-badge", "class") or ""), "the header names the live dataset")
     check(hits.get("/cube-live", 0) > 0 and not hits.get("/cube-bench"), "reads the live Cube")
     ctx.close()
 
@@ -120,7 +121,9 @@ with sync_playwright() as p:
     check(page.input_value("#f-dataset") == "250m" and page.inner_text("#mart-name") == "mart_250m", "the switch and the mart name follow")
     check(hits.get("/cube-bench", 0) > 0 and not hits.get("/cube-live"), f"benchmark: only the benchmark Cube is asked ({hits})")
     check(not hits.get("/actions"), "benchmark: the actions service is never called")
-    check(page.locator("#dataset-banner").is_visible() and "read-only" in page.inner_text("#dataset-banner"), "benchmark: a banner says it is a read-only copy")
+    check(page.locator("#dataset-banner").is_visible() and "Approve is disabled" in page.inner_text("#dataset-banner") and "postgres_active" in page.inner_text("#dataset-banner"),
+          "benchmark: a banner says Approve is disabled and why")
+    check(page.text_content("#dataset-badge") == "250M benchmark" and "ro" in (page.get_attribute("#dataset-badge", "class") or "").split(), "the header names the benchmark dataset")
     check(page.locator('[data-panel="proposals"]').is_hidden(), "benchmark: no proposals panel")
 
     page.reload()                                   # remembered without the URL parameter too

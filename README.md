@@ -447,6 +447,12 @@ or Approve controls (its product ids are not the live ERP's), and a banner says 
 Both Cubes must share `CUBEJS_API_SECRET` (the benchmark Cube is started with the one from `.env`), and the browser must
 be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests the switch against mock services.
 
+**`DATASET`** (`.env`, `live` or `250m`): the deployment serves the live mart or the 250M benchmark tier (`mart_250m`). Cube loads
+`spike/cube/model` (year-partitioned rollups, hourly refresh) plus the inventory cubes re-pointed at `mart_250m` into its own
+rollup schema (the live rollups are kept), the auth service reads `rls_250m`, the actions service reads `mart_250m` and refuses every
+write (approvals go to the live ERP, which only feeds the live mart), and the page header names the dataset and says Approve is
+disabled. Run `scripts/grant-dataset.sh 250m` once after the tier's dbt build. See `docs/deploy-demo.md`.
+
 **Serving it on the internet.** `docker-compose.public.yml` (with `PUBLIC_URL` and `COMPOSE_FILE` in `.env`) adds a Caddy front
 door with a Let's Encrypt certificate and serves Keycloak (`/kc`), the auth and actions services, Cube and the dashboard at one
 address; only Caddy publishes ports (80 and 443). Local runs are unchanged. Steps, the update for an existing Keycloak volume
