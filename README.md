@@ -445,7 +445,8 @@ switch between *Live (simulator)* and *250M benchmark* (`mart_250m`). Picking on
 (`?dataset=250m`, remembered in the browser); the benchmark is read-only: no actions service call, no proposals panel
 or Approve controls (its product ids are not the live ERP's), and a banner says it is a scaled copy that ends in 2021.
 Both Cubes must share `CUBEJS_API_SECRET` (the benchmark Cube is started with the one from `.env`), and the browser must
-be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests the switch against mock services.
+be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests the switch and `dashboard/cube/tests/header.py` the header and banner
+(one row from 1280 px up, no overflow down to a phone, both datasets, light and dark) against mock services, in a real Chrome.
 
 **`DATASET`** (`.env`, `live` or `250m`): the deployment serves the live mart or the 250M benchmark tier (`mart_250m`). Cube loads
 `spike/cube/model` (year-partitioned rollups, hourly refresh) plus the inventory cubes re-pointed at `mart_250m` into its own
