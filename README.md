@@ -439,6 +439,14 @@ do not point it at real customer or bank data. Tested: 16 unit tests (the loop a
 model, no network) and a live rules-mode run through the DAG; the llm path has not been run against the real API
 (no key was available).
 
+**Dataset switch** (dashboard header). The Cube dashboard reads the live mart by default. With `CUBE_250M_PORT` set in
+`.env` (the port of the second Cube from `spike/bench/run_scale.sh 250m`, normally 4001) the header offers a Dataset
+switch between *Live (simulator)* and *250M benchmark* (`mart_250m`). Picking one reloads the page on that Cube only
+(`?dataset=250m`, remembered in the browser); the benchmark is read-only: no actions service call, no proposals panel
+or Approve controls (its product ids are not the live ERP's), and a banner says it is a scaled copy that ends in 2021.
+Both Cubes must share `CUBEJS_API_SECRET` (the benchmark Cube is started with the one from `.env`), and the browser must
+be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests the switch against mock services.
+
 **Things that cost a day to find** (all fixed in the code, noted so they are not undone):
 - The all-in-one StarRocks image advertises its backend as `127.0.0.1`, so Stream Load from another
   container fails; hence separate FE/BE containers.

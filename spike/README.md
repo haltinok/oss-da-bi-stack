@@ -84,6 +84,13 @@ spike/bench/run_scale.sh 250m
 CUBE_URL=http://localhost:4001/cubejs-api/v1/load uv run --with pyjwt --with requests python -I spike/bench/bench.py --label 250m
 ```
 
+# 8. look at it in the dashboard: set CUBE_250M_PORT=4001 in the server's .env and recreate the dashboard container. A
+#    "Dataset" switch appears in the header (Live / 250M benchmark); the benchmark reads that second Cube, is read-only
+#    (no inventory actions, a banner says so) and the choice is remembered per browser (?dataset=250m).
+docker compose --profile starrocks up -d dashboard-cube
+# the browser must reach that port as well as the dashboard's, Keycloak's and the others':  ssh -L 4001:localhost:4001 -L 8250:localhost:8250 ... demo
+```
+
 ### Does the live pipeline touch any of this?
 No, and nothing here touches the live pipeline's objects, as long as the copy is not put in `raw`. Checked in the code:
 
