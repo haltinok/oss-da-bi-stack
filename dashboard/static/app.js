@@ -1305,11 +1305,11 @@ function initDataset() {
   if (!dataset) return;
   $("#mart-name").textContent = dataset.mart;
   $("#brand-sub").title = `Reads ${dataset.mart}`;
-  // The header names the dataset in the tools row: a switch when the stack serves two, a plain label when it serves one.
-  const field = $("#dataset-field");
-  field.title = `Dataset: ${dataset.label} (${dataset.mart})`;
-  field.classList.toggle("ro", !!dataset.readOnly);
-  field.hidden = false;
+  const badge = $("#dataset-badge");
+  badge.title = `Dataset: ${dataset.label} (${dataset.mart})`;
+  badge.textContent = dataset.label;
+  badge.classList.toggle("ro", !!dataset.readOnly);
+  badge.hidden = false;
   document.title = `AdventureWorks Sales · ${dataset.label}`;
   if (dataset.readOnly) {
     const banner = $("#dataset-banner");
@@ -1328,14 +1328,9 @@ function initDataset() {
     const hint = $("#inv .inv-head .hint");
     if (hint) hint.textContent += " Approve is disabled on this dataset (see the note at the top).";
   }
-  if (datasets.length < 2) {
-    const fixed = $("#dataset-static");
-    fixed.textContent = dataset.label;
-    fixed.hidden = false;
-    return;
-  }
+  if (datasets.length < 2) return;
   const sel = $("#f-dataset");
-  sel.hidden = false;
+  $("#dataset-field").hidden = false;
   sel.replaceChildren(...datasets.map((d) => el("option", { value: d.id }, esc(d.label))));
   sel.value = dataset.id;
   sel.addEventListener("change", () => {

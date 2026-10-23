@@ -45,9 +45,8 @@ with sync_playwright() as p:
 
     BENCH["on"] = False
     ctx, page = load(browser, base)
-    check(page.locator("#f-dataset").is_hidden() and page.locator("#dataset-static").is_visible() and page.text_content("#dataset-static") == "Live (simulator)",
-          "one dataset offered: no switch, a plain label names it")
-    check("ro" not in (page.get_attribute("#dataset-field", "class") or "").split() and page.locator("#dataset-badge").count() == 0, "the header names the live dataset (no badge in the title)")
+    check(page.locator("#dataset-field").is_hidden(), "one dataset offered: no switch")
+    check(page.text_content("#dataset-badge") == "Live (simulator)" and "ro" not in (page.get_attribute("#dataset-badge", "class") or "").split(), "the header names the live dataset")
     check(hits.get("/cube-live", 0) > 0 and not hits.get("/cube-bench"), "reads the live Cube")
     ctx.close()
 
@@ -69,7 +68,7 @@ with sync_playwright() as p:
     check(page.locator("#dataset-banner").is_visible() and "Approve is available in Live" in page.inner_text("#dataset-banner"), "benchmark: a one-line banner says Approve is available in Live")
     page.click("#dataset-banner-toggle")
     check("Approve is disabled" in page.inner_text("#dataset-banner") and "postgres_active" in page.inner_text("#dataset-banner"), "benchmark: Details gives the reason (the live ERP)")
-    check("ro" in (page.get_attribute("#dataset-field", "class") or "").split() and "250M benchmark" in (page.get_attribute("#dataset-field", "title") or ""), "the header marks the benchmark dataset")
+    check(page.text_content("#dataset-badge") == "250M benchmark" and "ro" in (page.get_attribute("#dataset-badge", "class") or "").split(), "the header names the benchmark dataset")
     check(page.locator('[data-panel="proposals"]').is_hidden(), "benchmark: no proposals panel")
 
     page.reload()                                   # remembered without the URL parameter too
