@@ -1,6 +1,6 @@
 # Plan: dashboards defined in YAML, rendered from Cube, authored by an agent
 
-Status: **Phases 1 and 2 done** (spec, validator, compiler: `dashboards/`, `scripts/dashspec`; shared modules: `dashboard/static/lib/`, `dashboard/cube/cube-client.mjs`); later phases not started. Written to be implemented with Claude Code, one phase per PR, like
+Status: **Phases 1, 2 and 3 done** (spec, validator, compiler: `dashboards/`, `scripts/dashspec`; shared modules: `dashboard/static/lib/`, `dashboard/cube/cube-client.mjs`); later phases not started. Written to be implemented with Claude Code, one phase per PR, like
 [`inventory-actions-plan.md`](inventory-actions-plan.md).
 
 ## Goal
@@ -121,7 +121,7 @@ layout:                   # 12-column grid; rows top to bottom
 ```
 
 Notes for Phase 1 to settle:
-- **Cross-fact arithmetic.** "Revenue across both channels" is a sum of two measures from two cubes. Either allow a small,
+- **Cross-fact arithmetic (settled in Phase 3: `sum` plus `ratio` of two sums, nothing more).** "Revenue across both channels" is a sum of two measures from two cubes. Either allow a small,
   closed set of combinations in the spec (`sum` of measures with the same unit) or require such a measure to exist in Cube
   (a view or a combined cube). Prefer the second if Cube can serve it from rollups; fall back to `sum` only.
 - **Labels and translations.** Labels in the spec, with an optional `labels_tr:` block, or a per-locale label file. Keep it
@@ -231,6 +231,6 @@ and shows the same totals as `spike/cube/check.py` for the same filters.
 
 ## Open questions
 
-- Compile at deploy time on the server, or in CI with the JSON committed?
+- ~~Compile at deploy time on the server, or in CI with the JSON committed?~~ Settled in Phase 3: committed (`dashboards/build/`), a test fails if it is stale, a deploy is `git pull`.
 - One language per dashboard file, or labels per locale in one file?
 - Should `/d/` replace `/` once parity is reached, with the inventory and actions as their own page?

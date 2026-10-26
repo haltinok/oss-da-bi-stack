@@ -13,6 +13,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 PORT = 19350
 hits: dict[str, int] = {}
 BENCH = {"on": True}
+ROLE = {"role": "admin"}  # what the mock auth service says the signed-in user is
+FAIL = {"members": set(), "message": "Profit and margin are not available for your role"}   # queries naming these members answer 403
 FAKE = {"on": False}      # True: the Cube mocks answer every query with generated rows instead of none (see fake_rows)
 
 POOLS = {
@@ -39,10 +41,9 @@ def fake_rows(query):
     rows = [{}]
     for key, values in axes:
         rows = [{**r, key: v} for r in rows for v in values][:80]
-    seed = sum(map(ord, "".join(query.get("measures", []))))
     for i, r in enumerate(rows):
         for m in query.get("measures", []):
-            h = (sum(map(ord, m)) * 31 + i * 17 + seed) % 997
+            h = (sum(map(ord, m)) * 31 + i * 17) % 997
             r[m] = str(round(h * (1.5 if m.endswith(("revenue", "profit")) else 1), 2) if "pct" not in m else 20 + h % 30)
         if not axes:
             break
@@ -76,7 +77,7 @@ class Handler(BaseHTTPRequestHandler):
                     f'location.replace({json.dumps(to)});</script>')
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
-            return self._send(json.dumps({"token": "t", "expires_in": 900, "user": "admin", "role": "admin", "territories": ["Canada"]}).encode())
+            return self._send(json.dumps({"token": "t", "expires_in": 900, "user": "admin", "role": ROLE["role"], "territories": ["Canada"]}).encode())
         if path.startswith("/cube-"):
             query = {}
             if FAKE["on"]:
@@ -87,6 +88,8 @@ class Handler(BaseHTTPRequestHandler):
                 query = body.get("query", body)
             ann = {"measures": {}, "dimensions": {}, "segments": {}, "timeDimensions": {}}
             queries = query if isinstance(query, list) else [query]
+            if FAIL["members"] and any(m in FAIL["members"] for q in queries for m in q.get("measures", [])):
+                return self._send(json.dumps({"error": FAIL["message"]}).encode(), status=403)
             results = [{"query": q, "data": fake_rows(q) if FAKE["on"] else [], "annotation": ann} for q in queries]
             # what Cube answers a queryType=multi request with (the client always asks that way)
             return self._send(json.dumps({"queryType": "regularQuery", "results": results, "pivotQuery": {**queries[0], "queryType": "regularQuery"}}).encode())
@@ -100,7 +103,9 @@ class Handler(BaseHTTPRequestHandler):
                   f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", cube: "http://localhost:{PORT}/cube-live" }}; '
                   f"window.STACK.datasets = {ds}];")
             return self._send(js.encode(), "application/javascript")
-        for base, strip in ((ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
+        if path == "/d" or path.startswith("/d/"):          # the renderer page, for /d/ and /d/<id>
+            path = "/d.html"
+        for base, strip in ((ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
             if path.startswith(strip):
                 rel = path[len(strip):] or "index.html"
                 f = base / rel
@@ -111,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
                         page = page.replace(b"</body>", b"<script>addEventListener('load', () => setTimeout(() => { if (window.__app) { window.__app.state.data = { latest_orders: [{ order_date: '2021-06-30T10:00:00' }] }; window.__app.setLive(true); const e = document.querySelector('#error'); if (e) e.hidden = true; } }, 1800));</script></body>")
                     if rel == "index.html":
                         page = page.replace(b'<script type="module" src="app.js"></script>', b'<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script type="module" src="app.js"></script>')
-                    ctype = "text/html" if rel.endswith(".html") else "text/javascript" if rel.endswith((".js", ".mjs")) else "text/css" if rel.endswith(".css") else "application/octet-stream"
+                    ctype = "text/html" if rel.endswith(".html") else "text/javascript" if rel.endswith((".js", ".mjs")) else "text/css" if rel.endswith(".css") else "application/json" if rel.endswith(".json") else "application/octet-stream"
                     return self._send(page, ctype)
         self._send(b"not found", "text/plain", 404)
 

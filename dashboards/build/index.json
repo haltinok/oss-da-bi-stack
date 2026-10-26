@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sales-overview",
+    "title": "Sales overview",
+    "description": "Revenue, margin and orders by channel, product and territory.",
+    "roles": [
+      "admin",
+      "manager"
+    ]
+  }
+]

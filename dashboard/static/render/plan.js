@@ -1,0 +1,177 @@
+// The renderer's data logic, with no DOM: which Cube queries a panel needs, and how their rows become numbers. A panel names Cube
+// members only; this module never writes SQL. Cube cannot join two fact cubes in one query, so a panel that lists measures of several
+// cubes gets one query per cube and the rows are merged here, on the dimensions the panel groups by.
+
+export const cubeOf = (member) => member.split(".")[0];
+export const num = (v) => (v == null || v === "" ? null : Number(v));
+
+/** "internet_sales.order_number" -> "Order number" (the label of a column that has none). */
+export const humanize = (member) => {
+  const name = member.split(".")[1].replace(/_/g, " ");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+};
+
+/** The Cube filters for the page's filter values; a panel can opt out of some with ignore_filters. */
+export function activeFilters(spec, values, panel = {}) {
+  const ignored = new Set(panel.ignore_filters || []);
+  return (spec.filters || [])
+    .filter((f) => values[f.id] !== undefined && values[f.id] !== "" && !ignored.has(f.id))
+    .map((f) => ({ member: f.dimension, operator: "equals", values: [String(values[f.id])] }));
+}
+
+/** A KPI measure as a term: what to fetch (members) and how to turn the fetched numbers into the tile's value. */
+export function term(def) {
+  if (def.member) return { kind: "member", members: [def.member], parts: [def.member], label: def.label, format: def.format };
+  if (def.sum) return { kind: "sum", members: [...def.sum], parts: def.sum, label: def.label, format: def.format };
+  return {
+    kind: "ratio", members: [...new Set([...def.ratio.num, ...def.ratio.den])], num: def.ratio.num, den: def.ratio.den,
+    label: def.label, format: def.format,
+  };
+}
+
+/** The tile's value from valueOf(member) -> number | null. A sum of nothing is null (not 0); a ratio with a zero denominator is null. */
+export function evaluate(t, valueOf) {
+  const total = (ms) => {
+    const vs = ms.map(valueOf).filter((v) => v != null && isFinite(v));
+    return vs.length ? vs.reduce((a, b) => a + b, 0) : null;
+  };
+  if (t.kind === "member") return valueOf(t.members[0]) ?? null;
+  if (t.kind === "sum") return total(t.members);
+  const n = total(t.num), d = total(t.den);
+  return n == null || !d ? null : n / d;
+}
+
+/** Group members by cube: Map(cube -> [members]), in first-seen order. */
+export function byCube(members) {
+  const out = new Map();
+  for (const m of members) {
+    const c = cubeOf(m);
+    if (!out.has(c)) out.set(c, []);
+    if (!out.get(c).includes(m)) out.get(c).push(m);
+  }
+  return out;
+}
+
+/** One Cube query per cube that owns some of `measures`; `base` (dimensions, timeDimensions, filters, ...) is added to each. */
+export function queriesPerCube(measures, base = {}) {
+  return [...byCube(measures)].map(([cube, ms]) => ({ cube, query: { ...base, measures: ms } }));
+}
+
+/** Run those queries in parallel -> [{ cube, rows }]. */
+export function runAll(run, queries, signal) {
+  return Promise.all(queries.map(async ({ cube, query }) => ({ cube, rows: await run(query, signal) })));
+}
+
+/** Measures of a no-dimension query: member -> number (a query with no rows has no value). */
+export function totals(results) {
+  const out = new Map();
+  for (const { rows } of results) for (const [k, v] of Object.entries(rows[0] || {})) out.set(k, num(v));
+  return out;
+}
+
+/**
+ * Rows of per-cube queries grouped by one time dimension -> [{ bucket, values: Map(member -> number) }] in time order. A bucket that one
+ * cube has and another lacks simply has no value for the other's members.
+ */
+export function byBucket(results, timeKey) {
+  const buckets = new Map();
+  for (const { rows } of results) {
+    for (const r of rows) {
+      const b = r[timeKey];
+      if (b == null) continue;
+      if (!buckets.has(b)) buckets.set(b, new Map());
+      for (const [k, v] of Object.entries(r)) if (k !== timeKey) buckets.get(b).set(k, num(v));
+    }
+  }
+  return [...buckets].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([bucket, values]) => ({ bucket, values }));
+}
+
+/**
+ * Rows of per-cube queries that all group by the same `dims` -> one row per distinct combination, with every cube's measures on it.
+ * Returns [{ key, dims: {dim: value}, values: Map(member -> number) }] (in first-seen order).
+ */
+export function byDims(results, dims) {
+  const out = new Map();
+  for (const { rows } of results) {
+    for (const r of rows) {
+      const key = dims.map((d) => r[d]).join("\u0000");
+      if (!out.has(key)) out.set(key, { key, dims: Object.fromEntries(dims.map((d) => [d, r[d]])), values: new Map() });
+      const cur = out.get(key);
+      for (const [k, v] of Object.entries(r)) if (!dims.includes(k)) cur.values.set(k, num(v));
+    }
+  }
+  return [...out.values()];
+}
+
+/** The Cube row key of a time dimension at a granularity. */
+export const timeKey = (dimension, granularity) => `${dimension}.${granularity}`;
+
+/** "2020-07-01T00:00:00.000" -> "2020-07-01" */
+export const day = (bucket) => String(bucket).slice(0, 10);
+
+/**
+ * Filter options for the page's filter bar: rows [{ value, parent }] from per-cube queries of [parent?, dimension], de-duplicated and
+ * sorted (numbers numerically). `parentValue` (the chosen value of the parent filter, if the dashboard has one) narrows them.
+ */
+export function optionsOf(results, filter, parentValue = "") {
+  const seen = new Map();
+  for (const { rows } of results) {
+    for (const r of rows) {
+      const value = r[filter.dimension];
+      const parent = filter.parent ? r[filter.parent] : undefined;
+      if (value == null || value === "") continue;
+      if (parentValue !== "" && String(parent) !== String(parentValue)) continue;
+      seen.set(`${parent}\u0000${value}`, { value: String(value), parent: parent == null ? undefined : String(parent) });
+    }
+  }
+  const all = [...seen.values()];
+  const numeric = all.every((o) => o.value !== "" && !isNaN(Number(o.value)));
+  const cmp = (a, b) => (numeric ? Number(a) - Number(b) : String(a).localeCompare(String(b)));
+  return all.sort((a, b) => (a.parent !== undefined && b.parent !== undefined && a.parent !== b.parent ? cmp(a.parent, b.parent) : cmp(a.value, b.value)));
+}
+
+/** The measures a filter's option query can use: one measure per cube of the panels that apply that filter. */
+export function optionMeasures(spec, filter) {
+  const per = new Map();
+  for (const p of spec.panels) {
+    if ((p.ignore_filters || []).includes(filter.id)) continue;
+    for (const m of panelMeasures(p, spec.members)) if (!per.has(cubeOf(m))) per.set(cubeOf(m), m);
+  }
+  return [...per.values()];
+}
+
+/** Every measure a panel reads (`members` is the compiled spec's member map, needed to tell a table's measures from its dimensions). */
+export function panelMeasures(p, members = {}) {
+  switch (p.type) {
+    case "kpi": return p.measures.flatMap((m) => term(m).members);
+    case "timeseries": return p.series.map((s) => s.member);
+    case "bar": case "treemap": return [p.measure];
+    case "table": return tableParts(p, members).measures;
+    default: return [];
+  }
+}
+
+/** The members a table shows, split by kind with the compiled `members` map: { measures, dimensions }. */
+export function tableParts(p, members) {
+  const cols = p.columns.map((c) => c.member);
+  return { measures: cols.filter((m) => members[m]?.kind === "measure"), dimensions: cols.filter((m) => members[m]?.kind !== "measure") };
+}
+
+/** The CSS colour for a series: a theme name (internet, reseller) is a CSS variable, a hex colour is used as is, none cycles a palette. */
+const CYCLE = ["var(--internet)", "var(--reseller)", "#1baf7a", "#eda100", "#6250d6", "#e87ba4"];
+export const colorOf = (color, i) => (!color ? CYCLE[i % CYCLE.length] : /^[a-z][a-z-]*$/.test(color) ? `var(--${color})` : color);
+
+/** A subset of Markdown for text panels: paragraphs, **bold**, `code`, [links](https://...), and "- " lists. Everything is escaped first. */
+export function markdown(src, esc) {
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" rel="noopener noreferrer" target="_blank">$1</a>');
+  const out = [];
+  for (const block of String(src).trim().split(/\n{2,}/)) {
+    const lines = block.split("\n");
+    if (lines.every((l) => /^\s*[-*] /.test(l))) out.push(`<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ""))}</li>`).join("")}</ul>`);
+    else out.push(`<p>${lines.map(inline).join("<br>")}</p>`);
+  }
+  return out.join("");
+}

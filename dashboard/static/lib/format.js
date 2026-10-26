@@ -7,6 +7,7 @@ export function createFormat({ locale = "en-US", currency = "USD" } = {}) {
   const cents = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const symbol = new Intl.NumberFormat(locale, { style: "currency", currency }).formatToParts(0).find((p) => p.type === "currency")?.value ?? currency;
   const integer = new Intl.NumberFormat(locale);
+  const twoDecimals = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
   const oneDecimal = new Intl.NumberFormat(locale);
   const month = new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" });
   const sign = (v) => (v < 0 ? "−" : "");
@@ -16,6 +17,8 @@ export function createFormat({ locale = "en-US", currency = "USD" } = {}) {
     money: (v) => (v == null ? "—" : sign(v) + symbol + (Math.abs(v) >= 1000 ? compact.format(Math.abs(v)) : cents.format(Math.abs(v)))),
     /** Whole currency units with grouping, for tables and tooltips. */
     moneyFull: (v) => (v == null ? "—" : v.toLocaleString(locale, { style: "currency", currency, maximumFractionDigits: 0 })),
+    /** A plain number, up to two decimals, grouped: 1,234.57 */
+    number: (v) => (v == null || !isFinite(v) ? "—" : twoDecimals.format(v)),
     int: (v) => (v == null ? "—" : integer.format(Math.round(v))),
     /** A fraction as a percentage: 0.153 -> 15.3%; never "−0%" for a tiny negative. */
     pct: (v, d = 1) => {

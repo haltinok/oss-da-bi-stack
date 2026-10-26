@@ -28,15 +28,18 @@ panels:
     type: kpi
     measures:
       - { sum: [internet_sales.revenue, reseller_sales.revenue], label: Revenue, format: money }
-      - { member: internet_sales.margin_pct, label: Gross margin, format: pct }
-      - { member: internet_sales.orders, label: Orders, format: int }
+      - { sum: [internet_sales.gross_profit, reseller_sales.gross_profit], label: Gross profit, format: money }
+      - { ratio: { num: [internet_sales.gross_profit, reseller_sales.gross_profit], den: [internet_sales.revenue, reseller_sales.revenue] }, label: Gross margin, format: pct }
+      - { sum: [internet_sales.orders, reseller_sales.orders], label: Orders, format: int }
+      - { ratio: { num: [internet_sales.revenue, reseller_sales.revenue], den: [internet_sales.orders, reseller_sales.orders] }, label: Avg order value, format: money }
+      - { sum: [internet_sales.units, reseller_sales.units], label: Units sold, format: int }
     sparkline: { granularity: month }
   - id: trend
     type: timeseries
     title: Monthly revenue by channel
     series:
-      - { member: internet_sales.revenue, label: Internet, color: internet }
-      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+      - { member: internet_sales.revenue, label: Internet, color: internet, format: money }
+      - { member: reseller_sales.revenue, label: Reseller, color: reseller, format: money }
     granularity: month
     style: stacked-bar
     on_click: { set_filter: fy }
@@ -53,10 +56,15 @@ panels:
     by: products.name
     sort: desc
     limit: 10
+    format: money
   - id: lines
     type: table
     title: Latest orders
-    columns: [internet_sales.order_number, internet_sales.order_date, territories.country, internet_sales.revenue]
+    columns:
+      - { member: internet_sales.order_number, label: Order }
+      - { member: internet_sales.order_date, label: Date }
+      - { member: territories.country, label: Country }
+      - { member: internet_sales.revenue, label: Revenue, format: money }
     order: { internet_sales.order_date: desc }
     limit: 50
 layout:

@@ -152,3 +152,9 @@ run them on a local stack, or against the server before the script, or with the 
 Remove the `COMPOSE_FILE` and `PUBLIC_URL` lines from `.env` and `docker compose up -d`. A Keycloak volume that was switched to the
 public address keeps the public redirect URIs: run `PUBLIC_URL=http://localhost:8250 keycloak/update-public-url.sh` (any
 `http://localhost` value counts as local, and the script then turns the password grant back on) after the stack is back up.
+
+## Dashboards from YAML (`/d/`)
+`dashboard-cube` also serves the dashboard renderer: `/d/` lists the dashboards the signed-in role may open and `/d/<id>` draws one
+(specs in `dashboards/*.yml`, compiled to the committed `dashboards/build/`; see `dashboards/README.md`). The first deploy of this needs the
+service recreated, because it gets a new mount and nginx routes: `git pull && docker compose up -d dashboard-cube`. After that a new or
+changed dashboard is only `git pull` (nginx reads the JSON on each request). Nothing else changes: the sales dashboard stays at `/`.

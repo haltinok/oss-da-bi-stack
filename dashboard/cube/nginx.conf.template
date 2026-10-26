@@ -22,6 +22,18 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # The dashboard renderer: /d/ and /d/<id> are one page (d.html); the compiled specs it draws are dashboards/build/*.json.
+    location = /d { return 301 /d/; }
+    location /d/ {
+        rewrite ^ /d.html break;
+        add_header Cache-Control "no-cache";
+    }
+    location /dashboards/ {
+        alias /srv/dashboards/;
+        default_type application/json;
+        add_header Cache-Control "no-cache";
+    }
+
     location / {
         try_files $uri $uri/ =404;
         add_header Cache-Control "no-cache";

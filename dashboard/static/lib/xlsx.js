@@ -8,11 +8,11 @@
 //   const blob = buildXlsx([{ name, title, subtitle, columns: [{ label, type }], rows: [[...]] }]);
 //
 // Column types: "text", "int", "money", "pct" (a fraction: 0.153 -> 15.3%),
-// "date" (ISO string or Date); a cell given as { v, t } overrides its column's
+// "number" (#,##0.00), "date" (ISO string or Date); a cell given as { v, t } overrides its column's
 // type. null / undefined / NaN cells are left empty.
 export const buildXlsx = (() => {
   // Style indexes into cellXfs below.
-  const STYLE = { text: 0, int: 1, money: 2, pct: 3, date: 4, header: 5, title: 6, note: 7 };
+  const STYLE = { text: 0, int: 1, money: 2, pct: 3, date: 4, header: 5, title: 6, note: 7, number: 8 };
 
   const xml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
     // Control characters other than tab/newline are invalid in XML 1.0.
@@ -76,7 +76,7 @@ ${rows.length ? `<autoFilter ref="A${headerRow}:${last}"/>` : ""}
 <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF3F2EE"/></patternFill></fill></fills>
 <borders count="2"><border/><border><bottom style="thin"><color rgb="FFC3C2B7"/></bottom></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="8">
+<cellXfs count="9">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
@@ -85,6 +85,7 @@ ${rows.length ? `<autoFilter ref="A${headerRow}:${last}"/>` : ""}
 <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
