@@ -30,6 +30,14 @@ the rebuilt `dashboards/build/*.json`, and open a PR. `scripts/dashspec` needs o
 
 Or ask Claude Code: the [`dashboard-author`](../skills/dashboard-author/SKILL.md) skill does these steps (and refuses to invent a metric).
 
+## Describe a dashboard instead of writing it
+On `/d/` there is a box: say what you want ("monthly revenue by channel and the top 5 products, with a table of the latest orders") and the
+[builder](../builder/README.md) drafts the YAML for **your role**, checks it with the same validator, and draws it at `/d/draft`. Change it in words, edit the
+YAML, browse the [semantic layer](semantic-layer.md) next to it, download the file, and send it through a pull request when it should be kept.
+Until an API key is configured, a rule-based stand-in answers (a fixed set of phrases, not free text); with a key, Claude does.
+
+![A draft built from a request](images/dashboards/builder.png)
+
 ## Anatomy of a file
 
 ```yaml

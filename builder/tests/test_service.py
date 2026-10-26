@@ -107,3 +107,26 @@ def test_llm_mode_runs_the_same_loop_with_the_anthropic_client(monkeypatch):
     body = client.post("/build", headers=token("manager"), json={"prompt": "regional sales"}).json()
     assert body["status"] == "ok" and body["mode"] == "llm" and body["model"] == main.core.MODEL and body["usage"]["input_tokens"] == 100
     assert script.calls[0]["system"][0]["cache_control"] and "cannot_build" in script.calls[0]["system"][0]["text"] and script.calls[0]["tools"][0]["name"] == "submit_dashboard"
+
+
+def test_validate_checks_a_hand_edited_file_for_the_callers_role():
+    good = client.post("/build", headers=token("manager"), json={"prompt": "revenue by month"}).json()["yaml"]
+    ok = client.post("/validate", headers=token("manager"), json={"yaml": good}).json()
+    assert ok["ok"] and ok["spec"]["id"] == "draft" and ok["problems"] == []
+    broken = client.post("/validate", headers=token("manager"), json={"yaml": good.replace("internet_sales.revenue", "internet_sales.nope", 1)}).json()
+    assert not broken["ok"] and broken["spec"] is None and any("internet_sales.nope" in p for p in broken["problems"])
+    as_rep = client.post("/validate", headers=token("rep"), json={"yaml": good.replace("internet_sales.revenue", "internet_sales.gross_profit")}).json()
+    assert not as_rep["ok"] and any("role 'rep' cannot read" in p for p in as_rep["problems"])
+    assert client.post("/validate", json={"yaml": good}).status_code == 401
+    assert client.post("/validate", headers=token("manager"), json={"yaml": ""}).status_code == 422
+
+
+def test_info_offers_examples_that_fit_the_role():
+    assert any("revenue" in e.lower() for e in client.get("/info", headers=token("manager")).json()["examples"])
+    assert all("stock" in e.lower() or "envanter" in e.lower() for e in client.get("/info", headers=token("purchasing")).json()["examples"])
+
+
+def test_every_example_builds_for_its_role():
+    for role in ("manager", "rep", "admin", "purchasing", "marketing"):
+        for ex in client.get("/info", headers=token(role)).json()["examples"]:
+            assert client.post("/build", headers=token(role, user=f"{role}-ex"), json={"prompt": ex}).json()["status"] == "ok", (role, ex)

@@ -140,3 +140,12 @@ def test_the_visible_catalog_drops_joins_to_cubes_a_role_cannot_see():
 def test_an_unknown_role_is_refused():
     with pytest.raises(ValueError):
         run(Script(), role="boss")
+
+
+def test_links_in_text_panels_are_removed_from_a_draft():
+    spec = yaml.safe_load(GOOD)
+    spec["panels"].append({"id": "note", "type": "text", "markdown": "See [the portal](https://evil.example/login) and [mail](mailto:a@b.c) and **bold**."})
+    spec["layout"].append([{"note": 12}])
+    out = run(Script([submit(yaml.safe_dump(spec))]))
+    note = next(p for p in out["spec"]["panels"] if p["id"] == "note")
+    assert note["markdown"] == "See the portal and mail and **bold**." and any("Links" in n for n in out["notes"])

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable
 
 import yaml
@@ -25,6 +26,7 @@ MAX_TURNS = MAX_ATTEMPTS + 3                                       # plus the tu
 MAX_TOKENS = 8000
 MAX_PROMPT = 2000
 MAX_YAML = 30_000
+LINK = re.compile(r"\[([^\]]*)\]\(\s*[a-zA-Z][a-zA-Z0-9+.-]*:[^)]*\)")      # [text](scheme:...) -> text
 ROLES = ("admin", "manager", "rep", "purchasing", "marketing")
 
 SPEC_GUIDE = """\
@@ -133,6 +135,13 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     spec["roles"] = [role]                         # the role rules are checked for the user who asked, whatever the model wrote
     if isinstance(spec.get("theme"), dict) and spec["theme"].pop("logo", None):
         notes.append("A logo was removed: builder drafts cannot load images.")
+    stripped = False
+    for p in spec.get("panels", []) if isinstance(spec.get("panels"), list) else []:
+        if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("markdown"), str):
+            clean = LINK.sub(r"\1", p["markdown"])
+            stripped, p["markdown"] = stripped or clean != p["markdown"], clean
+    if stripped:
+        notes.append("Links in text panels were removed: a draft cannot point readers at other sites.")
     errors, used = validate(spec, catalog)
     if errors:
         return None, errors[:12]
@@ -209,6 +218,20 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
     out["usage"], out["mode"], out["model"] = usage, mode, MODEL if mode == "llm" else "rule-based stand-in"
     log("result", {k: v for k, v in out.items() if k not in ("spec",)})
     return out
+
+
+EXAMPLES = {
+    "sales": ["Monthly revenue by channel and the top 5 products, with a table of the latest orders",
+              "Revenue and orders by region and country; click a bar to filter the rest",
+              "Revenue by category as a treemap, and the product mix by month",
+              "Türkçe satış panosu: aylık gelir, bölgeye göre gelir ve son siparişler"],
+    "inventory": ["Stock status and the reorder list", "Overstock and excess stock, top 10", "Envanter durumu ve yeniden sipariş listesi, Türkçe"],
+}
+
+
+def examples_for(role: str) -> list[str]:
+    """Requests that work for this role (the stand-in understands them; they are also good starting points for the model)."""
+    return EXAMPLES["inventory"] if role in ("purchasing", "marketing") else EXAMPLES["sales"]
 
 
 def check_catalog(model_dir: str) -> cat.Catalog:

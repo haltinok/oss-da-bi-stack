@@ -4,6 +4,7 @@
   GET  /info      the mode (llm | standin), the model, the caller's role
   GET  /catalog   the semantic layer as the caller's role may read it (cubes, measures, dimensions, descriptions, joins)
   POST /build     { prompt, current_yaml? } -> { status: ok | cannot | failed, yaml, spec, message, notes, attempts, mode, model, usage }
+  POST /validate  { yaml } -> { ok, yaml, spec, notes, problems }: the same checks for a file a person edited (no model, no cost)
 
 Every request carries a Keycloak access token (verified like the actions service does). The role from the token decides what the model is shown and
 what the validator accepts; Cube still enforces access on every query the finished dashboard sends. Only member names and descriptions go to the model,
@@ -110,13 +111,23 @@ def healthz() -> dict:
 @app.get("/info")
 def info(user: User_) -> dict:
     m = mode()
-    return {"mode": m, "model": core.MODEL if m == "llm" else "rule-based stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT,
+    return {"mode": m, "model": core.MODEL if m == "llm" else "rule-based stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "examples": core.examples_for(user.role),
             "note": "A language model reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
 
 
 @app.get("/catalog")
 def catalog(user: User_) -> list[dict]:
     return catalog_json(CATALOG, user.role)
+
+
+class ValidateRequest(BaseModel):
+    yaml: str = Field(min_length=1, max_length=core.MAX_YAML)
+
+
+@app.post("/validate")
+def validate(req: ValidateRequest, user: User_) -> dict:
+    built, problems = core.check_submission(req.yaml, CATALOG, user.role)
+    return {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "notes": built["notes"] if built else [], "problems": problems}
 
 
 @app.post("/build")

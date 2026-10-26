@@ -9,6 +9,7 @@ import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
 import { optionMeasures, optionsOf, pick, queriesPerCube, runAll } from "./plan.js";
 import { stringsFor } from "./strings.js";
+import { createBuilderApi, drafts, mountDraftBar, mountDrafts, mountPromptBox, mountSemantic } from "./builder.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -82,17 +83,29 @@ async function showList() {
   $("#title").textContent = t.dashboards;
   $("#export-label").textContent = t.exportAll;
   setStatus(`<strong>${esc(t.signedIn)}</strong>`);
-  $("#main").innerHTML = mine.length
+  const api = createBuilderApi({ stack: C, client, t });
+  $("#main").innerHTML = (api.available ? `<div id="builder-host"></div><div id="drafts-host" class="drafts-host" hidden></div>` : "") + (mine.length
     ? `<div class="dlist">${mine.map((d) => `<a href="/d/${encodeURIComponent(d.id)}"><div class="card"><h2>${esc(d.title)}</h2><p>${esc(d.description)}</p></div></a>`).join("")}</div>`
-    : `<div class="empty">${esc(t.noDashboards)}</div>`;
+    : `<div class="empty">${esc(t.noDashboards)}</div>`) + (api.available ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
+  if (!api.available) return;
+  mountPromptBox($("#builder-host"), api, t);
+  mountDrafts($("#drafts-host"), t);
+  $("#sem-wrap").addEventListener("toggle", () => { if ($("#sem-wrap").open && !$("#sem-host").dataset.ready) { $("#sem-host").dataset.ready = "1"; mountSemantic($("#sem-host"), api, t); } });
 }
 
 // ------------------------------------------------------------------ one dashboard
 async function showDashboard() {
-  const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
   const t0 = stringsFor(navigator.language);
-  if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
-  const spec = await res.json();
+  const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); every other id is a built file
+  let spec;
+  if (id === "draft") {
+    if (!draft?.spec) throw new Error(t0.noDraft);
+    spec = draft.spec;
+  } else {
+    const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
+    spec = await res.json();
+  }
   const role = client.session().role;
   const t = stringsFor(spec.locale);
   document.documentElement.lang = (spec.locale || "en-US").split("-")[0];
@@ -102,7 +115,7 @@ async function showDashboard() {
   $("#refresh").title = $("#refresh").ariaLabel = t.refresh;
   if ($("#signout")) $("#signout").textContent = t.signOut;
 
-  document.title = `${spec.title} · ${dataset.label}`;
+  document.title = `${draft ? `${t.draft}: ` : ""}${spec.title} · ${dataset.label}`;
   $("#title").textContent = spec.title;
   $("#brand-sub").textContent = spec.description || "";
   const fmt = createFormat({ locale: spec.locale || "en-US", currency: spec.currency || "USD" });
@@ -248,6 +261,10 @@ async function showDashboard() {
   $("#export-all").addEventListener("click", () => ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard"));
   $("#refresh").hidden = false;
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
+  if (draft) {
+    const api = createBuilderApi({ stack: C, client, t });
+    if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); mountDraftBar(host, api, t, draft); }
+  }
   buildFilters();
   ctx.syncReset?.();
   setStatus(esc(t.loading));

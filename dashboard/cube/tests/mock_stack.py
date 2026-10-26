@@ -5,6 +5,7 @@ actions service and two Cubes with empty data while counting what each page aske
 """
 import json
 import pathlib
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -15,6 +16,7 @@ hits: dict[str, int] = {}
 BENCH = {"on": True}
 ROLE = {"role": "admin"}  # what the mock auth service says the signed-in user is
 FAIL = {"members": set(), "message": "Profit and margin are not available for your role"}   # queries naming these members answer 403
+BUILDER = {"limit": False}   # True: /builder/build answers 429, as the service does when a user has built too often
 FAKE = {"on": False}      # True: the Cube mocks answer every query with generated rows instead of none (see fake_rows)
 
 POOLS = {
@@ -50,6 +52,36 @@ def fake_rows(query):
         if not axes:
             break
     return rows[: 1 if not axes else 80]
+_builder_cache = {}
+
+
+def builder_answer(path, body):
+    """The builder service without Keycloak: the real loop, validator and rule-based stand-in (builder/), for the role the mock signs in as."""
+    if not _builder_cache:
+        for extra in (str(ROOT), str(ROOT / "dashboards")):
+            if extra not in sys.path:
+                sys.path.insert(0, extra)
+        from builder import core
+        from builder.standin import StandInClient
+        from dashspec import catalog as cat
+        from dashspec.semantic import catalog_json
+        _builder_cache.update(core=core, standin=StandInClient, catalog=cat.from_model(ROOT / "cube" / "model"), catalog_json=catalog_json)
+    c, role = _builder_cache, ROLE["role"]
+    if path == "/info":
+        return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role),
+                     "note": "A rule-based stand-in answers."}
+    if path == "/catalog":
+        return 200, c["catalog_json"](c["catalog"], role)
+    if path == "/build":
+        if BUILDER["limit"]:
+            return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
+        return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin")
+    if path == "/validate":
+        built, problems = c["core"].check_submission(body["yaml"], c["catalog"], role)
+        return 200, {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "notes": built["notes"] if built else [], "problems": problems}
+    return 404, {"detail": "not found"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -80,6 +112,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
             return self._send(json.dumps({"token": "t", "expires_in": 900, "user": "admin", "role": ROLE["role"], "territories": ["Canada"]}).encode())
+        if path.startswith("/builder/"):
+            body = {}
+            if self.command == "POST":
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
+            status, answer = builder_answer(path[len("/builder"):], body)
+            return self._send(json.dumps(answer).encode(), status=status)
         if path.startswith("/cube-"):
             query = {}
             if FAKE["on"]:
@@ -102,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
             if BENCH["on"]:
                 ds += f', {{ id: "250m", label: "250M benchmark", mart: "mart_250m", cube: "http://localhost:{PORT}/cube-bench", readOnly: true }}'
             js = (f'window.STACK = {{ keycloak: {{ url: "http://localhost:{PORT}/kc", realm: "spike", clientId: "dashboard" }}, '
-                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", cube: "http://localhost:{PORT}/cube-live" }}; '
+                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", cube: "http://localhost:{PORT}/cube-live" }}; '
                   f"window.STACK.datasets = {ds}];")
             return self._send(js.encode(), "application/javascript")
         if path == "/d" or path.startswith("/d/"):          # the renderer page, for /d/ and /d/<id>

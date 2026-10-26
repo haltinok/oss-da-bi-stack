@@ -29,6 +29,21 @@ prompt ──> model (Claude, or the rule-based stand-in) ──> submit_dashboa
   table, a treemap, filters, clicks, language, and edits (chart style, top N, add or remove a table / treemap / breakdown). It is not an LLM and says so
   (`mode: standin`); it exists so everything else runs, and is tested on every prompt x every role.
 
+## The page
+On `/d/` (the dashboards list) a **Describe a dashboard** box: type a request or click an example that fits your role, press Build, and the result is drawn at
+`/d/draft` with the same renderer as every other dashboard (so its numbers come from Cube with your own token). The page says plainly whether a language
+model or the rule-based stand-in answered. On a draft:
+- **Change this dashboard**: ask for a change in words ("make the chart a line", "show the top 3", "add a table"); the model gets the current file.
+- **YAML**: the whole file, editable; Apply checks it for your role (`POST /validate`) and draws it, or lists the problems and changes nothing.
+- **Semantic layer**: every cube, measure and dimension your role may read, with what it means and what it joins to; search, and click a name to copy it
+  (and insert it at the cursor of an open YAML). The same browser is on `/d/` before you build anything.
+- **Download YAML** and **Save draft** (kept in this browser, up to 10). A draft only lives in your browser; to keep a dashboard for everyone, download the
+  YAML, put it in `dashboards/`, run `scripts/dashspec build` and open a pull request (the [guide](../docs/dashboards.md)).
+
+![A draft built from a request](../docs/images/dashboards/builder.png)
+
+Anything the model writes is shown as text, never as HTML; links in text panels and a logo are removed from drafts.
+
 ## Service
 `docker compose --profile starrocks up -d --build builder` (port `BUILDER_PORT`, default 8350; `.env.example` has the settings).
 
@@ -49,4 +64,4 @@ PYTHONPATH=dashboards:. ... python -m builder.cli "make the chart a line" --curr
 
 ## Tests
 `PYTHONPATH=dashboards:. uv run --with pytest --with pyyaml --with 'jsonschema>=4.18' --with fastapi --with httpx --with 'pyjwt[crypto]' --with pydantic --with anthropic python -m pytest builder/tests -q`
-(CI job `builder`). The page that uses the service (prompt box, `/d/draft`, the semantic-layer browser) is the next step.
+(CI job `builder`).

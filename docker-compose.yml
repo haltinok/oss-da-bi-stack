@@ -649,6 +649,7 @@ services:
       AUTH_PORT: ${AUTH_PORT:-8200}
       CUBE_PORT: ${CUBE_PORT:-4000}
       ACTIONS_PORT: ${ACTIONS_PORT:-8300}
+      BUILDER_PORT: ${BUILDER_PORT:-8350}
       # Optional second dataset in the dashboard: the port of the 250M benchmark Cube (spike/bench/run_scale.sh 250m).
       CUBE_250M_PORT: ${CUBE_250M_PORT:-}
       # How the browser reaches Keycloak, the auth and actions services and Cube. Empty (the default): each on its own

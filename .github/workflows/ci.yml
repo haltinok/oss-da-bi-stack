@@ -388,7 +388,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install playwright
+      - run: pip install playwright pyyaml "jsonschema>=4.18"
       - run: node --test dashboard/cube/tests/lib.test.mjs dashboard/cube/tests/lib_render.test.mjs
       - run: python -I dashboard/cube/tests/render.py
       - run: python -I dashboard/cube/tests/renderer.py
@@ -427,10 +427,10 @@ jobs:
           printf 'services:\n  caddy:\n    ports:\n      - "127.0.0.1:8088:8088"\n' > ci-public.yml
       - name: start Keycloak, the auth service, the dashboard and Caddy
         run: |
-          docker compose --profile starrocks build auth
+          docker compose --profile starrocks build auth builder
           docker compose --profile starrocks up -d --no-deps keycloak
           for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile starrocks ps -q keycloak)")" = healthy ] && break; sleep 3; done
-          docker compose --profile starrocks up -d --no-deps auth dashboard-cube caddy
+          docker compose --profile starrocks up -d --no-deps auth builder dashboard-cube caddy
           for i in $(seq 40); do curl -sf http://localhost:8088/auth-api/healthz >/dev/null && break; sleep 3; done
       - name: routing, issuer, admin console block, browser config
         run: |
@@ -443,6 +443,10 @@ jobs:
           test "$issuer" = "$B/kc/realms/spike"
           for p in /kc/admin/ /kc/realms/master /kc/realms/master/.well-known/openid-configuration; do test "$(code $B$p)" = 404; done
           test "$(code -X POST $B/auth-api/token -H 'Authorization: Bearer x.y.z')" = 401
+          curl -s $B/cube/config.js | grep -q 'builder: "http://localhost:8088/builder-api"'
+          for i in $(seq 20); do [ "$(code $B/builder-api/healthz)" = 200 ] && break; sleep 3; done
+          test "$(code $B/builder-api/healthz)" = 200       # the builder through Caddy (prefix stripped) ...
+          test "$(code $B/builder-api/info)" = 401          # ... and it wants a token
           test "$(code $B/cubejs-api/v1/meta)" != 200      # no Cube is running here: 502 from Caddy, never an unauthenticated 200
           set -a; . ./.env; set +a
           iss=$(curl -s -X POST $B/kc/realms/spike/protocol/openid-connect/token -d grant_type=password -d client_id=dashboard \

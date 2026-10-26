@@ -90,7 +90,7 @@ const clickable = (node, fn) => {
 // ------------------------------------------------------------------------------------------------------------------ kpi
 function kpiPanel(def, ctx) {
   const terms = def.measures.map(term);
-  const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--cols:${terms.length}` });
+  const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--cols:${Math.max(terms.length, 4)}` });
   const tiles = terms.map((t) => {
     const tile = el("div", { class: "card kpi" }, `<div class="label">${esc(t.label)}</div><div class="value">…</div><div class="delta"></div>`);
     root.append(tile);
