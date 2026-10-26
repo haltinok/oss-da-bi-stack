@@ -126,10 +126,39 @@
         }
       ],
       "granularity": "month",
+      "granularities": [
+        "month",
+        "quarter",
+        "year"
+      ],
       "style": "stacked-bar",
       "on_click": {
         "set_filter": "fy"
       }
+    },
+    {
+      "id": "margin",
+      "type": "timeseries",
+      "title": "Gross margin %",
+      "series": [
+        {
+          "ratio": {
+            "num": [
+              "internet_sales.gross_profit",
+              "reseller_sales.gross_profit"
+            ],
+            "den": [
+              "internet_sales.revenue",
+              "reseller_sales.revenue"
+            ]
+          },
+          "label": "Gross margin",
+          "color": "#6250d6",
+          "format": "pct"
+        }
+      ],
+      "granularity": "month",
+      "style": "line"
     },
     {
       "id": "mix",
@@ -140,6 +169,7 @@
         "products.category",
         "products.subcategory"
       ],
+      "format": "money",
       "on_click": {
         "set_filter": [
           "category",
@@ -151,11 +181,46 @@
       "id": "top",
       "type": "bar",
       "title": "Top 10 products",
-      "measure": "internet_sales.revenue",
+      "stack": [
+        {
+          "member": "internet_sales.revenue",
+          "label": "Internet",
+          "color": "internet"
+        },
+        {
+          "member": "reseller_sales.revenue",
+          "label": "Reseller",
+          "color": "reseller"
+        }
+      ],
       "by": "products.name",
       "sort": "desc",
       "limit": 10,
       "format": "money"
+    },
+    {
+      "id": "territories",
+      "type": "bar",
+      "title": "Revenue by territory",
+      "stack": [
+        {
+          "member": "internet_sales.revenue",
+          "label": "Internet",
+          "color": "internet"
+        },
+        {
+          "member": "reseller_sales.revenue",
+          "label": "Reseller",
+          "color": "reseller"
+        }
+      ],
+      "by": "territories.region",
+      "sort": "desc",
+      "limit": 20,
+      "format": "money",
+      "on_click": {
+        "set_filter": "region"
+      }
     },
     {
       "id": "lines",
@@ -211,6 +276,16 @@
       {
         "panel": "top",
         "span": 5
+      }
+    ],
+    [
+      {
+        "panel": "margin",
+        "span": 5
+      },
+      {
+        "panel": "territories",
+        "span": 7
       }
     ]
   ],

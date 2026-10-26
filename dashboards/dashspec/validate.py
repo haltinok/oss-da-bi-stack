@@ -31,7 +31,10 @@ def _where(spec, path):
 
 def _schema_message(err):
     if err.validator == "oneOf" and err.context and all(c.validator == "required" for c in err.context):
-        return "needs a 'member' (or a 'sum' / 'ratio' of measures, with a 'label')"
+        names = [n for c in err.context for n in c.validator_value]
+        if "member" in names:
+            return "needs a 'member' (or a 'sum' / 'ratio' of measures, with a 'label')"
+        return "needs exactly one of: " + ", ".join(dict.fromkeys(names))
     if err.validator == "oneOf":
         return "must be a filter id or a list of one or two filter ids"
     if err.validator == "required" and "sum" in err.message:
@@ -82,23 +85,31 @@ def column_member(c):
     return c if isinstance(c, str) else c["member"]
 
 
+def _measure_members(prefix, m):
+    """The members of a measure definition: { member } | { sum: [...] } | { ratio: { num, den } }."""
+    if "member" in m:
+        yield f"{prefix}.member", m["member"], "measure"
+    for j, s in enumerate(m.get("sum", [])):
+        yield f"{prefix}.sum[{j}]", s, "measure"
+    for part in ("num", "den"):
+        for j, s in enumerate(m.get("ratio", {}).get(part, [])):
+            yield f"{prefix}.ratio.{part}[{j}]", s, "measure"
+
+
 def _panel_members(p):
     """(field, member, wanted kind) for every Cube member a panel names; wanted is measure | dimension | any."""
     t = p["type"]
     if t == "kpi":
         for i, m in enumerate(p["measures"]):
-            if "member" in m:
-                yield f"measures[{i}].member", m["member"], "measure"
-            for j, s in enumerate(m.get("sum", [])):
-                yield f"measures[{i}].sum[{j}]", s, "measure"
-            for part in ("num", "den"):
-                for j, s in enumerate(m.get("ratio", {}).get(part, [])):
-                    yield f"measures[{i}].ratio.{part}[{j}]", s, "measure"
+            yield from _measure_members(f"measures[{i}]", m)
     elif t == "timeseries":
         for i, s in enumerate(p["series"]):
-            yield f"series[{i}].member", s["member"], "measure"
+            yield from _measure_members(f"series[{i}]", s)
     elif t == "bar":
-        yield "measure", p["measure"], "measure"
+        if "measure" in p:
+            yield "measure", p["measure"], "measure"
+        for i, s in enumerate(p.get("stack", [])):
+            yield f"stack[{i}].member", s["member"], "measure"
         yield "by", p["by"], "dimension"
         if "split" in p:
             yield "split", p["split"], "dimension"
@@ -162,9 +173,11 @@ def semantic_errors(spec, catalog):
             for fid in ids:
                 if fid not in filter_ids:
                     errs.append(f"{w}: on_click.set_filter: no filter with id '{fid}'")
-            carried = {"timeseries": 1, "treemap": len(p.get("group", []))}.get(p["type"])
-            if carried is not None and len(ids) > carried:
-                errs.append(f"{w}: on_click.set_filter: a click carries {carried} value(s) here, {len(ids)} filters are named")
+            _click_errors(p, w, ids, filters, catalog, errs)
+        if p["type"] == "timeseries" and p.get("granularities") and p["granularity"] not in p["granularities"]:
+            errs.append(f"{w}: granularities: must include the default granularity '{p['granularity']}'")
+        if p["type"] == "bar" and "stack" in p and "split" in p:
+            errs.append(f"{w}: split: a bar that is stacked by measures (stack) cannot also be split by a dimension")
         if p["type"] == "table":
             shown = [column_member(c) for c in p["columns"]]
             for col in p.get("order", {}):
@@ -174,6 +187,36 @@ def semantic_errors(spec, catalog):
 
     _layout_errors(spec, panel_ids, errs)
     return errs, used
+
+
+TIME_FILTERS = ("fiscal_year", "calendar_year")
+
+
+def _click_errors(p, w, ids, filters, catalog, errs):
+    """What a click on a panel carries must be something the named filters can take: each filter's dimension is one of the dimensions
+    of the clicked mark (the bar's `by`, the treemap's group in order, a table row's dimension columns), or, for a time chart, a year."""
+    by_id = {f["id"]: f for f in filters}
+    ids = [i for i in ids if i in by_id]
+    kind = p["type"]
+    if kind == "timeseries":
+        if len(ids) > 1:
+            errs.append(f"{w}: on_click.set_filter: a click on a time chart carries one value, {len(ids)} filters are named")
+        for i in ids:
+            dim = by_id[i]["dimension"]
+            if dim.partition(".")[2] not in TIME_FILTERS:
+                errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}'; a click on a time chart can set a filter on a fiscal_year or calendar_year dimension")
+    elif kind in ("bar", "treemap", "table"):
+        carried = {"bar": [p.get("by")], "treemap": p.get("group", []), "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
+        if kind == "bar" and len(ids) > 1:
+            errs.append(f"{w}: on_click.set_filter: a click on a bar carries one value, {len(ids)} filters are named")
+        for pos, i in enumerate(ids):
+            dim = by_id[i]["dimension"]
+            if kind == "treemap" and pos < len(carried) and dim != carried[pos]:
+                errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}' but group[{pos}] is '{carried[pos]}': name the filters in the order of the group")
+            elif kind != "treemap" and dim not in carried:
+                errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}', which this {kind} does not show ({', '.join(carried)})")
+        if kind == "treemap" and len(ids) > len(carried):
+            errs.append(f"{w}: on_click.set_filter: a click carries {len(carried)} value(s) here, {len(ids)} filters are named")
 
 
 def _join_errors(spec, p, w, catalog, errs):

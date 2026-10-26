@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, markdown, optionMeasures, optionsOf, panelMeasures, queriesPerCube,
-  tableParts, term, totals,
+  activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
+  pick, queriesPerCube, tableParts, term, totals, yearOf,
 } from "../../static/render/plan.js";
 
 const spec = {
@@ -132,4 +132,61 @@ test("markdown escapes html first, then renders bold, code, links and lists", ()
   assert.equal(markdown("- one\n- two", esc), "<ul><li>one</li><li>two</li></ul>");
   assert.equal(markdown("a\n\nb", esc), "<p>a</p><p>b</p>");
   assert.ok(!markdown("[x](javascript:alert(1))", esc).includes("<a "), "only http(s) links become links");
+});
+
+test("a panel leaves out the filters its own clicks set", () => {
+  const panel = { on_click: { set_filter: ["category", "subcategory"] } };
+  assert.deepEqual(ownFilterIds(panel), ["category", "subcategory"]);
+  assert.deepEqual(ownFilterIds({ on_click: { set_filter: "fy" } }), ["fy"]);
+  assert.deepEqual(ownFilterIds({}), []);
+  const values = { fy: "2021", category: "Bikes", subcategory: "Road Bikes" };
+  assert.deepEqual(activeFilters(spec, values, panel).map((f) => f.member), ["dates.fiscal_year"]);
+  assert.deepEqual(activeFilters(spec, values, { ...panel, ignore_filters: ["fy"] }), []);
+});
+
+test("yearOf: a fiscal year is named after the year it ends in; a calendar year is the year", () => {
+  assert.equal(yearOf("2020-07-01T00:00:00.000", 7, "fiscal_year"), 2021);
+  assert.equal(yearOf("2020-06-01", 7, "fiscal_year"), 2020);
+  assert.equal(yearOf("2021-01-01", 7, "fiscal_year"), 2021);
+  assert.equal(yearOf("2020-12-01", 1, "fiscal_year"), 2020, "a fiscal year starting in January is the calendar year");
+  assert.equal(yearOf("2020-12-01", 7, "calendar_year"), 2020);
+});
+
+test("pick sets the filters, and picking the same thing again restores what was there before", () => {
+  const saved = {};
+  const ids = ["category", "subcategory"];
+  let cur = { category: "Bikes", subcategory: "" };
+  let patch = pick(cur, ids, ["Clothing", "Jerseys"], saved);
+  assert.deepEqual(patch, { category: "Clothing", subcategory: "Jerseys" });
+  cur = { ...cur, ...patch };
+  patch = pick(cur, ids, ["Clothing", "Caps"], saved);          // another tile: the original category is still remembered
+  cur = { ...cur, ...patch };
+  assert.deepEqual(cur, { category: "Clothing", subcategory: "Caps" });
+  patch = pick(cur, ids, ["Clothing", "Caps"], saved);          // the same again: undo
+  assert.deepEqual(patch, { category: "Bikes", subcategory: "" });
+  assert.deepEqual(saved, {}, "nothing is left over");
+});
+
+test("picking when nothing was chosen before clears on the second click", () => {
+  const saved = {};
+  let cur = { fy: "" };
+  cur = { ...cur, ...pick(cur, ["fy"], [2021], saved) };
+  assert.equal(cur.fy, "2021");
+  cur = { ...cur, ...pick(cur, ["fy"], [2021], saved) };
+  assert.equal(cur.fy, "");
+});
+
+test("isSelected compares every named filter; `only` means the later ones are empty (a category heading)", () => {
+  const cur = { category: "Bikes", subcategory: "" };
+  assert.equal(isSelected(cur, ["category", "subcategory"], ["Bikes", ""]), true);
+  assert.equal(isSelected(cur, ["category", "subcategory"], ["Bikes", "Road Bikes"]), false);
+  assert.equal(isSelected(cur, ["category", "subcategory"], ["Bikes"], true), true);
+  assert.equal(isSelected({ category: "Bikes", subcategory: "Road Bikes" }, ["category", "subcategory"], ["Bikes"], true), false);
+  assert.equal(isSelected({ fy: 2021 }, ["fy"], ["2021"]), true, "numbers and strings compare as text");
+});
+
+test("a stacked bar and a ratio series count as reading all their measures", () => {
+  assert.deepEqual(panelMeasures({ type: "bar", stack: [{ member: "a.rev" }, { member: "b.rev" }] }), ["a.rev", "b.rev"]);
+  assert.deepEqual(panelMeasures({ type: "bar", measure: "a.rev" }), ["a.rev"]);
+  assert.deepEqual(panelMeasures({ type: "timeseries", series: [{ ratio: { num: ["a.gp"], den: ["a.rev"] }, label: "m" }] }), ["a.gp", "a.rev"]);
 });

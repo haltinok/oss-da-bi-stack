@@ -62,10 +62,10 @@ def _drop(pid, key):
 BROKEN = [
     ("unknown member", lambda s: panel(s, "top").update(by="products.nme"),
      ["panel 'top' (bar)", "by:", "'products.nme' is not in the Cube model", "products has:"]),
-    ("unknown cube", lambda s: panel(s, "top").update(measure="sales.revenue"),
-     ["panel 'top' (bar)", "measure:", "'sales.revenue' is not in the Cube model", "cubes:"]),
-    ("dimension used as a measure", lambda s: panel(s, "top").update(measure="products.name"),
-     ["panel 'top'", "measure:", "is a dimension, a measure is needed"]),
+    ("unknown cube", lambda s: panel(s, "mix").update(measure="sales.revenue"),
+     ["panel 'mix' (treemap)", "measure:", "'sales.revenue' is not in the Cube model", "cubes:"]),
+    ("dimension used as a measure", lambda s: panel(s, "mix").update(measure="products.name"),
+     ["panel 'mix'", "measure:", "is a dimension, a measure is needed"]),
     ("measure used as a dimension", lambda s: panel(s, "top").update(by="internet_sales.revenue"),
      ["panel 'top'", "by:", "is a measure, a dimension is needed"]),
     ("measure in a series, wrong index named", lambda s: panel(s, "trend")["series"].append({"member": "products.name"}),
@@ -111,7 +111,31 @@ BROKEN = [
     ("on_click names an unknown filter", _set("trend", "on_click", {"set_filter": "year"}),
      ["panel 'trend'", "on_click.set_filter", "no filter with id 'year'"]),
     ("on_click names too many filters", _set("trend", "on_click", {"set_filter": ["fy", "region"]}),
-     ["panel 'trend'", "on_click.set_filter", "carries 1 value(s)"]),
+     ["panel 'trend'", "on_click.set_filter", "carries one value"]),
+    ("time chart click on a non-year filter", _set("trend", "on_click", {"set_filter": "region"}),
+     ["panel 'trend' (timeseries)", "on_click.set_filter", "filter 'region' is on 'territories.region'", "fiscal_year or calendar_year"]),
+    ("bar click on a filter for another dimension", _set("top", "on_click", {"set_filter": "category"}),
+     ["panel 'top' (bar)", "on_click.set_filter", "filter 'category' is on 'products.category', which this bar does not show"]),
+    ("bar click naming two filters", _set("top", "on_click", {"set_filter": ["category", "subcategory"]}),
+     ["panel 'top' (bar)", "a click on a bar carries one value"]),
+    ("treemap filters in the wrong order", _set("mix", "on_click", {"set_filter": ["subcategory", "category"]}),
+     ["panel 'mix' (treemap)", "filter 'subcategory' is on 'products.subcategory' but group[0] is 'products.category'", "in the order of the group"]),
+    ("table click on a measure column's dimension that is not shown", _set("lines", "on_click", {"set_filter": "category"}),
+     ["panel 'lines' (table)", "filter 'category' is on 'products.category', which this table does not show"]),
+    ("granularities without the default", _set("trend", "granularities", ["quarter", "year"]),
+     ["panel 'trend' (timeseries)", "granularities:", "must include the default granularity 'month'"]),
+    ("granularities with one entry", _set("trend", "granularities", ["month"]),
+     ["panel 'trend'", "granularities:", "is too short"]),
+    ("a bar with neither measure nor stack", _drop("top", "stack"),
+     ["panel 'top' (bar)", "needs exactly one of: measure, stack"]),
+    ("a stacked bar that is also split", _set("top", "split", "territories.region"),
+     ["panel 'top' (bar)", "split:", "stacked by measures"]),
+    ("a stack member that is a dimension", lambda s: panel(s, "top")["stack"].append({"member": "products.name"}),
+     ["panel 'top' (bar)", "stack[2].member", "is a dimension"]),
+    ("a series ratio with an unknown member", lambda s: panel(s, "margin")["series"][0]["ratio"]["num"].append("internet_sales.nope"),
+     ["panel 'margin' (timeseries)", "series[0].ratio.num[2]", "'internet_sales.nope' is not in the Cube model"]),
+    ("a series sum without a label", lambda s: panel(s, "trend")["series"].append({"sum": ["internet_sales.revenue", "reseller_sales.revenue"]}),
+     ["panel 'trend' (timeseries)", "series[2]", "needs a 'member'"]),
     ("ignore_filters names an unknown filter", _set("top", "ignore_filters", ["nope"]),
      ["panel 'top'", "ignore_filters:", "no filter with id 'nope'"]),
     ("table order on a column that is not shown", _set("lines", "order", {"internet_sales.units": "desc"}),
@@ -121,7 +145,7 @@ BROKEN = [
     ("layout names an unknown panel", lambda s: s["layout"].append([{"ghost": 12}]),
      ["layout:", "no panel with id 'ghost'"]),
     ("panel missing from the layout", lambda s: s["layout"].pop(),
-     ["layout:", "panel 'mix' is placed 0 times", "panel 'top' is placed 0 times"]),
+     ["layout:", "panel 'margin' is placed 0 times", "panel 'territories' is placed 0 times"]),
     ("panel placed twice", lambda s: s["layout"].append([{"kpis": 12}]),
      ["layout:", "panel 'kpis' is placed 2 times"]),
     ("a filter on a cube the measure has no join to", lambda s: s["panels"].append(
@@ -199,11 +223,11 @@ def test_a_nested_error_does_not_make_every_key_of_the_panel_look_unknown():
 def test_compile_gives_every_table_column_as_an_object():
     errors, used = validate(copy.deepcopy(GOOD), CATALOG)
     assert errors == []
-    cols = compile_spec(copy.deepcopy(GOOD), used)["panels"][4]["columns"]
+    cols = next(p for p in compile_spec(copy.deepcopy(GOOD), used)["panels"] if p["id"] == "lines")["columns"]
     assert cols[0] == {"member": "internet_sales.order_number", "label": "Order"}
     spec = copy.deepcopy(GOOD)
     panel(spec, "lines")["columns"] = ["internet_sales.order_number", "internet_sales.revenue"]
-    assert compile_spec(spec, used)["panels"][4]["columns"] == [{"member": "internet_sales.order_number"}, {"member": "internet_sales.revenue"}]
+    assert next(p for p in compile_spec(spec, used)["panels"] if p["id"] == "lines")["columns"] == [{"member": "internet_sales.order_number"}, {"member": "internet_sales.revenue"}]
 
 
 def test_build_writes_each_dashboard_and_an_index(tmp_path, capsys):

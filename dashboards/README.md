@@ -36,12 +36,20 @@ role may open, `/d/<id>` draws one. After editing a YAML file run `scripts/dashs
 they differ. A deploy is then just `git pull` (nginx reads the files on each request; no restart).
 
 ## What the renderer draws
-`kpi` (tiles, optional sparkline), `timeseries` (line, bar, stacked bar), `bar` (ranked, optional split), `table`, `text`. A `treemap`
-panel is validated but drawn from Phase 4 on (the page says so). Filters are selects (a filter's `parent` groups its options, or narrows
-them when the dashboard has a filter on that dimension); they go in the URL (`?fy=2021&region=Canada`). Every panel loads on its own: one
-that fails shows its message in its card and the rest draw; changing a filter cancels what is still running.
+`kpi` (tiles, optional sparkline), `timeseries` (line, bar, stacked bar; optional `granularities` switch), `bar` (ranked; one `measure`,
+or a `stack` of measures from several cubes, or a `split` by a dimension), `treemap` (one or two dimensions), `table`, `text`. Filters are selects (a
+filter's `parent` groups its options, or narrows them when the dashboard has a filter on that dimension); they go in the URL
+(`?fy=2021&region=Canada`). Every panel loads on its own: one that fails shows its message in its card and the rest draw; changing a
+filter cancels what is still running.
 
-A KPI measure is `member`, a `sum` of measures (across cubes), or a `ratio` of two sums (`{ num: [...], den: [...] }`, for a margin over
-both channels). A `format` is `money`, `int`, `pct` (a fraction, 0.153 -> 15.3%), `decimal` or `number`. Table columns are a member or
-`{ member, label, format }`. For a measure over more than one cube the renderer sends one query per cube and merges the rows.
-Not in v1: comparison with the previous period, click-to-filter (Phase 4).
+**Click to filter** (`on_click: { set_filter: <id> | [<id>, <id>] }`): a click on a bar, a treemap tile, a table row or a month sets those
+filters from what was clicked, and a second click undoes it (restoring what the filters held before the first click). A bar carries its
+`by` value, a treemap tile its group values in order (a category heading only the first), a table row its dimension columns, a month its
+fiscal or calendar year. The validator checks that each named filter is on a dimension the click carries. The panel that was clicked
+does not narrow itself with the filters it sets (it keeps showing every choice and marks the selected one).
+
+A KPI measure (and a time-chart series) is a `member`, a `sum` of measures (across cubes), or a `ratio` of two sums
+(`{ num: [...], den: [...] }`, for a margin over both channels). A `format` is `money`, `int`, `pct` (a fraction, 0.153 -> 15.3%),
+`decimal` or `number`. Table columns are a member or `{ member, label, format }`. For a measure over more than one cube the renderer
+sends one query per cube and merges the rows (a ranked bar over two cubes ranks after merging).
+Not yet: comparison with the previous period on KPI tiles, a different time dimension per panel.
