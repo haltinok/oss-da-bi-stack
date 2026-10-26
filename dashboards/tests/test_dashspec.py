@@ -414,3 +414,26 @@ def test_a_good_theme_compiles():
     errors, used = validate(spec, CATALOG)
     assert errors == []
     assert compile_spec(spec, used)["theme"]["colors"]["internet"] == "#112233"
+
+
+# ---------------------------------------------------------------------------------------------------------------- documentation
+def test_the_spec_reference_is_generated_from_the_schema_and_current():
+    from dashspec.docs import generate
+    text = generate()          # raises if a schema field has no description, or a description has no field
+    assert (REPO / "docs" / "dashboard-spec-reference.md").read_text() == text, "run scripts/dashspec docs"
+    for field in ("fiscal_year_start", "granularities", "ignore_filters", "set_filter", "stack", "markdown"):
+        assert f"`{field}`" in text
+
+
+def test_links_and_images_in_the_dashboard_docs_resolve():
+    import re
+    for name in ("dashboards.md", "dashboard-spec-reference.md", "dashboard-spec-plan.md"):
+        path = REPO / "docs" / name
+        for target in re.findall(r"\]\(((?!https?://|#|mailto:)[^)\s]+)\)", path.read_text()):
+            assert (path.parent / target.split("#")[0]).resolve().exists(), f"{name}: broken link {target}"
+    guide = (REPO / "docs" / "dashboards.md").read_text()
+    for anchor in re.findall(r"\]\(#([^)]+)\)", guide):
+        heads = [re.sub(r"[^a-z0-9 -]", "", h.lower()).strip().replace(" ", "-") for h in re.findall(r"^#+ (.+)$", guide, re.M)]
+        assert anchor in heads, f"dashboards.md: no heading for #{anchor}"
+    for panel_type in ("kpi", "timeseries", "bar", "treemap", "table", "text"):
+        assert f"**`{panel_type}`" in guide, f"the gallery lacks {panel_type}"
