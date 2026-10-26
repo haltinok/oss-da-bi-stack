@@ -11,9 +11,18 @@ export const humanize = (member) => {
   return name.charAt(0).toUpperCase() + name.slice(1);
 };
 
-/** The Cube filters for the page's filter values; a panel can opt out of some with ignore_filters. */
+/** The filter ids a click on this panel sets (its `on_click.set_filter`, one id or a list). */
+export const ownFilterIds = (def) => {
+  const f = def.on_click?.set_filter;
+  return f == null ? [] : Array.isArray(f) ? f : [f];
+};
+
+/**
+ * The Cube filters for the page's filter values. A panel leaves out the filters in its ignore_filters and the ones its own clicks set:
+ * a cross-filtering panel keeps showing every choice (and marks the selected one) instead of narrowing itself to it.
+ */
 export function activeFilters(spec, values, panel = {}) {
-  const ignored = new Set(panel.ignore_filters || []);
+  const ignored = new Set([...(panel.ignore_filters || []), ...ownFilterIds(panel)]);
   return (spec.filters || [])
     .filter((f) => values[f.id] !== undefined && values[f.id] !== "" && !ignored.has(f.id))
     .map((f) => ({ member: f.dimension, operator: "equals", values: [String(values[f.id])] }));
@@ -144,8 +153,9 @@ export function optionMeasures(spec, filter) {
 export function panelMeasures(p, members = {}) {
   switch (p.type) {
     case "kpi": return p.measures.flatMap((m) => term(m).members);
-    case "timeseries": return p.series.map((s) => s.member);
-    case "bar": case "treemap": return [p.measure];
+    case "timeseries": return p.series.flatMap((s) => term(s).members);
+    case "bar": return p.stack ? p.stack.map((s) => s.member) : [p.measure];
+    case "treemap": return [p.measure];
     case "table": return tableParts(p, members).measures;
     default: return [];
   }
@@ -175,3 +185,30 @@ export function markdown(src, esc) {
   }
   return out.join("");
 }
+
+/** The year a time bucket belongs to: kind is "fiscal_year" (the year starts in `startMonth`, named after the year it ends in) or "calendar_year". */
+export function yearOf(bucket, startMonth, kind) {
+  const [y, m] = String(bucket).split("-").map(Number);
+  return kind === "fiscal_year" && startMonth > 1 && m >= startMonth ? y + 1 : y;
+}
+
+/**
+ * A click that sets filters `ids` to `values`, as the filter patch to apply. Clicking what is already selected undoes it: the filters go back
+ * to what they were before the first click (`saved`, remembered per set of ids), so picking a subcategory and clicking it again restores
+ * the category that was chosen before. Mutates `saved`.
+ */
+export function pick(current, ids, values, saved) {
+  const key = ids.join("|");
+  const same = ids.every((id, i) => String(current[id] ?? "") === String(values[i]));
+  if (same) {
+    const back = saved[key] || {};
+    delete saved[key];
+    return Object.fromEntries(ids.map((id) => [id, back[id] ?? ""]));
+  }
+  if (!saved[key]) saved[key] = Object.fromEntries(ids.map((id) => [id, current[id] ?? ""]));
+  return Object.fromEntries(ids.map((id, i) => [id, String(values[i])]));
+}
+
+/** Is exactly this selection active? (every named filter holds its value; with `only`, the filters after the first are empty.) */
+export const isSelected = (current, ids, values, only = false) =>
+  ids.every((id, i) => (only && i >= values.length ? !current[id] : String(current[id] ?? "") === String(values[i])));

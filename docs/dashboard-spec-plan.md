@@ -1,6 +1,6 @@
 # Plan: dashboards defined in YAML, rendered from Cube, authored by an agent
 
-Status: **Phases 1, 2 and 3 done** (spec, validator, compiler: `dashboards/`, `scripts/dashspec`; shared modules: `dashboard/static/lib/`, `dashboard/cube/cube-client.mjs`); later phases not started. Written to be implemented with Claude Code, one phase per PR, like
+Status: **Phases 1 to 4 done** (spec, validator, compiler: `dashboards/`, `scripts/dashspec`; shared modules: `dashboard/static/lib/`, `dashboard/cube/cube-client.mjs`); later phases not started. Written to be implemented with Claude Code, one phase per PR, like
 [`inventory-actions-plan.md`](inventory-actions-plan.md).
 
 ## Goal

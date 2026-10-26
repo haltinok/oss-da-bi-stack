@@ -7,7 +7,7 @@ import { createFormat } from "../lib/format.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { optionMeasures, optionsOf, queriesPerCube, runAll } from "./plan.js";
+import { optionMeasures, optionsOf, pick, queriesPerCube, runAll } from "./plan.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -119,7 +119,10 @@ async function showDashboard() {
       return `Filters: ${parts.length ? parts.join(" · ") : "none"} · exported ${dateTimeFmt.format(new Date())} from ${dataset.mart}`;
     },
     exportSheets: (sheets, name) => downloadXlsx(sheets.filter(Boolean), { prefix: spec.id, slug: slugify(name) }),
+    // A click on a panel sets filters (see plan.js `pick`): the page applies them like a change in the filter bar.
+    pick: (ids, vals) => apply(pick(values, ids, vals, saved)),
   };
+  const saved = {};                                     // what the filters held before a click, so that clicking again can undo it
 
   const panels = new Map(spec.panels.map((p) => [p.id, createPanel(p, ctx)]));
   const grid = el("div", { class: "rgrid" });
@@ -170,6 +173,7 @@ async function showDashboard() {
       field.append(sel);
       bar.append(field);
       sel.addEventListener("change", () => {
+        for (const k of Object.keys(saved)) delete saved[k];
         values[f.id] = sel.value;
         for (const g of spec.filters) if (parentFilter(g)?.id === f.id) fillOptions(g);   // a child's options follow its parent's value
         for (const g of spec.filters) selects.get(g.id).classList.toggle("set", !!values[g.id]);
@@ -179,6 +183,7 @@ async function showDashboard() {
     }
     const reset = el("button", { class: "reset", type: "button", hidden: "" }, "Reset filters");
     reset.addEventListener("click", () => {
+      for (const k of Object.keys(saved)) delete saved[k];
       for (const f of spec.filters) values[f.id] = "";
       for (const f of spec.filters) fillOptions(f);
       writeUrl();
@@ -187,6 +192,14 @@ async function showDashboard() {
     bar.append(reset);
     bar.hidden = false;
     ctx.syncReset = () => { reset.hidden = !Object.values(values).some(Boolean); };
+  }
+  /** Set filters from a patch { filterId: value } (a click on a panel): children's options follow, the selects show it, the URL records it. */
+  function apply(patch) {
+    Object.assign(values, patch);
+    for (const f of spec.filters) if (parentFilter(f) && parentFilter(f).id in patch) fillOptions(f);
+    for (const f of spec.filters) { const sel = selects.get(f.id); sel.value = values[f.id]; sel.classList.toggle("set", !!values[f.id]); }
+    writeUrl();
+    loadAll();
   }
   function writeUrl() {
     const q = new URLSearchParams(location.search);
@@ -197,12 +210,12 @@ async function showDashboard() {
 
   // ---- loading
   let ctrl = null, lastLoad = 0, seq = 0;
-  async function loadAll() {
+  async function loadAll({ force = false } = {}) {
     ctrl?.abort();
     ctrl = new AbortController();
     const mine = ++seq, signal = ctrl.signal;
     show("");
-    const results = await Promise.allSettled([...panels.values()].map((p) => p.load(signal)));
+    const results = await Promise.allSettled([...panels.values()].map((p) => p.load(signal, { force })));
     if (mine !== seq) return;                           // a newer load took over
     const failed = results.filter((r) => r.status === "rejected" && r.reason?.name !== "AbortError");
     lastLoad = Date.now();
@@ -215,14 +228,14 @@ async function showDashboard() {
   $("#export-all").hidden = false;
   $("#export-all").addEventListener("click", () => ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard"));
   $("#refresh").hidden = false;
-  $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll(); });
+  $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
   buildFilters();
   ctx.syncReset?.();
   setStatus("Loading…");
   await loadOptions(new AbortController().signal).catch((e) => console.warn("filter options failed:", e?.message || e));
   await loadAll();
-  setInterval(() => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll(); }, 30_000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll(); });
+  setInterval(() => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); }, 30_000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); });
 }
 
 // ------------------------------------------------------------------ start

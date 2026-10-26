@@ -20,10 +20,16 @@
 .card.pending .panel-body { opacity: 0.55; }
 .card.pending { opacity: 1; }
 
+.seg { align-self: flex-start; }
+@media (max-width: 560px) { .card-h { flex-wrap: wrap; } .card-h > div:first-child { flex: 1 1 100%; } .card-h .spacer { display: none; } }
+
 /* Ranked bars (bar panels): name, stacked bar, value. */
 .rrows { display: flex; flex-direction: column; gap: 2px; }
 .rrow { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 5px 6px; border-radius: 6px; font-size: 13px; }
 .rrow:hover, .rrow:focus-visible { background: var(--surface-2); outline: none; }
+.rrow.clickable, tr.clickable { cursor: pointer; }
+.rrow.sel, tr.sel { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--focus); }
+tr.clickable:hover { background: var(--surface-2); }
 .rrow .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rrow .num { text-align: right; font-variant-numeric: tabular-nums; min-width: 64px; }
 

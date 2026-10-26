@@ -6,8 +6,10 @@ Checks the list page, every panel type of dashboards/sales-overview.yml drawn fr
 queries they send, cancelling what is still running), one failing panel not blanking the rest, the Excel export, the dataset switch, a role
 the dashboard is not for, and that the KPI tiles show the same figures as the sales dashboard does for the same data.
 """
+import json
 import pathlib
 import sys
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -45,6 +47,19 @@ def settled(page, timeout=20000):
     page.wait_for_function("!document.querySelector('.card.pending, .kpi.pending')", timeout=timeout)
 
 
+def sent(page):
+    """The Cube queries the page sent, decoded."""
+    out = []
+    for u in page.queries:
+        q = parse_qs(urlparse(u).query).get("query", ["{}"])[0]
+        out.append(json.loads(q))
+    return out
+
+
+def has_filter(q, member):
+    return any(f.get("member") == member for f in q.get("filters", []))
+
+
 def tiles(page):
     return {t.query_selector(".label").inner_text(): t.query_selector(".value").inner_text() for t in page.query_selector_all(".kpi")}
 
@@ -80,7 +95,10 @@ with sync_playwright() as p:
     check(page.locator('[data-panel="top"] .rrow').count() == 5, "the bar panel has one row per product")
     check(page.locator('[data-panel="lines"] tbody tr').count() > 3, "the table panel has rows")
     check("Order" in page.inner_text('[data-panel="lines"] thead') and "Revenue" in page.inner_text('[data-panel="lines"] thead'), "table columns use the spec's labels")
-    check("not drawn by this renderer yet" in page.inner_text('[data-panel="mix"]'), "a panel type for a later phase says so instead of failing")
+    check(page.locator('[data-panel="mix"] .cell').count() > 6 and page.locator('[data-panel="mix"] .group-label').count() == 4, "the treemap draws a tile per subcategory and a heading per category")
+    check(page.locator('[data-panel="territories"] .rrow').count() == 3 and page.locator('[data-panel="margin"] svg path[stroke]').count() == 1, "territory bars and the margin line are drawn")
+    check(page.locator('[data-panel="top"] .hbar i').count() >= 10, "stacked bars: one segment per channel")
+    check([b.inner_text() for b in page.query_selector_all('[data-panel="trend"] .seg button')] == ["month", "quarter", "year"], "the time chart offers its granularities")
     check(page.locator("#filters select").count() == 4, "a select per filter")
     check(page.locator('#filters select >> nth=0 >> option').all_inner_texts() == ["All", "2020", "2021"], "fiscal years sorted numerically")
 
@@ -137,6 +155,94 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/d/sales-overview?fy=2020")
     settled(page)
     check(page.input_value("#filters select >> nth=0") == "2020", "a filter in the URL is applied on load")
+    ctx.close()
+
+    # ---- click to filter
+    ctx, page = open_page(browser, "/d/sales-overview")
+    settled(page)
+    terr = '[data-panel="territories"]'
+    first = page.locator(f"{terr} .rrow").first
+    label = first.locator(".name").inner_text()
+    page.queries.clear()
+    first.click()
+    settled(page)
+    check(f"region={label}" in page.url and page.input_value("#filters select >> nth=1") == label, f"clicking a bar sets the region filter ({label})")
+    check("sel" in (page.locator(f"{terr} .rrow").first.get_attribute("class") or ""), "the clicked bar is marked as selected")
+    qs = sent(page)
+    own = [q for q in qs if q.get("dimensions") == ["territories.region"]]
+    check(not own, "the clicked panel does not query again (its own filter does not narrow it)")
+    check(qs and all(has_filter(q, "territories.region") for q in qs if "territories.region" not in q.get("dimensions", [])
+                     and any(m.endswith(("revenue", "orders", "units", "gross_profit")) for m in q.get("measures", []))), "every other panel's queries carry the filter")
+    check(page.locator("#filters .reset").is_visible(), "Reset filters appears after a click")
+    page.locator(f"{terr} .rrow").first.click()
+    settled(page)
+    check("region=" not in page.url and page.input_value("#filters select >> nth=1") == "", "clicking the selected bar again undoes it")
+    page.locator(f"{terr} .rrow").nth(1).focus()
+    page.keyboard.press("Enter")
+    settled(page)
+    check("region=" in page.url, "a bar can be picked with the keyboard (Enter)")
+    page.click("#filters .reset")
+    settled(page)
+
+    # the treemap: a tile sets category and subcategory, a heading only the category; clicking again restores what was there before
+    mix = '[data-panel="mix"]'
+    page.select_option("#filters select >> nth=2", "Bikes")
+    settled(page)
+    tile = page.locator(f"{mix} .cell", has_text="Helmets").first
+    page.queries.clear()
+    tile.click()
+    settled(page)
+    cat, sub = page.input_value("#filters select >> nth=2"), page.input_value("#filters select >> nth=3")
+    check(sub == "Helmets" and cat != "", f"a treemap tile sets the subcategory and its category ({cat} / {sub})")
+    check(page.locator(f"{mix} .cell.sel").count() == 1 and "✓" in page.locator(f"{mix} .cell.sel").inner_text(), "the selected tile is outlined and ticked")
+    check(not [q for q in sent(page) if q.get("dimensions") == ["products.category", "products.subcategory"]], "the treemap keeps showing every category (no query of its own)")
+    page.locator(f"{mix} .cell.sel").click()
+    settled(page)
+    check(page.input_value("#filters select >> nth=2") == "Bikes" and page.input_value("#filters select >> nth=3") == "", "clicking it again brings back the category that was chosen before")
+    check(page.locator(f"{mix} .group-label.sel").count() == 1, "the category chosen in the filter bar is marked in the treemap")
+    head = page.locator(f"{mix} .group-label:not(.sel)").first
+    name = head.text_content().split(" · ")[0].replace("✓ ", "")
+    head.click()
+    settled(page)
+    check(page.input_value("#filters select >> nth=2") == name and page.input_value("#filters select >> nth=3") == "", f"a heading sets only the category ({name})")
+    check(page.locator(f"{mix} .group-label.sel").count() == 1, "the selected heading is marked")
+    page.click("#filters .reset")
+    settled(page)
+
+    # the time chart: a click sets the fiscal year; the granularity switch re-queries
+    trend = '[data-panel="trend"]'
+    page.evaluate("document.querySelector('[data-panel=\"trend\"]').scrollIntoView({ block: 'center' })")
+    page.locator(f"{trend} .hit").nth(2).click()
+    settled(page)
+    check("fy=2021" in page.url, "a click on a month sets its fiscal year (Sep '20 is FY2021)")
+    page.locator(f"{trend} .hit").nth(2).click()
+    settled(page)
+    check("fy=" not in page.url, "and clicking again clears it")
+    page.queries.clear()
+    page.click(f'{trend} .seg button[data-g="quarter"]')
+    page.wait_for_function("document.querySelector('[data-panel=\"trend\"] .seg button[data-g=\"quarter\"]').getAttribute('aria-pressed') === 'true'")
+    page.wait_for_timeout(800)
+    check(any(q.get("timeDimensions", [{}])[0].get("granularity") == "quarter" for q in sent(page)), "the granularity switch queries by quarter")
+    check("Q3 2020" in page.inner_text(trend), "and labels the buckets as quarters")
+    check(page.locator('[data-panel="kpis"]').count() == 1 and not any(q.get("timeDimensions", [{}])[0].get("granularity") == "quarter" and "internet_sales.units" in q.get("measures", []) for q in sent(page)), "other panels are not reloaded by it")
+    ctx.close()
+
+    # a table whose rows filter (patched into the spec: the sales dashboard's table has no click)
+    ctx, page = open_page(browser, "/d/sales-overview")
+    def patch(route):
+        spec = json.loads(route.fetch().text())
+        spec["filters"].append({"id": "country", "dimension": "territories.country", "label": "Country"})
+        next(p for p in spec["panels"] if p["id"] == "lines")["on_click"] = {"set_filter": "country"}
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+    page.route("**/dashboards/sales-overview.json", patch)
+    page.reload()
+    settled(page)
+    row = page.locator('[data-panel="lines"] tbody tr').first
+    country = row.locator("td").nth(2).inner_text()
+    row.click()
+    settled(page)
+    check(f"country={country}" in page.url, f"clicking a table row sets the filter from the row ({country})")
+    check(page.locator('[data-panel="lines"] tr.sel').count() >= 1, "the matching rows are marked")
     ctx.close()
 
     # ---- one failing panel does not blank the rest

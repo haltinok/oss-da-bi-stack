@@ -96,6 +96,19 @@
         }
       ]
     },
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "member": { "$ref": "#/$defs/member" },
+        "sum": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 2 },
+        "ratio": { "$ref": "#/$defs/measure/properties/ratio" },
+        "label": { "type": "string" },
+        "color": { "type": "string" },
+        "format": { "$ref": "#/$defs/format" }
+      },
+      "oneOf": [{ "required": ["member"] }, { "required": ["sum", "label"] }, { "required": ["ratio", "label"] }]
+    },
     "on_click": {
       "type": "object",
       "required": ["set_filter"],
@@ -140,22 +153,9 @@
           "then": {
             "required": ["series", "granularity"],
             "properties": {
-              "series": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "object",
-                  "required": ["member"],
-                  "additionalProperties": false,
-                  "properties": {
-                    "member": { "$ref": "#/$defs/member" },
-                    "label": { "type": "string" },
-                    "color": { "type": "string" },
-                    "format": { "$ref": "#/$defs/format" }
-                  }
-                }
-              },
+              "series": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/series" } },
               "granularity": { "$ref": "#/$defs/granularity" },
+              "granularities": { "type": "array", "items": { "$ref": "#/$defs/granularity" }, "minItems": 2, "uniqueItems": true },
               "style": { "enum": ["line", "bar", "stacked-bar"] },
               "on_click": { "$ref": "#/$defs/on_click" }
             }
@@ -164,9 +164,20 @@
         {
           "if": { "properties": { "type": { "const": "bar" } } },
           "then": {
-            "required": ["measure", "by"],
+            "required": ["by"],
+            "oneOf": [{ "required": ["measure"] }, { "required": ["stack"] }],
             "properties": {
               "measure": { "$ref": "#/$defs/member" },
+              "stack": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                  "type": "object",
+                  "required": ["member"],
+                  "additionalProperties": false,
+                  "properties": { "member": { "$ref": "#/$defs/member" }, "label": { "type": "string" }, "color": { "type": "string" } }
+                }
+              },
               "by": { "$ref": "#/$defs/member" },
               "split": { "$ref": "#/$defs/member" },
               "sort": { "$ref": "#/$defs/direction" },
