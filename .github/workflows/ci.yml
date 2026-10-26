@@ -363,6 +363,22 @@ jobs:
       - run: pip install pytest requests fastapi httpx 'pyjwt[crypto]' pymysql psycopg2-binary pydantic
       - run: python -m pytest actions/tests/test_rules.py actions/tests/test_actions_dataset.py auth/tests agent/tests -q
 
+  # Dashboard specs (dashboards/*.yml): the validator's tests, every checked-in spec validated against the Cube model, and the compiler.
+  dashspec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml 'jsonschema>=4.18'
+      - env:
+          PYTHONPATH: dashboards
+        run: |
+          python -m pytest dashboards/tests -q
+          python -m dashspec validate dashboards/*.yml
+          for f in dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
+
   # The public overlay (docker-compose.public.yml): Keycloak under /kc, the auth service and the dashboard behind Caddy at one
   # address. Plain HTTP on a local port stands in for the HTTPS front door; the routing, issuer, admin-console block and browser
   # config are the same. (The certificate itself needs a real domain and ports 80/443: see docs/deploy-demo.md.)

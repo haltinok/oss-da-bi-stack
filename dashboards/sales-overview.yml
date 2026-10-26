@@ -1,0 +1,65 @@
+spec: 1
+id: sales-overview
+title: Sales overview
+description: Revenue, margin and orders by channel, product and territory.
+locale: en-US
+currency: USD
+roles: [admin, manager]
+time:
+  dimension: dates.full_date
+  fiscal_year_start: 7
+filters:
+  - id: fy
+    dimension: dates.fiscal_year
+    label: Fiscal year
+  - id: region
+    dimension: territories.region
+    label: Region
+    parent: territories.group_name
+  - id: category
+    dimension: products.category
+    label: Category
+  - id: subcategory
+    dimension: products.subcategory
+    label: Subcategory
+    parent: products.category
+panels:
+  - id: kpis
+    type: kpi
+    measures:
+      - { sum: [internet_sales.revenue, reseller_sales.revenue], label: Revenue, format: money }
+      - { member: internet_sales.margin_pct, label: Gross margin, format: pct }
+      - { member: internet_sales.orders, label: Orders, format: int }
+    sparkline: { granularity: month }
+  - id: trend
+    type: timeseries
+    title: Monthly revenue by channel
+    series:
+      - { member: internet_sales.revenue, label: Internet, color: internet }
+      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+    granularity: month
+    style: stacked-bar
+    on_click: { set_filter: fy }
+  - id: mix
+    type: treemap
+    title: Product mix
+    measure: internet_sales.revenue
+    group: [products.category, products.subcategory]
+    on_click: { set_filter: [category, subcategory] }
+  - id: top
+    type: bar
+    title: Top 10 products
+    measure: internet_sales.revenue
+    by: products.name
+    sort: desc
+    limit: 10
+  - id: lines
+    type: table
+    title: Latest orders
+    columns: [internet_sales.order_number, internet_sales.order_date, territories.country, internet_sales.revenue]
+    order: { internet_sales.order_date: desc }
+    limit: 50
+layout:
+  - [kpis: 12]
+  - [trend: 8, lines: 4]
+  - [mix: 7, top: 5]
