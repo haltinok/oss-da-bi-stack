@@ -21,7 +21,7 @@ the renderer builds the queries. Full reference: `dashboards/README.md`. Plan: `
 
 ## Workflow
 1. **Read the request.** Ask at most three questions, only when the audience (roles), the metrics or the language/currency are unclear.
-2. `scripts/dashspec meta` : the cubes, measures and dimensions (with types) and which cubes join. Pick members from it.
+2. `scripts/dashspec meta` : the cubes, measures and dimensions (with types, what each means) and which cubes join; the same as a page with who may read what is `docs/semantic-layer.md`. Pick members from it.
 3. **Write `dashboards/<id>.yml`.** The file name is the id (lowercase, digits, `-` and `_`). Start from the closest example:
    `sales-overview.yml` (KPIs, charts, click-to-filter, treemap), `regional-sales.yml` (no profit: safe for reps),
    `envanter-sagligi.yml` (Turkish, lira, inventory tables).

@@ -1,22 +1,28 @@
 cubes:
   - name: dates
+    description: "The calendar: join target for a time axis and fiscal years."
     sql_table: mart.dim_date
     data_source: default
 
     dimensions:
       - name: key
+        description: "Date key."
         sql: date_key
         type: number
         primary_key: true
       - name: full_date
+        description: "Calendar date (a time dimension)."
         sql: full_date
         type: time
       - name: fiscal_year
+        description: "Fiscal year, named after the year it ends in (the year starts in July: July 2020 is FY2021)."
         sql: fiscal_year
         type: number
       - name: calendar_year
+        description: "Calendar year."
         sql: calendar_year
         type: number
       - name: month_name
+        description: "Month name."
         sql: month_name
         type: string

@@ -134,6 +134,15 @@ def cmd_docs(args):
     return 0
 
 
+def cmd_semantic(args):
+    """Write the semantic-layer page generated from the Cube model (docs/semantic-layer.md)."""
+    from .semantic import generate
+    out = pathlib.Path(args.output)
+    out.write_text(generate(cat.from_model(args.model)))
+    print(f"wrote {out}")
+    return 0
+
+
 def cmd_meta(args):
     catalog = _catalog(args)
     if args.json:
@@ -143,6 +152,8 @@ def cmd_meta(args):
         return 0
     for name, c in sorted(catalog.cubes.items()):
         print(f"cube {name}" + (f"  (joins: {', '.join(sorted(c['joins']))})" if c["joins"] else ""))
+        if c.get("description"):
+            print(f"  {c['description']}")
         print("  measures:   " + ", ".join(f"{m} [{t}]" for m, t in sorted(c["measures"].items())))
         print("  dimensions: " + ", ".join(f"{d} [{t}]" for d, t in sorted(c["dimensions"].items())))
     return 0
@@ -172,6 +183,9 @@ def main(argv=None):
     dd = sub.add_parser("docs", help="write the spec reference, generated from the schema")
     dd.add_argument("-o", "--output", default=str(REPO / "docs" / "dashboard-spec-reference.md"))
     dd.set_defaults(fn=cmd_docs)
+    se = sub.add_parser("semantic", parents=[src], help="write the semantic-layer page (what the model offers, who may read what)")
+    se.add_argument("-o", "--output", default=str(REPO / "docs" / "semantic-layer.md"))
+    se.set_defaults(fn=cmd_semantic)
     m = sub.add_parser("meta", parents=[src], help="the catalog of cubes, measures and dimensions (for the authoring agent)")
     m.add_argument("--json", action="store_true")
     m.set_defaults(fn=cmd_meta)
