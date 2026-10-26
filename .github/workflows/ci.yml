@@ -389,8 +389,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install playwright
-      - run: node --test dashboard/cube/tests/lib.test.mjs
+      - run: node --test dashboard/cube/tests/lib.test.mjs dashboard/cube/tests/lib_render.test.mjs
       - run: python -I dashboard/cube/tests/render.py
+      - run: python -I dashboard/cube/tests/renderer.py
       - run: python -I dashboard/cube/tests/header.py
       - run: python -I dashboard/cube/tests/dataset.py
 

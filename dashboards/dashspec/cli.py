@@ -71,6 +71,37 @@ def cmd_compile(args):
     return 0
 
 
+def cmd_build(args):
+    """Compile every dashboards/*.yml into <out>/<id>.json and write <out>/index.json (the list the renderer shows)."""
+    catalog = _catalog(args)
+    src, out = pathlib.Path(args.dir), pathlib.Path(args.out)
+    index, bad = [], 0
+    for path in sorted(src.glob("*.yml")):
+        spec, used, errs = _check(path, catalog)
+        if errs:
+            bad += 1
+            print(f"{path}: {len(errs)} problem(s)", file=sys.stderr)
+            for e in errs:
+                print(f"  - {e}", file=sys.stderr)
+            continue
+        if path.stem != spec["id"]:
+            bad += 1
+            print(f"{path}: the file name must be the dashboard id ('{spec['id']}.yml')", file=sys.stderr)
+            continue
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{spec['id']}.json").write_text(json.dumps(compile_spec(spec, used), indent=2, ensure_ascii=False) + "\n")
+        index.append({"id": spec["id"], "title": spec["title"], "description": spec.get("description", ""), "roles": spec.get("roles", [])})
+    if bad:
+        return 1
+    stale = {p.name for p in out.glob("*.json")} - {f"{i['id']}.json" for i in index} - {"index.json"} if out.is_dir() else set()
+    for name in sorted(stale):      # a dashboard that was deleted must not stay served
+        (out / name).unlink()
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n")
+    print(f"built {len(index)} dashboard(s) into {out}")
+    return 0
+
+
 def cmd_meta(args):
     catalog = _catalog(args)
     if args.json:
@@ -98,6 +129,10 @@ def main(argv=None):
     c.add_argument("file")
     c.add_argument("-o", "--output")
     c.set_defaults(fn=cmd_compile)
+    b = sub.add_parser("build", parents=[src], help="compile every dashboard in a directory (default dashboards/) into dashboards/build")
+    b.add_argument("--dir", default=str(REPO / "dashboards"))
+    b.add_argument("--out", default=str(REPO / "dashboards" / "build"))
+    b.set_defaults(fn=cmd_build)
     m = sub.add_parser("meta", parents=[src], help="the catalog of cubes, measures and dimensions (for the authoring agent)")
     m.add_argument("--json", action="store_true")
     m.set_defaults(fn=cmd_meta)

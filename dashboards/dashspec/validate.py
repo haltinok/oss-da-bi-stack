@@ -31,7 +31,7 @@ def _where(spec, path):
 
 def _schema_message(err):
     if err.validator == "oneOf" and err.context and all(c.validator == "required" for c in err.context):
-        return "needs a 'member' (or a 'sum' of measures with a 'label')"
+        return "needs a 'member' (or a 'sum' / 'ratio' of measures, with a 'label')"
     if err.validator == "oneOf":
         return "must be a filter id or a list of one or two filter ids"
     if err.validator == "required" and "sum" in err.message:
@@ -77,6 +77,11 @@ def schema_errors(spec):
     return out
 
 
+def column_member(c):
+    """A table column is a member string or { member, label, format }."""
+    return c if isinstance(c, str) else c["member"]
+
+
 def _panel_members(p):
     """(field, member, wanted kind) for every Cube member a panel names; wanted is measure | dimension | any."""
     t = p["type"]
@@ -86,6 +91,9 @@ def _panel_members(p):
                 yield f"measures[{i}].member", m["member"], "measure"
             for j, s in enumerate(m.get("sum", [])):
                 yield f"measures[{i}].sum[{j}]", s, "measure"
+            for part in ("num", "den"):
+                for j, s in enumerate(m.get("ratio", {}).get(part, [])):
+                    yield f"measures[{i}].ratio.{part}[{j}]", s, "measure"
     elif t == "timeseries":
         for i, s in enumerate(p["series"]):
             yield f"series[{i}].member", s["member"], "measure"
@@ -100,7 +108,7 @@ def _panel_members(p):
             yield f"group[{i}]", g, "dimension"
     elif t == "table":
         for i, c in enumerate(p["columns"]):
-            yield f"columns[{i}]", c, "any"
+            yield f"columns[{i}]", column_member(c), "any"
 
 
 def semantic_errors(spec, catalog):
@@ -158,8 +166,9 @@ def semantic_errors(spec, catalog):
             if carried is not None and len(ids) > carried:
                 errs.append(f"{w}: on_click.set_filter: a click carries {carried} value(s) here, {len(ids)} filters are named")
         if p["type"] == "table":
+            shown = [column_member(c) for c in p["columns"]]
             for col in p.get("order", {}):
-                if col not in p["columns"]:
+                if col not in shown:
                     errs.append(f"{w}: order.{col}: not one of the table's columns")
         _join_errors(spec, p, w, catalog, errs)
 

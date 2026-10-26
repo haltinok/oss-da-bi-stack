@@ -81,9 +81,19 @@ BROKEN = [
     ("limit out of range", _set("top", "limit", 0),
      ["panel 'top'", "limit:", "0 is less than the minimum of 1"]),
     ("kpi measure without member or sum", lambda s: panel(s, "kpis")["measures"].append({"label": "x"}),
-     ["panel 'kpis' (kpi)", "measures[3]", "needs a 'member'"]),
+     ["panel 'kpis' (kpi)", "measures[6]", "needs a 'member'"]),
     ("sum of one measure", lambda s: panel(s, "kpis")["measures"][0].update(sum=["internet_sales.revenue"]),
      ["panel 'kpis'", "measures[0].sum", "is too short"]),
+    ("ratio with an unknown member", lambda s: panel(s, "kpis")["measures"][2]["ratio"]["num"].append("internet_sales.nope"),
+     ["panel 'kpis'", "measures[2].ratio.num[2]", "'internet_sales.nope' is not in the Cube model"]),
+    ("ratio denominator that is a dimension", lambda s: panel(s, "kpis")["measures"][2]["ratio"]["den"].append("products.name"),
+     ["panel 'kpis'", "measures[2].ratio.den[2]", "is a dimension"]),
+    ("ratio without a label", lambda s: panel(s, "kpis")["measures"][2].pop("label"),
+     ["panel 'kpis'", "measures[2]", "needs a 'member'"]),
+    ("table column object with an unknown member", lambda s: panel(s, "lines")["columns"].append({"member": "territories.nope", "label": "X"}),
+     ["panel 'lines' (table)", "columns[4]", "'territories.nope' is not in the Cube model"]),
+    ("table column object with a bad format", lambda s: panel(s, "lines")["columns"][3].update(format="euros"),
+     ["panel 'lines'", "columns[3]"]),
     ("sum of a dimension", lambda s: panel(s, "kpis")["measures"][0].update(sum=["internet_sales.revenue", "products.name"]),
      ["panel 'kpis'", "measures[0].sum[1]", "is a dimension"]),
     ("time dimension that is not time", lambda s: s["time"].update(dimension="dates.fiscal_year"),
@@ -184,3 +194,50 @@ def test_a_nested_error_does_not_make_every_key_of_the_panel_look_unknown():
     assert any("granularity:" in e and "'fortnight'" in e for e in errors)
     assert any("colour:" in e for e in errors)
     assert not any("Unevaluated" in e for e in errors)
+
+
+def test_compile_gives_every_table_column_as_an_object():
+    errors, used = validate(copy.deepcopy(GOOD), CATALOG)
+    assert errors == []
+    cols = compile_spec(copy.deepcopy(GOOD), used)["panels"][4]["columns"]
+    assert cols[0] == {"member": "internet_sales.order_number", "label": "Order"}
+    spec = copy.deepcopy(GOOD)
+    panel(spec, "lines")["columns"] = ["internet_sales.order_number", "internet_sales.revenue"]
+    assert compile_spec(spec, used)["panels"][4]["columns"] == [{"member": "internet_sales.order_number"}, {"member": "internet_sales.revenue"}]
+
+
+def test_build_writes_each_dashboard_and_an_index(tmp_path, capsys):
+    src, out = tmp_path / "src", tmp_path / "out"
+    src.mkdir()
+    (src / "sales-overview.yml").write_text((REPO / "dashboards" / "sales-overview.yml").read_text())
+    assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
+    assert json.loads((out / "sales-overview.json").read_text())["id"] == "sales-overview"
+    index = json.loads((out / "index.json").read_text())
+    assert index == [{"id": "sales-overview", "title": "Sales overview", "description": GOOD["description"], "roles": ["admin", "manager"]}]
+    (out / "gone.json").write_text("{}")                       # a dashboard that no longer exists is not served
+    assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
+    assert not (out / "gone.json").exists()
+
+
+def test_build_fails_on_a_bad_file_and_on_a_name_that_is_not_the_id(tmp_path, capsys):
+    src, out = tmp_path / "src", tmp_path / "out"
+    src.mkdir()
+    spec = copy.deepcopy(GOOD)
+    panel(spec, "top")["by"] = "products.nme"
+    (src / "sales-overview.yml").write_text(yaml.safe_dump(spec))
+    assert main(["build", "--dir", str(src), "--out", str(out)]) == 1
+    assert "products.nme" in capsys.readouterr().err
+    (src / "sales-overview.yml").write_text((REPO / "dashboards" / "sales-overview.yml").read_text())
+    (src / "other-name.yml").write_text((REPO / "dashboards" / "sales-overview.yml").read_text())
+    assert main(["build", "--dir", str(src), "--out", str(out)]) == 1
+    assert "must be the dashboard id" in capsys.readouterr().err
+
+
+def test_the_committed_build_is_current(tmp_path):
+    """dashboards/build is committed (nginx serves it as is): rebuilding from the YAML must change nothing."""
+    out = tmp_path / "out"
+    assert main(["build", "--out", str(out)]) == 0
+    committed = REPO / "dashboards" / "build"
+    for f in sorted(out.iterdir()):
+        assert (committed / f.name).read_text() == f.read_text(), f"{f.name} is stale: run scripts/dashspec build"
+    assert sorted(p.name for p in committed.iterdir()) == sorted(p.name for p in out.iterdir())

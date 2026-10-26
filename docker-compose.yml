@@ -613,6 +613,7 @@ services:
     volumes:
       - ./dashboard/static:/usr/share/nginx/html:ro
       - ./dashboard/cube:/srv/cube:ro
+      - ./dashboards/build:/srv/dashboards:ro
       - ./dashboard/cube/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     environment:
       KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}

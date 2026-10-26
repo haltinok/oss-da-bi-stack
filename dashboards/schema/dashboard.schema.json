@@ -47,7 +47,7 @@
   "$defs": {
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
     "member": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" },
-    "format": { "enum": ["money", "int", "decimal", "pct"] },
+    "format": { "enum": ["money", "int", "decimal", "pct", "number"] },
     "granularity": { "enum": ["hour", "day", "week", "month", "quarter", "year"] },
     "direction": { "enum": ["asc", "desc"] },
     "filter": {
@@ -67,10 +67,34 @@
       "properties": {
         "member": { "$ref": "#/$defs/member" },
         "sum": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 2 },
+        "ratio": {
+          "type": "object",
+          "required": ["num", "den"],
+          "additionalProperties": false,
+          "properties": {
+            "num": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1 },
+            "den": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1 }
+          }
+        },
         "label": { "type": "string" },
         "format": { "$ref": "#/$defs/format" }
       },
-      "oneOf": [{ "required": ["member"] }, { "required": ["sum", "label"] }]
+      "oneOf": [{ "required": ["member"] }, { "required": ["sum", "label"] }, { "required": ["ratio", "label"] }]
+    },
+    "column": {
+      "anyOf": [
+        { "$ref": "#/$defs/member" },
+        {
+          "type": "object",
+          "required": ["member"],
+          "additionalProperties": false,
+          "properties": {
+            "member": { "$ref": "#/$defs/member" },
+            "label": { "type": "string" },
+            "format": { "$ref": "#/$defs/format" }
+          }
+        }
+      ]
     },
     "on_click": {
       "type": "object",
@@ -169,7 +193,7 @@
           "then": {
             "required": ["columns"],
             "properties": {
-              "columns": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 20 },
+              "columns": { "type": "array", "items": { "$ref": "#/$defs/column" }, "minItems": 1, "maxItems": 20 },
               "order": { "type": "object", "additionalProperties": { "$ref": "#/$defs/direction" } },
               "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
               "on_click": { "$ref": "#/$defs/on_click" }

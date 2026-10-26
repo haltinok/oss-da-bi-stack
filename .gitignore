@@ -33,6 +33,3 @@ dashboard/cube/tests/screenshots/
 
 # proposal agent run logs
 agent-logs/
-
-# --- compiled dashboard specs (dashspec compile) -----------------------------
-dashboards/build/

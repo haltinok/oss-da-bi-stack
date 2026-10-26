@@ -1,0 +1,135 @@
+// Unit tests for the renderer's data logic (dashboard/static/render/plan.js): no DOM, no Cube.
+//   node --test dashboard/cube/tests/lib_render.test.mjs
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, markdown, optionMeasures, optionsOf, panelMeasures, queriesPerCube,
+  tableParts, term, totals,
+} from "../../static/render/plan.js";
+
+const spec = {
+  time: { dimension: "dates.full_date" },
+  filters: [
+    { id: "fy", dimension: "dates.fiscal_year" },
+    { id: "category", dimension: "products.category" },
+    { id: "subcategory", dimension: "products.subcategory", parent: "products.category" },
+  ],
+  members: { "a.rev": { kind: "measure" }, "a.day": { kind: "dimension", type: "time" }, "b.rev": { kind: "measure" }, "p.name": { kind: "dimension" } },
+  panels: [
+    { id: "k", type: "kpi", measures: [{ sum: ["a.rev", "b.rev"], label: "Revenue" }] },
+    { id: "t", type: "table", columns: [{ member: "p.name" }, { member: "a.rev" }], ignore_filters: ["fy"] },
+  ],
+};
+
+test("humanize turns a member into a column label", () => {
+  assert.equal(humanize("internet_sales.order_number"), "Order number");
+  assert.equal(humanize("dates.fiscal_year"), "Fiscal year");
+});
+
+test("activeFilters keeps the chosen values and honours ignore_filters", () => {
+  const values = { fy: "2021", category: "", subcategory: "Road Bikes" };
+  assert.deepEqual(activeFilters(spec, values), [
+    { member: "dates.fiscal_year", operator: "equals", values: ["2021"] },
+    { member: "products.subcategory", operator: "equals", values: ["Road Bikes"] },
+  ]);
+  assert.deepEqual(activeFilters(spec, values, { ignore_filters: ["fy"] }).map((f) => f.member), ["products.subcategory"]);
+  assert.deepEqual(activeFilters(spec, {}), []);
+});
+
+test("a sum term adds across cubes; a sum of nothing is null, not zero", () => {
+  const t = term({ sum: ["a.rev", "b.rev"], label: "Revenue" });
+  assert.equal(evaluate(t, (m) => ({ "a.rev": 10, "b.rev": 5 })[m]), 15);
+  assert.equal(evaluate(t, (m) => ({ "a.rev": 10, "b.rev": null })[m]), 10);
+  assert.equal(evaluate(t, () => null), null);
+});
+
+test("a ratio term divides the sums, and a zero or missing denominator is null", () => {
+  const t = term({ ratio: { num: ["a.gp", "b.gp"], den: ["a.rev", "b.rev"] }, label: "Margin" });
+  assert.deepEqual(t.members, ["a.gp", "b.gp", "a.rev", "b.rev"]);
+  const v = { "a.gp": 20, "b.gp": 10, "a.rev": 60, "b.rev": 40 };
+  assert.equal(evaluate(t, (m) => v[m]), 0.3);
+  assert.equal(evaluate(t, (m) => (m.endsWith("rev") ? 0 : v[m])), null);
+  assert.equal(evaluate(t, () => null), null);
+});
+
+test("a member term is the member's own value", () => {
+  assert.equal(evaluate(term({ member: "a.rev" }), () => 7), 7);
+  assert.equal(evaluate(term({ member: "a.rev" }), () => undefined), null);
+});
+
+test("queriesPerCube makes one query per cube and adds the base to each", () => {
+  const qs = queriesPerCube(["a.rev", "b.rev", "a.units"], { filters: [{ member: "x" }] });
+  assert.deepEqual(qs, [
+    { cube: "a", query: { filters: [{ member: "x" }], measures: ["a.rev", "a.units"] } },
+    { cube: "b", query: { filters: [{ member: "x" }], measures: ["b.rev"] } },
+  ]);
+  assert.deepEqual([...byCube(["a.x", "a.x", "b.y"])], [["a", ["a.x"]], ["b", ["b.y"]]]);
+});
+
+test("totals reads the single row of each cube's answer", () => {
+  const t = totals([{ rows: [{ "a.rev": "12.5" }] }, { rows: [{ "b.rev": 3 }] }, { rows: [] }]);
+  assert.equal(t.get("a.rev"), 12.5);
+  assert.equal(t.get("b.rev"), 3);
+});
+
+test("byBucket merges per-cube rows on the time key, in time order", () => {
+  const key = "dates.full_date.month";
+  const out = byBucket([
+    { rows: [{ [key]: "2020-08-01T00:00:00.000", "a.rev": "2" }, { [key]: "2020-07-01T00:00:00.000", "a.rev": "1" }] },
+    { rows: [{ [key]: "2020-08-01T00:00:00.000", "b.rev": "20" }] },
+  ], key);
+  assert.deepEqual(out.map((b) => b.bucket), ["2020-07-01T00:00:00.000", "2020-08-01T00:00:00.000"]);
+  assert.equal(out[1].values.get("a.rev"), 2);
+  assert.equal(out[1].values.get("b.rev"), 20);
+  assert.equal(out[0].values.has("b.rev"), false, "a cube with no row for a month has no value for it");
+});
+
+test("byDims joins per-cube rows on the dimensions they share", () => {
+  const rows = byDims([
+    { rows: [{ "p.name": "Helmet", "a.rev": "5" }, { "p.name": "Jersey", "a.rev": "3" }] },
+    { rows: [{ "p.name": "Helmet", "b.rev": "7" }] },
+  ], ["p.name"]);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].values.get("a.rev"), 5);
+  assert.equal(rows[0].values.get("b.rev"), 7);
+  assert.equal(rows[1].values.has("b.rev"), false);
+  assert.deepEqual(rows[0].dims, { "p.name": "Helmet" });
+});
+
+test("optionsOf sorts numbers numerically, groups by parent, and narrows by the parent's value", () => {
+  const fy = optionsOf([{ rows: [{ "dates.fiscal_year": 2021 }, { "dates.fiscal_year": 2020 }, { "dates.fiscal_year": 2021 }, { "dates.fiscal_year": 10 }] }], spec.filters[0]);
+  assert.deepEqual(fy.map((o) => o.value), ["10", "2020", "2021"]);
+  const rows = [{ rows: [
+    { "products.category": "Bikes", "products.subcategory": "Road Bikes" }, { "products.category": "Clothing", "products.subcategory": "Jerseys" },
+    { "products.category": "Bikes", "products.subcategory": "Mountain Bikes" },
+  ] }];
+  assert.deepEqual(optionsOf(rows, spec.filters[2]).map((o) => o.value), ["Mountain Bikes", "Road Bikes", "Jerseys"]);
+  assert.deepEqual(optionsOf(rows, spec.filters[2], "Clothing").map((o) => o.value), ["Jerseys"]);
+});
+
+test("optionMeasures picks one measure per cube from the panels that apply the filter", () => {
+  assert.deepEqual(optionMeasures(spec, spec.filters[1]).sort(), ["a.rev", "b.rev"]);
+  const onlyTable = { ...spec, panels: [spec.panels[1]] };
+  assert.deepEqual(optionMeasures(onlyTable, spec.filters[0]), [], "a filter no panel applies has nothing to query");
+  assert.deepEqual(optionMeasures(onlyTable, spec.filters[1]), ["a.rev"]);
+});
+
+test("panelMeasures and tableParts split a table's members by kind", () => {
+  assert.deepEqual(panelMeasures(spec.panels[0], spec.members), ["a.rev", "b.rev"]);
+  assert.deepEqual(tableParts(spec.panels[1], spec.members), { measures: ["a.rev"], dimensions: ["p.name"] });
+});
+
+test("colorOf maps theme names to CSS variables, passes hex through and cycles a palette", () => {
+  assert.equal(colorOf("internet", 0), "var(--internet)");
+  assert.equal(colorOf("#112233", 0), "#112233");
+  assert.equal(colorOf(undefined, 1), "var(--reseller)");
+});
+
+test("markdown escapes html first, then renders bold, code, links and lists", () => {
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  assert.equal(markdown("<b>x</b>", esc), "<p>&#60;b&#62;x&#60;/b&#62;</p>");
+  assert.equal(markdown("**hi** `c` [a](https://e.com/x)", esc), '<p><strong>hi</strong> <code>c</code> <a href="https://e.com/x" rel="noopener noreferrer" target="_blank">a</a></p>');
+  assert.equal(markdown("- one\n- two", esc), "<ul><li>one</li><li>two</li></ul>");
+  assert.equal(markdown("a\n\nb", esc), "<p>a</p><p>b</p>");
+  assert.ok(!markdown("[x](javascript:alert(1))", esc).includes("<a "), "only http(s) links become links");
+});

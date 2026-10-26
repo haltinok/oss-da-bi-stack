@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dashboards</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='8' width='3' height='7' rx='1' fill='%232a78d6'/%3E%3Crect x='6.5' y='4' width='3' height='11' rx='1' fill='%232a78d6'/%3E%3Crect x='12' y='1' width='3' height='14' rx='1' fill='%23eb6834'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/render/render.css">
+</head>
+<body>
+<!-- Served for /d/ and /d/<id>: the renderer (render/main.js) draws a compiled dashboard spec (dashboards/build/<id>.json). -->
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="brand">
+      <h1><span id="title">Dashboards</span> <span class="dataset-badge" id="dataset-badge" hidden></span></h1>
+      <span class="sub" id="brand-sub"></span>
+    </div>
+    <div class="tools" id="tools">
+      <label class="field" id="dataset-field" hidden>Dataset <select id="f-dataset" aria-label="Dataset"></select></label>
+      <div class="live" id="live" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span><span id="live-text">Connecting…</span>
+      </div>
+      <button class="export-all" id="export-all" type="button" hidden>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v8m0 0L5 7m3 3 3-3M3 13h10"/></svg>Export all
+      </button>
+      <button class="icon-btn" id="refresh" title="Refresh" aria-label="Refresh" type="button" hidden>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
+      </button>
+      <button class="icon-btn" id="theme" title="Toggle theme" aria-label="Toggle light or dark theme" type="button">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="error-banner" id="error" hidden></div>
+  <nav class="filters rfilters" id="filters" aria-label="Filters" hidden></nav>
+  <main id="main"></main>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script src="/cube/config.js"></script>
+<script type="module" src="/render/main.js"></script>
+</body>
+</html>
