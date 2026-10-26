@@ -115,7 +115,10 @@ function kpiPanel(def, ctx) {
         const key = timeKey(ctx.spec.time.dimension, spark.granularity);
         const buckets = byBucket(series, key);
         const line = buckets.map((b) => evaluate(t, (m) => b.values.get(m) ?? null));
-        tile.append(sparkline(line, (li, lv) => `${t.label} by ${spark.granularity}, latest ${ctx.bucketLabel(buckets[li].bucket, spark.granularity)}: ${fmtOf(t)(lv)}`));
+        const full = ctx.formatter(t.format, true);
+        tile.append(sparkline(line, (li, lv) => `${t.label} by ${spark.granularity}, latest ${ctx.bucketLabel(buckets[li].bucket, spark.granularity)}: ${fmtOf(t)(lv)}`, {
+          tip: (i, v) => ctx.tooltip.tipAttr(ctx.tooltip.tipLines(ctx.bucketLabel(buckets[i].bucket, spark.granularity), [[t.label, full(v)]])),
+        }));
       }
     } catch (e) {
       if (e?.name === "AbortError" || signal?.aborted) throw e;

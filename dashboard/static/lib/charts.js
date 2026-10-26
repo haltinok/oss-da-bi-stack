@@ -67,9 +67,10 @@ export function stackBarHtml(parts, max) {
 
 /**
  * A KPI sparkline: values (null = no value for that step), drawn as one line that breaks at gaps, ending in a dot.
- * ariaLabel(lastIndex, lastValue) -> the text for screen readers.
+ * ariaLabel(lastIndex, lastValue) -> the text for screen readers. `tip(index, value)` (optional) returns a tooltip id (see lib/tooltip.js) for each point:
+ * hovering the tile then shows that point's value and a guide line at it.
  */
-export function sparkline(values, ariaLabel) {
+export function sparkline(values, ariaLabel, { tip } = {}) {
   const W = 200, H = 34;
   const svg = svgEl("svg", { class: "spark", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true" });
   const pts = values.map((v, i) => [i, v]).filter(([, v]) => v != null && isFinite(v));
@@ -84,6 +85,17 @@ export function sparkline(values, ariaLabel) {
   const [li, lv] = pts[pts.length - 1];
   svg.append(svgEl("circle", { cx: x(li), cy: y(lv), r: 2.5, fill: "var(--ink)" }));
   svg.setAttribute("aria-label", ariaLabel(li, lv));
+  if (tip) {
+    const step = W / Math.max(values.length - 1, 1);
+    for (const [i, v] of pts) {
+      const id = tip(i, v);
+      if (!id) continue;
+      const g = svgEl("g", { class: "spark-pt" });
+      g.append(svgEl("line", { class: "spark-guide", x1: x(i), x2: x(i), y1: 0, y2: H, "vector-effect": "non-scaling-stroke" }));
+      g.append(svgEl("rect", { class: "spark-hit", x: x(i) - step / 2, y: 0, width: step, height: H, fill: "transparent", "data-tip": id }));
+      svg.append(g);
+    }
+  }
   return svg;
 }
 

@@ -627,7 +627,10 @@ function renderKpis(months) {
 }
 
 function sparkline(values, months, k) {
-  return sparklineSvg(values, (li, lv) => `${k.label} by month, latest ${months[li] ? monthLabel(months[li].month) : ""}: ${k.fmt(lv)}`);
+  const full = k.fmt === money ? moneyFull : k.fmt;       // the tooltip shows whole currency units, the tile the compact figure
+  return sparklineSvg(values, (li, lv) => `${k.label} by month, latest ${months[li] ? monthLabel(months[li].month) : ""}: ${k.fmt(lv)}`, {
+    tip: (i, v) => (months[i] ? tipAttr(tipLines(monthLabel(months[i].month), [[k.label, full(v)]])) : null),
+  });
 }
 
 // ---- Monthly trend + margin

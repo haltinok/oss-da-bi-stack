@@ -211,6 +211,9 @@ button, select { font: inherit; color: inherit; }
 .kpi .delta.down { color: var(--bad); }
 .kpi .delta .vs { color: var(--muted); }
 .kpi svg.spark { width: 100%; height: 34px; margin-top: 4px; display: block; overflow: visible; }
+.spark-guide { stroke: var(--muted); stroke-width: 1; opacity: 0; pointer-events: none; }
+.spark-pt:hover .spark-guide { opacity: .7; }
+.spark-hit { cursor: default; }
 
 /* Charts */
 .chart { position: relative; width: 100%; }
