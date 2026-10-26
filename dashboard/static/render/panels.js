@@ -300,4 +300,3 @@ function unsupportedPanel(def, ctx) {
   body.innerHTML = `<div class="empty">The '${esc(def.type)}' panel is not drawn by this renderer yet.</div>`;
   return { root, load: async () => {}, sheet: () => null };
 }
-
