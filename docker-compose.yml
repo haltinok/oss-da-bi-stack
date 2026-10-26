@@ -109,6 +109,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: postgres
+      BUILDER_DB_PASSWORD: ${BUILDER_DB_PASSWORD:-}      # the dashboard builder's login (postgres/init/03_builder_user.sh); empty skips it
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -627,6 +628,13 @@ services:
       BUILDER_EFFORT: ${BUILDER_EFFORT-medium}
       BUILDER_SPEC_REFERENCE: ${BUILDER_SPEC_REFERENCE:-1}
       BUILDER_RATE_LIMIT: ${BUILDER_RATE_LIMIT:-20}
+      # saved dashboards (Postgres, schema builder); without BUILDER_DB_PASSWORD saving is off and the rest of the builder works
+      BUILDER_PG_HOST: postgres
+      BUILDER_PG_PORT: "5432"
+      BUILDER_PG_DB: postgres
+      BUILDER_PG_USER: builder_app
+      BUILDER_DB_PASSWORD: ${BUILDER_DB_PASSWORD:-}
+      BUILDER_MAX_SAVED: ${BUILDER_MAX_SAVED:-50}
       BUILDER_DAILY_TOKENS: ${BUILDER_DAILY_TOKENS:-300000}
       BUILDER_MAX_CONCURRENT: ${BUILDER_MAX_CONCURRENT:-4}
       BUILDER_TIMEOUT: ${BUILDER_TIMEOUT:-120}

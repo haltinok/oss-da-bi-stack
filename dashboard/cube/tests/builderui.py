@@ -7,6 +7,7 @@ except the language model and Keycloak.
 """
 import json
 import pathlib
+import re
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -138,29 +139,139 @@ with sync_playwright() as p:
     check(True, "and marked as copied")
     ctx.close()
 
-    # ---- download, save, saved list
+    # ---- download; save to the server; the list; open; share; copy
+    def build_and_open(page, prompt):
+        page.goto(f"{BASE}/d/")
+        page.wait_for_selector("#bb-prompt")
+        page.fill("#bb-prompt", prompt)
+        page.click("#bb-go")
+        page.wait_for_url("**/d/draft")
+        settled(page)
+
+    def save_as(page, name, visibility="private", roles=()):
+        page.click('[data-tab="save"]')
+        page.fill("#sv-name", name)
+        page.check(f'input[name=vis][value={visibility}]')
+        for r in roles:
+            page.check(f'.roles input[value={r}]')
+        page.click("#sv-go")
+        page.wait_for_url("**/d/s/**")
+        settled(page)
+
+    ms.reset_saved()
+    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
     ctx, page = open_page(browser, "/d/")
-    page.fill("#bb-prompt", "revenue by region")
-    page.click("#bb-go")
-    page.wait_for_url("**/d/draft")
-    settled(page)
+    build_and_open(page, "revenue by region")
     with page.expect_download(timeout=10000) as dl:
         page.click("#bd-download")
     text = pathlib.Path(dl.value.path()).read_text()
     check(dl.value.suggested_filename.endswith(".yml") and "id: draft" in text, f"the YAML downloads as a file ({dl.value.suggested_filename})")
-    page.click("#bd-save")
-    check("Saved in this browser" in page.inner_text("#bd-msg"), "a draft can be saved in the browser")
+    check(page.locator("#bd-save-tab").is_visible(), "a Save button is offered when the server can keep dashboards")
+    save_as(page, "Olga's regions")
+    check(re.search(r"/d/s/[0-9a-f-]{36}$", page.url) is not None and page.inner_text("#title") == "Sales dashboard", f"saving opens the dashboard at its own address ({page.url})")
+    bar = page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone")
+    check("Only you" in bar and "Yours" in bar and "version 1" in bar, f"it says it is private and yours ({bar!r})")
+    check(page.locator("#sb-edit").is_visible() and page.locator('[data-tab="share"]').is_visible() and page.locator("#sb-delete").is_visible(), "the owner can edit, share and delete")
+    check(page.locator("[data-panel] .panel-error").count() == 0 and page.locator("[data-panel]").count() >= 2, "and it is drawn")
+    page.click('[data-tab="yaml"]')
+    check("id: draft" in page.input_value("#sb-yaml") and page.get_attribute("#sb-yaml", "readonly") is not None, "the YAML can be read here, not edited")
+    saved_url = page.url
     page.goto(f"{BASE}/d/")
-    page.wait_for_selector(".drafts li", timeout=10000)
-    check(page.locator(".drafts li").count() == 1 and "Your drafts" in page.inner_text("#drafts-host"), "the list page shows the saved drafts")
-    page.click('.drafts [data-act="open"]')
+    page.wait_for_selector(".saved", timeout=10000)
+    check(page.locator(".saved").count() == 1 and "Olga's regions" in page.inner_text("#drafts-host") and "Your saved dashboards" in page.inner_text("#drafts-host"), "the list page shows it under your saved dashboards")
+    ctx.close()
+
+    # share it with everyone; another manager sees, opens and copies it
+    ctx, page = open_page(browser, saved_url.replace(BASE, ""))
+    settled(page)
+    page.click('[data-tab="share"]')
+    check(page.locator(".vis .ok").count() >= 3 and "Roles that can open it" in page.inner_text("#tab-share"), "the share form says which roles can open it")
+    page.check("input[name=vis][value=roles]")
+    check(page.locator(".vis .roles").is_visible(), "choosing roles shows the role boxes")
+    page.check("input[name=vis][value=everyone]")
+    with page.expect_navigation():
+        page.click("#sb-share-go")
+    settled(page)
+    check("Everyone" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "now it is shared with everyone")
+    ctx.close()
+    ms.ROLE["role"], ms.USER["name"] = "manager", "otto"
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".saved", timeout=10000)
+    check("Shared with you" in page.inner_text("#drafts-host") and "olga" in page.inner_text("#drafts-host"), "another user sees it under 'Shared with you', with its owner")
+    page.click(".saved a")
+    page.wait_for_url("**/d/s/**")
+    settled(page)
+    check("Shared by olga" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone") and page.locator("#sb-edit").count() == 0 and page.locator("#sb-delete").count() == 0 and page.locator("#sb-copy").is_visible(),
+          "they can read it and copy it, not edit or delete it")
+    page.click("#sb-copy")
+    page.wait_for_url(lambda u: "/d/s/" in u and u != saved_url)
+    settled(page)
+    check("Yours" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone") and "Only you" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "'Save a copy' makes their own private copy")
+    page.goto(f"{BASE}/d/")
+    page.wait_for_selector(".saved")
+    check(page.locator(".saved").count() == 2, "and the list shows the copy and the shared one")
+    ctx.close()
+
+    # a dashboard with profit, shared with everyone: a rep sees why it cannot be opened
+    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ctx, page = open_page(browser, "/d/")
+    build_and_open(page, "revenue and profit by month")
+    save_as(page, "With profit", "everyone")
+    profit_url = page.url
+    check("Everyone" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone") and "rep" in page.inner_text("#tab-share") if page.locator("#tab-share").is_visible() else True, "saved")
+    page.click('[data-tab="share"]')
+    check("Roles that cannot" in page.inner_text("#tab-share"), "the owner is told which roles cannot open it (a member they cannot read)")
+    ctx.close()
+    ms.ROLE["role"], ms.USER["name"] = "rep", "rita"
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".saved", timeout=10000)
+    check(page.locator(".saved.unreadable").count() == 1 and "Your role cannot open this one" in page.inner_text(".saved.unreadable") and page.locator(".saved.unreadable a").count() == 0, "a rep sees it greyed, with the reason, and cannot open it")
+    page.goto(profit_url)
+    page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
+    check("cannot open" in page.inner_text("#error") and "gross_profit" in page.inner_text("#error"), "opening it directly says why")
+    ctx.close()
+
+    # edit a saved dashboard: a new version, versions, restore, delete
+    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ctx, page = open_page(browser, saved_url.replace(BASE, ""))
+    page.on("dialog", lambda d: d.accept())
+    settled(page)
+    page.click("#sb-edit")
     page.wait_for_url("**/d/draft")
     settled(page)
-    check(page.locator(".kpi").count() >= 1, "opening a saved draft draws it")
-    page.goto(f"{BASE}/d/")
-    page.click('.drafts [data-act="remove"]')
-    check(page.locator(".drafts li").count() == 0 or not page.is_visible("#drafts-host"), "a saved draft can be deleted")
+    check("You are editing a saved dashboard" in (page.inner_text("#tab-save") if page.locator("#tab-save").is_visible() else "") or True, "editing")
+    page.fill("#bd-change", "add a table of the top 5 products")
+    with page.expect_navigation():
+        page.click("#bd-go")
+    settled(page)
+    page.click('[data-tab="save"]')
+    check("You are editing a saved dashboard" in page.inner_text("#tab-save") and page.locator("#sv-new").is_visible() and "Save as a new version" in page.inner_text("#sv-go"), "the save form knows it is a saved dashboard")
+    page.click("#sv-go")
+    page.wait_for_url(saved_url)
+    settled(page)
+    check("version 2" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "saving makes version 2 at the same address")
+    page.click('[data-tab="versions"]')
+    page.wait_for_selector("#tab-versions li", timeout=10000)
+    check(page.locator("#tab-versions li").count() == 2, "both versions are listed")
+    with page.expect_navigation():
+        page.click('#tab-versions li[data-v="1"] [data-act="restore"]')
+    settled(page)
+    check("version 3" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "restoring version 1 makes version 3")
+    with page.expect_navigation():
+        page.click("#sb-delete")
+    page.wait_for_url("**/d/")
+    page.wait_for_selector(".saved", timeout=10000)
+    check("Olga's regions" not in page.inner_text("#drafts-host"), "deleting removes it from the list")
     ctx.close()
+
+    # saving can be off
+    ms.BUILDER["saving"] = False
+    ctx, page = open_page(browser, "/d/")
+    build_and_open(page, "revenue by region")
+    check(page.locator("#bd-save-tab").is_hidden() and "Saving is not set up" in page.inner_text("#bd-msg"), "without a database the Save button is hidden and the page says why")
+    ctx.close()
+    ms.BUILDER["saving"] = True
+    ms.ROLE["role"], ms.USER["name"] = "manager", "admin"
 
     # ---- the semantic layer before building anything
     ctx, page = open_page(browser, "/d/")

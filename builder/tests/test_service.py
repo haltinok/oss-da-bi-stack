@@ -236,3 +236,97 @@ def test_a_log_file_that_cannot_be_written_does_not_break_a_build(monkeypatch, t
 
 def test_control_characters_are_removed_from_the_prompt():
     assert main.clean("revenue\x00 by\x07 month\nand more\tstuff") == "revenue by month\nand more\tstuff"
+
+
+# ---------------------------------------------------------------------------------------------------------------- saved dashboards over HTTP
+@pytest.fixture
+def memory_store(monkeypatch):
+    from builder.store import MemoryStore
+    store = MemoryStore()
+    monkeypatch.setattr(main, "STORE", store)
+    return store
+
+
+def sales_yaml(role="manager", user="maker"):
+    return client.post("/build", headers=token(role, user), json={"prompt": "monthly revenue by channel and the top 5 products"}).json()["yaml"]
+
+
+def test_saving_is_off_without_a_database_and_everything_else_still_works(monkeypatch):
+    monkeypatch.setattr(main, "STORE", None)
+    h = token("manager", "nodb")
+    r = client.get("/saved", headers=h)
+    assert r.status_code == 503 and "BUILDER_DB_PASSWORD" in r.json()["detail"]
+    assert client.get("/info", headers=h).json()["saving"] is False
+    assert client.post("/build", headers=h, json={"prompt": "revenue by month"}).status_code == 200
+
+
+def test_the_whole_life_of_a_saved_dashboard(memory_store):
+    owner, other, rep = token("manager", "olga"), token("manager", "otto"), token("rep", "rita")
+    yml = sales_yaml()
+    made = client.post("/saved", headers=owner, json={"yaml": yml, "title": "Olga's sales"})
+    assert made.status_code == 201 and made.json()["visibility"] == "private" and made.json()["mine"] and set(made.json()["readable_by"]) >= {"manager", "admin"}
+    id_ = made.json()["id"]
+    assert client.get("/info", headers=owner).json()["saving"] is True
+    assert [d["title"] for d in client.get("/saved", headers=owner).json()] == ["Olga's sales"] and client.get("/saved", headers=other).json() == []
+    assert client.get(f"/saved/{id_}", headers=other).status_code == 404
+    opened = client.get(f"/saved/{id_}", headers=owner).json()
+    assert opened["spec"]["id"] == "draft" and opened["meta"]["can_edit"] and opened["yaml"] and "readable_by" in opened
+    shared = client.put(f"/saved/{id_}", headers=owner, json={"visibility": "roles", "shared_roles": ["manager"]})
+    assert shared.status_code == 200 and shared.json()["shared_roles"] == ["manager"]
+    seen = client.get(f"/saved/{id_}", headers=other).json()
+    assert seen["meta"]["owner"] == "olga" and not seen["meta"]["can_edit"] and "readable_by" not in seen
+    assert client.get(f"/saved/{id_}", headers=rep).status_code == 404, "shared with managers only"
+    assert client.put(f"/saved/{id_}", headers=other, json={"yaml": yml}).status_code == 403
+    assert client.delete(f"/saved/{id_}", headers=other).status_code == 403
+    assert client.put(f"/saved/{id_}", headers=owner, json={"title": "Renamed", "yaml": yml.replace("Sales dashboard", "Sales v2")}).json()["version"] in (1, 2)
+    assert [v["version"] for v in client.get(f"/saved/{id_}/versions", headers=owner).json()][0] >= 1
+    assert client.get(f"/saved/{id_}/versions", headers=other).status_code == 403
+    assert client.delete(f"/saved/{id_}", headers=owner).status_code == 204
+    assert client.get(f"/saved/{id_}", headers=owner).status_code == 404 and client.get("/saved", headers=owner).json() == []
+
+
+def test_a_role_that_cannot_read_a_shared_dashboard_gets_the_reason(memory_store):
+    maker = token("manager", "maker2")
+    profit = client.post("/build", headers=maker, json={"prompt": "revenue and profit by month"}).json()["yaml"]
+    made = client.post("/saved", headers=maker, json={"yaml": profit, "visibility": "everyone"}).json()
+    assert "rep" not in made["readable_by"]
+    rita = token("rep", "rita2")
+    listed = client.get("/saved", headers=rita).json()
+    assert listed[0]["readable"] is False and any("gross_profit" in p for p in listed[0]["problems"])
+    r = client.get(f"/saved/{made['id']}", headers=rita)
+    assert r.status_code == 422 and "cannot open" in r.json()["detail"]["message"] and any("role 'rep' cannot read" in p for p in r.json()["detail"]["problems"])
+
+
+def test_saving_checks_the_file_for_the_savers_role_and_the_input(memory_store):
+    rep = token("rep", "rita3")
+    manager_yaml = client.post("/build", headers=token("manager", "m3"), json={"prompt": "revenue and profit by month"}).json()["yaml"]
+    r = client.post("/saved", headers=rep, json={"yaml": manager_yaml})
+    assert r.status_code == 422 and any("profit" in p for p in r.json()["detail"]["problems"])
+    h = token("manager", "m4")
+    ok = sales_yaml()
+    assert client.post("/saved", headers=h, json={"yaml": ""}).status_code == 422
+    assert client.post("/saved", headers=h, json={"yaml": ok, "visibility": "world"}).status_code == 422
+    assert client.post("/saved", headers=h, json={"yaml": ok, "visibility": "roles"}).status_code == 422
+    assert client.post("/saved", headers=h, json={"yaml": ok, "title": "x" * 121}).status_code == 422
+    assert client.post("/saved", json={"yaml": ok}).status_code == 401
+
+
+def test_a_user_can_only_keep_so_many(memory_store, monkeypatch):
+    monkeypatch.setattr(main, "MAX_SAVED", 2)
+    h, yml = token("manager", "hoarder"), sales_yaml()
+    for _ in range(2):
+        assert client.post("/saved", headers=h, json={"yaml": yml}).status_code == 201
+    r = client.post("/saved", headers=h, json={"yaml": yml})
+    assert r.status_code == 409 and "delete one first" in r.json()["detail"]
+
+
+def test_saves_changes_and_deletions_are_logged(memory_store, monkeypatch, tmp_path):
+    log = tmp_path / "log.jsonl"
+    monkeypatch.setattr(main, "LOG_FILE", str(log))
+    h = token("manager", "logger")
+    id_ = client.post("/saved", headers=h, json={"yaml": sales_yaml(), "visibility": "everyone"}).json()["id"]
+    client.put(f"/saved/{id_}", headers=h, json={"visibility": "private"})
+    client.delete(f"/saved/{id_}", headers=h)
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [e["event"] for e in events if e["user"] == "logger"][-3:] == ["saved", "saved_update", "saved_delete"]
+    assert next(e for e in events if e["event"] == "saved")["visibility"] == "everyone"

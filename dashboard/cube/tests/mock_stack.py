@@ -14,9 +14,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 PORT = 19350
 hits: dict[str, int] = {}
 BENCH = {"on": True}
+USER = {"name": "admin"}     # who the mock auth service says is signed in (the owner of what they save)
 ROLE = {"role": "admin"}  # what the mock auth service says the signed-in user is
 FAIL = {"members": set(), "message": "Profit and margin are not available for your role"}   # queries naming these members answer 403
-BUILDER = {"limit": False}   # True: /builder/build answers 429, as the service does when a user has built too often
+BUILDER = {"limit": False, "saving": True}   # True: /builder/build answers 429, as the service does when a user has built too often
 FAKE = {"on": False}      # True: the Cube mocks answer every query with generated rows instead of none (see fake_rows)
 
 POOLS = {
@@ -78,7 +79,7 @@ def fake_rows(query):
 _builder_cache = {}
 
 
-def builder_answer(path, body):
+def builder_answer(path, body, method="GET"):
     """The builder service without Keycloak: the real loop, validator and rule-based stand-in (builder/), for the role the mock signs in as."""
     if not _builder_cache:
         for extra in (str(ROOT), str(ROOT / "dashboards")):
@@ -92,16 +93,53 @@ def builder_answer(path, body):
     c, role = _builder_cache, ROLE["role"]
     if path == "/info":
         return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role),
-                     "note": "A rule-based stand-in answers."}
+                     "saving": BUILDER["saving"], "builds_left": 20, "note": "A rule-based stand-in answers."}
     if path == "/catalog":
         return 200, c["catalog_json"](c["catalog"], role)
     if path == "/build":
         if BUILDER["limit"]:
             return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
         return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin")
+    if path.startswith("/saved"):
+        if not BUILDER["saving"]:
+            return 503, {"detail": "Saving is not set up on this server (BUILDER_DB_PASSWORD is empty)."}
+        return saved_answer(path, body, method, c)
     if path == "/validate":
         built, problems = c["core"].check_submission(body["yaml"], c["catalog"], role)
         return 200, {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "notes": built["notes"] if built else [], "problems": problems}
+    return 404, {"detail": "not found"}
+
+
+def reset_saved():
+    _builder_cache.pop("saved_store", None)
+
+
+def saved_answer(path, body, method, c):
+    """The saved-dashboard endpoints on an in-memory store, through the same rules (builder/saved.py) the service uses."""
+    from builder import saved
+    from builder.store import MemoryStore
+    if "saved_store" not in _builder_cache:
+        _builder_cache["saved_store"] = MemoryStore()
+    store, catalog, who = _builder_cache["saved_store"], c["catalog"], saved.Who(name=USER["name"], role=ROLE["role"])
+    parts = [p for p in path.split("/") if p]
+    try:
+        if parts == ["saved"] and method == "GET":
+            return 200, saved.list_saved(store, catalog, who)
+        if parts == ["saved"] and method == "POST":
+            return 201, saved.save_new(store, catalog, who, body["yaml"], title=body.get("title"), visibility=body.get("visibility", "private"), shared_roles=body.get("shared_roles", []))
+        if len(parts) == 2 and method == "GET":
+            return 200, saved.open_saved(store, catalog, who, parts[1])
+        if len(parts) == 2 and method == "PUT":
+            return 200, saved.update_saved(store, catalog, who, parts[1], yaml_text=body.get("yaml"), title=body.get("title"), visibility=body.get("visibility"), shared_roles=body.get("shared_roles"))
+        if len(parts) == 2 and method == "DELETE":
+            saved.delete_saved(store, who, parts[1])
+            return 204, {}
+        if len(parts) == 3 and parts[2] == "versions":
+            return 200, saved.versions(store, who, parts[1])
+        if len(parts) == 3 and parts[2] == "restore":
+            return 200, saved.restore(store, catalog, who, parts[1], body["version"])
+    except saved.SavedError as e:
+        return e.status, {"detail": {"message": e.message, "problems": e.problems} if e.problems else e.message}
     return 404, {"detail": "not found"}
 
 
@@ -114,6 +152,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
 
@@ -122,6 +161,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.do_GET()
+
+    do_PUT = do_DELETE = do_POST
 
     def do_GET(self):
         path = urlparse(self.path).path
@@ -134,13 +175,13 @@ class Handler(BaseHTTPRequestHandler):
                     f'location.replace({json.dumps(to)});</script>')
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
-            return self._send(json.dumps({"token": "t", "expires_in": 900, "user": "admin", "role": ROLE["role"], "territories": ["Canada"]}).encode())
+            return self._send(json.dumps({"token": "t", "expires_in": 900, "user": USER["name"], "role": ROLE["role"], "territories": ["Canada"]}).encode())
         if path.startswith("/builder/"):
             body = {}
-            if self.command == "POST":
+            if self.command in ("POST", "PUT"):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
-            status, answer = builder_answer(path[len("/builder"):], body)
-            return self._send(json.dumps(answer).encode(), status=status)
+            status, answer = builder_answer(path[len("/builder"):], body, self.command)
+            return self._send(b"" if status == 204 else json.dumps(answer).encode(), status=status)
         if path.startswith("/cube-"):
             query = {}
             if FAKE["on"]:

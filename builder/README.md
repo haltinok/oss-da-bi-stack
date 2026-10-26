@@ -39,8 +39,9 @@ model or the rule-based stand-in answered. On a draft:
 - **YAML**: the whole file, editable; Apply checks it for your role (`POST /validate`) and draws it, or lists the problems and changes nothing.
 - **Semantic layer**: every cube, measure and dimension your role may read, with what it means and what it joins to; search, and click a name to copy it
   (and insert it at the cursor of an open YAML). The same browser is on `/d/` before you build anything.
-- **Download YAML** and **Save draft** (kept in this browser, up to 10). A draft only lives in your browser; to keep a dashboard for everyone, download the
-  YAML, put it in `dashboards/`, run `scripts/dashspec build` and open a pull request (the [guide](../docs/dashboards.md)).
+- **Save…** keeps it on the server (Postgres), private to you or shared with roles or everyone, at `/d/s/<id>`; see [Saved dashboards](../docs/builder.md#saved-dashboards).
+  Without `BUILDER_DB_PASSWORD` the button is hidden. **Download YAML** gives the file; to make a dashboard part of the product for everyone, put it in `dashboards/`,
+  run `scripts/dashspec build` and open a pull request (the [guide](../docs/dashboards.md)).
 
 ![A draft built from a request](../docs/images/dashboards/builder.png)
 
@@ -53,6 +54,8 @@ Anything the model writes is shown as text, never as HTML; links in text panels 
 |---|---|
 | `GET /info` | the mode, the model, the caller's role |
 | `GET /catalog` | the semantic layer for the caller's role (cubes, members, descriptions, joins, who else can read each) |
+| `GET/POST /saved`, `GET/PUT/DELETE /saved/{id}` | list what you can see, save, open (re-validated for your role), change sharing/title/YAML, delete |
+| `GET /saved/{id}/versions`, `POST /saved/{id}/restore` `{ version }` | the owner's earlier versions; restoring makes a new version |
 | `POST /build` `{ prompt, current_yaml? }` | `{ status: ok \| cannot \| failed, yaml, spec, message, notes, attempts, mode, model, usage }` |
 
 Every call needs a Keycloak access token of the `dashboard` client. Each user may build `BUILDER_RATE_LIMIT` (20) times an hour; each build writes one log
