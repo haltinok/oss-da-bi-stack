@@ -622,6 +622,9 @@ services:
       BUILDER_MODE: ${BUILDER_MODE:-auto}
       BUILDER_MODEL: ${BUILDER_MODEL:-claude-opus-5-5}
       BUILDER_RATE_LIMIT: ${BUILDER_RATE_LIMIT:-20}
+      BUILDER_DAILY_TOKENS: ${BUILDER_DAILY_TOKENS:-300000}
+      BUILDER_MAX_CONCURRENT: ${BUILDER_MAX_CONCURRENT:-4}
+      BUILDER_TIMEOUT: ${BUILDER_TIMEOUT:-120}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8350/healthz').status==200 else 1)"]
       interval: 10s

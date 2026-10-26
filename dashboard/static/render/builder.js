@@ -74,7 +74,7 @@ export function mountPromptBox(host, api, t) {
     <div id="bb-out" class="bmsg" hidden></div></section>`;
   const prompt = host.querySelector("#bb-prompt"), go = host.querySelector("#bb-go"), out = host.querySelector("#bb-out");
   api.info().then((info) => {
-    host.querySelector("#bb-mode").textContent = modeNote(info, t);
+    host.querySelector("#bb-mode").textContent = `${modeNote(info, t)}${info.builds_left !== undefined ? ` ${t.buildsLeft(info.builds_left, info.rate_limit_per_hour)}` : ""}`;
     const ex = host.querySelector("#bb-ex");
     for (const text of info.examples || []) {
       const b = el("button", { type: "button", class: "chip" }, esc(text));

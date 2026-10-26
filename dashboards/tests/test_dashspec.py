@@ -451,7 +451,7 @@ def test_the_spec_reference_is_generated_from_the_schema_and_current():
 
 def test_links_and_images_in_the_dashboard_docs_resolve():
     import re
-    for name in ("dashboards.md", "dashboard-spec-reference.md", "dashboard-spec-plan.md"):
+    for name in ("dashboards.md", "dashboard-spec-reference.md", "dashboard-spec-plan.md", "builder.md", "semantic-layer.md"):
         path = REPO / "docs" / name
         for target in re.findall(r"\]\(((?!https?://|#|mailto:)[^)\s]+)\)", path.read_text()):
             assert (path.parent / target.split("#")[0]).resolve().exists(), f"{name}: broken link {target}"

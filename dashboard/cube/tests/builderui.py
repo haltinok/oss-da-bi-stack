@@ -73,7 +73,7 @@ with sync_playwright() as p:
     check(page.locator('[data-panel="trend"] .hit').count() > 5, "with the real renderer (hover bars, clicks)")
     check(page.locator(".builder-bar .badge").inner_text().lower() == "draft" and "title" and page.title().startswith("Draft:"), "the page says it is a draft")
     check("stand-in" in page.inner_text("#bd-mode"), "and who built it")
-    check("Composed from your request" in page.inner_text("#bd-msg"), "the builder's message is shown")
+    check("Understood:" in page.inner_text("#bd-msg"), "the builder says what it understood")
     check(page.locator("[data-panel] .panel-error").count() == 0, "no panel errors for the manager")
     if KEEP:
         SHOTS.mkdir(exist_ok=True)

@@ -22,12 +22,14 @@ prompt ──> model (Claude, or the rule-based stand-in) ──> submit_dashboa
 3. Whatever is built, Cube enforces row-level security and role limits on every query the page sends, with the user's own token.
 4. The model cannot approximate a missing metric: it must call `cannot_build` and say what is missing.
 
+Operating it, the limits, what is logged and what leaves the network: **[docs/builder.md](../docs/builder.md)**. How to check a real model: [`evals.md`](evals.md).
+
 ## Two models, one loop
 - **Claude** (`ANTHROPIC_API_KEY` set; `BUILDER_MODEL`, default `claude-opus-5-5`): reads free text, edits a dashboard in conversation. Not yet run against the real
   API in this repository (no key was available): the loop, the prompts and the checks are tested with a scripted model.
-- **The rule-based stand-in** (no key): keywords in English and Turkish for measures, a time axis, breakdowns (region, country, category, product), top N, a
-  table, a treemap, filters, clicks, language, and edits (chart style, top N, add or remove a table / treemap / breakdown). It is not an LLM and says so
-  (`mode: standin`); it exists so everything else runs, and is tested on every prompt x every role.
+- **The rule-based stand-in** (no key): keywords in English and Turkish for measures, a time axis with a drill-down (year, quarter, month, day), a chart per channel, column / line / area
+  styles, pie and donut, breakdowns (region, country, category, product), top N, a table, a treemap, filters, clicks, language, and edits (chart style, columns, top N, split a chart per
+  channel, add or remove a panel). It says what it understood and what it did not. It is not an LLM and says so (`mode: standin`); it exists so everything else runs, and is tested on every prompt x every role.
 
 ## The page
 On `/d/` (the dashboards list) a **Describe a dashboard** box: type a request or click an example that fits your role, press Build, and the result is drawn at
