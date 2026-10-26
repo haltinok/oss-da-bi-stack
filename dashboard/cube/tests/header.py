@@ -7,6 +7,7 @@ left; dataset select, status, Export, Refresh, theme and user on the right); bel
 The benchmark dataset's status must be neutral ("Static snapshot · data to ..."), never "Live", and its banner one line with the
 explanation behind a Details toggle. --shots keeps the screenshots (dashboard/cube/tests/screenshots/, git-ignored).
 """
+import itertools
 import pathlib
 import sys
 
@@ -20,6 +21,9 @@ SHOTS = pathlib.Path(__file__).parent / "screenshots"
 KEEP = "--shots" in sys.argv
 WIDTHS = [1920, 1700, 1600, 1536, 1500, 1440, 1366, 1280, 1100, 1024, 768, 390]
 failures = []
+# The page uses the system font, which differs by machine (a CI runner's is wider than a laptop's): check with the default font and
+# with a deliberately wide one, so the layout does not depend on which machine runs the test.
+FONTS = [None, "DejaVu Sans"]
 
 
 def check(ok, msg):
@@ -50,19 +54,21 @@ GEOMETRY = """() => {
 
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
-    for dataset in ("live", "250m"):
-        for theme in ("light", "dark"):
-            for w in WIDTHS:
+    for font, dataset, theme, w in itertools.product(FONTS, ("live", "250m"), ("light", "dark"), WIDTHS):
+        if True:
+            if True:
                 ctx = browser.new_context(viewport={"width": w, "height": 900})
                 ctx.add_init_script(SEED + f'try {{ localStorage.setItem("theme", "{theme}"); localStorage.setItem("dataset", "{dataset}"); }} catch (e) {{}}')
                 page = ctx.new_page()
                 page.goto(f"http://localhost:{PORT}/")
+                if font:
+                    page.add_style_tag(content=f'html, body, button, select {{ font-family: "{font}", sans-serif !important; }}')
                 page.wait_for_selector("#who", timeout=20000)
                 page.wait_for_timeout(700)
                 page.evaluate(INJECT)
                 page.wait_for_timeout(200)
                 g = page.evaluate(GEOMETRY)
-                tag = f"{dataset} {theme} {w}px"
+                tag = f"{dataset} {theme} {w}px" + (f" ({font})" if font else "")
                 tools = [k for k in ("sel", "live", "export", "refresh", "theme", "who") if g[k]]
                 check(g["overflow"] <= 0, f"{tag}: the page scrolls sideways by {g['overflow']}px")
                 check(all(g[k]["right"] <= w + 0.5 and g[k]["left"] >= -0.5 for k in tools + ["brand"]), f"{tag}: something sticks out of the viewport")
