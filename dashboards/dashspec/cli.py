@@ -125,6 +125,15 @@ def cmd_lint(args):
     return status
 
 
+def cmd_docs(args):
+    """Write the spec reference generated from the schema (docs/dashboard-spec-reference.md)."""
+    from .docs import generate
+    out = pathlib.Path(args.output)
+    out.write_text(generate())
+    print(f"wrote {out}")
+    return 0
+
+
 def cmd_meta(args):
     catalog = _catalog(args)
     if args.json:
@@ -160,6 +169,9 @@ def main(argv=None):
     li.add_argument("files", nargs="+")
     li.add_argument("--strict", action="store_true", help="exit 1 on any warning (use it for a dashboard on the 250M dataset)")
     li.set_defaults(fn=cmd_lint)
+    dd = sub.add_parser("docs", help="write the spec reference, generated from the schema")
+    dd.add_argument("-o", "--output", default=str(REPO / "docs" / "dashboard-spec-reference.md"))
+    dd.set_defaults(fn=cmd_docs)
     m = sub.add_parser("meta", parents=[src], help="the catalog of cubes, measures and dimensions (for the authoring agent)")
     m.add_argument("--json", action="store_true")
     m.set_defaults(fn=cmd_meta)

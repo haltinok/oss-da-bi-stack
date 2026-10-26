@@ -233,6 +233,8 @@ psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5434/active_db" -c '\dt
 
 ## Live sales dashboard
 
+> More dashboards without writing code: a dashboard can be one YAML file, validated against the Cube model and drawn at `/d/<id>`. See [`docs/dashboards.md`](docs/dashboards.md).
+
 `dashboard/static` is a small, dependency-light web app over the star: revenue,
 gross profit and margin, orders, average order value and units (each with a
 sparkline and a change vs the prior fiscal year), monthly revenue by channel,

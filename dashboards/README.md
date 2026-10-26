@@ -1,6 +1,7 @@
 # Dashboards as code
 
-A dashboard is one YAML file here. Plan: [`../docs/dashboard-spec-plan.md`](../docs/dashboard-spec-plan.md). The validator and compiler
+A dashboard is one YAML file here. Plan: [`../docs/dashboard-spec-plan.md`](../docs/dashboard-spec-plan.md). The full guide is [`docs/dashboards.md`](../docs/dashboards.md) and the field reference [`docs/dashboard-spec-reference.md`](../docs/dashboard-spec-reference.md).
+The validator and compiler
 (`dashspec`) check a file; the renderer (`dashboard/static/render/`) draws it at `/d/<id>`.
 
 ```bash
