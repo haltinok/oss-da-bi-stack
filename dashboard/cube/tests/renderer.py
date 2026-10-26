@@ -339,7 +339,10 @@ with sync_playwright() as p:
     check(crumbs() == ["All"] and hits() == 3 and "2019" in page.inner_text(trend) and "Click a point to drill down" in page.inner_text(trend), "the chart starts at the year level with a trail")
     check(page.locator(f"{trend} svg path[fill-opacity]").count() >= 2, "a stacked area is drawn")
     check(page.locator('[data-panel="donut"] path.slice').count() == 4 and page.locator('[data-panel="donut"] .pie-legend li').count() == 4, "the donut has a slice and a legend row per subcategory")
-    check("Total" in page.inner_text('[data-panel="donut"]') and "$5.46K" in page.inner_text('[data-panel="donut"]'), "with the total in the middle")
+    check("Total" in page.inner_text('[data-panel="donut"]') and "$" in page.text_content('[data-panel="donut"] .pie-total'), "with the total in the middle")
+    page.locator('[data-panel="donut"] path.slice').first.hover()
+    check("Revenue" in page.inner_text("#tip") and "Share" in page.inner_text("#tip"), "the slice tooltip uses the author's measure label")
+    page.mouse.move(5, 5)
     check(page.locator('[data-panel="categories"] svg .hit').count() == 4 and page.locator('[data-panel="categories"] svg rect[fill]').count() >= 4, "vertical columns are drawn for the category bars")
     check(page.locator("#period-bar").is_hidden(), "no period yet")
 

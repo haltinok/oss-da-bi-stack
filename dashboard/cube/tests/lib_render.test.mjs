@@ -257,3 +257,11 @@ test("a pie reads its slices ranked, so the rest can be grouped", () => {
   const q = pieQueries(salesSpec, { id: "p", type: "pie", measure: "internet_sales.revenue", by: "products.name" }, {});
   assert.deepEqual(q[0].query, { dimensions: ["products.name"], filters: [], order: { "internet_sales.revenue": "desc" }, limit: 100, measures: ["internet_sales.revenue"] });
 });
+
+test("a pie that sums two cubes asks each for its slices, ranked by its own measure", () => {
+  const spec = { ...salesSpec, cubes: undefined, members: { "internet_sales.revenue": { kind: "measure" }, "reseller_sales.revenue": { kind: "measure" }, "products.name": { kind: "dimension" } } };
+  const q = pieQueries(spec, { id: "p", type: "pie", sum: ["internet_sales.revenue", "reseller_sales.revenue"], label: "Gelir", by: "products.name" }, {});
+  assert.deepEqual(q.map((x) => x.cube), ["internet_sales", "reseller_sales"]);
+  assert.deepEqual(q.map((x) => x.query.order), [{ "internet_sales.revenue": "desc" }, { "reseller_sales.revenue": "desc" }]);
+  assert.ok(q.every((x) => x.query.limit === 100 && x.query.dimensions[0] === "products.name"));
+});

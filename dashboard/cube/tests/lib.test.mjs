@@ -29,6 +29,9 @@ test("tr-TR / TRY uses Turkish separators, the lira sign and Turkish month names
   assert.equal(f.money(12.5), "₺12,50");
   assert.match(f.moneyFull(1500), /₺1\.500/);
   assert.equal(f.monthName(2), "Şub");
+  assert.equal(f.pct(0.153), "%15,3", "the percent sign goes where Turkish puts it");
+  assert.equal(f.pct(-0.153, 0), "−%15");
+  assert.equal(f.pct(-0.00001), "%0,0");
 });
 
 test("ratio is null when the denominator is zero or a value is missing", () => {

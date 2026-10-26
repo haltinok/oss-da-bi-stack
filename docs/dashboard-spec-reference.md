@@ -136,6 +136,8 @@ Exactly one of `measure` or `stack`.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `measure` | member (`cube.name`) |  | The measure ranked. Use this or `stack`. |
+| `label` | string |  | The measure's name in tooltips, the Table view and Excel (with `measure`). Default: the measure's name, capitalised (English): write it in your language. |
+| `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
 | `stack` | list of object (2+) |  | Two or more measures stacked in one bar (internet and reseller revenue), ranked by their total after merging the per-cube results. |
 | `by` | member (`cube.name`) | yes | The dimension each bar stands for. |
 | `split` | member (`cube.name`) |  | Splits each bar by another dimension (with `measure`, not with `stack`). |
@@ -149,8 +151,11 @@ Exactly one of `measure` or `stack`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `measure` | member (`cube.name`) | yes | The measure each slice stands for. |
+| `measure` | member (`cube.name`) |  | The measure each slice stands for. Use this or `sum`. |
+| `sum` | list of member (`cube.name`) (2+) |  | Two or more measures added together, typically the same measure of both sales facts (each is queried separately and the slices are added up by name). Needs a `label`. Each cube contributes its top 100 slices. |
+| `label` | string |  | The measure's name in the tooltip, the Table view and Excel. Default: the measure's name, capitalised (English): write it in your language. |
 | `by` | member (`cube.name`) | yes | The dimension a slice stands for. |
+| `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
 | `limit` | integer 2-30 |  | How many slices before the rest is grouped as one "Other" slice (2-30). Default 8. |
 | `style` | `pie` \| `donut` |  | `pie` or `donut` (a ring with the total in the middle). Default `donut`. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
@@ -161,7 +166,9 @@ Exactly one of `measure` or `stack`.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `measure` | member (`cube.name`) | yes | The measure that sets each tile's area. |
+| `label` | string |  | The measure's name in tooltips, the Table view and Excel. Default: the measure's name, capitalised (English). |
 | `group` | list of member (`cube.name`) (1+) | yes | One dimension (tiles) or two (tiles grouped under headings, as category and subcategory). |
+| `group_labels` | list of string (1+) |  | The names of the `group` dimensions (one per dimension) in the Table view and Excel. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
 | `on_click` | on_click |  | A click on a tile sets the filters in `group` order (a heading sets only the first). Name the filters in the order of the group. |
 

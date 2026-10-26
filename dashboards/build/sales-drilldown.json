@@ -108,9 +108,14 @@
     {
       "id": "donut",
       "type": "pie",
-      "title": "Internet revenue by subcategory",
-      "measure": "internet_sales.revenue",
+      "title": "Revenue by subcategory",
+      "sum": [
+        "internet_sales.revenue",
+        "reseller_sales.revenue"
+      ],
+      "label": "Revenue",
       "by": "products.subcategory",
+      "by_label": "Subcategory",
       "limit": 8,
       "style": "donut",
       "format": "money",

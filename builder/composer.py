@@ -240,12 +240,11 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     if pie_dim and b.can(dim_members[pie_dim]) and not denied(role, f"{b.channels()[0]}.{prim}"):
         c0 = b.channels()
         pf = b.add_filter({"region": "region", "country": "country", "category": "category", "subcategory": "subcategory"}.get(pie_dim, "x"), dim_members[pie_dim], pie_dim) if pie_dim != "product" else None
-        measure_members = [f"{c}.{prim}" for c in c0]
-        pie = {"id": b.pid("pie"), "type": "pie", "title": b.lab("by", m=b.lab(prim), d=b.lab("products" if pie_dim == "product" else pie_dim)), "measure": measure_members[0],
+        measure_members = [f"{c}.{prim}" for c in c0 if not denied(role, f"{c}.{prim}")]
+        pie = {"id": b.pid("pie"), "type": "pie", "title": b.lab("by", m=b.lab(prim), d=b.lab("products" if pie_dim == "product" else pie_dim)),
+               "label": b.lab(prim), "by_label": b.lab("products" if pie_dim == "product" else pie_dim),
                "by": dim_members[pie_dim], "style": "pie" if has(p["t"], "pie", "pasta") else "donut", "limit": 8, "format": "money" if prim in ("revenue", "gross_profit") else "int"}
-        if len(measure_members) > 1:
-            pie["measure"] = measure_members[0]
-            b.notes.append("Pasta grafik yalnızca İnternet kanalını gösterir." if b.tr else "A pie shows one measure, so it shows the Internet channel only.")
+        pie.update({"sum": measure_members} if len(measure_members) > 1 else {"measure": measure_members[0]})     # both channels, added up
         if pf and clickable:
             pie["on_click"] = {"set_filter": pf}
         b.panels.append(pie)
@@ -261,6 +260,7 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
                  if not denied(role, f"{c}.{measure_key}")]
         fmt = "money" if measure_key in ("revenue", "gross_profit") else "int"
         panel = {"id": b.pid(f"by_{d}"), "type": "bar", "title": b.lab("by", m=b.lab(measure_key), d=b.lab("products" if d == "product" else d)),
+                 "by_label": b.lab("products" if d == "product" else d), **({"label": b.lab(measure_key)} if len(stack) <= 1 else {}),
                  "by": dim_members[d], "sort": "desc", "limit": p["top"] or (10 if d in ("product", "category", "subcategory") else 15), "format": fmt}
         panel.update({"stack": stack} if len(stack) > 1 else {"measure": stack[0]["member"]})
         if p["column"]:
@@ -273,7 +273,8 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     if p["treemap"] and b.can("products.category") and not denied(role, f"{b.channels()[0]}.revenue"):
         cf = b.add_filter("category", "products.category", "category")
         sf = b.add_filter("subcategory", "products.subcategory", "subcategory", parent="products.category")
-        t = {"id": b.pid("mix"), "type": "treemap", "title": b.lab("mix"), "measure": f"{b.channels()[0]}.revenue", "group": ["products.category", "products.subcategory"], "format": "money"}
+        t = {"id": b.pid("mix"), "type": "treemap", "title": b.lab("mix"), "label": b.lab("revenue"), "group_labels": [b.lab("category"), b.lab("subcategory")],
+             "measure": f"{b.channels()[0]}.revenue", "group": ["products.category", "products.subcategory"], "format": "money"}
         if cf and sf and clickable:
             t["on_click"] = {"set_filter": [cf, sf]}
         b.panels.append(t)

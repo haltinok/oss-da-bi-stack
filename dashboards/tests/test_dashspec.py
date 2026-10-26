@@ -511,3 +511,27 @@ def test_a_drill_down_a_pie_and_the_new_styles_are_valid_and_compile_with_cube_j
 def test_ignore_filters_only_accepts_filters_and_the_period():
     errors = run(_set("top", "ignore_filters", ["period", "nope"]))
     assert errors == ["panel 'top' (bar): ignore_filters: no filter with id 'nope'"]
+
+
+def test_pie_bar_and_treemap_can_name_their_measure_and_dimensions_in_your_language():
+    spec = copy.deepcopy(GOOD)
+    spec["panels"].append({"id": "p", "type": "pie", "sum": ["internet_sales.revenue", "reseller_sales.revenue"], "label": "Gelir", "by": "products.subcategory", "by_label": "Alt kategori"})
+    panel(spec, "mix").update(label="Gelir", group_labels=["Kategori", "Alt kategori"])
+    spec["panels"].append({"id": "b", "type": "bar", "measure": "internet_sales.revenue", "label": "Gelir", "by": "territories.region", "by_label": "Bölge"})
+    spec["layout"] += [[{"p": 12}], [{"b": 12}]]
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    assert next(p for p in out["panels"] if p["id"] == "p")["sum"] == ["internet_sales.revenue", "reseller_sales.revenue"]
+
+
+@pytest.mark.parametrize("pie,needle", [
+    ({"sum": ["internet_sales.revenue", "reseller_sales.revenue"]}, "needs exactly one of: measure, sum"),             # a sum needs its label
+    ({"measure": "internet_sales.revenue", "sum": ["internet_sales.revenue", "reseller_sales.revenue"], "label": "x"}, "needs exactly one of: measure, sum"),
+    ({"sum": ["internet_sales.revenue", "products.name"], "label": "x"}, "sum[1]"),
+    ({"sum": ["internet_sales.revenue"], "label": "x"}, "sum:"),
+    ({}, "needs exactly one of: measure, sum"),
+])
+def test_a_pie_has_a_measure_or_a_labelled_sum(pie, needle):
+    errors = run(lambda s: (s["panels"].append({"id": "p", "type": "pie", "by": "products.category", **pie}), s["layout"].append([{"p": 12}])))
+    assert errors and needle in "\n".join(errors), errors

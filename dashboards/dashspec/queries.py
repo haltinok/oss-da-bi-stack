@@ -57,7 +57,9 @@ def panel_measures(panel, members):
         return [x for s in panel["series"] for x in term_members(s)]
     if kind == "bar":
         return [s["member"] for s in panel["stack"]] if "stack" in panel else [panel["measure"]]
-    if kind in ("pie", "treemap"):
+    if kind == "pie":
+        return list(panel["sum"]) if "sum" in panel else [panel["measure"]]
+    if kind == "treemap":
         return [panel["measure"]]
     if kind == "table":
         return table_parts(panel, members)[0]
@@ -126,7 +128,8 @@ def panel_queries(spec, panel, values):
             base |= {"order": {panel["measure"]: panel.get("sort", "desc")}, "limit": panel.get("limit", DEFAULT_LIMIT["bar"])}
         return follow_period(spec, panel, values, per_cube(measures, base))
     if kind == "pie":
-        return follow_period(spec, panel, values, per_cube([panel["measure"]], {"dimensions": [panel["by"]], "filters": filters, "order": {panel["measure"]: "desc"}, "limit": 100}))
+        qs = per_cube(panel_measures(panel, spec["members"]), {"dimensions": [panel["by"]], "filters": filters, "limit": 100})
+        return follow_period(spec, panel, values, [{**q, "query": {**q["query"], "order": {q["query"]["measures"][0]: "desc"}}} for q in qs])
     if kind == "treemap":
         return follow_period(spec, panel, values, per_cube([panel["measure"]], {"dimensions": panel["group"], "filters": filters}))
     if kind == "table":

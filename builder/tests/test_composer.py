@@ -200,3 +200,19 @@ def test_column_words_make_vertical_bars_when_there_is_no_time_chart():
 def test_average_order_value_alone_does_not_add_the_order_count():
     out = build("admin", "average order value and revenue")
     assert [m["label"] for m in out["spec"]["panels"][0]["measures"]] == ["Revenue", "Avg order value"]
+
+
+def test_a_turkish_dashboard_labels_its_pie_bars_and_treemap_in_turkish():
+    spec = build("admin", "Türkçe satış panosu: alt kategoriye göre pasta grafiği, bölgeye göre gelir ve ürün karması treemap")["spec"]
+    pie = next(p for p in spec["panels"] if p["type"] == "pie")
+    assert pie["label"] == "Gelir" and pie["by_label"] == "Alt kategori" and pie["sum"] == ["internet_sales.revenue", "reseller_sales.revenue"], "both channels, labelled"
+    bar = next(p for p in spec["panels"] if p["type"] == "bar")
+    assert bar["by_label"] == "Bölge"
+    tree = next(p for p in spec["panels"] if p["type"] == "treemap")
+    assert tree["label"] == "Gelir" and tree["group_labels"] == ["Kategori", "Alt kategori"]
+    assert "Internet channel only" not in str(build("admin", "pie of revenue by category")["message"])
+
+
+def test_an_english_pie_sums_both_channels_too_and_a_rep_gets_the_same_without_profit():
+    pie = next(p for p in build("rep", "pie of revenue by category")["spec"]["panels"] if p["type"] == "pie")
+    assert pie["sum"] == ["internet_sales.revenue", "reseller_sales.revenue"] and pie["label"] == "Revenue"

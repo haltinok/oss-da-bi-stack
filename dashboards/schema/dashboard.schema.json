@@ -191,6 +191,8 @@
             "oneOf": [{ "required": ["measure"] }, { "required": ["stack"] }],
             "properties": {
               "measure": { "$ref": "#/$defs/member" },
+              "label": { "type": "string" },
+              "by_label": { "type": "string" },
               "stack": {
                 "type": "array",
                 "minItems": 2,
@@ -214,10 +216,14 @@
         {
           "if": { "properties": { "type": { "const": "pie" } } },
           "then": {
-            "required": ["measure", "by"],
+            "required": ["by"],
+            "oneOf": [{ "required": ["measure"] }, { "required": ["sum", "label"] }],
             "properties": {
               "measure": { "$ref": "#/$defs/member" },
+              "sum": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 2 },
+              "label": { "type": "string" },
               "by": { "$ref": "#/$defs/member" },
+              "by_label": { "type": "string" },
               "limit": { "type": "integer", "minimum": 2, "maximum": 30 },
               "style": { "enum": ["pie", "donut"] },
               "format": { "$ref": "#/$defs/format" },
@@ -231,7 +237,9 @@
             "required": ["measure", "group"],
             "properties": {
               "measure": { "$ref": "#/$defs/member" },
+              "label": { "type": "string" },
               "group": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 2 },
+              "group_labels": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 2 },
               "format": { "$ref": "#/$defs/format" },
               "on_click": { "$ref": "#/$defs/on_click" }
             }

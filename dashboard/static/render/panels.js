@@ -341,10 +341,10 @@ function barPanel(def, ctx) {
     const parts = def.stack ? stack.map((s) => ({ key: s.member, name: s.label, color: s.color })) : splits.map((s, i) => ({ key: s, name: s, color: colorOf(null, i) }));
     const max = Math.max(...rows.map((r) => Math.abs(r.total)), 1);
     const type = XLSX_TYPE[def.format || "number"] || "number";
-    const totalLabel = parts.length ? ctx.t.total : humanize(def.measure);
+    const totalLabel = parts.length ? ctx.t.total : def.label || humanize(def.measure);
     return {
       rows, redrawOnResize: false,
-      columns: [colOf(humanize(def.by), "text", (r) => r.label, (v) => v), ...parts.map((p) => colOf(p.name, type, (r) => r.parts.get(p.key) ?? 0, f)), colOf(totalLabel, type, (r) => r.total, f)],
+      columns: [colOf(def.by_label || humanize(def.by), "text", (r) => r.label, (v) => v), ...parts.map((p) => colOf(p.name, type, (r) => r.parts.get(p.key) ?? 0, f)), colOf(totalLabel, type, (r) => r.total, f)],
       afterTable: (host) => ids.length && wireRows(host.querySelectorAll("tbody tr"), rows),
       redrawOnResize: def.orientation === "vertical",
       draw(host) {
@@ -430,14 +430,19 @@ const PIE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#6250d6", "#e87ba4", "
 function piePanel(def, ctx) {
   const f = ctx.formatter(def.format), fullF = ctx.formatter(def.format, true), pctF = ctx.formatter("pct");
   const ids = ownFilterIds(def), limit = def.limit || 8, donut = (def.style || "donut") === "donut";
+  const measures = def.sum || [def.measure];
+  const measureLabel = def.label || humanize(measures[0]);                  // the author's word (a Turkish dashboard writes `label: Gelir`)
+  const byLabel = def.by_label || humanize(def.by);
   return modelPanel(def, ctx, async (signal) => {
     const res = await runAll(ctx.run, pieQueries(ctx.spec, def, ctx.filterValues()), signal);
-    const slices = pieSlices(res[0].rows.map((r) => ({ label: String(r[def.by]), value: num(r[def.measure]) || 0 })), limit, ctx.t.other);
+    const sums = new Map();                                                // slices of several cubes are added up by name
+    for (const { rows } of res) for (const r of rows) sums.set(String(r[def.by]), (sums.get(String(r[def.by])) || 0) + measures.reduce((a, m) => a + (num(r[m]) || 0), 0));
+    const slices = pieSlices([...sums].map(([label, value]) => ({ label, value })), limit, ctx.t.other);
     const total = slices.reduce((a, b) => a + b.value, 0);
     const rows = slices.map((s, i) => ({ ...s, share: total ? s.value / total : 0, color: s.other ? "#b8b8b0" : PIE[i % PIE.length] }));
     return {
       rows, redrawOnResize: true,
-      columns: [colOf(humanize(def.by), "text", (r) => r.label, (v) => v), colOf(humanize(def.measure), XLSX_TYPE[def.format || "number"] || "number", (r) => r.value, f), colOf(ctx.t.share, "pct", (r) => r.share, pctF)],
+      columns: [colOf(byLabel, "text", (r) => r.label, (v) => v), colOf(measureLabel, XLSX_TYPE[def.format || "number"] || "number", (r) => r.value, f), colOf(ctx.t.share, "pct", (r) => r.share, pctF)],
       draw(host) {
         host.innerHTML = "";
         const cur = ctx.filterValues();
@@ -455,7 +460,7 @@ function piePanel(def, ctx) {
           const mid = (a0 + a1) / 2, on = selected(r), out = on ? 7 : 0;
           const slice = svgEl("path", { d: arcPath(cx, cy, R, donut ? R * 0.58 : 0, a0, Math.max(a1, a0 + 0.0001)), fill: r.color, stroke: "var(--surface)", "stroke-width": 1.5, tabindex: 0,
             class: `slice${picked && !on ? " dim" : ""}${ids.length && !r.other ? " clickable" : ""}`, transform: out ? `translate(${(Math.sin(mid) * out).toFixed(1)},${(-Math.cos(mid) * out).toFixed(1)})` : undefined,
-            "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(r.label, [[humanize(def.measure), fullF(r.value)], [ctx.t.share, pctF(r.share)]])),
+            "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(r.label, [[measureLabel, fullF(r.value)], [ctx.t.share, pctF(r.share)]])),
             "aria-label": `${r.label}: ${fullF(r.value)}, ${pctF(r.share)}`, ...(ids.length && !r.other ? { role: "button", "aria-pressed": String(on) } : {}) });
           slice.addEventListener("click", () => pick(r));
           slice.addEventListener("keydown", (e) => { if (e.key === "Enter") pick(r); });
@@ -496,8 +501,8 @@ function treemapPanel(def, ctx) {
       .sort((x, y) => y.value - x.value);
     return {
       rows, redrawOnResize: true,
-      columns: [colOf(humanize(d1), "text", (r) => r.a, (v) => v), ...(d2 ? [colOf(humanize(d2), "text", (r) => r.b, (v) => v)] : []),
-        colOf(humanize(def.measure), XLSX_TYPE[def.format || "number"] || "number", (r) => r.value, f)],
+      columns: [colOf(def.group_labels?.[0] || humanize(d1), "text", (r) => r.a, (v) => v), ...(d2 ? [colOf(def.group_labels?.[1] || humanize(d2), "text", (r) => r.b, (v) => v)] : []),
+        colOf(def.label || humanize(def.measure), XLSX_TYPE[def.format || "number"] || "number", (r) => r.value, f)],
       draw: (host) => drawTreemap(host, rows, !!d2),
     };
   });
@@ -537,7 +542,7 @@ function treemapPanel(def, ctx) {
         const isSel = ids.length ? (nested ? isSelected(cur, pickIds(2), [s.a, s.b]) : isSelected(cur, pickIds(1), [s.a])) : false;
         const cell = el("div", { class: `cell${light ? " ink-light" : ""}${isSel ? " sel" : ""}`, tabindex: 0, "aria-pressed": String(isSel),
           style: `left:${s.x + GAP / 2}px;top:${s.y + GAP / 2}px;width:${w}px;height:${h}px;background:${fill}`,
-          "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(nested ? `${s.a} › ${s.b}` : s.a, [[humanize(def.measure), fullF(s.value)], [ctx.t.share, ctx.formatter("pct")(s.value / total)]])),
+          "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(nested ? `${s.a} › ${s.b}` : s.a, [[def.label || humanize(def.measure), fullF(s.value)], [ctx.t.share, ctx.formatter("pct")(s.value / total)]])),
           "aria-label": `${label}: ${fullF(s.value)}` });
         const name = `${isSel ? "✓ " : ""}${esc(label)}`;
         if (w > 64 && h > 34) cell.innerHTML = `<div class="n">${name}</div><div class="v">${esc(f(s.value))}</div>`;

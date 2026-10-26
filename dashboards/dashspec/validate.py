@@ -30,8 +30,8 @@ def _where(spec, path):
 
 
 def _schema_message(err):
-    if err.validator == "oneOf" and err.context and all(c.validator == "required" for c in err.context):
-        names = [n for c in err.context for n in c.validator_value]
+    if err.validator == "oneOf" and isinstance(err.validator_value, list) and all(isinstance(a, dict) and set(a) == {"required"} for a in err.validator_value):
+        names = [n for a in err.validator_value for n in a["required"]]                  # none of them matched, or more than one did
         if "member" in names:
             return "needs a 'member' (or a 'sum' / 'ratio' of measures, with a 'label')"
         return "needs exactly one of: " + ", ".join(dict.fromkeys(names))
@@ -114,7 +114,10 @@ def _panel_members(p):
         if "split" in p:
             yield "split", p["split"], "dimension"
     elif t == "pie":
-        yield "measure", p["measure"], "measure"
+        if "measure" in p:
+            yield "measure", p["measure"], "measure"
+        for j, m in enumerate(p.get("sum", [])):
+            yield f"sum[{j}]", m, "measure"
         yield "by", p["by"], "dimension"
     elif t == "treemap":
         yield "measure", p["measure"], "measure"

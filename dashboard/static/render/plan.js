@@ -155,7 +155,8 @@ export function panelMeasures(p, members = {}) {
     case "kpi": return p.measures.flatMap((m) => term(m).members);
     case "timeseries": return p.series.flatMap((s) => term(s).members);
     case "bar": return p.stack ? p.stack.map((s) => s.member) : [p.measure];
-    case "pie": case "treemap": return [p.measure];
+    case "pie": return p.sum || [p.measure];
+    case "treemap": return [p.measure];
     case "table": return tableParts(p, members).measures;
     default: return [];
   }
@@ -304,7 +305,8 @@ export function barQueries(spec, def, values) {
 
 /** A pie reads every slice (up to 100) so that the tail past `limit` can be grouped as "Other" with an exact total. */
 export const pieQueries = (spec, def, values) => followPeriod(spec, def, values,
-  queriesPerCube([def.measure], { dimensions: [def.by], filters: activeFilters(spec, values, def), order: { [def.measure]: "desc" }, limit: 100 }));
+  queriesPerCube(def.sum || [def.measure], { dimensions: [def.by], filters: activeFilters(spec, values, def), limit: 100 })
+    .map((q) => ({ ...q, query: { ...q.query, order: { [q.query.measures[0]]: "desc" } } })));
 
 export const treemapQueries = (spec, def, values) => followPeriod(spec, def, values, queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) }));
 
