@@ -107,9 +107,9 @@ Either a member string, or an object with these fields.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | id | yes | The panel's id; `layout` and `ignore_filters` refer to it. |
-| `type` | `kpi` \| `timeseries` \| `bar` \| `treemap` \| `table` \| `text` | yes | `kpi`, `timeseries`, `bar`, `treemap`, `table` or `text`. |
+| `type` | `kpi` \| `timeseries` \| `bar` \| `pie` \| `treemap` \| `table` \| `text` | yes | `kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table` or `text`. |
 | `title` | string |  | The card heading. |
-| `ignore_filters` | list of id |  | Filters this panel does not apply, for a panel whose measures cannot join to the filter's dimension (an inventory panel under a territory filter). |
+| `ignore_filters` | list of id |  | Filters this panel does not apply, for a panel whose measures cannot join to the filter's dimension (an inventory panel under a territory filter). The reserved id `period` is the date range a drill-down sets. |
 
 ### `kpi`
 
@@ -125,7 +125,8 @@ Either a member string, or an object with these fields.
 | `series` | list of series (1+) | yes | The measures drawn, one series each; measures of several cubes are queried separately and merged on the time axis. |
 | `granularity` | `hour` \| `day` \| `week` \| `month` \| `quarter` \| `year` | yes | The time grouping: `hour`, `day`, `week`, `month`, `quarter` or `year`. |
 | `granularities` | list of `hour` \| `day` \| `week` \| `month` \| `quarter` \| `year` (2+) |  | Offers a switch between these granularities in the card header (at least two, and it must include `granularity`). Only this panel reloads. |
-| `style` | `line` \| `bar` \| `stacked-bar` |  | `line`, `bar` (grouped) or `stacked-bar`. Default `line`. |
+| `drill` | list of `hour` \| `day` \| `week` \| `month` \| `quarter` \| `year` (2+) |  | A drill-down: the chart starts at the first level and a click on a point opens the next, finer one for that period (`[year, month, day]`; levels go from coarse to fine: year, quarter, month, week, day, hour). The click also filters every other panel to that period (they follow it unless they list `period` in `ignore_filters`), and a trail above the chart goes back up. The first level must be `granularity`; not with `granularities` or `on_click`. Years are calendar years. |
+| `style` | `line` \| `area` \| `stacked-area` \| `bar` \| `stacked-bar` |  | `line`, `area`, `stacked-area`, `bar` (grouped) or `stacked-bar`. Default `line`. |
 | `on_click` | on_click |  | A click on a period sets a filter on a `fiscal_year` or `calendar_year` dimension. |
 
 ### `bar`
@@ -135,20 +136,39 @@ Exactly one of `measure` or `stack`.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `measure` | member (`cube.name`) |  | The measure ranked. Use this or `stack`. |
+| `label` | string |  | The measure's name in tooltips, the Table view and Excel (with `measure`). Default: the measure's name, capitalised (English): write it in your language. |
+| `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
 | `stack` | list of object (2+) |  | Two or more measures stacked in one bar (internet and reseller revenue), ranked by their total after merging the per-cube results. |
 | `by` | member (`cube.name`) | yes | The dimension each bar stands for. |
 | `split` | member (`cube.name`) |  | Splits each bar by another dimension (with `measure`, not with `stack`). |
 | `sort` | `asc` \| `desc` |  | `desc` (default) or `asc`. |
 | `limit` | integer 1-1000 |  | How many bars. Default 10. |
+| `orientation` | `horizontal` \| `vertical` |  | `horizontal` (ranked rows, default) or `vertical` (columns, for a few categories). |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
 | `on_click` | on_click |  | A click on a bar sets one filter, on the dimension in `by`. |
+
+### `pie`
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `measure` | member (`cube.name`) |  | The measure each slice stands for. Use this or `sum`. |
+| `sum` | list of member (`cube.name`) (2+) |  | Two or more measures added together, typically the same measure of both sales facts (each is queried separately and the slices are added up by name). Needs a `label`. Each cube contributes its top 100 slices. |
+| `label` | string |  | The measure's name in the tooltip, the Table view and Excel. Default: the measure's name, capitalised (English): write it in your language. |
+| `by` | member (`cube.name`) | yes | The dimension a slice stands for. |
+| `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
+| `limit` | integer 2-30 |  | How many slices before the rest is grouped as one "Other" slice (2-30). Default 8. |
+| `style` | `pie` \| `donut` |  | `pie` or `donut` (a ring with the total in the middle). Default `donut`. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
+| `on_click` | on_click |  | A click on a slice sets one filter, on the dimension in `by`; click again to undo. |
 
 ### `treemap`
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `measure` | member (`cube.name`) | yes | The measure that sets each tile's area. |
+| `label` | string |  | The measure's name in tooltips, the Table view and Excel. Default: the measure's name, capitalised (English). |
 | `group` | list of member (`cube.name`) (1+) | yes | One dimension (tiles) or two (tiles grouped under headings, as category and subcategory). |
+| `group_labels` | list of string (1+) |  | The names of the `group` dimensions (one per dimension) in the Table view and Excel. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
 | `on_click` | on_click |  | A click on a tile sets the filters in `group` order (a heading sets only the first). Name the filters in the order of the group. |
 

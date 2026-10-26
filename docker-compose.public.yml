@@ -32,6 +32,8 @@ services:
         condition: service_started
       actions:
         condition: service_started
+      builder:
+        condition: service_started
 
   keycloak:
     environment:
@@ -49,6 +51,11 @@ services:
       KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs
 
   actions:
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_URL:?set PUBLIC_URL}/kc/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs
+
+  builder:
     environment:
       KEYCLOAK_ISSUER: ${PUBLIC_URL:?set PUBLIC_URL}/kc/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs

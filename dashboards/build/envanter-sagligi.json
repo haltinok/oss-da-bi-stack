@@ -291,5 +291,15 @@
       "kind": "dimension",
       "type": "string"
     }
+  },
+  "cubes": {
+    "inventory_health": {
+      "joins": [
+        "products"
+      ]
+    },
+    "products": {
+      "joins": []
+    }
   }
 }

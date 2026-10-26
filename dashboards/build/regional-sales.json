@@ -200,5 +200,31 @@
       "kind": "dimension",
       "type": "string"
     }
+  },
+  "cubes": {
+    "dates": {
+      "joins": []
+    },
+    "internet_sales": {
+      "joins": [
+        "customers",
+        "dates",
+        "products",
+        "territories"
+      ]
+    },
+    "products": {
+      "joins": []
+    },
+    "reseller_sales": {
+      "joins": [
+        "dates",
+        "products",
+        "territories"
+      ]
+    },
+    "territories": {
+      "joins": []
+    }
   }
 }

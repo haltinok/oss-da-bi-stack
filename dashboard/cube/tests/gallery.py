@@ -27,6 +27,8 @@ SHOTS = [
     ("table.png", "sales-overview", "admin", '[data-panel="lines"]', 1280),
     ("text.png", "envanter-sagligi", "purchasing", '[data-panel="not"]', 1280),
     ("turkish.png", "envanter-sagligi", "purchasing", None, 1100),
+    ("pie.png", "sales-drilldown", "admin", '[data-panel="donut"]', 1280),
+    ("drill.png", "sales-drilldown", "admin", '[data-panel="trend"]', 1280, lambda page: page.locator('[data-panel="trend"] .hit').nth(1).click()),
     ("phone.png", "regional-sales", "rep", None, 390),
 ]
 ms.start()
@@ -34,7 +36,7 @@ ms.FAKE["on"] = True
 ms.BENCH["on"] = False
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
-    for name, dash, role, selector, width in SHOTS:
+    for name, dash, role, selector, width, *act in SHOTS:
         ms.ROLE["role"] = role
         ctx = browser.new_context(viewport={"width": width, "height": 900})
         ctx.add_init_script(ms.SEED + 'try { localStorage.setItem("theme", "light"); localStorage.setItem("dataset", "live"); } catch (e) {}')
@@ -42,6 +44,9 @@ with sync_playwright() as p:
         page.goto(f"http://localhost:{ms.PORT}/d/{dash}")
         page.wait_for_function("document.querySelector('#live-text')?.textContent.match(/Updated|Güncellendi/)", timeout=30000)
         page.wait_for_timeout(1200)
+        if act:
+            act[0](page)
+            page.wait_for_timeout(1500)
         page.evaluate("document.querySelector('.tip')?.classList.remove('on')")
         if selector:
             page.locator(selector).screenshot(path=str(OUT / name))

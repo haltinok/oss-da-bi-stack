@@ -22,6 +22,29 @@ def has(text: str, *words: str) -> bool:
     return any(re.search(rf"\b{re.escape(w)}", text) for w in words)
 
 
+def word(text: str, *words: str) -> bool:
+    """Whole words only: "ay" (month) must not match "ayrica" (also)."""
+    return any(re.search(rf"\b{re.escape(w)}\b", text) for w in words)
+
+
+def chart_segments(t: str) -> list[tuple[str, list[str]]]:
+    """"…a chart for internet… also a second chart for reseller…": the pieces of the request that name a channel, as (cube, time levels named there)."""
+    out = []
+    for part in re.split(r"\b(?:ayrica|also|furthermore|ikinci bir|second|bir de)\b", t):
+        internet, reseller = word(part, "internet", "online"), word(part, "reseller", "bayi")
+        if internet == reseller:
+            continue
+        out.append(("internet_sales" if internet else "reseller_sales", drill_levels(part)))
+    return out if len({c for c, _ in out}) == 2 else []
+
+
+def drill_levels(t: str) -> list[str]:
+    """The time levels named in the request, coarse to fine: "Yıl Ay ve Gün" -> [year, month, day]."""
+    named = [(g, word(t, *w)) for g, w in (("year", ("yil", "year", "yillik", "yearly", "annual")), ("quarter", ("ceyrek", "quarter", "quarterly")),
+                                           ("month", ("ay", "month", "aylik", "monthly")), ("week", ("hafta", "week", "weekly", "haftalik")), ("day", ("gun", "day", "gunluk", "daily")))]
+    return [g for g, on in named if on]
+
+
 L = {  # label -> (English, Turkish)
     "revenue": ("Revenue", "Gelir"), "gross_profit": ("Gross profit", "Brüt kâr"), "margin": ("Gross margin", "Brüt marj"), "orders": ("Orders", "Siparişler"),
     "units": ("Units sold", "Satılan adet"), "aov": ("Avg order value", "Ort. sipariş tutarı"), "internet": ("Internet", "İnternet"), "reseller": ("Reseller", "Bayi"),
@@ -32,7 +55,7 @@ L = {  # label -> (English, Turkish)
     "excess": ("Excess stock value", "Fazla stok tutarı"), "vendor": ("Vendor", "Tedarikçi"), "on_hand": ("On hand", "Eldeki"), "on_order": ("On order", "Siparişte"),
     "cover": ("Days of cover", "Kapsama (gün)"), "qty": ("Suggested qty", "Önerilen adet"), "excess_units": ("Excess units", "Fazla adet"), "discount": ("Suggested discount %", "Önerilen indirim %"),
     "by": ("{m} by {d}", "{d} bazında {m}"), "monthly": ("{m} by month", "Aylık {m}"), "trend": ("{m} over time", "Zaman içinde {m}"), "sales": ("Sales dashboard", "Satış panosu"),
-    "inventory": ("Inventory dashboard", "Envanter panosu"), "built": ("Built from: {p}", "İstek: {p}"), "product_name": ("Product", "Ürün"),
+    "inventory": ("Inventory dashboard", "Envanter panosu"), "drilltitle": ("{m}: year, month, day", "{m}: yıl, ay, gün"), "built": ("Built from: {p}", "İstek: {p}"), "product_name": ("Product", "Ürün"),
     "stock_status": ("Products by status", "Duruma göre ürün sayısı"), "reorder_list": ("Reorder list", "Yeniden sipariş listesi"), "excess_list": ("Excess and dead stock", "Fazla ve ölü stok"),
     "vendor_value": ("Suggested order value by vendor", "Tedarikçiye göre önerilen sipariş tutarı"), "granularity": ("", ""),
 }
@@ -54,9 +77,10 @@ def parse(prompt: str) -> dict:
     t = norm(prompt)
     wants = {k: has(t, *w) for k, w in {
         "revenue": ("revenue", "sales", "gelir", "satis", "ciro"), "profit": ("profit", "kar"), "margin": ("margin", "marj"), "orders": ("order", "siparis"),
-        "units": ("units", "quantity", "adet", "miktar"), "aov": ("average order", "avg order", "aov", "ortalama siparis"),
+        "units": ("units", "quantity", "adet", "aded", "miktar"), "aov": ("average order", "avg order", "aov", "ortalama siparis"),
     }.items()}
-    wants["orders"] = wants["orders"] and not has(t, "latest order", "last order", "orders table", "list of order", "son siparis")
+    stripped = re.sub(r"average order\w*|avg order\w*|ortalama siparis\w*", " ", t)        # "average order value" is not a request for the number of orders
+    wants["orders"] = has(stripped, "order", "siparis") and not has(t, "latest order", "last order", "orders table", "list of order", "son siparis")
     return {
         "t": t, "wants": wants, "top": _top_n(t),
         "inventory": has(t, "inventory", "stock", "reorder", "overstock", "envanter", "stok", "supplier", "vendor", "tedarik", "excess"),
@@ -64,15 +88,21 @@ def parse(prompt: str) -> dict:
         "internet_only": has(t, "internet", "online") and not has(t, "reseller", "bayi", "channel", "kanal"),
         "reseller_only": has(t, "reseller", "bayi") and not has(t, "internet", "online", "channel", "kanal"),
         "by_channel": has(t, "channel", "kanal"),
+        "drill": has(t, "drill", "detaya", "detay") and len(drill_levels(t)) >= 2, "levels": drill_levels(t),
+        "pie": has(t, "pie", "pasta", "donut", "halka"), "area": has(t, "area", "alan grafik"),
+        "column": has(t, "column", "sutun", "dikey", "kolon"),
+        "separate": has(t, "ayri", "separate", "ikinci", "second", "half", "yarim", "iki chart", "iki grafik", "two chart", "each channel", "her kanal", "her biri"),
+        "chart_segments": chart_segments(t),
         "gran": next((g for g, w in (("quarter", ("quarter", "ceyrek")), ("year", ("yearly", "annual", "by year", "yillik", "per year")), ("day", ("daily", "by day", "gunluk")),
                                      ("month", ("month", "aylik", "monthly"))) if has(t, *w)), None),
         "trend": has(t, "trend", "over time", "time series", "zaman", "history"),
-        "dims": [d for d, w in (("region", ("region", "territor", "bolge")), ("country", ("country", "countries", "ulke")), ("category", ("categor", "kategori")),
-                                ("subcategory", ("subcategor", "alt kategori")), ("product", ("product", "urun"))) if has(t, *w)],
+        "dims": [d for d, rx in (("region", r"\b(region|territor|bolge)"), ("country", r"\b(country|countries|ulke)"),
+                                 ("category", r"\b(?<!sub)categor|(?<!alt )\bkategori"), ("subcategory", r"subcategor|alt kategori"),
+                                 ("product", r"\b(product|urun)(?!\w* (alt kategori|subcategor))")) if re.search(rx, t)],
         "table": has(t, "table", "list", "latest order", "last order", "detail", "tablo", "liste", "son siparis"),
         "treemap": has(t, "treemap", "mix", "composition", "share", "karma"),
         "clickable": has(t, "click", "cross filter", "interactive", "tikla"),
-        "style": next((s for s, w in (("stacked-bar", ("stacked",)), ("line", ("line", "cizgi")), ("bar", ("column", "bar chart", "bars"))) if has(t, *w)), None),
+        "style": next((s for s, w in (("stacked-bar", ("stacked",)), ("area", ("area", "alan grafik")), ("line", ("line", "cizgi")), ("bar", ("bar chart", "bars", "column", "kolon", "sutun"))) if has(t, *w)), None),
         "filters": [f for f, w in (("fy", ("fiscal", "year filter", "filter by year", "yil")), ("region", ("filter by region", "region filter", "bolge filtre")),
                                    ("category", ("filter by category", "category filter", "kategori filtre")), ("country", ("filter by country", "country filter"))) if has(t, *w)],
     }
@@ -90,7 +120,7 @@ class Builder:
 
     # ---- helpers
     def lab(self, key: str, **kw) -> str:
-        if self.tr and "m" in kw:
+        if self.tr and "m" in kw and key != "drilltitle":
             kw["m"] = kw["m"].lower()                 # "Bölge bazında gelir": the measure inside a sentence is not capitalised
         return L[key][1 if self.tr else 0].format(**kw)
 
@@ -167,24 +197,61 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     b.panels.append({"id": "kpis", "type": "kpi", "measures": terms[:8], "sparkline": {"granularity": "month"}})
     fid = b.add_filter("fy", "dates.fiscal_year", "fy")
     dims = p["dims"] + ([] if p["dims"] else (["region"] if has(p["t"], "region", "territor", "bolge") else []))
-    want_time = p["trend"] or p["gran"] or not (p["dims"] or p["table"] or p["treemap"])
+    want_time = p["trend"] or p["gran"] or p["drill"] or p["style"] in ("line", "area") or not (p["dims"] or p["table"] or p["treemap"] or p["pie"])
     clickable = True                                       # charts filter the other panels on a click: it is what a dashboard is for
     prim = next((k for k in keys if k in ("revenue", "orders", "units", "gross_profit")), "revenue")
+    if len(p["chart_segments"]) >= 2:
+        inherit = next((lv for _, lv in p["chart_segments"] if len(lv) >= 2), [])
+        for cube, lv in p["chart_segments"]:
+            if denied(role, f"{cube}.{prim}"):
+                continue
+            ch = "internet" if cube == "internet_sales" else "reseller"
+            levels = lv if len(lv) >= 2 else (inherit if p["drill"] or inherit else [])
+            gran = levels[0] if levels else (p["gran"] or "month")
+            panel = {"id": b.pid(f"trend_{ch}"), "type": "timeseries", "title": f"{b.lab(ch)}: {b.lab(prim)}", "granularity": gran, "style": p["style"] or "line",
+                     "series": [{"member": f"{cube}.{prim}", "label": b.lab(ch), "color": ch, "format": "money" if prim in ("revenue", "gross_profit") else "int"}]}
+            if len(levels) >= 2:
+                panel["drill"] = levels
+            else:
+                panel["granularities"] = ["month", "quarter", "year"]
+                if fid and clickable:
+                    panel["on_click"] = {"set_filter": fid}
+            b.panels.append(panel)
+        want_time = False
     if want_time:
         series = [{"member": f"{c}.{ {'revenue': 'revenue', 'gross_profit': 'gross_profit', 'orders': 'orders', 'units': 'units'}[prim] }", "label": b.lab("internet" if c == "internet_sales" else "reseller"),
                    "color": "internet" if c == "internet_sales" else "reseller", "format": "money" if prim in ("revenue", "gross_profit") else "int"}
                   for c in b.channels() if not denied(role, f"{c}.{prim}")]
-        gran = p["gran"] or "month"
-        panel = {"id": b.pid("trend"), "type": "timeseries", "title": b.lab("monthly" if gran == "month" else "trend", m=b.lab(prim)), "series": series, "granularity": gran,
-                 "granularities": ["month", "quarter", "year"], "style": p["style"] or ("stacked-bar" if len(series) > 1 else "line")}
-        if fid and clickable:
-            panel["on_click"] = {"set_filter": fid}
-        if gran not in panel["granularities"]:
-            panel.pop("granularities")
+        levels = p["levels"] if p["drill"] else []
+        gran = levels[0] if levels else (p["gran"] or "month")
+        style = p["style"] or ("stacked-bar" if len(series) > 1 and not levels else "line")
+        panel = {"id": b.pid("trend"), "type": "timeseries", "title": b.lab("monthly" if gran == "month" else "trend", m=b.lab(prim)), "series": series, "granularity": gran, "style": style}
+        if levels:
+            panel["drill"] = levels                                   # a click opens the next level and filters the other panels to the period
+            panel["title"] = b.lab("drilltitle", m=b.lab(prim))
+        else:
+            if gran in ("month", "quarter", "year"):
+                panel["granularities"] = ["month", "quarter", "year"]
+            if fid and clickable:
+                panel["on_click"] = {"set_filter": fid}
         b.panels.append(panel)
     dim_members = {"region": "territories.region", "country": "territories.country", "category": "products.category", "subcategory": "products.subcategory", "product": "products.name"}
+    pie_dim = next((d for d in ("subcategory", "category", "region", "country", "product") if d in dims), "category") if p["pie"] else None
+    if pie_dim and b.can(dim_members[pie_dim]) and not denied(role, f"{b.channels()[0]}.{prim}"):
+        c0 = b.channels()
+        pf = b.add_filter({"region": "region", "country": "country", "category": "category", "subcategory": "subcategory"}.get(pie_dim, "x"), dim_members[pie_dim], pie_dim) if pie_dim != "product" else None
+        measure_members = [f"{c}.{prim}" for c in c0 if not denied(role, f"{c}.{prim}")]
+        pie = {"id": b.pid("pie"), "type": "pie", "title": b.lab("by", m=b.lab(prim), d=b.lab("products" if pie_dim == "product" else pie_dim)),
+               "label": b.lab(prim), "by_label": b.lab("products" if pie_dim == "product" else pie_dim),
+               "by": dim_members[pie_dim], "style": "pie" if has(p["t"], "pie", "pasta") else "donut", "limit": 8, "format": "money" if prim in ("revenue", "gross_profit") else "int"}
+        pie.update({"sum": measure_members} if len(measure_members) > 1 else {"measure": measure_members[0]})     # both channels, added up
+        if pf and clickable:
+            pie["on_click"] = {"set_filter": pf}
+        b.panels.append(pie)
     for d in dims:
         if d in ("category", "subcategory") and p["treemap"]:
+            continue
+        if d == pie_dim:
             continue
         if not b.can(dim_members[d]):
             continue
@@ -193,8 +260,11 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
                  if not denied(role, f"{c}.{measure_key}")]
         fmt = "money" if measure_key in ("revenue", "gross_profit") else "int"
         panel = {"id": b.pid(f"by_{d}"), "type": "bar", "title": b.lab("by", m=b.lab(measure_key), d=b.lab("products" if d == "product" else d)),
+                 "by_label": b.lab("products" if d == "product" else d), **({"label": b.lab(measure_key)} if len(stack) <= 1 else {}),
                  "by": dim_members[d], "sort": "desc", "limit": p["top"] or (10 if d in ("product", "category", "subcategory") else 15), "format": fmt}
         panel.update({"stack": stack} if len(stack) > 1 else {"measure": stack[0]["member"]})
+        if p["column"]:
+            panel["orientation"] = "vertical"
         if d in ("region", "country", "category", "subcategory"):
             f = b.add_filter({"region": "region", "country": "country", "category": "category", "subcategory": "subcategory"}[d], dim_members[d], d)
             if f and clickable:
@@ -203,7 +273,8 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     if p["treemap"] and b.can("products.category") and not denied(role, f"{b.channels()[0]}.revenue"):
         cf = b.add_filter("category", "products.category", "category")
         sf = b.add_filter("subcategory", "products.subcategory", "subcategory", parent="products.category")
-        t = {"id": b.pid("mix"), "type": "treemap", "title": b.lab("mix"), "measure": f"{b.channels()[0]}.revenue", "group": ["products.category", "products.subcategory"], "format": "money"}
+        t = {"id": b.pid("mix"), "type": "treemap", "title": b.lab("mix"), "label": b.lab("revenue"), "group_labels": [b.lab("category"), b.lab("subcategory")],
+             "measure": f"{b.channels()[0]}.revenue", "group": ["products.category", "products.subcategory"], "format": "money"}
         if cf and sf and clickable:
             t["on_click"] = {"set_filter": [cf, sf]}
         b.panels.append(t)
@@ -219,6 +290,10 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     if has(p["t"], "for germany", "in germany", "for canada", "in canada", "for europe", "in europe"):
         b.notes.append("A dashboard cannot be fixed to one region: use the region filter above the panels (your role's own territories are applied by Cube anyway).")
         b.add_filter("region", "territories.region", "region")
+    levels_said = [f"{'Internet' if c == 'internet_sales' else 'Reseller'}: {' > '.join(lv)}" for c, lv in p["chart_segments"] if lv]
+    heard = [f"measures: {', '.join(L[k][0].lower() for k in keys)}"] + ([f"chart style: {p['style']}"] if p["style"] else []) + ([f"drill-down {'; '.join(levels_said) or ' > '.join(p['levels'])}"] if p["drill"] or levels_said else []) \
+        + (["a separate chart per channel"] if len(p["chart_segments"]) >= 2 else []) + (["pie"] if p["pie"] else [])
+    b.notes.insert(0, ("Anladığım: " if b.tr else "Understood: ") + "; ".join(heard) + ".")
     return finish(b, prompt, "dates.full_date", "sales")
 
 
@@ -261,7 +336,7 @@ def compose_inventory(p, prompt, catalog, role) -> Composition:
 
 
 # ------------------------------------------------------------------------------------------------------------------ layout and the file
-FLEXIBLE = {"timeseries": (8, 4), "treemap": (7, 5), "bar": (6, 6)}
+FLEXIBLE = {"timeseries": (8, 4), "treemap": (7, 5), "bar": (6, 6), "pie": (5, 7)}
 
 
 def layout(panels: list[dict]) -> list[list[dict]]:
@@ -272,6 +347,10 @@ def layout(panels: list[dict]) -> list[list[dict]]:
         nxt = panels[i + 1] if i + 1 < len(panels) else None
         if p["type"] in FLEXIBLE and nxt and nxt["type"] in FLEXIBLE:
             a, c = FLEXIBLE[p["type"]]
+            if nxt["type"] == "pie" and p["type"] != "pie":
+                a, c = 7, 5                                           # a pie needs room for its legend
+            if p["type"] == nxt["type"] == "timeseries":
+                a, c = 6, 6                                           # two time charts share a row evenly
             rows.append([{p["id"]: a}, {nxt["id"]: c}])
             i += 2
         else:
@@ -310,6 +389,24 @@ def refine(p, prompt, catalog, role, current_yaml) -> Composition:
             if x["type"] == "timeseries":
                 x["style"], changed = p["style"], True
         notes.append(f"Chart style set to {p['style']}.")
+    if p["column"]:
+        for x in spec["panels"]:
+            if x["type"] == "bar":
+                x["orientation"], changed = "vertical", True
+        notes.append("Bars drawn as columns.")
+    if p["separate"] and not remove and (has(t, "internet", "reseller", "bayi", "channel", "kanal", "chart", "grafik", "panel", "pane")):
+        panels = []
+        for x in spec["panels"]:
+            if x["type"] == "timeseries" and len(x["series"]) > 1:
+                for k, ser in enumerate(x["series"]):
+                    clone = {**x, "id": f"{x['id']}_{k + 1}", "title": f"{ser.get('label', '')}: {x.get('title', '')}".strip(": "), "series": [ser]}
+                    panels.append(clone)
+                changed = True
+                notes.append("Split the chart into one chart per series, side by side.")
+            else:
+                panels.append(x)
+        spec["panels"] = panels
+        spec["layout"] = layout(spec["panels"])
     if p["top"]:
         for x in spec["panels"]:
             if x["type"] in ("bar", "table"):

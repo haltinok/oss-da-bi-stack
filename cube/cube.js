@@ -19,6 +19,15 @@ class StarRocksQuery extends MysqlQuery {
   timeStampCast(value) {
     return `CAST(${value} AS DATETIME)`;
   }
+
+  // The stock dialect truncates to a quarter with TIMESTAMPDIFF(QUARTER, ...), which StarRocks does not have ("No matching function with
+  // signature: QUARTERS_diff"), so a time chart by quarter failed. DATE_TRUNC('quarter', ...) is native; every other granularity is unchanged.
+  timeGroupedColumn(granularity, dimension) {
+    if (granularity === 'quarter') {
+      return `CAST(DATE_TRUNC('quarter', ${dimension}) AS DATETIME)`;
+    }
+    return super.timeGroupedColumn(granularity, dimension);
+  }
 }
 
 // --- Security --------------------------------------------------------------

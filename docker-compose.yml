@@ -622,6 +622,9 @@ services:
       BUILDER_MODE: ${BUILDER_MODE:-auto}
       BUILDER_MODEL: ${BUILDER_MODEL:-claude-opus-5-5}
       BUILDER_RATE_LIMIT: ${BUILDER_RATE_LIMIT:-20}
+      BUILDER_DAILY_TOKENS: ${BUILDER_DAILY_TOKENS:-300000}
+      BUILDER_MAX_CONCURRENT: ${BUILDER_MAX_CONCURRENT:-4}
+      BUILDER_TIMEOUT: ${BUILDER_TIMEOUT:-120}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8350/healthz').status==200 else 1)"]
       interval: 10s
@@ -649,6 +652,7 @@ services:
       AUTH_PORT: ${AUTH_PORT:-8200}
       CUBE_PORT: ${CUBE_PORT:-4000}
       ACTIONS_PORT: ${ACTIONS_PORT:-8300}
+      BUILDER_PORT: ${BUILDER_PORT:-8350}
       # Optional second dataset in the dashboard: the port of the 250M benchmark Cube (spike/bench/run_scale.sh 250m).
       CUBE_250M_PORT: ${CUBE_250M_PORT:-}
       # How the browser reaches Keycloak, the auth and actions services and Cube. Empty (the default): each on its own

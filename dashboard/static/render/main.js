@@ -7,8 +7,9 @@ import { createFormat } from "../lib/format.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { optionMeasures, optionsOf, pick, queriesPerCube, runAll } from "./plan.js";
+import { formatPeriod, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, queriesPerCube, runAll } from "./plan.js";
 import { stringsFor } from "./strings.js";
+import { createBuilderApi, drafts, mountDraftBar, mountDrafts, mountPromptBox, mountSemantic } from "./builder.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -82,17 +83,29 @@ async function showList() {
   $("#title").textContent = t.dashboards;
   $("#export-label").textContent = t.exportAll;
   setStatus(`<strong>${esc(t.signedIn)}</strong>`);
-  $("#main").innerHTML = mine.length
+  const api = createBuilderApi({ stack: C, client, t });
+  $("#main").innerHTML = (api.available ? `<div id="builder-host"></div><div id="drafts-host" class="drafts-host" hidden></div>` : "") + (mine.length
     ? `<div class="dlist">${mine.map((d) => `<a href="/d/${encodeURIComponent(d.id)}"><div class="card"><h2>${esc(d.title)}</h2><p>${esc(d.description)}</p></div></a>`).join("")}</div>`
-    : `<div class="empty">${esc(t.noDashboards)}</div>`;
+    : `<div class="empty">${esc(t.noDashboards)}</div>`) + (api.available ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
+  if (!api.available) return;
+  mountPromptBox($("#builder-host"), api, t);
+  mountDrafts($("#drafts-host"), t);
+  $("#sem-wrap").addEventListener("toggle", () => { if ($("#sem-wrap").open && !$("#sem-host").dataset.ready) { $("#sem-host").dataset.ready = "1"; mountSemantic($("#sem-host"), api, t); } });
 }
 
 // ------------------------------------------------------------------ one dashboard
 async function showDashboard() {
-  const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
   const t0 = stringsFor(navigator.language);
-  if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
-  const spec = await res.json();
+  const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); every other id is a built file
+  let spec;
+  if (id === "draft") {
+    if (!draft?.spec) throw new Error(t0.noDraft);
+    spec = draft.spec;
+  } else {
+    const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
+    spec = await res.json();
+  }
   const role = client.session().role;
   const t = stringsFor(spec.locale);
   document.documentElement.lang = (spec.locale || "en-US").split("-")[0];
@@ -102,7 +115,7 @@ async function showDashboard() {
   $("#refresh").title = $("#refresh").ariaLabel = t.refresh;
   if ($("#signout")) $("#signout").textContent = t.signOut;
 
-  document.title = `${spec.title} · ${dataset.label}`;
+  document.title = `${draft ? `${t.draft}: ` : ""}${spec.title} · ${dataset.label}`;
   $("#title").textContent = spec.title;
   $("#brand-sub").textContent = spec.description || "";
   const fmt = createFormat({ locale: spec.locale || "en-US", currency: spec.currency || "USD" });
@@ -111,7 +124,11 @@ async function showDashboard() {
   const dateTimeFmt = new Intl.DateTimeFormat(fmt.locale, { dateStyle: "medium", timeStyle: "short" });
   const asDate = (b) => new Date(`${String(b).slice(0, 19)}Z`);
 
-  const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, new URLSearchParams(location.search).get(f.id) || ""]));
+  const qs = new URLSearchParams(location.search);
+  const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, qs.get(f.id) || ""]));
+  values[PERIOD] = parsePeriod(qs.get("period")) ? qs.get("period") : "";             // the date range a drill-down sets (other panels follow it)
+  const drills = Object.fromEntries(spec.panels.filter((p) => p.drill).map((p) => [p.id, (qs.get(`drill_${p.id}`) || "").split(",").filter((b) => /^\d{4}-\d{2}-\d{2}/.test(b))]));
+  const clearedHooks = [];
   const span = Object.fromEntries(spec.layout.flat().map((c) => [c.panel, c.span]));
 
   const ctx = {
@@ -138,19 +155,38 @@ async function showDashboard() {
       return `${t.filters}: ${parts.length ? parts.join(" · ") : t.none} · ${t.exported} ${dateTimeFmt.format(new Date())} ${t.from} ${dataset.mart}`;
     },
     exportSheets: (sheets, name) => downloadXlsx(sheets.filter(Boolean), { prefix: spec.id, slug: slugify(name), symbol: fmt.symbol }),
+    // A drill-down: where each time chart is (kept in the URL) and the period it hands to the other panels.
+    period: () => parsePeriod(values[PERIOD]),
+    setPeriod(range) { values[PERIOD] = range ? formatPeriod(range[0], range[1]) : ""; if (!range) clearedHooks.forEach((h) => h()); renderPeriod(); writeUrl(); loadAll(); },
+    drillPath: (id) => drills[id] || [],
+    setDrill(id, path) { drills[id] = path; },
+    onPeriodCleared: (fn) => clearedHooks.push(fn),
+    bodyWidth: (id) => panels.get(id)?.root.querySelector(".panel-body")?.clientWidth || 640,
     // A click on a panel sets filters (see plan.js `pick`): the page applies them like a change in the filter bar.
     pick: (ids, vals) => apply(pick(values, ids, vals, saved)),
   };
   const saved = {};                                     // what the filters held before a click, so that clicking again can undo it
 
   const panels = new Map(spec.panels.map((p) => [p.id, createPanel(p, ctx)]));
+  const periodBar = el("div", { id: "period-bar", class: "period-bar", hidden: "" });
+  function renderPeriod() {
+    const range = parsePeriod(values[PERIOD]);
+    periodBar.hidden = !range;
+    if (!range) return;
+    const show = (d) => dateFmt.format(new Date(`${d}T00:00:00Z`));
+    periodBar.innerHTML = `<span class="chip on">${esc(t.periodLabel)}: ${esc(range[0] === range[1] ? show(range[0]) : `${show(range[0])} – ${show(range[1])}`)}</span>`;
+    const x = el("button", { type: "button", class: "chip-x", "aria-label": t.clearPeriod, title: t.clearPeriod }, "✕");
+    x.addEventListener("click", () => ctx.setPeriod(null));
+    periodBar.append(x);
+  }
   const grid = el("div", { class: "rgrid" });
   for (const row of spec.layout) for (const cell of row) {
     const root = panels.get(cell.panel).root;
     root.style.gridColumn = `span ${span[cell.panel]}`;
     grid.append(root);
   }
-  $("#main").replaceChildren(grid);
+  $("#main").replaceChildren(periodBar, grid);
+  renderPeriod();
 
   // ---- filters
   const optionRows = new Map();                         // filter id -> per-cube query results ([parent?, dimension] pairs)
@@ -204,6 +240,9 @@ async function showDashboard() {
     reset.addEventListener("click", () => {
       for (const k of Object.keys(saved)) delete saved[k];
       for (const f of spec.filters) values[f.id] = "";
+      values[PERIOD] = "";
+      clearedHooks.forEach((h) => h());
+      renderPeriod();
       for (const f of spec.filters) fillOptions(f);
       writeUrl();
       loadAll();
@@ -223,6 +262,8 @@ async function showDashboard() {
   function writeUrl() {
     const q = new URLSearchParams(location.search);
     for (const f of spec.filters || []) { if (values[f.id]) q.set(f.id, values[f.id]); else q.delete(f.id); }
+    if (values[PERIOD]) q.set("period", values[PERIOD]); else q.delete("period");
+    for (const [id, path] of Object.entries(drills)) { if (path.length) q.set(`drill_${id}`, path.join(",")); else q.delete(`drill_${id}`); }
     history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
     ctx.syncReset?.();
   }
@@ -248,6 +289,10 @@ async function showDashboard() {
   $("#export-all").addEventListener("click", () => ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard"));
   $("#refresh").hidden = false;
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
+  if (draft) {
+    const api = createBuilderApi({ stack: C, client, t });
+    if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); mountDraftBar(host, api, t, draft); }
+  }
   buildFilters();
   ctx.syncReset?.();
   setStatus(esc(t.loading));

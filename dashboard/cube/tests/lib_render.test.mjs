@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
   pick, queriesPerCube, tableParts, term, totals, yearOf,
 } from "../../static/render/plan.js";
@@ -200,4 +201,67 @@ test("every language has every word the page uses, and an unknown language falls
   assert.equal(stringsFor(undefined).reset, "Reset filters");
   assert.match(stringsFor("tr").notForRole("Pano", "rep"), /rolünüz \(rep\)/);
   assert.deepEqual(Object.keys(translations.tr.granularities), Object.keys(translations.en.granularities));
+});
+
+test("rangeOf gives the first and last day a bucket stands for", () => {
+  assert.deepEqual(rangeOf("2021-01-01T00:00:00.000", "year"), ["2021-01-01", "2021-12-31"]);
+  assert.deepEqual(rangeOf("2021-04-01T00:00:00.000", "quarter"), ["2021-04-01", "2021-06-30"]);
+  assert.deepEqual(rangeOf("2020-10-01", "quarter"), ["2020-10-01", "2020-12-31"]);
+  assert.deepEqual(rangeOf("2021-02-01T00:00:00.000", "month"), ["2021-02-01", "2021-02-28"]);
+  assert.deepEqual(rangeOf("2020-02-01", "month"), ["2020-02-01", "2020-02-29"], "a leap year");
+  assert.deepEqual(rangeOf("2021-12-01", "month"), ["2021-12-01", "2021-12-31"]);
+  assert.deepEqual(rangeOf("2021-03-29T00:00:00.000", "week"), ["2021-03-29", "2021-04-04"]);
+  assert.deepEqual(rangeOf("2021-03-05T00:00:00.000", "day"), ["2021-03-05", "2021-03-05"]);
+});
+
+test("a period parses only as two ISO dates and formats back", () => {
+  assert.deepEqual(parsePeriod("2021-03-01..2021-03-31"), ["2021-03-01", "2021-03-31"]);
+  for (const bad of ["", null, "2021-03-01", "2021-3-1..2021-3-31", "x..y", "2021-03-01..2021-03-31;drop"]) assert.equal(parsePeriod(bad), null, String(bad));
+  assert.equal(formatPeriod("2021-01-01", "2021-12-31"), "2021-01-01..2021-12-31");
+});
+
+const salesSpec = {
+  time: { dimension: "dates.full_date" }, filters: [],
+  cubes: { internet_sales: { joins: ["dates", "products"] }, dates: { joins: [] }, inventory_health: { joins: ["products"] }, products: { joins: [] } },
+  members: { "internet_sales.revenue": { kind: "measure" }, "inventory_health.on_hand": { kind: "dimension" }, "inventory_health.product_count": { kind: "measure" }, "products.name": { kind: "dimension" } },
+};
+
+test("the period narrows the panels that can reach the time dimension, and not the drill panel, text, an opt-out or an inventory panel", () => {
+  const bar = { id: "b", type: "bar", measure: "internet_sales.revenue", by: "products.name" };
+  assert.equal(appliesPeriod(salesSpec, bar), true);
+  assert.equal(appliesPeriod(salesSpec, { ...bar, ignore_filters: ["period"] }), false, "opted out");
+  assert.equal(appliesPeriod(salesSpec, { id: "t", type: "timeseries", series: [{ member: "internet_sales.revenue" }], drill: ["year", "month"] }), false, "the drill panel keeps its own range");
+  assert.equal(appliesPeriod(salesSpec, { id: "x", type: "text", markdown: "hi" }), false);
+  assert.equal(appliesPeriod(salesSpec, { id: "i", type: "bar", measure: "inventory_health.product_count", by: "products.name" }), false, "no join from inventory to dates");
+  assert.equal(appliesPeriod({ ...salesSpec, cubes: undefined }, { id: "i", type: "bar", measure: "inventory_health.product_count", by: "products.name" }), true, "without join info a panel is assumed to follow");
+});
+
+test("withRange adds a date range to the time dimension, merging into an existing time entry", () => {
+  const range = ["2021-03-01", "2021-03-31"];
+  assert.deepEqual(withRange(salesSpec, { measures: ["m"] }, range).timeDimensions, [{ dimension: "dates.full_date", dateRange: range }]);
+  const merged = withRange(salesSpec, { timeDimensions: [{ dimension: "dates.full_date", granularity: "month" }] }, range);
+  assert.deepEqual(merged.timeDimensions, [{ dimension: "dates.full_date", granularity: "month", dateRange: range }]);
+  assert.deepEqual(withRange(salesSpec, { timeDimensions: [{ dimension: "x.y", granularity: "day" }] }, range).timeDimensions.length, 2);
+});
+
+test("followPeriod narrows a following panel's queries only while a period is set", () => {
+  const bar = { id: "b", type: "bar", measure: "internet_sales.revenue", by: "products.name" };
+  const queries = [{ cube: "internet_sales", query: { measures: ["internet_sales.revenue"] } }];
+  assert.deepEqual(followPeriod(salesSpec, bar, {}, queries), queries);
+  const out = followPeriod(salesSpec, bar, { [PERIOD]: "2021-03-01..2021-03-31" }, queries);
+  assert.deepEqual(out[0].query.timeDimensions, [{ dimension: "dates.full_date", dateRange: ["2021-03-01", "2021-03-31"] }]);
+  assert.equal(queries[0].query.timeDimensions, undefined, "the input is not changed");
+});
+
+test("a pie reads its slices ranked, so the rest can be grouped", () => {
+  const q = pieQueries(salesSpec, { id: "p", type: "pie", measure: "internet_sales.revenue", by: "products.name" }, {});
+  assert.deepEqual(q[0].query, { dimensions: ["products.name"], filters: [], order: { "internet_sales.revenue": "desc" }, limit: 100, measures: ["internet_sales.revenue"] });
+});
+
+test("a pie that sums two cubes asks each for its slices, ranked by its own measure", () => {
+  const spec = { ...salesSpec, cubes: undefined, members: { "internet_sales.revenue": { kind: "measure" }, "reseller_sales.revenue": { kind: "measure" }, "products.name": { kind: "dimension" } } };
+  const q = pieQueries(spec, { id: "p", type: "pie", sum: ["internet_sales.revenue", "reseller_sales.revenue"], label: "Gelir", by: "products.name" }, {});
+  assert.deepEqual(q.map((x) => x.cube), ["internet_sales", "reseller_sales"]);
+  assert.deepEqual(q.map((x) => x.query.order), [{ "internet_sales.revenue": "desc" }, { "reseller_sales.revenue": "desc" }]);
+  assert.ok(q.every((x) => x.query.limit === 100 && x.query.dimensions[0] === "products.name"));
 });

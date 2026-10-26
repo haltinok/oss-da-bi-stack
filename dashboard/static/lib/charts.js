@@ -67,9 +67,10 @@ export function stackBarHtml(parts, max) {
 
 /**
  * A KPI sparkline: values (null = no value for that step), drawn as one line that breaks at gaps, ending in a dot.
- * ariaLabel(lastIndex, lastValue) -> the text for screen readers.
+ * ariaLabel(lastIndex, lastValue) -> the text for screen readers. `tip(index, value)` (optional) returns a tooltip id (see lib/tooltip.js) for each point:
+ * hovering the tile then shows that point's value and a guide line at it.
  */
-export function sparkline(values, ariaLabel) {
+export function sparkline(values, ariaLabel, { tip } = {}) {
   const W = 200, H = 34;
   const svg = svgEl("svg", { class: "spark", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true" });
   const pts = values.map((v, i) => [i, v]).filter(([, v]) => v != null && isFinite(v));
@@ -84,5 +85,42 @@ export function sparkline(values, ariaLabel) {
   const [li, lv] = pts[pts.length - 1];
   svg.append(svgEl("circle", { cx: x(li), cy: y(lv), r: 2.5, fill: "var(--ink)" }));
   svg.setAttribute("aria-label", ariaLabel(li, lv));
+  if (tip) {
+    const step = W / Math.max(values.length - 1, 1);
+    for (const [i, v] of pts) {
+      const id = tip(i, v);
+      if (!id) continue;
+      const g = svgEl("g", { class: "spark-pt" });
+      g.append(svgEl("line", { class: "spark-guide", x1: x(i), x2: x(i), y1: 0, y2: H, "vector-effect": "non-scaling-stroke" }));
+      g.append(svgEl("rect", { class: "spark-hit", x: x(i) - step / 2, y: 0, width: step, height: H, fill: "transparent", "data-tip": id }));
+      svg.append(g);
+    }
+  }
   return svg;
+}
+
+/**
+ * The outline of a pie slice or a donut segment: centre (cx, cy), outer radius r, inner radius r0 (0 for a pie), from angle a0 to a1 in radians
+ * (0 = 12 o'clock, clockwise). A slice that covers the whole circle is drawn as two halves, since one arc cannot start and end on the same point.
+ */
+export function arcPath(cx, cy, r, r0, a0, a1) {
+  const pt = (rad, a) => [cx + rad * Math.sin(a), cy - rad * Math.cos(a)];
+  const f = (n) => +n.toFixed(2);
+  if (a1 - a0 >= 2 * Math.PI - 1e-6) {
+    const ring = (rad, sweep) => `M${f(cx)},${f(cy - rad)}A${rad},${rad} 0 1 ${sweep} ${f(cx)},${f(cy + rad)}A${rad},${rad} 0 1 ${sweep} ${f(cx)},${f(cy - rad)}Z`;
+    return r0 > 0 ? ring(r, 1) + ring(r0, 0) : ring(r, 1);
+  }
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const [x0, y0] = pt(r, a0), [x1, y1] = pt(r, a1);
+  if (r0 <= 0) return `M${f(cx)},${f(cy)}L${f(x0)},${f(y0)}A${r},${r} 0 ${large} 1 ${f(x1)},${f(y1)}Z`;
+  const [x2, y2] = pt(r0, a1), [x3, y3] = pt(r0, a0);
+  return `M${f(x0)},${f(y0)}A${r},${r} 0 ${large} 1 ${f(x1)},${f(y1)}L${f(x2)},${f(y2)}A${r0},${r0} 0 ${large} 0 ${f(x3)},${f(y3)}Z`;
+}
+
+/** Slices for a pie: items [{ label, value }] (any order) -> the largest `limit - 1`, the rest grouped as one { label: otherLabel, other: true }; zero and negative values are dropped. */
+export function pieSlices(items, limit, otherLabel) {
+  const sorted = items.filter((i) => i.value > 0).sort((a, b) => b.value - a.value);
+  if (sorted.length <= limit) return sorted;
+  const head = sorted.slice(0, limit - 1), tail = sorted.slice(limit - 1);
+  return [...head, { label: otherLabel, value: tail.reduce((a, b) => a + b.value, 0), other: true, count: tail.length }];
 }

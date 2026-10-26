@@ -35,6 +35,10 @@
 	handle_path /actions-api/* {
 		reverse_proxy actions:8300
 	}
+	# The dashboard builder (a prompt becomes a dashboard spec); every call needs the Keycloak token.
+	handle_path /builder-api/* {
+		reverse_proxy builder:8350
+	}
 
 	# Cube keeps its /cubejs-api prefix. Production mode: no playground; every call needs the signed token (cube/cube.js).
 	handle /cubejs-api/* {

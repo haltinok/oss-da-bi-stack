@@ -5,6 +5,7 @@ actions service and two Cubes with empty data while counting what each page aske
 """
 import json
 import pathlib
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -15,6 +16,7 @@ hits: dict[str, int] = {}
 BENCH = {"on": True}
 ROLE = {"role": "admin"}  # what the mock auth service says the signed-in user is
 FAIL = {"members": set(), "message": "Profit and margin are not available for your role"}   # queries naming these members answer 403
+BUILDER = {"limit": False}   # True: /builder/build answers 429, as the service does when a user has built too often
 FAKE = {"on": False}      # True: the Cube mocks answer every query with generated rows instead of none (see fake_rows)
 
 POOLS = {
@@ -27,7 +29,30 @@ POOLS = {
     "suggested_order_value": [4200, 900], "excess_units": [30, 0], "excess_value": [1500, 80], "suggested_discount_pct": [10, 30],
     "order_date": ["2021-06-30T10:00:00.000", "2021-06-29T09:30:00.000"], "order_number": ["SO1", "SO2", "SO3", "SO4"], "order_status": [5], "status": ["stockout", "reorder_now", "overstock"],
 }
-MONTHS = [f"{2020 + (6 + i) // 12}-{(6 + i) % 12 + 1:02d}-01T00:00:00.000" for i in range(12)]     # Jul 2020 .. Jun 2021
+MONTHS = [f"{2020 + (6 + i) // 12}-{(6 + i) % 12 + 1:02d}-01T00:00:00.000" for i in range(12)]     # Jul 2020 .. Jun 2021 (kept for older tests)
+
+
+def buckets(granularity, date_range=None):
+    """Time buckets of one granularity inside a date range (default: the fiscal year Jul 2020 - Jun 2021; years: 2019-2021), as Cube writes them."""
+    import datetime as dt
+    a, b = ([dt.date.fromisoformat(x[:10]) for x in date_range] if date_range else [dt.date(2019 if granularity == "year" else 2020, 1 if granularity == "year" else 7, 1),
+                                                                                    dt.date(2021, 12 if granularity == "year" else 6, 31 if granularity == "year" else 30)])
+    out, d = [], a
+    while d <= b and len(out) < 62:
+        if granularity == "year":
+            d = dt.date(d.year, 1, 1)
+            nxt = dt.date(d.year + 1, 1, 1)
+        elif granularity == "quarter":
+            d = dt.date(d.year, (d.month - 1) // 3 * 3 + 1, 1)
+            nxt = dt.date(d.year + (d.month + 2) // 12, (d.month + 2) % 12 + 1, 1)
+        elif granularity == "month":
+            d = dt.date(d.year, d.month, 1)
+            nxt = dt.date(d.year + d.month // 12, d.month % 12 + 1, 1)
+        else:
+            nxt = d + dt.timedelta(days=1)
+        out.append(f"{d.isoformat()}T00:00:00.000")
+        d = nxt
+    return out or [f"{a.isoformat()}T00:00:00.000"]
 
 
 def fake_rows(query):
@@ -39,7 +64,7 @@ def fake_rows(query):
         axes.append((d, POOLS.get(d.partition(".")[2], ["a", "b"])))
     for t in query.get("timeDimensions", []):
         if t.get("granularity"):
-            axes.append((f"{t['dimension']}.{t['granularity']}", MONTHS if t["granularity"] == "month" else MONTHS[:1]))
+            axes.append((f"{t['dimension']}.{t['granularity']}", buckets(t["granularity"], t.get("dateRange"))))
     rows = [{}]
     for key, values in axes:
         rows = [{**r, key: v} for r in rows for v in values][:80]
@@ -50,6 +75,36 @@ def fake_rows(query):
         if not axes:
             break
     return rows[: 1 if not axes else 80]
+_builder_cache = {}
+
+
+def builder_answer(path, body):
+    """The builder service without Keycloak: the real loop, validator and rule-based stand-in (builder/), for the role the mock signs in as."""
+    if not _builder_cache:
+        for extra in (str(ROOT), str(ROOT / "dashboards")):
+            if extra not in sys.path:
+                sys.path.insert(0, extra)
+        from builder import core
+        from builder.standin import StandInClient
+        from dashspec import catalog as cat
+        from dashspec.semantic import catalog_json
+        _builder_cache.update(core=core, standin=StandInClient, catalog=cat.from_model(ROOT / "cube" / "model"), catalog_json=catalog_json)
+    c, role = _builder_cache, ROLE["role"]
+    if path == "/info":
+        return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role),
+                     "note": "A rule-based stand-in answers."}
+    if path == "/catalog":
+        return 200, c["catalog_json"](c["catalog"], role)
+    if path == "/build":
+        if BUILDER["limit"]:
+            return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
+        return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin")
+    if path == "/validate":
+        built, problems = c["core"].check_submission(body["yaml"], c["catalog"], role)
+        return 200, {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "notes": built["notes"] if built else [], "problems": problems}
+    return 404, {"detail": "not found"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -80,6 +135,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
             return self._send(json.dumps({"token": "t", "expires_in": 900, "user": "admin", "role": ROLE["role"], "territories": ["Canada"]}).encode())
+        if path.startswith("/builder/"):
+            body = {}
+            if self.command == "POST":
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
+            status, answer = builder_answer(path[len("/builder"):], body)
+            return self._send(json.dumps(answer).encode(), status=status)
         if path.startswith("/cube-"):
             query = {}
             if FAKE["on"]:
@@ -102,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
             if BENCH["on"]:
                 ds += f', {{ id: "250m", label: "250M benchmark", mart: "mart_250m", cube: "http://localhost:{PORT}/cube-bench", readOnly: true }}'
             js = (f'window.STACK = {{ keycloak: {{ url: "http://localhost:{PORT}/kc", realm: "spike", clientId: "dashboard" }}, '
-                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", cube: "http://localhost:{PORT}/cube-live" }}; '
+                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", cube: "http://localhost:{PORT}/cube-live" }}; '
                   f"window.STACK.datasets = {ds}];")
             return self._send(js.encode(), "application/javascript")
         if path == "/d" or path.startswith("/d/"):          # the renderer page, for /d/ and /d/<id>

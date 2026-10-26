@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable
 
 import yaml
@@ -25,6 +26,7 @@ MAX_TURNS = MAX_ATTEMPTS + 3                                       # plus the tu
 MAX_TOKENS = 8000
 MAX_PROMPT = 2000
 MAX_YAML = 30_000
+LINK = re.compile(r"\[([^\]]*)\]\(\s*[a-zA-Z][a-zA-Z0-9+.-]*:[^)]*\)")      # [text](scheme:...) -> text
 ROLES = ("admin", "manager", "rep", "purchasing", "marketing")
 
 SPEC_GUIDE = """\
@@ -35,8 +37,11 @@ time: { dimension: <a time dimension>, fiscal_year_start: 7 }
 filters: list of { id, dimension, label, parent? }  (selects above the panels; every panel applies them unless it lists the id in ignore_filters)
 panels: list of { id, type, title?, ignore_filters?, ... }, types:
   kpi        measures: [ {member|sum|ratio, label, format} ... max 8 ], sparkline: { granularity: month }
-  timeseries series: [ {member|sum|ratio, label, color?, format} ], granularity, granularities?: [month, quarter, year], style: line | bar | stacked-bar, on_click?: { set_filter: <id of a fiscal_year filter> }
-  bar        measure: <m>  OR  stack: [ {member, label, color?} x2+ ]   by: <dimension>, sort, limit, format, on_click?: { set_filter: <filter on the by dimension> }
+  timeseries series: [ {member|sum|ratio, label, color?, format} ], granularity, style: line | area | stacked-area | bar | stacked-bar,
+             and EITHER granularities?: [month, quarter, year] (a switch) + on_click?: { set_filter: <id of a fiscal_year filter> }
+             OR drill: [year, month, day] (a drill-down: a click opens the next finer level for that period and filters every other panel to it; granularity = the first level; no on_click)
+  bar        measure: <m> (+ label)  OR  stack: [ {member, label, color?} x2+ ]   by: <dimension>, by_label, sort, limit, orientation?: horizontal | vertical, format, on_click?: { set_filter: <filter on the by dimension> }
+  pie        measure: <m> OR sum: [a.m, b.m] (needs label), label, by: <dimension>, by_label, limit (slices before "Other", 2-30), style: pie | donut, format, on_click?: { set_filter: <filter on the by dimension> }
   treemap    measure, group: [dim] or [dim, dim], format, on_click?: { set_filter: [<filter on group[0]>, <filter on group[1]>] }
   table      columns: [ member | {member, label, format} ], order: { member: asc|desc }, limit, on_click?
   text       markdown
@@ -45,8 +50,8 @@ format: money | int | pct (a fraction) | decimal | number.   color: internet | r
 layout: rows of 12 columns, every panel exactly once: - [kpis: 12]  - [trend: 8, lines: 4]
 Rules: use only members from the catalog. Cube cannot join two fact cubes in one query, so combine channels with sum/ratio/stack, nothing else:
 no other arithmetic. A filter must be on a dimension the panel's measures can join to (else add it to that panel's ignore_filters).
-A click rule: bar -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; time chart -> a year filter.
-Write titles and labels in the language of locale. If the request needs a metric the catalog does not have, call cannot_build and say which."""
+A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; time chart -> a year filter.
+Write titles and labels in the language of locale: every `label`, including the `label` / `by_label` / `group_labels` of pie, bar and treemap panels (without one the member's English name is shown). If the request needs a metric the catalog does not have, call cannot_build and say which."""
 
 SYSTEM = """You build dashboards for a bank's BI team from a short request. The data is a simulated AdventureWorks company. A person looks at the \
 result and can ask for changes; you never see data, only the catalog of members (names and types) the signed-in user may read.
@@ -133,10 +138,17 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     spec["roles"] = [role]                         # the role rules are checked for the user who asked, whatever the model wrote
     if isinstance(spec.get("theme"), dict) and spec["theme"].pop("logo", None):
         notes.append("A logo was removed: builder drafts cannot load images.")
+    stripped = False
+    for p in spec.get("panels", []) if isinstance(spec.get("panels"), list) else []:
+        if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("markdown"), str):
+            clean = LINK.sub(r"\1", p["markdown"])
+            stripped, p["markdown"] = stripped or clean != p["markdown"], clean
+    if stripped:
+        notes.append("Links in text panels were removed: a draft cannot point readers at other sites.")
     errors, used = validate(spec, catalog)
     if errors:
         return None, errors[:12]
-    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used), "notes": notes}, []
+    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used, catalog), "notes": notes}, []
 
 
 # ------------------------------------------------------------------------------------------------------------------ the loop
@@ -209,6 +221,20 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
     out["usage"], out["mode"], out["model"] = usage, mode, MODEL if mode == "llm" else "rule-based stand-in"
     log("result", {k: v for k, v in out.items() if k not in ("spec",)})
     return out
+
+
+EXAMPLES = {
+    "sales": ["Monthly revenue by channel and the top 5 products, with a table of the latest orders",
+              "Revenue and orders by region and country; click a bar to filter the rest",
+              "Revenue by category as a treemap, and the product mix by month",
+              "Türkçe satış panosu: aylık gelir, bölgeye göre gelir ve son siparişler"],
+    "inventory": ["Stock status and the reorder list", "Overstock and excess stock, top 10", "Envanter durumu ve yeniden sipariş listesi, Türkçe"],
+}
+
+
+def examples_for(role: str) -> list[str]:
+    """Requests that work for this role (the stand-in understands them; they are also good starting points for the model)."""
+    return EXAMPLES["inventory"] if role in ("purchasing", "marketing") else EXAMPLES["sales"]
 
 
 def check_catalog(model_dir: str) -> cat.Catalog:

@@ -55,7 +55,9 @@ filters:                      # selects above the panels; a click can set them
 panels:
   - { id: kpis, type: kpi, measures: [ { member: x.m, label: L, format: money }, { sum: [a.m, b.m], label: L }, { ratio: { num: [..], den: [..] }, label: L, format: pct } ], sparkline: { granularity: month } }
   - { id: trend, type: timeseries, series: [ { member: a.m, label: A, color: internet, format: money } ], granularity: month, granularities: [month, quarter, year], style: stacked-bar, on_click: { set_filter: fy } }
-  - { id: top, type: bar, measure: a.m, by: products.name, sort: desc, limit: 10, format: money }     # or stack: [ {member, label, color}, ... ] / split: <dimension>
+  - { id: drill, type: timeseries, series: [ ... ], granularity: year, drill: [year, month, day], style: line }     # styles: line | area | stacked-area | bar | stacked-bar
+  - { id: share, type: pie, measure: a.m, by: products.subcategory, limit: 8, style: donut, format: money, on_click: { set_filter: subcategory } }
+  - { id: top, type: bar, measure: a.m, by: products.name, sort: desc, limit: 10, format: money }     # or stack: [ {member, label, color}, ... ] / split: <dimension>; orientation: vertical for columns
   - { id: mix, type: treemap, measure: a.m, group: [products.category, products.subcategory], on_click: { set_filter: [category, subcategory] } }
   - { id: lines, type: table, columns: [ { member: a.order_number, label: Order }, { member: a.m, label: Revenue, format: money } ], order: { a.order_date: desc }, limit: 50 }
   - { id: note, type: text, markdown: "Plain **Markdown**." }
@@ -69,7 +71,10 @@ layout:                       # rows of 12 columns; every panel exactly once
   else: no other arithmetic.
 - **A filter applies to every panel** whose measures can join to its dimension; a panel that cannot (an inventory panel under a territory
   filter) lists it in `ignore_filters`. The panel a click comes from does not narrow itself with the filters it sets.
-- **Click rules** (validated): a bar sets a filter on its `by`; a treemap's filters follow its `group` in order; a table row sets filters
+- **Drill-down** (`drill: [year, month, day]`, coarse to fine): a click on a point opens the next level for that period **and** filters every other panel to
+  that date range (cross-filtering at the same time); a trail above the chart goes back up; a panel lists `period` in `ignore_filters` to opt out. Years are
+  calendar years. Not together with `granularities` or `on_click`.
+- **Click rules** (validated): a bar or pie sets a filter on its `by`; a treemap's filters follow its `group` in order; a table row sets filters
   on the dimension columns it shows; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension.
 - **Labels:** one language per file. For `tr-TR` write every `title`, `label` and `description` in Turkish; the page's own words (buttons,
   "All", status) follow `locale`. Currency formatting is a display choice only: the data is not converted. If the demo data is in another

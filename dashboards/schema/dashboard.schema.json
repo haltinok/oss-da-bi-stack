@@ -149,7 +149,7 @@
       "required": ["id", "type"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
-        "type": { "enum": ["kpi", "timeseries", "bar", "treemap", "table", "text"] },
+        "type": { "enum": ["kpi", "timeseries", "bar", "pie", "treemap", "table", "text"] },
         "title": { "type": "string" },
         "ignore_filters": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
       },
@@ -178,7 +178,8 @@
               "series": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/series" } },
               "granularity": { "$ref": "#/$defs/granularity" },
               "granularities": { "type": "array", "items": { "$ref": "#/$defs/granularity" }, "minItems": 2, "uniqueItems": true },
-              "style": { "enum": ["line", "bar", "stacked-bar"] },
+              "drill": { "type": "array", "items": { "$ref": "#/$defs/granularity" }, "minItems": 2, "maxItems": 4, "uniqueItems": true },
+              "style": { "enum": ["line", "area", "stacked-area", "bar", "stacked-bar"] },
               "on_click": { "$ref": "#/$defs/on_click" }
             }
           }
@@ -190,6 +191,8 @@
             "oneOf": [{ "required": ["measure"] }, { "required": ["stack"] }],
             "properties": {
               "measure": { "$ref": "#/$defs/member" },
+              "label": { "type": "string" },
+              "by_label": { "type": "string" },
               "stack": {
                 "type": "array",
                 "minItems": 2,
@@ -204,6 +207,25 @@
               "split": { "$ref": "#/$defs/member" },
               "sort": { "$ref": "#/$defs/direction" },
               "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
+              "orientation": { "enum": ["horizontal", "vertical"] },
+              "format": { "$ref": "#/$defs/format" },
+              "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "pie" } } },
+          "then": {
+            "required": ["by"],
+            "oneOf": [{ "required": ["measure"] }, { "required": ["sum", "label"] }],
+            "properties": {
+              "measure": { "$ref": "#/$defs/member" },
+              "sum": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 2 },
+              "label": { "type": "string" },
+              "by": { "$ref": "#/$defs/member" },
+              "by_label": { "type": "string" },
+              "limit": { "type": "integer", "minimum": 2, "maximum": 30 },
+              "style": { "enum": ["pie", "donut"] },
               "format": { "$ref": "#/$defs/format" },
               "on_click": { "$ref": "#/$defs/on_click" }
             }
@@ -215,7 +237,9 @@
             "required": ["measure", "group"],
             "properties": {
               "measure": { "$ref": "#/$defs/member" },
+              "label": { "type": "string" },
               "group": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 2 },
+              "group_labels": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 2 },
               "format": { "$ref": "#/$defs/format" },
               "on_click": { "$ref": "#/$defs/on_click" }
             }

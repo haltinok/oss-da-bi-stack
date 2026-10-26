@@ -67,6 +67,10 @@ with sync_playwright() as p:
     check(name.startswith("adventureworks-") and name.endswith(".xlsx"), f"Excel export downloads a file ({name})")
     size = pathlib.Path(dl.value.path()).stat().st_size
     check(size > 1000 and pathlib.Path(dl.value.path()).read_bytes()[:2] == b"PK", f"the export is a zip ({size} bytes)")
+    page.evaluate("document.querySelector('#kpis').scrollIntoView({ block: 'center' })")
+    page.locator("#kpis .kpi svg.spark .spark-hit").nth(3).hover()
+    check(page.locator("#tip.on").count() == 1 and "Revenue" in page.inner_text("#tip") and "$" in page.inner_text("#tip"), "hovering a mini chart on the sales dashboard shows the month and the value")
+    page.mouse.move(5, 5)
     page.evaluate("document.querySelector('#trend').scrollIntoView({ block: 'center' })")
     page.locator("#trend [data-tip]").first.hover()
     page.wait_for_timeout(200)

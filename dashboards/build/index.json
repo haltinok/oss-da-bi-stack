@@ -18,6 +18,15 @@
     ]
   },
   {
+    "id": "sales-drilldown",
+    "title": "Sales drill-down",
+    "description": "Revenue over time that drills from year to month to day, a donut by subcategory and columns by category. Every click filters the rest.",
+    "roles": [
+      "admin",
+      "manager"
+    ]
+  },
+  {
     "id": "sales-overview",
     "title": "Sales overview",
     "description": "Revenue, margin and orders by channel, product and territory.",

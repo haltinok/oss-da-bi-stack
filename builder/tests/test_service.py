@@ -1,4 +1,5 @@
 """The HTTP service: who may call it, what each role sees, the rate limit, the modes, and a build end to end (no Keycloak, no model API)."""
+import json
 import os
 import pathlib
 import time
@@ -107,3 +108,131 @@ def test_llm_mode_runs_the_same_loop_with_the_anthropic_client(monkeypatch):
     body = client.post("/build", headers=token("manager"), json={"prompt": "regional sales"}).json()
     assert body["status"] == "ok" and body["mode"] == "llm" and body["model"] == main.core.MODEL and body["usage"]["input_tokens"] == 100
     assert script.calls[0]["system"][0]["cache_control"] and "cannot_build" in script.calls[0]["system"][0]["text"] and script.calls[0]["tools"][0]["name"] == "submit_dashboard"
+
+
+def test_validate_checks_a_hand_edited_file_for_the_callers_role():
+    good = client.post("/build", headers=token("manager"), json={"prompt": "revenue by month"}).json()["yaml"]
+    ok = client.post("/validate", headers=token("manager"), json={"yaml": good}).json()
+    assert ok["ok"] and ok["spec"]["id"] == "draft" and ok["problems"] == []
+    broken = client.post("/validate", headers=token("manager"), json={"yaml": good.replace("internet_sales.revenue", "internet_sales.nope", 1)}).json()
+    assert not broken["ok"] and broken["spec"] is None and any("internet_sales.nope" in p for p in broken["problems"])
+    as_rep = client.post("/validate", headers=token("rep"), json={"yaml": good.replace("internet_sales.revenue", "internet_sales.gross_profit")}).json()
+    assert not as_rep["ok"] and any("role 'rep' cannot read" in p for p in as_rep["problems"])
+    assert client.post("/validate", json={"yaml": good}).status_code == 401
+    assert client.post("/validate", headers=token("manager"), json={"yaml": ""}).status_code == 422
+
+
+def test_info_offers_examples_that_fit_the_role():
+    assert any("revenue" in e.lower() for e in client.get("/info", headers=token("manager")).json()["examples"])
+    assert all("stock" in e.lower() or "envanter" in e.lower() for e in client.get("/info", headers=token("purchasing")).json()["examples"])
+
+
+def test_every_example_builds_for_its_role():
+    for role in ("manager", "rep", "admin", "purchasing", "marketing"):
+        for ex in client.get("/info", headers=token(role)).json()["examples"]:
+            assert client.post("/build", headers=token(role, user=f"{role}-ex"), json={"prompt": ex}).json()["status"] == "ok", (role, ex)
+
+
+# ---------------------------------------------------------------------------------------------------------------- limits, errors, audit
+def llm(monkeypatch, *answers):
+    from builder.tests.test_core import Script
+    script = Script(*answers)
+    monkeypatch.setattr(main, "make_client", lambda m, role: script)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    return script
+
+
+def test_usage_and_builds_left_follow_the_users_builds():
+    h = token(user="counter")
+    assert client.get("/info", headers=h).json()["builds_left"] == main.RATE_LIMIT
+    client.post("/build", headers=h, json={"prompt": "revenue by month"})
+    use = client.get("/usage", headers=h).json()
+    assert use["builds_last_hour"] == 1 and use["builds_per_hour"] == main.RATE_LIMIT and use["tokens_today"] == 0 and use["mode"] == "standin"
+    assert client.get("/info", headers=h).json()["builds_left"] == main.RATE_LIMIT - 1
+    assert client.get("/usage").status_code == 401
+
+
+def test_a_daily_token_budget_stops_a_user_until_tomorrow(monkeypatch):
+    from builder.tests.test_core import GOOD, submit
+    llm(monkeypatch, [submit(GOOD)], [submit(GOOD)])
+    monkeypatch.setattr(main, "DAILY_TOKENS", 200)
+    h = token("manager", "spender")
+    assert client.post("/build", headers=h, json={"prompt": "regional sales"}).status_code == 200          # 150 tokens
+    assert client.get("/usage", headers=h).json()["tokens_today"] == 150
+    assert client.post("/build", headers=h, json={"prompt": "regional sales again"}).status_code == 200       # 300 now, over budget
+    blocked = client.post("/build", headers=h, json={"prompt": "and once more"})
+    assert blocked.status_code == 429 and "budget" in blocked.json()["detail"] and "midnight UTC" in blocked.json()["detail"]
+    assert client.get("/usage", headers=token("manager", "someone-else")).json()["tokens_today"] == 0, "the budget is per user"
+
+
+def test_tokens_reset_on_a_new_day(monkeypatch):
+    main._tokens["old"] = ("1999-01-01", 10**9)
+    assert main._tokens_today(main.User(name="old", role="rep")) == 0
+
+
+def test_at_most_a_few_builds_run_at_once_and_a_refused_one_costs_nothing(monkeypatch):
+    import threading
+    monkeypatch.setattr(main, "_slots", threading.BoundedSemaphore(1))
+    assert main._slots.acquire(blocking=False)
+    h = token(user="impatient")
+    r = client.post("/build", headers=h, json={"prompt": "revenue by month"})
+    assert r.status_code == 503 and "busy" in r.json()["detail"]
+    assert client.get("/usage", headers=h).json()["builds_last_hour"] == 0
+    main._slots.release()
+    assert client.post("/build", headers=h, json={"prompt": "revenue by month"}).status_code == 200
+
+
+@pytest.mark.parametrize("status,words", [(401, "key was rejected"), (403, "key was rejected"), (500, "not reachable"), (None, "not reachable")])
+def test_a_model_failure_is_reported_plainly_and_leaks_nothing(monkeypatch, status, words):
+    secret = "sk-ant-api03-SECRET-do-not-leak"
+
+    class Boom:
+        def __init__(self):
+            self.messages = SimpleNamespace(create=self.create)
+
+        def create(self, **kw):
+            err = RuntimeError(f"request failed for key {secret}")
+            err.status_code = status
+            raise err
+    monkeypatch.setattr(main, "make_client", lambda m, role: Boom())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    r = client.post("/build", headers=token(user="unlucky"), json={"prompt": "revenue by month"})
+    assert r.status_code == 502 and words in r.json()["detail"] and secret not in r.text
+
+
+def test_a_timeout_says_so(monkeypatch):
+    class APITimeoutError(Exception):
+        pass
+
+    class Slow:
+        def __init__(self):
+            self.messages = SimpleNamespace(create=self.create)
+
+        def create(self, **kw):
+            raise APITimeoutError("timed out")
+    monkeypatch.setattr(main, "make_client", lambda m, role: Slow())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    r = client.post("/build", headers=token(user="waiting"), json={"prompt": "revenue by month"})
+    assert r.status_code == 502 and "took too long" in r.json()["detail"]
+    assert client.get("/usage", headers=token(user="waiting")).json()["builds_last_hour"] == 1       # the attempt happened; it counts
+
+
+def test_every_build_is_logged_to_stdout_and_a_file(monkeypatch, tmp_path, capsys):
+    log = tmp_path / "builds.jsonl"
+    monkeypatch.setattr(main, "LOG_FILE", str(log))
+    long_prompt = "revenue by month " + "x" * 500
+    client.post("/build", headers=token("manager", "logged"), json={"prompt": long_prompt})
+    client.post("/build", headers=token("rep", "logged-rep"), json={"prompt": "profit by region"})
+    lines = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [(e["user"], e["role"], e["status"], e["mode"]) for e in lines] == [("logged", "manager", "ok", "standin"), ("logged-rep", "rep", "cannot", "standin")]
+    assert len(lines[0]["prompt"]) == 160 and lines[0]["at"].endswith("+00:00") and lines[0]["usage"]["turns"] == 1 and lines[0]["refine"] is False
+    assert '"event": "build"' in capsys.readouterr().out
+
+
+def test_a_log_file_that_cannot_be_written_does_not_break_a_build(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "LOG_FILE", str(tmp_path / "missing-dir" / "builds.jsonl"))
+    assert client.post("/build", headers=token(user="unlogged"), json={"prompt": "revenue by month"}).status_code == 200
+
+
+def test_control_characters_are_removed_from_the_prompt():
+    assert main.clean("revenue\x00 by\x07 month\nand more\tstuff") == "revenue by month\nand more\tstuff"

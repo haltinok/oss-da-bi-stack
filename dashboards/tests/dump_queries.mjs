@@ -5,5 +5,5 @@ import { panelQueries } from "../../dashboard/static/render/plan.js";
 
 const spec = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const ids = (spec.filters || []).map((f) => f.id);
-const states = [{}, ...ids.map((i) => ({ [i]: "x" })), Object.fromEntries(ids.map((i) => [i, "y"]))];
+const states = [{}, ...ids.map((i) => ({ [i]: "x" })), Object.fromEntries(ids.map((i) => [i, "y"])), { _period: "2021-03-01..2021-03-31" }, { _period: "2020-01-01..2020-12-31", ...Object.fromEntries(ids.map((i) => [i, "z"])) }];
 console.log(JSON.stringify(states.map((values) => ({ values, panels: Object.fromEntries(spec.panels.map((p) => [p.id, panelQueries(spec, p, values)])) }))));
