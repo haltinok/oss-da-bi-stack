@@ -3,84 +3,11 @@
 // /api/meta and /api/dashboard, with Cube queries (via @cubejs-client/core) instead of SQL.
 // The shapes returned are exactly those of the former Postgres-backed dashboard/app.py, so app.js is unchanged apart
 // from a one-line hook in getJSON() and null-safe handling of hidden profit figures.
-import cubejs from "./vendor/cubejs-client-core.mjs";
+import { createCubeClient } from "./cube-client.mjs";
 
 const C = window.STACK;
-const KC = `${C.keycloak.url}/realms/${C.keycloak.realm}/protocol/openid-connect`;
-const REDIRECT = `${location.origin}/`;
-const store = {
-  get: (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } },
-  set: (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
-  del: (k) => { try { sessionStorage.removeItem(k); } catch { /* ignore */ } },
-};
 
-// ------------------------------------------------------------------ Keycloak sign-in (PKCE)
-const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-async function login() {
-  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
-  const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-  const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
-  store.set("pkce", { verifier, state });
-  const p = new URLSearchParams({
-    client_id: C.keycloak.clientId, redirect_uri: REDIRECT, response_type: "code", scope: "openid",
-    code_challenge: challenge, code_challenge_method: "S256", state,
-  });
-  location.assign(`${KC}/auth?${p}`);
-  return new Promise(() => {}); // never resolves: the page navigates away
-}
-
-async function tokenRequest(params) {
-  const res = await fetch(`${KC}/token`, {
-    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: C.keycloak.clientId, ...params }),
-  });
-  if (!res.ok) throw new Error(`Keycloak token request failed (${res.status})`);
-  const t = await res.json();
-  const tokens = { access: t.access_token, refresh: t.refresh_token, expires: Date.now() + t.expires_in * 1000 };
-  store.set("kc", tokens);
-  return tokens;
-}
-
-async function keycloakTokens() {
-  const code = new URLSearchParams(location.search).get("code");
-  if (code) {
-    const { verifier, state } = store.get("pkce") || {};
-    const back = new URLSearchParams(location.search).get("state");
-    history.replaceState({}, "", REDIRECT); // drop ?code=... from the address bar
-    store.del("pkce");
-    if (!verifier || back !== state) return login();
-    return tokenRequest({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, code_verifier: verifier });
-  }
-  const t = store.get("kc");
-  if (!t) return login();
-  if (t.expires - Date.now() > 30_000) return t;
-  try {
-    return await tokenRequest({ grant_type: "refresh_token", refresh_token: t.refresh });
-  } catch {
-    store.del("kc");
-    return login();
-  }
-}
-
-// ------------------------------------------------------------------ Cube token (via auth service)
-let session = null; // { token, expires, user, role }
-
-async function cubeToken(force = false) {
-  if (!force && session && session.expires - Date.now() > 60_000) return session.token;
-  const kc = await keycloakTokens();
-  const res = await fetch(`${C.auth}/token`, { method: "POST", headers: { Authorization: `Bearer ${kc.access}` } });
-  if (res.status === 401) { store.del("kc"); return login(); }
-  if (!res.ok) throw new Error(res.status === 403 ? "Your account has no access to this dashboard" : `Sign-in failed (${res.status})`);
-  const t = await res.json();
-  session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, territories: t.territories };
-  window.dashboardData.noProfit = t.role === "rep"; // profit/margin are not available to reps
-  window.dashboardData.role = t.role;
-  showWho();
-  return session.token;
-}
-
-function showWho() {
+function showWho(session) {
   if (document.getElementById("who")) return;
   const who = document.createElement("div");
   who.id = "who";
@@ -90,8 +17,7 @@ function showWho() {
   (document.querySelector("header.top .tools") || document.querySelector("header.top"))?.append(who);
   document.getElementById("signout").addEventListener("click", (e) => {
     e.preventDefault();
-    store.del("kc");
-    location.assign(`${KC}/logout?${new URLSearchParams({ client_id: C.keycloak.clientId, post_logout_redirect_uri: REDIRECT })}`);
+    client.signOut();
   });
 }
 
@@ -105,18 +31,17 @@ const dataset = DATASETS.find((d) => d.id === wanted) || DATASETS[0];
 keep.set(dataset.id);
 window.dashboardData.dataset = dataset;
 window.dashboardData.datasets = DATASETS;
-const api = cubejs(() => cubeToken(), { apiUrl: dataset.cube });
+const client = createCubeClient({
+  stack: C, apiUrl: dataset.cube,
+  onSession(session) {
+    window.dashboardData.noProfit = session.role === "rep"; // profit/margin are not available to reps
+    window.dashboardData.role = session.role;
+    showWho(session);
+  },
+});
+const { run } = client;
 const CH = { Internet: "internet_sales", Reseller: "reseller_sales" };
 const num = (v) => (v == null ? null : Number(v));
-
-async function run(query, signal) {
-  try {
-    return (await api.load(query, { signal })).rawData();
-  } catch (e) {
-    if (e?.status === 401) { await cubeToken(true); return (await api.load(query, { signal })).rawData(); }
-    throw e;
-  }
-}
 
 const channels = (f) => (f.channel ? [f.channel] : Object.keys(CH));
 const profit = () => !window.dashboardData.noProfit;
@@ -396,12 +321,12 @@ const INV = "inventory_health";
 // The same Keycloak access token as the auth service gets; the service checks the role and every rule again.
 async function actionsCall(method, path, body) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const kc = await keycloakTokens();
+    const kc = await client.keycloak();
     const res = await fetch(`${C.actions}${path}`, {
       method, headers: { Authorization: `Bearer ${kc.access}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (res.status === 401 && attempt === 0) { store.del("kc"); continue; }
+    if (res.status === 401 && attempt === 0) { client.dropKeycloakToken(); continue; }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : Array.isArray(data.detail) ? "The request was malformed" : `HTTP ${res.status}`);
     return data;
@@ -411,7 +336,7 @@ async function actionsCall(method, path, body) {
 const BAND_OF = { 10: "1-10%", 20: "11-20%", 30: "21-30%", 40: "over 30%" };
 
 async function inventory(signal) {
-  const role = session.role;
+  const role = client.session().role;
   const out = {};
   const q = [];
   if (role === "admin" || role === "purchasing") {
@@ -487,7 +412,7 @@ async function inventory(signal) {
 }
 
 // ------------------------------------------------------------------ the endpoints the page calls
-await cubeToken(); // signs in (redirecting if needed) before the first request
+await client.token(); // signs in (redirecting if needed) before the first request
 window.__dashboardDataReady({
   // Inventory actions: the page posts approvals here (the service re-checks the role and every rule).
   // A benchmark dataset has other product ids than the live ERP: nothing may be approved against it.

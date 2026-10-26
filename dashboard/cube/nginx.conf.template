@@ -26,7 +26,7 @@ server {
         try_files $uri $uri/ =404;
         add_header Cache-Control "no-cache";
         sub_filter_once on;
-        sub_filter '<script src="app.js"></script>'
-                   '<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script src="app.js"></script>';
+        sub_filter '<script type="module" src="app.js"></script>'
+                   '<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script type="module" src="app.js"></script>';
     }
 }

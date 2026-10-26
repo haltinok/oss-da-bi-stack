@@ -264,9 +264,9 @@ live feed of the latest orders. It is served by the `dashboard-cube` service
   (currency, %, counts, dates), each sheet has a frozen header and autofilter
   and states the filters it was exported with (and any the panel deliberately
   ignores), and the rows are the same ones the chart's table view shows. The
-  `.xlsx` is generated in the browser by `static/xlsx.js` (no dependency).
+  `.xlsx` is generated in the browser by `static/lib/xlsx.js` (no dependency).
 - **Data source:** `static/app.js` asks `window.dashboardData` for `/api/meta` and `/api/dashboard`. The
-  Cube adapter (`dashboard/cube/cube-source.mjs`, injected by nginx in front of `app.js`) answers them
+  Cube adapter (`dashboard/cube/cube-source.mjs`, injected by nginx in front of `app.js`, on top of the shared sign-in and query client `dashboard/cube/cube-client.mjs`) answers them
   with Cube queries; the page itself knows nothing about Cube.
 
 **Continuous dates.** The AdventureWorks sample's business dates end in mid-2014,
@@ -587,7 +587,7 @@ oss-da-bi-stack/
 │       ├── 01_init.sql       # orders: Kafka engine + history + current-state + rejected views
 │       └── 02_adventureworks_cdc.sql  # AW: multi-topic Kafka table + aw_events + typed tables
 ├── dashboard/
-│   └── static/               # index.html, app.js (inline-SVG charts), xlsx.js (Excel export), style.css
+│   └── static/               # index.html, app.js (the sales dashboard), lib/ (shared ES modules: format, charts, tooltip, table, xlsx), style.css
 ├── spike/                    # the StarRocks + Cube spike: benchmarks, results, and the pieces
 │   ├── results.md            #   not yet moved out: auth/, keycloak/, dashboard/ (Cube data source)
 │   └── ...

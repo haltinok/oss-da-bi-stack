@@ -2,6 +2,11 @@
 // Every panel renders from GET /api/dashboard; the page polls it so new orders
 // appear as soon as Airflow's dbt build lands them in analytics.mart.
 "use strict";
+import { $, el, esc, svgEl } from "./lib/dom.js";
+import { createFormat, ratio } from "./lib/format.js";
+import { createTooltip } from "./lib/tooltip.js";
+import { niceTicks, barPath, squarify, shade as shadeOf, stackBarHtml, sparkline as sparklineSvg } from "./lib/charts.js";
+import { tableHtml, downloadXlsx, slugify } from "./lib/table.js";
 
 const POLL_MS = 30_000;
 const META_EVERY = 10; // re-read filter options every 10th poll
@@ -11,35 +16,17 @@ const STATUS = {
   1: "◔ In process", 2: "◑ Approved", 3: "⏸ Backordered",
   4: "✕ Rejected", 5: "✓ Shipped", 6: "✕ Cancelled",
 };
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Gaps up to this many empty months are drawn as zero months; longer ones as an axis break.
 const MAX_FILLED_GAP = 6;
 
-const $ = (sel) => document.querySelector(sel);
-const el = (tag, attrs = {}, html = "") => {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  if (html) n.innerHTML = html;
-  return n;
-};
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
 // ---------------------------------------------------------------- formatting
-const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
-const money = (v) => (v == null ? "—" : (v < 0 ? "−$" : "$") + (Math.abs(v) >= 1000 ? compact.format(Math.abs(v)) : Math.abs(v).toFixed(2)));
-const moneyFull = (v) => (v == null ? "—" : v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
-const int = (v) => (v == null ? "—" : Math.round(v).toLocaleString("en-US"));
-const pct = (v, d = 1) => {
-  if (v == null || !isFinite(v)) return "—";
-  const txt = Math.abs(v * 100).toFixed(d);
-  return (v < 0 && +txt !== 0 ? "−" : "") + txt + "%"; // no "−0%" for tiny negatives
-};
-const ratio = (a, b) => (b && a != null ? a / b : null);
+const fmt = createFormat({ locale: "en-US", currency: "USD" });
+const { money, moneyFull, int, pct } = fmt;
 const fyOf = (iso) => { const [y, m] = iso.split("-").map(Number); return m >= 7 ? y + 1 : y; };
 const fyRange = (fy) => `Jul ${String(fy - 1).slice(2)} – Jun ${String(fy).slice(2)}`;
 const monthLabel = (iso, withYear = true) => {
   const [y, m] = iso.split("-").map(Number);
-  return withYear ? `${MONTHS[m - 1]} ${y}` : MONTHS[m - 1];
+  return withYear ? `${fmt.monthName(m)} ${y}` : fmt.monthName(m);
 };
 const ago = (iso) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -96,37 +83,7 @@ function writeUrl() {
 }
 
 // ------------------------------------------------------------------- tooltip
-const tip = $("#tip");
-const tips = new Map();
-let tipSeq = 0;
-function tipAttr(html) { const id = String(++tipSeq); tips.set(id, html); return id; }
-function tipLines(title, lines) {
-  return `<div class="t">${esc(title)}</div>` + lines.map(([label, value, color]) =>
-    `<div class="l"><span>${color ? `<i class="swatch" style="background:${color}"></i>` : ""}${esc(label)}</span><b>${esc(value)}</b></div>`).join("");
-}
-function placeTip(x, y) {
-  const r = tip.getBoundingClientRect();
-  let left = x + 14, top = y + 14;
-  if (left + r.width > innerWidth - 8) left = x - r.width - 14;
-  if (top + r.height > innerHeight - 8) top = y - r.height - 14;
-  tip.style.left = `${Math.max(8, left)}px`;
-  tip.style.top = `${Math.max(8, top)}px`;
-}
-function showTip(target, x, y) {
-  const html = tips.get(target.dataset.tip);
-  if (!html) return;
-  tip.innerHTML = html;
-  tip.classList.add("on");
-  if (x == null) { const b = target.getBoundingClientRect(); x = b.left + b.width / 2; y = b.top; }
-  placeTip(x, y);
-}
-document.addEventListener("pointermove", (e) => {
-  const t = e.target.closest?.("[data-tip]");
-  if (t) showTip(t, e.clientX, e.clientY); else tip.classList.remove("on");
-});
-document.addEventListener("focusin", (e) => { const t = e.target.closest?.("[data-tip]"); if (t) showTip(t); });
-document.addEventListener("focusout", () => tip.classList.remove("on"));
-document.addEventListener("scroll", () => tip.classList.remove("on"), { passive: true });
+const { tipAttr, tipLines, clear: clearTips } = createTooltip($("#tip"));
 
 // --------------------------------------------------------------------- data
 async function getJSON(url, signal, onPartial) {
@@ -387,7 +344,7 @@ for (const btn of document.querySelectorAll(".tbl-toggle")) {
 // ------------------------------------------------------------------- render
 function renderAll() {
   if (!state.data) return;
-  tips.clear();
+  clearTips();
   const d = state.data;
   const months = d.monthly ? monthSeries(d.monthly) : [];
   if (d.kpis) renderKpis(months);
@@ -414,7 +371,7 @@ const margin = (r) => ratio(r.gross_profit, r.revenue);
 
 const STATUS_LABEL = { stockout: "Stockout", reorder_now: "Reorder now", overstock: "Overstock", dead_stock: "Dead stock" };
 const cover = (v) => (v == null ? "—" : v > 999 ? ">999" : String(Math.round(v)));
-const one = (v) => (v == null ? "—" : (Math.round(v * 10) / 10).toLocaleString("en-US"));
+const one = fmt.decimal;
 // What past offers of about this depth did, from mart.offer_performance (descriptive, no control group).
 function evidence(pct) {
   const d = state.invData || {};
@@ -557,11 +514,7 @@ const DATASETS = {
 };
 
 function table({ columns, rows }) {
-  if (state.noProfit) columns = columns.filter((c) => !c.profit);
-  const num = (c) => (c.type !== "text" && c.type !== "date" ? "n" : "");
-  const head = columns.map((c) => `<th class="${num(c)}">${esc(c.label)}</th>`).join("");
-  const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="${num(c)}">${esc(c.fmt(c.get(r)))}</td>`).join("")}</tr>`).join("");
-  return `<div class="tbl-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return tableHtml({ columns: state.noProfit ? columns.filter((c) => !c.profit) : columns, rows });
 }
 
 // ---- Excel export
@@ -598,14 +551,9 @@ function toSheet(d) {
 
 function exportXlsx(keys) {
   if (!state.data && !state.invData) return;
-  const blob = window.buildXlsx(keys.map((k) => toSheet(DATASETS[k]())));
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
-  const slug = keys.length === 1 ? DATASETS[keys[0]]().name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "dashboard";
-  const a = el("a", { href: URL.createObjectURL(blob), download: `adventureworks-${slug}-${stamp}.xlsx` });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  downloadXlsx(keys.map((k) => toSheet(DATASETS[k]())), {
+    prefix: "adventureworks", slug: keys.length === 1 ? slugify(DATASETS[keys[0]]().name) : "dashboard",
+  });
 }
 
 for (const btn of document.querySelectorAll(".xls-btn")) {
@@ -679,45 +627,7 @@ function renderKpis(months) {
 }
 
 function sparkline(values, months, k) {
-  const W = 200, H = 34;
-  const svg = svgEl("svg", { class: "spark", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true" });
-  const pts = values.map((v, i) => [i, v]).filter(([, v]) => v != null && isFinite(v));
-  if (pts.length < 2) return svg;
-  const lo = Math.min(0, ...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1])) || 1;
-  const x = (i) => (i / (values.length - 1)) * W;
-  const y = (v) => H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 6);
-  // Break the line where a month has no value instead of interpolating across it.
-  let d = "", prev = -2;
-  for (const [i, v] of pts) { d += `${i === prev + 1 ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; prev = i; }
-  svg.append(svgEl("path", { d, fill: "none", stroke: "var(--ink-2)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
-  const [li, lv] = pts[pts.length - 1];
-  const last = months[li];
-  svg.append(svgEl("circle", { cx: x(li), cy: y(lv), r: 2.5, fill: "var(--ink)" }));
-  svg.setAttribute("aria-label", `${k.label} by month, latest ${last ? monthLabel(last.month) : ""}: ${k.fmt(lv)}`);
-  return svg;
-}
-
-// ---- SVG helpers
-function svgEl(tag, attrs = {}) {
-  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  return n;
-}
-function niceTicks(lo, hi, count = 4) {
-  if (hi === lo) hi = lo + 1;
-  const raw = (hi - lo) / count;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
-  const start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step;
-  const ticks = [];
-  for (let v = start; v <= end + step / 2; v += step) ticks.push(+v.toFixed(10));
-  return ticks;
-}
-// A bar whose data end (top) is rounded and whose baseline end is square.
-function barPath(x, y, w, h, r = 4) {
-  if (h <= 0 || w <= 0) return "";
-  r = Math.min(r, w / 2, h);
-  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  return sparklineSvg(values, (li, lv) => `${k.label} by month, latest ${months[li] ? monthLabel(months[li].month) : ""}: ${k.fmt(lv)}`);
 }
 
 // ---- Monthly trend + margin
@@ -871,40 +781,7 @@ const CATEGORY_HUE = {
   Accessories: { hue: "#eda100" },
 };
 const FALLBACK_HUE = { hue: "#898781" };
-const SHADES = [100, 78, 62, 50, 40, 32]; // % of the hue, mixed with white
-function shade(category, i) {
-  const { hue, lightTextFrom = Infinity } = CATEGORY_HUE[category] || FALLBACK_HUE;
-  const p = SHADES[i % SHADES.length];
-  return { fill: p === 100 ? hue : `color-mix(in oklab, ${hue} ${p}%, #fcfcfb)`, light: p >= lightTextFrom };
-}
-
-function squarify(items, x, y, w, h) {
-  const total = items.reduce((s, i) => s + i.value, 0);
-  const out = [];
-  if (!total || w <= 0 || h <= 0) return out;
-  const scale = (w * h) / total;
-  const rest = items.map((i) => ({ ...i, area: i.value * scale })).sort((a, b) => b.area - a.area);
-  const worst = (row, side) => {
-    const s = row.reduce((a, r) => a + r.area, 0);
-    return Math.max(...row.map((r) => Math.max((side * side * r.area) / (s * s), (s * s) / (side * side * r.area))));
-  };
-  while (rest.length) {
-    const side = Math.min(w, h);
-    const row = [rest.shift()];
-    while (rest.length && worst([...row, rest[0]], side) <= worst(row, side)) row.push(rest.shift());
-    const s = row.reduce((a, r) => a + r.area, 0);
-    if (w >= h) {
-      const rw = s / h; let yy = y;
-      for (const r of row) { const rh = r.area / rw; out.push({ ...r, x, y: yy, w: rw, h: rh }); yy += rh; }
-      x += rw; w -= rw;
-    } else {
-      const rh = s / w; let xx = x;
-      for (const r of row) { const rw = r.area / rh; out.push({ ...r, x: xx, y, w: rw, h: rh }); xx += rw; }
-      y += rh; h -= rh;
-    }
-  }
-  return out;
-}
+const shade = (category, i) => shadeOf(CATEGORY_HUE, FALLBACK_HUE, category, i);
 
 function renderMix() {
   const rows = state.data.mix.filter((r) => r.revenue > 0);
@@ -979,10 +856,7 @@ function renderMix() {
 }
 
 // ---- Ranked rows shared by top products and territories
-function stackBar(r, max) {
-  const parts = CHANNELS.map((c) => [c, r[c.toLowerCase()] || 0]).filter(([, v]) => v > 0);
-  return `<div class="hbar">${parts.map(([c, v]) => `<i style="width:${(v / max) * 100}%;background:${CH_VAR[c]}"></i>`).join("")}</div>`;
-}
+const stackBar = (r, max) => stackBarHtml(CHANNELS.map((c) => ({ value: r[c.toLowerCase()] || 0, color: CH_VAR[c] })), max);
 function rowTip(title, r, extra = []) {
   return tipAttr(tipLines(title, [
     ...CHANNELS.map((c) => [c, moneyFull(r[c.toLowerCase()] || 0), CH_VAR[c]]),
@@ -1368,3 +1242,6 @@ new ResizeObserver(() => {
 readUrl();
 mountTimers();
 initRole().then(() => { load(); loadInventory(); });
+
+// Test hook: the browser tests (dashboard/cube/tests) put the page in a known state through this.
+window.__app = { state, setLive };

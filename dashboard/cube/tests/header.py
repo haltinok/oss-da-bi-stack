@@ -32,8 +32,8 @@ def check(ok, msg):
 server = ms.start()
 BENCH["on"] = True
 INJECT = """() => {
-  state.data = { latest_orders: [{ order_date: "2021-06-30T10:00:00" }] };
-  setLive(true);
+  window.__app.state.data = { latest_orders: [{ order_date: "2021-06-30T10:00:00" }] };
+  window.__app.setLive(true);
   return true;
 }"""
 GEOMETRY = """() => {
