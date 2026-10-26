@@ -1,6 +1,7 @@
 # Evaluating the builder with a real model
 
-Run these with `ANTHROPIC_API_KEY` set (and `--mode llm`, or `BUILDER_MODE=llm`), once per model or prompt change. Nothing here has been run against the real API yet.
+Run these with a key set (`ANTHROPIC_API_KEY`, or `BUILDER_PROVIDER=deepseek` with `DEEPSEEK_API_KEY`) and `--mode llm` (or `BUILDER_MODE=llm`), once per model or prompt change; run them for each model you consider
+(Opus, Sonnet, `deepseek-flash`, `deepseek-v4-pro`) and compare passes, submissions needed and tokens. Nothing here has been run against a real API yet.
 
 ```bash
 PYTHONPATH=dashboards:. uv run --with pyyaml --with 'jsonschema>=4.18' --with anthropic python -m builder.cli "<request>" --role <role> --mode llm
