@@ -1,5 +1,23 @@
 [
   {
+    "id": "envanter-sagligi",
+    "title": "Envanter sağlığı",
+    "description": "Stok durumu, yeniden sipariş önerileri ve fazla stok. Yalnızca okunur; onay işlemleri satış panosundaki envanter bölümündedir.",
+    "roles": [
+      "admin",
+      "purchasing"
+    ]
+  },
+  {
+    "id": "regional-sales",
+    "title": "Regional sales",
+    "description": "Revenue and orders by territory and product. No cost or profit figures, so it is the same for a manager and a rep; each sees only their own territories.",
+    "roles": [
+      "manager",
+      "rep"
+    ]
+  },
+  {
     "id": "sales-overview",
     "title": "Sales overview",
     "description": "Revenue, margin and orders by channel, product and territory.",

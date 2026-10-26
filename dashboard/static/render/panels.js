@@ -4,8 +4,8 @@ import { el, esc, svgEl } from "../lib/dom.js";
 import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade } from "../lib/charts.js";
 import { tableHtml } from "../lib/table.js";
 import {
-  activeFilters, byBucket, byDims, colorOf, evaluate, humanize, isSelected, markdown, num, ownFilterIds, queriesPerCube, runAll, tableParts, term,
-  timeKey, totals, yearOf,
+  activeFilters, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, runAll, tableParts,
+  tableQueries, term, timeKey, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
 const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
@@ -25,9 +25,9 @@ export function createPanel(def, ctx) {
 // ------------------------------------------------------------------------------------------------------------------ shared card
 function card(def, ctx, { table = true, hint = "", extra = "" } = {}) {
   const root = el("section", { class: "card", "data-panel": def.id });
-  const click = ownFilterIds(def).length ? "Click to filter the other panels; click again to undo" : "";
+  const click = ownFilterIds(def).length ? ctx.t.clickHint : "";
   root.innerHTML = `<div class="card-h"><div><h2>${esc(def.title || "")}</h2>${hint || click ? `<div class="hint">${esc(hint || click)}</div>` : ""}</div><div class="spacer"></div>${extra}${
-    table ? '<button class="tbl-toggle" aria-pressed="false">Table</button>' : ""}<button class="tbl-toggle xls-btn" title="Download this panel\'s data as an Excel file">Excel</button></div><div class="panel-body"></div>`;
+    table ? `<button class="tbl-toggle" aria-pressed="false">${esc(ctx.t.table)}</button>` : ""}<button class="tbl-toggle xls-btn" title="${esc(ctx.t.downloadPanel)}">${esc(ctx.t.excel)}</button></div><div class="panel-body"></div>`;
   return { root, body: root.querySelector(".panel-body") };
 }
 
@@ -43,7 +43,7 @@ function modelPanel(def, ctx, fetchModel, opts = {}) {
     if (!model) return;
     body.innerHTML = "";
     body.style.height = "";
-    if (!model.rows.length) { body.innerHTML = '<div class="empty">No rows match these filters</div>'; return; }
+    if (!model.rows.length) { body.innerHTML = `<div class="empty">${esc(ctx.t.noRows)}</div>`; return; }
     if (tableView) { body.innerHTML = tableHtml({ columns: model.columns, rows: model.rows }); model.afterTable?.(body); } else model.draw(body);
   };
   const toggle = root.querySelector(".tbl-toggle:not(.xls-btn)");
@@ -102,13 +102,10 @@ function kpiPanel(def, ctx) {
   const tileLoad = async (t, i, signal) => {
     const tile = tiles[i];
     tile.classList.add("pending");
-    const filters = activeFilters(ctx.spec, ctx.filterValues(), def);
     const spark = def.sparkline;
+    const q = kpiQueries(ctx.spec, def, t, ctx.filterValues());
     try {
-      const [now, series] = await Promise.all([
-        runAll(ctx.run, queriesPerCube(t.members, { filters }), signal),
-        spark ? runAll(ctx.run, queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: ctx.spec.time.dimension, granularity: spark.granularity }] }), signal) : null,
-      ]);
+      const [now, series] = await Promise.all([runAll(ctx.run, q.now, signal), q.series ? runAll(ctx.run, q.series, signal) : null]);
       const v = evaluate(t, (m) => totals(now).get(m) ?? null);
       values[i] = v;
       tile.querySelector(".value").textContent = fmtOf(t)(v);
@@ -136,7 +133,7 @@ function kpiPanel(def, ctx) {
     redraw() {},
     sheet: () => ({
       name: (def.title || "Key figures").slice(0, 31), title: def.title || "Key figures", subtitle: ctx.subtitle(),
-      columns: [{ label: "Measure", type: "text" }, { label: "Value", type: "text" }],
+      columns: [{ label: ctx.t.measure, type: "text" }, { label: ctx.t.value, type: "text" }],
       rows: terms.map((t, i) => [t.label, { v: values[i], t: XLSX_TYPE[t.format] || "number" }]),
     }),
     load(signal, { force = false } = {}) {
@@ -155,18 +152,15 @@ function timeseriesPanel(def, ctx) {
   const grans = def.granularities || [];
   let gran = def.granularity;
   const switcher = grans.length > 1
-    ? `<div class="seg" role="group" aria-label="Granularity">${grans.map((g) => `<button type="button" data-g="${g}" aria-pressed="${g === gran}">${esc(g)}</button>`).join("")}</div>` : "";
+    ? `<div class="seg" role="group" aria-label="${esc(ctx.t.granularity)}">${grans.map((g) => `<button type="button" data-g="${g}" aria-pressed="${g === gran}">${esc(ctx.t.granularities[g] || g)}</button>`).join("")}</div>` : "";
   const panel = modelPanel(def, ctx, async (signal) => {
-    const members = [...new Set(series.flatMap((s) => s.members))];
-    const res = await runAll(ctx.run, queriesPerCube(members, {
-      timeDimensions: [{ dimension: ctx.spec.time.dimension, granularity: gran }], filters: activeFilters(ctx.spec, ctx.filterValues(), def),
-    }), signal);
+    const res = await runAll(ctx.run, timeseriesQueries(ctx.spec, def, ctx.filterValues(), gran), signal);
     const rows = byBucket(res, timeKey(ctx.spec.time.dimension, gran)).map(({ bucket, values }) => ({
       bucket, label: ctx.bucketLabel(bucket, gran), v: series.map((s) => evaluate(s, (m) => values.get(m) ?? null)),
     }));
     return {
       rows, redrawOnResize: true,
-      columns: [colOf("Period", "text", (r) => r.label, (v) => v), ...series.map((s, i) => colOf(s.label, XLSX_TYPE[s.format || "number"] || "number", (r) => r.v[i], ctx.formatter(s.format)))],
+      columns: [colOf(ctx.t.period, "text", (r) => r.label, (v) => v), ...series.map((s, i) => colOf(s.label, XLSX_TYPE[s.format || "number"] || "number", (r) => r.v[i], ctx.formatter(s.format)))],
       draw: (host) => drawTimeseries(host, rows, series, style, gran, ctx, def),
     };
   }, { extra: switcher, cacheKey: () => gran });
@@ -245,7 +239,7 @@ function drawTimeseries(host, rows, series, style, granularity, ctx, def) {
   }
   rows.forEach((r, i) => {
     const lines = series.map((s, k) => [s.label, ctx.formatter(s.format, true)(r.v[k]), s.color]);
-    if (stacked && series.length > 1) lines.push(["Total", ctx.formatter(series[0].format, true)(r.v.reduce((a, b) => a + (b || 0), 0))]);
+    if (stacked && series.length > 1) lines.push([ctx.t.total, ctx.formatter(series[0].format, true)(r.v.reduce((a, b) => a + (b || 0), 0))]);
     const hit = svgEl("rect", { class: "hit", x: L + band * i, y: T, width: band, height: H - T - B, tabindex: 0, "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(ctx.bucketLabel(r.bucket, granularity), lines)), "aria-label": `${ctx.bucketLabel(r.bucket, granularity)}: ${lines.map(([a, b]) => `${a} ${b}`).join(", ")}` });
     if (filter) {
       hit.addEventListener("click", () => ctx.pick([filter.id], [yearFor(r.bucket)]));
@@ -265,14 +259,9 @@ function barPanel(def, ctx) {
   const stack = (def.stack || []).map((s, i) => ({ ...s, label: s.label || humanize(s.member), color: colorOf(s.color, i) }));
   const measures = def.stack ? stack.map((s) => s.member) : [def.measure];
   return modelPanel(def, ctx, async (signal) => {
-    const dims = [def.by, ...(def.split ? [def.split] : [])];
     const sort = def.sort || "desc";
     const limit = def.limit || 10;
-    const single = !def.stack && !def.split;       // then the database ranks and limits; otherwise totals per row are needed first
-    const res = await runAll(ctx.run, queriesPerCube(measures, {
-      dimensions: dims, filters: activeFilters(ctx.spec, ctx.filterValues(), def),
-      ...(single ? { order: { [def.measure]: sort }, limit } : {}),
-    }), signal);
+    const res = await runAll(ctx.run, barQueries(ctx.spec, def, ctx.filterValues()), signal);
     const by = new Map();
     for (const r of res.flatMap((x) => x.rows)) {
       const k = String(r[def.by]);
@@ -291,7 +280,7 @@ function barPanel(def, ctx) {
     const parts = def.stack ? stack.map((s) => ({ key: s.member, name: s.label, color: s.color })) : splits.map((s, i) => ({ key: s, name: s, color: colorOf(null, i) }));
     const max = Math.max(...rows.map((r) => Math.abs(r.total)), 1);
     const type = XLSX_TYPE[def.format || "number"] || "number";
-    const totalLabel = parts.length ? "Total" : humanize(def.measure);
+    const totalLabel = parts.length ? ctx.t.total : humanize(def.measure);
     return {
       rows, redrawOnResize: false,
       columns: [colOf(humanize(def.by), "text", (r) => r.label, (v) => v), ...parts.map((p) => colOf(p.name, type, (r) => r.parts.get(p.key) ?? 0, f)), colOf(totalLabel, type, (r) => r.total, f)],
@@ -331,7 +320,7 @@ function treemapPanel(def, ctx) {
   const ids = ownFilterIds(def);
   const [d1, d2] = def.group;
   return modelPanel(def, ctx, async (signal) => {
-    const res = await runAll(ctx.run, queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(ctx.spec, ctx.filterValues(), def) }), signal);
+    const res = await runAll(ctx.run, treemapQueries(ctx.spec, def, ctx.filterValues()), signal);
     const rows = res[0].rows.map((r) => ({ a: String(r[d1]), b: d2 ? String(r[d2]) : null, value: num(r[def.measure]) || 0 })).filter((r) => r.value > 0)
       .sort((x, y) => y.value - x.value);
     return {
@@ -377,7 +366,7 @@ function treemapPanel(def, ctx) {
         const isSel = ids.length ? (nested ? isSelected(cur, pickIds(2), [s.a, s.b]) : isSelected(cur, pickIds(1), [s.a])) : false;
         const cell = el("div", { class: `cell${light ? " ink-light" : ""}${isSel ? " sel" : ""}`, tabindex: 0, "aria-pressed": String(isSel),
           style: `left:${s.x + GAP / 2}px;top:${s.y + GAP / 2}px;width:${w}px;height:${h}px;background:${fill}`,
-          "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(nested ? `${s.a} › ${s.b}` : s.a, [[humanize(def.measure), fullF(s.value)], ["Share of total", ctx.formatter("pct")(s.value / total)]])),
+          "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(nested ? `${s.a} › ${s.b}` : s.a, [[humanize(def.measure), fullF(s.value)], [ctx.t.share, ctx.formatter("pct")(s.value / total)]])),
           "aria-label": `${label}: ${fullF(s.value)}` });
         const name = `${isSel ? "✓ " : ""}${esc(label)}`;
         if (w > 64 && h > 34) cell.innerHTML = `<div class="n">${name}</div><div class="v">${esc(f(s.value))}</div>`;
@@ -398,19 +387,15 @@ function tablePanel(def, ctx) {
   const colFor = (c) => {
     const m = c.member, kind = kindOf(m);
     const label = c.label || humanize(m);
-    if (kind.kind === "measure") return colOf(label, XLSX_TYPE[c.format || "number"] || "number", (r) => r.values.get(m) ?? null, ctx.formatter(c.format));
+    if (kind.kind === "measure") return colOf(label, XLSX_TYPE[c.format || "number"] || "number", (r) => r.values.get(m) ?? null, ctx.formatter(c.format, true));
     if (kind.type === "time") return colOf(label, "date", (r) => r.dims[m] && String(r.dims[m]).replace(/\.\d+$/, ""), (v) => (v ? ctx.dateTime(v) : ""));
-    if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format));
+    if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format, true));
     return colOf(label, "text", (r) => (r.dims[m] == null ? "" : String(r.dims[m])), (v) => v);
   };
   return modelPanel(def, ctx, async (signal) => {
-    const filters = activeFilters(ctx.spec, ctx.filterValues(), def);
     const order = Object.entries(def.order || {});
     const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
-    const base = { dimensions, filters, ...(single ? { order: Object.fromEntries(order), limit: def.limit || 100 } : {}) };
-    const res = measures.length
-      ? await runAll(ctx.run, queriesPerCube(measures, base), signal)
-      : [{ cube: "", rows: await ctx.run({ ...base, order: Object.fromEntries(order), limit: def.limit || 100 }, signal) }];
+    const res = await runAll(ctx.run, tableQueries(ctx.spec, def, ctx.filterValues()), signal);
     let rows = byDims(res, dimensions);
     if (!single) {                                    // several measure cubes were merged here: order and limit apply after the merge
       const get = (r, m) => (kindOf(m).kind === "measure" ? r.values.get(m) : r.dims[m]);

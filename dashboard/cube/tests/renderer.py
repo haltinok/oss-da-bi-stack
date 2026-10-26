@@ -6,9 +6,11 @@ Checks the list page, every panel type of dashboards/sales-overview.yml drawn fr
 queries they send, cancelling what is still running), one failing panel not blanking the rest, the Excel export, the dataset switch, a role
 the dashboard is not for, and that the KPI tiles show the same figures as the sales dashboard does for the same data.
 """
+import io
 import json
 import pathlib
 import sys
+import zipfile
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import sync_playwright
@@ -43,7 +45,7 @@ def open_page(browser, path, dataset="live", width=1440, theme="light"):
 
 
 def settled(page, timeout=20000):
-    page.wait_for_function("document.querySelector('#live-text')?.textContent.match(/Updated|Stale/)", timeout=timeout)
+    page.wait_for_function("document.querySelector('#live-text')?.textContent.match(/Updated|Stale|Güncellendi|Eski/)", timeout=timeout)
     page.wait_for_function("!document.querySelector('.card.pending, .kpi.pending')", timeout=timeout)
 
 
@@ -74,10 +76,18 @@ with sync_playwright() as p:
     ms.ROLE["role"] = "admin"
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".dlist a", timeout=20000)
-    check(page.locator(".dlist a").count() == 1 and "Sales overview" in page.inner_text(".dlist"), "/d/ lists the dashboards the role may open")
-    check(page.get_attribute(".dlist a", "href") == "/d/sales-overview", "the list links to /d/<id>")
+    names = page.locator(".dlist h2").all_inner_texts()
+    check(sorted(names) == ["Envanter sağlığı", "Sales overview"], f"/d/ lists the dashboards the role may open ({names})")
+    check(page.get_attribute(".dlist a >> nth=0", "href").startswith("/d/"), "the list links to /d/<id>")
     check(not page.problems, f"the list loads without console errors {page.problems[:2]}")
     ctx.close()
+
+    ms.ROLE["role"] = "rep"
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".dlist a", timeout=20000)
+    check(page.locator(".dlist h2").all_inner_texts() == ["Regional sales"], "a rep is offered only the dashboard made for reps")
+    ctx.close()
+    ms.ROLE["role"] = "admin"
 
     # ---- a whole dashboard
     ctx, page = open_page(browser, "/d/sales-overview")
@@ -272,6 +282,46 @@ with sync_playwright() as p:
     settled(page)
     check(page.queries and all("/cube-bench/" in u for u in page.queries), "the 250M dataset reads its own Cube")
     check(page.text_content("#dataset-badge") == "250M benchmark", "the badge names the benchmark")
+    ctx.close()
+
+    # ---- language, currency, theme
+    ms.ROLE["role"] = "purchasing"
+    ctx, page = open_page(browser, "/d/envanter-sagligi")
+    settled(page)
+    check(not page.problems, f"the Turkish dashboard loads without console errors {page.problems[:2]}")
+    check(page.get_attribute("html", "lang") == "tr", "the page language follows the spec's locale")
+    check("Durum" in page.inner_text("#filters") and "Tümü" in page.inner_text("#filters"), "filter labels and 'All' are Turkish")
+    check("Tümünü dışa aktar" in page.inner_text("#export-all") and "Güncellendi" in page.inner_text("#live-text"), "the page's own words are Turkish")
+    check(page.locator('[data-panel="durumlar"] .tbl-toggle', has_text="Tablo").count() == 1, "panel buttons are Turkish")
+    check("₺" in page.inner_text('[data-panel="ozet"]'), "money tiles use the lira sign")
+    check("₺4.200" in page.inner_text('[data-panel="siparis"]'), "a table shows whole lira with Turkish separators")
+    check("Sign out" not in page.inner_text("#who") and "Çıkış" in page.inner_text("#who"), "Sign out is translated")
+    with page.expect_download(timeout=10000) as dl:
+        page.click("#export-all")
+    xl = zipfile.ZipFile(io.BytesIO(pathlib.Path(dl.value.path()).read_bytes()))
+    styles = xl.read("xl/styles.xml").decode()
+    check("&quot;₺&quot;#,##0.00" in styles and "&quot;$&quot;" not in styles, "the Excel file formats money with the lira sign")
+    ctx.close()
+    ms.ROLE["role"] = "rep"
+    ctx, page = open_page(browser, "/d/envanter-sagligi")
+    page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
+    check("rolünüz (rep) için kullanılamaz" in page.inner_text("#error"), "the role message is Turkish too")
+    ctx.close()
+    ms.ROLE["role"] = "admin"
+
+    ctx, page = open_page(browser, "/d/sales-overview")
+    def themed(route):
+        spec = json.loads(route.fetch().text())
+        spec.update(locale="tr-TR", currency="TRY", theme={"name": "Fairstone", "logo": "/render/none.svg", "colors": {"internet": "#112233"}})
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+    page.route("**/dashboards/sales-overview.json", themed)
+    page.reload()
+    settled(page)
+    check("Tem '20" in page.inner_text('[data-panel="trend"]'), "month names follow the locale (Tem = July)")
+    check(page.text_content("#brand-name") == "Fairstone" and page.is_visible("#brand-name"), "the theme's name is shown above the title")
+    check(page.get_attribute("#logo", "src") == "/render/none.svg" and not page.eval_on_selector("#logo", "n => n.hidden"), "the theme's logo is set")
+    check(page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--internet').trim()") == "#112233", "the theme's colours replace the tokens")
+    check(page.evaluate("getComputedStyle(document.querySelector('[data-panel=\"trend\"] .legend .swatch')).backgroundColor") == "rgb(17, 34, 51)", "a series coloured `internet` follows the theme")
     ctx.close()
 
     # ---- unknown dashboard, wrong role

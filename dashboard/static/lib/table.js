@@ -11,8 +11,8 @@ export const tableHtml = ({ columns, rows }) => {
 };
 
 /** Sheets [{ name, title, subtitle, columns: [{label, type}], rows }] -> an .xlsx download named `<prefix>-<slug>-<yyyymmdd-hhmm>.xlsx`. */
-export function downloadXlsx(sheets, { prefix, slug }) {
-  const blob = buildXlsx(sheets);
+export function downloadXlsx(sheets, { prefix, slug, symbol }) {
+  const blob = buildXlsx(sheets, { symbol });
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
   const a = el("a", { href: URL.createObjectURL(blob), download: `${prefix}-${slug}-${stamp}.xlsx` });
   document.body.append(a);

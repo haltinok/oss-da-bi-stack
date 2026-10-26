@@ -8,6 +8,7 @@ import yaml
 
 from . import catalog as cat
 from .compile import compile_spec
+from .lint import cube_planner, lint
 from .validate import validate
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
@@ -102,6 +103,28 @@ def cmd_build(args):
     return 0
 
 
+def cmd_lint(args):
+    """Validate, then ask Cube whether a pre-aggregation serves each query of each dashboard. Warnings do not fail the run unless --strict."""
+    token = os.environ.get("CUBE_TOKEN")
+    if not token or not args.cube_url:
+        sys.exit("lint asks a running Cube: pass --cube-url and set CUBE_TOKEN to a Cube JWT (role admin)")
+    plan = cube_planner(args.cube_url, token)
+    catalog, status = cat.from_model(args.model), 0        # the members and joins come from the model files; Cube only plans queries
+    for path in args.files:
+        spec, used, errs = _check(path, catalog)
+        if errs:
+            print(f"{path}: {len(errs)} problem(s) (run validate)")
+            status = 1
+            continue
+        found = lint(compile_spec(spec, used), plan)
+        print(f"{path}: " + ("every query is served by a pre-aggregation" if not found else f"{len(found)} warning(s)"))
+        for severity, message in found:
+            print(f"  - {severity}: {message}")
+        if found and args.strict:
+            status = 1
+    return status
+
+
 def cmd_meta(args):
     catalog = _catalog(args)
     if args.json:
@@ -133,6 +156,10 @@ def main(argv=None):
     b.add_argument("--dir", default=str(REPO / "dashboards"))
     b.add_argument("--out", default=str(REPO / "dashboards" / "build"))
     b.set_defaults(fn=cmd_build)
+    li = sub.add_parser("lint", parents=[src], help="does a Cube pre-aggregation serve every query? (needs --cube-url and $CUBE_TOKEN)")
+    li.add_argument("files", nargs="+")
+    li.add_argument("--strict", action="store_true", help="exit 1 on any warning (use it for a dashboard on the 250M dataset)")
+    li.set_defaults(fn=cmd_lint)
     m = sub.add_parser("meta", parents=[src], help="the catalog of cubes, measures and dimensions (for the authoring agent)")
     m.add_argument("--json", action="store_true")
     m.set_defaults(fn=cmd_meta)

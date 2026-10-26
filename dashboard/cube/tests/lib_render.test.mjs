@@ -6,6 +6,7 @@ import {
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
   pick, queriesPerCube, tableParts, term, totals, yearOf,
 } from "../../static/render/plan.js";
+import { stringsFor, translations } from "../../static/render/strings.js";
 
 const spec = {
   time: { dimension: "dates.full_date" },
@@ -189,4 +190,14 @@ test("a stacked bar and a ratio series count as reading all their measures", () 
   assert.deepEqual(panelMeasures({ type: "bar", stack: [{ member: "a.rev" }, { member: "b.rev" }] }), ["a.rev", "b.rev"]);
   assert.deepEqual(panelMeasures({ type: "bar", measure: "a.rev" }), ["a.rev"]);
   assert.deepEqual(panelMeasures({ type: "timeseries", series: [{ ratio: { num: ["a.gp"], den: ["a.rev"] }, label: "m" }] }), ["a.gp", "a.rev"]);
+});
+
+test("every language has every word the page uses, and an unknown language falls back to English", () => {
+  const keys = Object.keys(translations.en).sort();
+  for (const [lang, words] of Object.entries(translations)) assert.deepEqual(Object.keys(words).sort(), keys, `${lang} is missing or has extra words`);
+  assert.equal(stringsFor("tr-TR").all, "Tümü");
+  assert.equal(stringsFor("de-DE").all, "All");
+  assert.equal(stringsFor(undefined).reset, "Reset filters");
+  assert.match(stringsFor("tr").notForRole("Pano", "rep"), /rolünüz \(rep\)/);
+  assert.deepEqual(Object.keys(translations.tr.granularities), Object.keys(translations.en.granularities));
 });

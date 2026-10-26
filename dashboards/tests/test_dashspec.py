@@ -136,6 +136,10 @@ BROKEN = [
      ["panel 'margin' (timeseries)", "series[0].ratio.num[2]", "'internet_sales.nope' is not in the Cube model"]),
     ("a series sum without a label", lambda s: panel(s, "trend")["series"].append({"sum": ["internet_sales.revenue", "reseller_sales.revenue"]}),
      ["panel 'trend' (timeseries)", "series[2]", "needs a 'member'"]),
+    ("role rep on a dashboard with profit", lambda s: s.update(roles=["admin", "rep"]),
+     ["panel 'kpis' (kpi)", "role 'rep' cannot read 'internet_sales.gross_profit'", "profit and margin are hidden from reps"]),
+    ("role purchasing on a sales dashboard", lambda s: s.update(roles=["purchasing"]),
+     ["role 'purchasing' cannot read", "is not available to purchasing"]),
     ("ignore_filters names an unknown filter", _set("top", "ignore_filters", ["nope"]),
      ["panel 'top'", "ignore_filters:", "no filter with id 'nope'"]),
     ("table order on a column that is not shown", _set("lines", "order", {"internet_sales.units": "desc"}),
@@ -172,6 +176,7 @@ def test_ignore_filters_fixes_the_join_error():
         s["panels"].append({"id": "stock", "type": "kpi", "measures": [{"member": "inventory_health.stockout_items"}],
                             "ignore_filters": ["fy", "region", "category", "subcategory"]})
         s["layout"].append([{"stock": 12}])
+        s["roles"] = ["admin"]          # a manager may not read inventory data (see the role rules)
     assert run(add) == []
 
 
@@ -265,3 +270,147 @@ def test_the_committed_build_is_current(tmp_path):
     for f in sorted(out.iterdir()):
         assert (committed / f.name).read_text() == f.read_text(), f"{f.name} is stale: run scripts/dashspec build"
     assert sorted(p.name for p in committed.iterdir()) == sorted(p.name for p in out.iterdir())
+
+
+# ---------------------------------------------------------------------------------------------------------------- queries and lint
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+
+from dashspec.lint import filter_states, lint  # noqa: E402
+from dashspec.queries import panel_queries  # noqa: E402
+
+
+def built(name):
+    return json.loads((REPO / "dashboards" / "build" / f"{name}.json").read_text())
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is needed to run the renderer's query builders")
+@pytest.mark.parametrize("path", sorted((REPO / "dashboards" / "build").glob("*.json")), ids=lambda p: p.stem)
+def test_python_queries_match_the_renderers(path):
+    """The queries dashspec lint asks Cube about are the ones the page sends (plan.js is the source of truth)."""
+    spec = json.loads(path.read_text())
+    if path.name == "index.json":
+        pytest.skip("not a dashboard")
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        for pid, js in state["panels"].items():
+            panel = next(p for p in spec["panels"] if p["id"] == pid)
+            assert panel_queries(spec, panel, state["values"]) == js, f"{pid} under {state['values']}"
+
+
+def test_lint_reports_queries_no_rollup_serves_and_those_cube_did_not_describe():
+    spec = built("sales-overview")
+    calls = []
+
+    def plan(q):
+        calls.append(q)
+        if "inventory" in json.dumps(q):
+            return None
+        return [] if "products.name" in q.get("dimensions", []) else ["internet_sales.monthly"]
+
+    found = lint(spec, plan)
+    text = "\n".join(m for _, m in found)
+    assert any(s == "warning" for s, _ in found)
+    assert "panel 'top' (bar): no pre-aggregation serves" in text and "products.name" in text
+    assert "panel 'kpis'" not in text, "served queries are not reported"
+    assert len(calls) == len({json.dumps(c, sort_keys=True) for c in calls}), "the same query is only asked once"
+    assert [label for label, _ in filter_states(spec)][:2] == ["no filter", "filter 'fy'"]
+    assert lint(spec, lambda q: ["x"]) == []
+    assert all(s == "unknown" for s, _ in lint(spec, lambda q: None))
+
+
+def test_cli_lint_needs_a_cube(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("CUBE_TOKEN", raising=False)
+    with pytest.raises(SystemExit) as e:
+        main(["lint", str(REPO / "dashboards" / "sales-overview.yml")])
+    assert "CUBE_TOKEN" in str(e.value)
+
+
+def test_role_rules_for_inventory_dashboards():
+    spec = yaml.safe_load((REPO / "dashboards" / "envanter-sagligi.yml").read_text())
+    assert validate(copy.deepcopy(spec), CATALOG)[0] == []
+    spec["roles"] = ["admin", "purchasing", "marketing"]
+    text = "\n".join(validate(spec, CATALOG)[0])
+    assert "role 'marketing' cannot read 'inventory_health.suggested_order_value_total'" in text and "supplier and order data" in text
+    spec["roles"] = ["manager"]
+    assert "role 'manager' cannot read 'inventory_health." in "\n".join(validate(spec, CATALOG)[0])
+
+
+def test_role_rules_match_cube_js():
+    """validate.py mirrors the role rules of cube/cube.js; if one changes, so must the other."""
+    import re
+
+    import dashspec.validate as v
+    js = (REPO / "cube" / "cube.js").read_text()
+
+    def js_set(name):
+        return set(re.findall(r"'([a-z_]+)'", re.search(rf"const {name} = new Set\(\[(.*?)\]\)", js, re.S).group(1)))
+    assert js_set("PROFIT_MEMBERS") == v.PROFIT_MEMBERS
+    assert js_set("INVENTORY_CUBES") == v.INVENTORY_CUBES
+    assert js_set("SUPPLIER_MEMBERS") == v.SUPPLIER_MEMBERS
+    for role, cubes in v.ROLE_CUBES.items():
+        assert set(re.findall(r"'([a-z_]+)'", re.search(rf"{role}: new Set\(\[(.*?)\]\)", js).group(1))) == cubes
+
+
+def test_a_rep_dashboard_uses_no_profit_member():
+    for path in (REPO / "dashboards").glob("*.yml"):
+        spec = yaml.safe_load(path.read_text())
+        if "rep" in spec.get("roles", []):
+            assert validate(spec, CATALOG)[0] == [], path.name
+
+
+def test_cli_lint_against_a_stub_cube(capsys, monkeypatch):
+    """`dashspec lint` asks GET /cubejs-api/v1/sql for each query and reports the ones whose plan uses no pre-aggregation."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    seen = []
+
+    class Stub(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            assert self.headers["Authorization"] == "tok"
+            q = json.loads(parse_qs(urlparse(self.path).query)["query"][0])
+            seen.append(q)
+            body = {"sql": {"sql": ["select 1", []], "preAggregations": [] if "products.name" in q.get("dimensions", []) else [{"tableName": "x"}]}}
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode())
+
+    server = HTTPServer(("127.0.0.1", 0), Stub)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("CUBE_TOKEN", "tok")
+    good = str(REPO / "dashboards" / "sales-overview.yml")
+    url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        assert main(["lint", good, "--cube-url", url]) == 0
+        out = capsys.readouterr().out
+        assert "warning(s)" in out and "panel 'top' (bar): no pre-aggregation serves" in out and "panel 'kpis'" not in out
+        assert main(["lint", good, "--cube-url", url, "--strict"]) == 1
+        assert seen, "Cube was asked"
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.parametrize("theme,needle", [
+    ({"colors": {"internet": "blue"}}, "theme.colors.internet"),
+    ({"colors": {"sidebar": "#112233"}}, "theme.colors"),
+    ({"logo": "javascript:alert(1)"}, "theme.logo"),
+    ({"logo": "http://example.com/x.svg"}, "theme.logo"),
+    ({"name": "x" * 61}, "theme.name"),
+    ({"title": "x"}, "theme"),
+])
+def test_theme_is_checked(theme, needle):
+    errors = run(lambda s: s.update(theme=theme))
+    assert errors and needle in "\n".join(errors), errors
+
+
+def test_a_good_theme_compiles():
+    spec = copy.deepcopy(GOOD)
+    spec["theme"] = {"name": "Fairstone", "logo": "/assets/logo.svg", "colors": {"internet": "#112233", "focus": "#3987E5"}}
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    assert compile_spec(spec, used)["theme"]["colors"]["internet"] == "#112233"

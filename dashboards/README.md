@@ -30,6 +30,25 @@ PYTHONPATH=dashboards uv run --with pytest --with pyyaml --with 'jsonschema>=4.1
 ```
 CI runs them in the `dashspec` job, and validates and compiles every `dashboards/*.yml`.
 
+## Language, currency, theme, roles
+- `locale` (`en-US`, `tr-TR`, ...) sets number and date formats and month names; the page's own words (buttons, "All", status, messages) exist in
+  English and Turkish (`render/strings.js`) and fall back to English. Titles, labels and descriptions are the author's, one language per file.
+- `currency` (`USD`, `TRY`, ...) sets the currency sign on screen and in the Excel export. It is display only: the data is not converted.
+- `theme: { name, logo, colors }` puts a name and a logo (a path or an https URL) in the header and recolours the theme tokens
+  (`internet`, `reseller`, `focus`, `live`, `good`, `bad`, `warn`; `#rrggbb`). A series with `color: internet` follows the theme.
+- `roles` lists who may open the page. Cube enforces what each role may read; the validator mirrors those rules (rep: no profit members;
+  purchasing/marketing: inventory data only, marketing no supplier data; manager/rep: no inventory, no customers), so a page that would
+  show an error to a listed role does not validate. A test keeps the mirror equal to `cube/cube.js`.
+
+## Is it fast? `dashspec lint`
+```bash
+CUBE_TOKEN=<an admin Cube JWT> scripts/dashspec lint dashboards/sales-overview.yml --cube-url http://localhost:4000 [--strict]
+```
+For every panel, with no filter, each filter alone and all filters, it asks Cube to *plan* the queries the page sends (`GET /v1/sql`; nothing
+is run) and reports those no pre-aggregation serves: they scan the fact table, fine on the live mart, seconds at 250M rows. `--strict` fails
+on any warning. The queries are the renderer's own (`render/plan.js`); `queries.py` mirrors them and a test compares the two.
+To look at a page without a stack: `uv run --with playwright python -I dashboard/cube/tests/shot.py <id> --role rep --width 390`.
+
 ## Serving
 `dashboards/build/` is **committed**: nginx (the `dashboard-cube` service) serves it at `/dashboards/`, and `/d/` lists what the signed-in
 role may open, `/d/<id>` draws one. After editing a YAML file run `scripts/dashspec build` and commit the JSON with it; a test fails if

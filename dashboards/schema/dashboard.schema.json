@@ -18,6 +18,27 @@
       "minItems": 1,
       "uniqueItems": true
     },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "maxLength": 60 },
+        "logo": { "type": "string", "pattern": "^(/|https://)[^\\s\"'<>]+$" },
+        "colors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "internet": { "$ref": "#/$defs/hex" },
+            "reseller": { "$ref": "#/$defs/hex" },
+            "focus": { "$ref": "#/$defs/hex" },
+            "live": { "$ref": "#/$defs/hex" },
+            "good": { "$ref": "#/$defs/hex" },
+            "bad": { "$ref": "#/$defs/hex" },
+            "warn": { "$ref": "#/$defs/hex" }
+          }
+        }
+      }
+    },
     "time": {
       "type": "object",
       "required": ["dimension"],
@@ -46,6 +67,7 @@
   },
   "$defs": {
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+    "hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
     "member": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" },
     "format": { "enum": ["money", "int", "decimal", "pct", "number"] },
     "granularity": { "enum": ["hour", "day", "week", "month", "quarter", "year"] },

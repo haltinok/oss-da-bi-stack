@@ -89,3 +89,10 @@ test("buildXlsx writes a zip with the workbook parts", async () => {
   for (const part of ["[Content_Types].xml", "xl/workbook.xml", "xl/worksheets/sheet1.xml"]) assert.ok(text.includes(part), part);
   assert.ok(text.includes("Helmet") && text.includes("12.5"));
 });
+
+test("buildXlsx formats money with the page's currency sign", async () => {
+  const sheet = [{ name: "S", title: "T", subtitle: "", columns: [{ label: "A", type: "money" }], rows: [[1.5]] }];
+  const text = async (opts) => new TextDecoder("utf-8").decode(new Uint8Array(await buildXlsx(sheet, opts).arrayBuffer()));
+  assert.ok((await text({ symbol: "₺" })).includes('formatCode="&quot;₺&quot;#,##0.00"'), "the lira sign is in the number format");
+  assert.ok((await text()).includes('formatCode="&quot;$&quot;#,##0.00"'), "the dollar sign is the default");
+});

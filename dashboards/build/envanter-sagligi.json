@@ -1,0 +1,295 @@
+{
+  "spec": 1,
+  "id": "envanter-sagligi",
+  "title": "Envanter sağlığı",
+  "description": "Stok durumu, yeniden sipariş önerileri ve fazla stok. Yalnızca okunur; onay işlemleri satış panosundaki envanter bölümündedir.",
+  "locale": "tr-TR",
+  "currency": "TRY",
+  "roles": [
+    "admin",
+    "purchasing"
+  ],
+  "time": {
+    "dimension": "inventory_health.last_sale_date"
+  },
+  "filters": [
+    {
+      "id": "durum",
+      "dimension": "inventory_health.status",
+      "label": "Durum"
+    },
+    {
+      "id": "kategori",
+      "dimension": "products.category",
+      "label": "Kategori"
+    }
+  ],
+  "panels": [
+    {
+      "id": "ozet",
+      "type": "kpi",
+      "measures": [
+        {
+          "member": "inventory_health.product_count",
+          "label": "Ürün",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.stockout_items",
+          "label": "Stoksuz",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.reorder_items",
+          "label": "Sipariş gerekli",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.overstock_items",
+          "label": "Fazla stok",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.suggested_order_value_total",
+          "label": "Önerilen sipariş tutarı",
+          "format": "money"
+        },
+        {
+          "member": "inventory_health.excess_value_total",
+          "label": "Fazla stok tutarı",
+          "format": "money"
+        }
+      ]
+    },
+    {
+      "id": "durumlar",
+      "type": "bar",
+      "title": "Duruma göre ürün sayısı",
+      "measure": "inventory_health.product_count",
+      "by": "inventory_health.status",
+      "sort": "desc",
+      "limit": 8,
+      "format": "int",
+      "on_click": {
+        "set_filter": "durum"
+      }
+    },
+    {
+      "id": "tedarikci",
+      "type": "bar",
+      "title": "Tedarikçiye göre önerilen sipariş tutarı",
+      "measure": "inventory_health.suggested_order_value_total",
+      "by": "inventory_health.vendor_name",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money"
+    },
+    {
+      "id": "siparis",
+      "type": "table",
+      "title": "Yeniden sipariş listesi",
+      "columns": [
+        {
+          "member": "inventory_health.product_name",
+          "label": "Ürün"
+        },
+        {
+          "member": "inventory_health.status",
+          "label": "Durum"
+        },
+        {
+          "member": "inventory_health.on_hand",
+          "label": "Eldeki",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.on_order",
+          "label": "Siparişte",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.days_of_cover",
+          "label": "Kapsama (gün)",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.suggested_order_qty",
+          "label": "Önerilen adet",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.suggested_order_value",
+          "label": "Önerilen tutar",
+          "format": "money"
+        },
+        {
+          "member": "inventory_health.vendor_name",
+          "label": "Tedarikçi"
+        }
+      ],
+      "order": {
+        "inventory_health.suggested_order_value": "desc"
+      },
+      "limit": 25
+    },
+    {
+      "id": "fazla",
+      "type": "table",
+      "title": "Fazla ve ölü stok",
+      "columns": [
+        {
+          "member": "inventory_health.product_name",
+          "label": "Ürün"
+        },
+        {
+          "member": "inventory_health.status",
+          "label": "Durum"
+        },
+        {
+          "member": "inventory_health.on_hand",
+          "label": "Eldeki",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.excess_units",
+          "label": "Fazla adet",
+          "format": "int"
+        },
+        {
+          "member": "inventory_health.excess_value",
+          "label": "Fazla tutar",
+          "format": "money"
+        },
+        {
+          "member": "inventory_health.suggested_discount_pct",
+          "label": "Önerilen indirim %",
+          "format": "int"
+        }
+      ],
+      "order": {
+        "inventory_health.excess_value": "desc"
+      },
+      "limit": 25
+    },
+    {
+      "id": "not",
+      "type": "text",
+      "title": "Not",
+      "markdown": "Bu sayfa **demo verisi** üzerindedir. Tutarlar kaynakta ABD doları cinsindedir; burada yalnızca biçim (₺ simgesi, Türkçe ayraçlar) gösterilir, kur dönüşümü yapılmaz.\n"
+    }
+  ],
+  "layout": [
+    [
+      {
+        "panel": "ozet",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "durumlar",
+        "span": 5
+      },
+      {
+        "panel": "tedarikci",
+        "span": 7
+      }
+    ],
+    [
+      {
+        "panel": "siparis",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "fazla",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "not",
+        "span": 12
+      }
+    ]
+  ],
+  "members": {
+    "inventory_health.days_of_cover": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.excess_units": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.excess_value": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.excess_value_total": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "inventory_health.last_sale_date": {
+      "kind": "dimension",
+      "type": "time"
+    },
+    "inventory_health.on_hand": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.on_order": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.overstock_items": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "inventory_health.product_count": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "inventory_health.product_name": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "inventory_health.reorder_items": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "inventory_health.status": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "inventory_health.stockout_items": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "inventory_health.suggested_discount_pct": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.suggested_order_qty": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.suggested_order_value": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "inventory_health.suggested_order_value_total": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "inventory_health.vendor_name": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "products.category": {
+      "kind": "dimension",
+      "type": "string"
+    }
+  }
+}

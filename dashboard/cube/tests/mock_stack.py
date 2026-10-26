@@ -23,6 +23,8 @@ POOLS = {
     "subcategory": ["Road Bikes", "Mountain Bikes", "Helmets", "Jerseys"],
     "name": ["Road-150 Red", "Mountain-200 Black", "Sport-100 Helmet", "Long-Sleeve Logo Jersey", "HL Road Frame"],
     "group_name": ["North America", "Europe"], "region": ["Canada", "Germany", "France"], "country": ["Canada", "Germany", "France"],
+    "vendor_name": ["Proseware", "Litware", "Fabrikam"], "on_hand": [12, 480], "on_order": [0, 60], "days_of_cover": [4, 210], "suggested_order_qty": [100, 40],
+    "suggested_order_value": [4200, 900], "excess_units": [30, 0], "excess_value": [1500, 80], "suggested_discount_pct": [10, 30],
     "order_date": ["2021-06-30T10:00:00.000", "2021-06-29T09:30:00.000"], "order_number": ["SO1", "SO2", "SO3", "SO4"], "order_status": [5], "status": ["stockout", "reorder_now", "overstock"],
 }
 MONTHS = [f"{2020 + (6 + i) // 12}-{(6 + i) % 12 + 1:02d}-01T00:00:00.000" for i in range(12)]     # Jul 2020 .. Jun 2021
