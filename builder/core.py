@@ -19,8 +19,11 @@ from dashspec import catalog as cat
 from dashspec.compile import compile_spec
 from dashspec.validate import ROLE_CUBES, denied, validate
 
-MODEL = os.environ.get("BUILDER_MODEL", "claude-opus-5-5")
-EFFORT = os.environ.get("BUILDER_EFFORT", "medium")
+from builder import provider
+
+MODEL = provider.model()                                         # the model of this process (see builder/provider.py for DeepSeek and other compatible servers)
+EFFORT = os.environ.get("BUILDER_EFFORT", "medium")              # sent to Anthropic only; empty sends nothing
+SPEC_REFERENCE = os.environ.get("BUILDER_SPEC_REFERENCE", "1") not in ("0", "", "false")
 MAX_ATTEMPTS = int(os.environ.get("BUILDER_MAX_ATTEMPTS", "3"))   # failed submissions before giving up
 MAX_TURNS = MAX_ATTEMPTS + 3                                       # plus the turns that only talk
 MAX_TOKENS = 8000
@@ -63,7 +66,10 @@ problems, fix them and submit again. Never invent a member or approximate a metr
 say what is missing. Keep it focused (a KPI row, one or two charts, maybe a table); do not add panels that were not asked for.
 When the request changes an existing dashboard, you are given its YAML: submit the complete changed file.
 
-A complete example:
+The complete field reference (generated from the schema; every field the file may contain):
+{reference}
+
+Complete examples that are valid for this user:
 {example}
 
 The catalog (cube, join targets, measures [type], dimensions [type]) for this user:
@@ -105,20 +111,44 @@ def catalog_text(catalog: cat.Catalog) -> str:
     return "\n".join(lines)
 
 
+def reference_text() -> str:
+    """The spec reference generated from the schema (docs/dashboard-spec-reference.md): a weaker or cheaper model needs the exact fields, not only the cheat sheet."""
+    if not SPEC_REFERENCE:
+        return ""
+    try:
+        from dashspec.docs import generate
+        text = generate().split("\n", 4)[-1].strip()
+        # the role paragraph names members some roles cannot read; the model is only told about what this role can (see the catalog below)
+        lines, out, skip = text.split("\n"), [], False
+        for line in lines:
+            if line.startswith("- **Roles:**"):
+                skip = True
+                continue
+            if skip and (line.startswith("- ") or not line.strip()):
+                skip = False
+            if not skip:
+                out.append(line)
+        return "\n".join(out)
+    except Exception:  # noqa: BLE001 (a missing schema file must not stop a build)
+        return ""
+
+
 def example_spec(catalog: cat.Catalog, role: str) -> str:
-    """A complete spec that is valid for this role, composed from the catalog it may read (so it never names a member the role cannot see)."""
+    """Complete specs that are valid for this role, composed from the catalog it may read (so they never name a member the role cannot see)."""
     from builder import composer
-    asks = ("revenue and orders by month, by region and top products, a table of latest orders and a treemap", "stock status and an excess stock table")
-    for ask in asks:
+    out = []
+    for title, ask in (("a dashboard with KPIs, a time chart, breakdowns, a table and a treemap", "revenue and orders by month, by region and top products, a table of latest orders and a treemap"),
+                       ("a drill-down line chart and a pie with click-to-filter, in Turkish, with labels in Turkish", "Türkçe: yıl ay gün drill çizgi grafik ve alt kategoriye göre pasta grafiği"),
+                       ("an inventory dashboard", "stock status and an excess stock table")):
         comp = composer.compose(ask, catalog, role)
         if comp.spec:
-            return yaml.safe_dump(comp.spec, sort_keys=False, allow_unicode=True, width=140)
-    return ""
+            out.append(f"# {title}\n" + yaml.safe_dump(comp.spec, sort_keys=False, allow_unicode=True, width=140))
+    return "\n---\n".join(out[:2])
 
 
 def system_blocks(catalog: cat.Catalog, role: str) -> list[dict]:
     visible = visible_catalog(catalog, role)
-    text = SYSTEM.format(guide=SPEC_GUIDE, example=example_spec(visible, role), catalog=catalog_text(visible))
+    text = SYSTEM.format(guide=SPEC_GUIDE, reference=reference_text(), example=example_spec(visible, role), catalog=catalog_text(visible))
     return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
 
@@ -127,6 +157,7 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     """-> ({ yaml, spec, notes }, []) for a spec this role can render, or (None, problems) to give back to the model."""
     if len(text) > MAX_YAML:
         return None, [f"the file is too long ({len(text)} characters, at most {MAX_YAML})"]
+    text = re.sub(r"^\s*```(?:ya?ml)?[ \t]*\n|\n[ \t]*```\s*$", "", text)             # a model sometimes wraps the file in a code fence
     try:
         spec = yaml.safe_load(text)
     except yaml.YAMLError as e:
@@ -166,12 +197,12 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
     if current_yaml:
         user += f"\n\nThe current dashboard (change it as asked and submit the complete file):\n```yaml\n{current_yaml}\n```"
     messages = [{"role": "user", "content": user}]
-    log("request", {"model": MODEL, "mode": mode, "role": role, "prompt": prompt, "refine": bool(current_yaml)})
+    log("request", {"model": provider.model(), "mode": mode, "role": role, "prompt": prompt, "refine": bool(current_yaml)})
     usage = {"input_tokens": 0, "output_tokens": 0, "turns": 0}
     failures, last_errors, summary = 0, [], ""
     out = {"status": "failed", "message": "", "yaml": None, "spec": None, "notes": [], "attempts": 0}
     for turn in range(MAX_TURNS):
-        response = client.messages.create(model=MODEL, max_tokens=MAX_TOKENS, system=system, tools=TOOLS, messages=messages, output_config={"effort": EFFORT})
+        response = client.messages.create(max_tokens=MAX_TOKENS, tools=TOOLS, messages=messages, **provider.request_kwargs(system, EFFORT))
         usage["turns"] += 1
         usage["input_tokens"] += getattr(response.usage, "input_tokens", 0) or 0
         usage["output_tokens"] += getattr(response.usage, "output_tokens", 0) or 0
@@ -218,7 +249,7 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
         out["message"] = out["message"] or "The model did not finish."
     if out["status"] == "failed":
         out["problems"] = last_errors
-    out["usage"], out["mode"], out["model"] = usage, mode, MODEL if mode == "llm" else "rule-based stand-in"
+    out["usage"], out["mode"], out["model"] = usage, mode, provider.model() if mode == "llm" else "rule-based stand-in"
     log("result", {k: v for k, v in out.items() if k not in ("spec",)})
     return out
 

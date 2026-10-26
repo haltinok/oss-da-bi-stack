@@ -62,7 +62,7 @@ const show = (host, o) => {
   host.innerHTML = `${o.title ? `<strong>${esc(o.title)}</strong>` : ""}<ul>${o.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
 };
 
-const modeNote = (info, t) => (info.mode === "llm" ? t.modeLlm : t.modeStandin);
+const modeNote = (info, t) => (info.mode === "llm" ? `${t.modeLlm}${info.provider ? ` (${info.provider}${info.model ? `, ${info.model}` : ""})` : ""}` : t.modeStandin);
 
 // ------------------------------------------------------------------------------------------------------------------ the prompt box (/d/)
 export function mountPromptBox(host, api, t) {

@@ -9,7 +9,7 @@
 
 Every request carries a Keycloak access token (verified like the actions service does). The role from the token decides what the model is shown and
 what the validator accepts; Cube still enforces access on every query the finished dashboard sends. Only member names and descriptions go to the model,
-never data rows. With ANTHROPIC_API_KEY set the model is Claude; without it a rule-based stand-in answers (a fixed set of phrases, no API calls). Each
+never data rows. With an API key set the model is Claude (or DeepSeek or another Anthropic-compatible server: builder/provider.py); without it a rule-based stand-in answers (a fixed set of phrases, no API calls). Each
 user may build BUILDER_RATE_LIMIT times an hour and use BUILDER_DAILY_TOKENS model tokens a day; at most BUILDER_MAX_CONCURRENT builds run at once and a
 model call gives up after BUILDER_TIMEOUT seconds. Every build writes one JSON line (stdout, and BUILDER_LOG_FILE if set).
 """
@@ -30,7 +30,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from builder import core
+from builder import core, provider
 from builder.standin import StandInClient
 
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
@@ -49,17 +49,16 @@ if MODE not in ("auto", "llm", "standin"):
 
 def mode() -> str:
     if MODE == "auto":
-        return "llm" if os.environ.get("ANTHROPIC_API_KEY") else "standin"
-    if MODE == "llm" and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(503, "BUILDER_MODE=llm needs ANTHROPIC_API_KEY")
+        return "llm" if provider.has_key() else "standin"
+    if MODE == "llm" and not provider.has_key():
+        raise HTTPException(503, "BUILDER_MODE=llm needs an API key (ANTHROPIC_API_KEY, or DEEPSEEK_API_KEY with BUILDER_PROVIDER=deepseek)")
     return MODE
 
 
 def make_client(m: str, role: str):
     if m == "standin":
         return StandInClient(CATALOG, role)
-    import anthropic
-    return anthropic.Anthropic(timeout=TIMEOUT, max_retries=1)
+    return provider.make_client(TIMEOUT)
 
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
@@ -155,8 +154,8 @@ def healthz() -> dict:
 @app.get("/info")
 def info(user: User_) -> dict:
     m = mode()
-    return {"mode": m, "model": core.MODEL if m == "llm" else "rule-based stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role),
-            "note": "A language model reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
+    return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role),
+            "note": f"A language model ({provider.label()}, {provider.model()}) reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
 
 
 @app.get("/usage")

@@ -14,6 +14,26 @@ whoever has to decide whether to trust it. The user's view is in [`builder/READM
 The builder only ever produces a **spec**: YAML that names Cube members. It never queries data, never writes SQL and never sees a row. The finished dashboard
 reads data like every other dashboard: from Cube, with the signed-in user's own token.
 
+## Which model: Claude, DeepSeek, or another compatible server
+The service talks to any model API that speaks the Anthropic Messages format, through the same SDK and the same loop and checks (`builder/provider.py`):
+| You want | Set in `.env` |
+|---|---|
+| Claude (default; `BUILDER_MODEL` defaults to `claude-opus-5-5`) | `ANTHROPIC_API_KEY=...` |
+| **DeepSeek** (cheaper) | `BUILDER_PROVIDER=deepseek`, `DEEPSEEK_API_KEY=...`; the model defaults to `deepseek-flash` (its cheap one), `BUILDER_MODEL=deepseek-v4-pro` for its strongest |
+| Another compatible server, for example a gateway to an open model you host | `ANTHROPIC_BASE_URL=https://host/anthropic`, `ANTHROPIC_API_KEY=...`, `BUILDER_MODEL=...` |
+then `docker compose --profile starrocks up -d --no-deps builder`. The page shows who reads the request (for example "DeepSeek, deepseek-flash"). To another provider than Anthropic the
+service sends the plainest request: the system prompt as one string, no cache markers and no effort setting (Anthropic features a compatible endpoint may reject).
+DeepSeek's endpoint is documented at <https://api-docs.deepseek.com/guides/anthropic_api>; its model names change, so check them there.
+
+**The model reads the dashboard spec.** The prompt carries the field reference generated from the schema (the same table as [dashboard-spec-reference.md](dashboard-spec-reference.md): every
+field, type, whether required, and what it means), the validator's rules, a cheat sheet, two complete examples that are valid for the user's role (one with a drill-down and a pie
+with Turkish labels) and the role's catalog: roughly 6,000-8,000 tokens in and 1,000-3,000 out per build. That is the price of a cheaper model being able to write a valid file;
+`BUILDER_SPEC_REFERENCE=0` leaves the reference out (about a third smaller) if a model copes without it. A model that wraps the YAML in a code fence is tolerated.
+**None of the three has been run against its real API here** (no keys); the wire format is tested against a fake compatible server through the real SDK.
+
+**Where the provider is:** Anthropic's API and DeepSeek's hosted API are outside your network. DeepSeek is operated from China; the request text and the catalog (names and descriptions, never
+data) would go there. For a bank that needs InfoSec's approval like any external service; a model you host yourself behind a compatible gateway keeps everything inside.
+
 ## What leaves your network (LLM mode only)
 | Sent to the Anthropic API | Never sent |
 |---|---|
@@ -57,16 +77,19 @@ characters of the request. A model failure is logged as `status: error` with the
 ## Configuration (`.env`)
 | Setting | Default | |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | empty | set it to use Claude; empty means the stand-in |
+| `ANTHROPIC_API_KEY` | empty | set it to use Claude (or another compatible server with `ANTHROPIC_BASE_URL`); empty means the stand-in |
+| `BUILDER_PROVIDER`, `DEEPSEEK_API_KEY` | `anthropic`, empty | `deepseek` uses DeepSeek's endpoint with its own key |
+| `ANTHROPIC_BASE_URL` | empty | the address of an Anthropic-compatible server |
+| `BUILDER_SPEC_REFERENCE` | `1` | `0` leaves the field reference out of the prompt |
 | `BUILDER_MODE` | `auto` | `auto` (Claude when a key is set), `llm` (refuse to start a build without a key), `standin` |
-| `BUILDER_MODEL` | `claude-opus-5-5` | the model |
+| `BUILDER_MODEL` | `claude-opus-5-5` (`deepseek-flash` with DeepSeek) | the model |
 | `BUILDER_EFFORT` | `medium` | the model's effort setting |
 | `BUILDER_PORT` | `8350` | the published port (127.0.0.1); public deployments reach it at `/builder-api` through Caddy |
 | the limits above, `BUILDER_LOG_FILE` | | |
 To switch a running stack to Claude: add the key to `.env`, then `docker compose --profile starrocks up -d --no-deps builder`. The page says which one answered.
 
 ## The two models
-- **Claude.** Free text, edits in conversation. **Not yet run against the real API here** (no key was available): the loop, prompts, limits and error handling are tested with
+- **A language model** (Claude, DeepSeek, …). Free text, edits in conversation. **Not yet run against a real API here** (no key was available): the loop, prompts, limits and error handling are tested with
   a scripted model. Before relying on it, run [`builder/evals.md`](../builder/evals.md) with a real key.
 - **The rule-based stand-in.** Keywords in English and Turkish (measures, drill levels, chart styles, per-channel charts, breakdowns, top N, table, treemap, pie, filters, clicks, language),
   and edits (chart style, columns, top N, add or remove a panel, split a chart per channel). It says what it understood ("Understood: …") and, when it understood nothing

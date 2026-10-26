@@ -11,7 +11,7 @@ import sys
 
 from dashspec import catalog as cat
 
-from builder import core
+from builder import core, provider
 from builder.standin import StandInClient
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -26,11 +26,10 @@ def main(argv=None) -> int:
     ap.add_argument("--mode", choices=("auto", "llm", "standin"), default="auto")
     ap.add_argument("-o", "--output", help="write the YAML here")
     args = ap.parse_args(argv)
-    mode = args.mode if args.mode != "auto" else ("llm" if os.environ.get("ANTHROPIC_API_KEY") else "standin")
+    mode = args.mode if args.mode != "auto" else ("llm" if provider.has_key() else "standin")
     catalog = cat.from_model(args.model_dir)
     if mode == "llm":
-        import anthropic
-        client = anthropic.Anthropic()
+        client = provider.make_client(120)
     else:
         client = StandInClient(catalog, args.role)
     current = pathlib.Path(args.current).read_text() if args.current else None
