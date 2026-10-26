@@ -1,22 +1,28 @@
 cubes:
   - name: products
+    description: "Products and their categories: join target for both sales facts and the inventory cube."
     sql_table: mart.dim_product
     data_source: default
 
     dimensions:
       - name: key
+        description: "Product key."
         sql: product_key
         type: number
         primary_key: true
       - name: name
+        description: "Product name."
         sql: product_name
         type: string
       - name: category
+        description: "Product category (Bikes, Components, Clothing, Accessories; Uncategorized when none)."
         sql: "COALESCE({CUBE}.product_category_name, 'Uncategorized')"
         type: string
       - name: subcategory
+        description: "Product subcategory (Uncategorized when none)."
         sql: "COALESCE({CUBE}.product_subcategory_name, 'Uncategorized')"
         type: string
       - name: color
+        description: "Product colour."
         sql: color
         type: string

@@ -437,3 +437,31 @@ def test_links_and_images_in_the_dashboard_docs_resolve():
         assert anchor in heads, f"dashboards.md: no heading for #{anchor}"
     for panel_type in ("kpi", "timeseries", "bar", "treemap", "table", "text"):
         assert f"**`{panel_type}`" in guide, f"the gallery lacks {panel_type}"
+
+
+# ---------------------------------------------------------------------------------------------------------------- the semantic layer
+def test_every_member_of_the_cube_model_has_a_description():
+    """The descriptions are what people (and the builder's model) read to choose members; a new member must come with one."""
+    missing = [f"{c}.{m}" for c, v in CATALOG.cubes.items() for m in [*v["measures"], *v["dimensions"]] if m not in v["docs"]]
+    assert not missing, f"describe these in cube/model/cubes/*.yml: {missing}"
+    assert all(v["description"] for v in CATALOG.cubes.values()), "every cube needs a description"
+
+
+def test_the_semantic_layer_page_is_generated_from_the_model_and_current():
+    from dashspec.semantic import generate
+    assert (REPO / "docs" / "semantic-layer.md").read_text() == generate(CATALOG), "run scripts/dashspec semantic"
+
+
+def test_catalog_json_hides_what_a_role_cannot_read():
+    from dashspec.semantic import catalog_json
+    rep = {c["cube"]: c for c in catalog_json(CATALOG, "rep")}
+    assert "inventory_health" not in rep and "customers" not in rep
+    assert "gross_profit" not in {m["name"] for m in rep["internet_sales"]["measures"]}
+    assert "revenue" in {m["name"] for m in rep["internet_sales"]["measures"]}
+    mk = {c["cube"]: c for c in catalog_json(CATALOG, "marketing")}
+    assert set(mk) == {"inventory_health", "offer_performance", "products"}
+    assert "vendor_name" not in {d["name"] for d in mk["inventory_health"]["dimensions"]}
+    admin = {c["cube"]: c for c in catalog_json(CATALOG)}
+    gp = next(m for m in admin["internet_sales"]["measures"] if m["name"] == "gross_profit")
+    assert gp["hidden_from"] == ["rep", "purchasing", "marketing"] and gp["description"]
+    assert admin["internet_sales"]["joins"] == ["customers", "dates", "products", "territories"] and admin["internet_sales"]["fact"]

@@ -599,6 +599,35 @@ services:
       timeout: 3s
       retries: 10
 
+  # The dashboard builder: a prompt on the dashboards page becomes a validated dashboard spec (builder/). Without ANTHROPIC_API_KEY a rule-based
+  # stand-in answers; with it Claude does (only member names and descriptions are sent, never data). Cube still enforces access on every query.
+  builder:
+    build:
+      context: ./builder
+      additional_contexts:
+        dashboards: ./dashboards
+        cubemodel: ./cube/model
+    profiles: [starrocks]
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BUILDER_PORT:-8350}:8350"
+    environment:
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
+      ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      BUILDER_MODE: ${BUILDER_MODE:-auto}
+      BUILDER_MODEL: ${BUILDER_MODEL:-claude-opus-5-5}
+      BUILDER_RATE_LIMIT: ${BUILDER_RATE_LIMIT:-20}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8350/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   dashboard-cube:
     # The dashboard UI (dashboard/static), served as static files with the Cube data source
     # injected in front of app.js (Keycloak sign-in + Cube queries instead of SQL).

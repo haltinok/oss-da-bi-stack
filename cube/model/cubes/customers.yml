@@ -1,17 +1,21 @@
 cubes:
   - name: customers
+    description: "Customers. Personal data: admin only."
     sql_table: mart.dim_customer
     data_source: default
 
     dimensions:
       - name: key
+        description: "Customer key."
         sql: customer_key
         type: number
         primary_key: true
       - name: last_name
+        description: "Customer last name (personal data, admin only)."
         sql: last_name
         type: string
 
     measures:
       - name: count
+        description: "Number of customers."
         type: count

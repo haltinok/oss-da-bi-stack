@@ -137,11 +137,15 @@ if __name__ == "__main__":
     import sys
     port = int(next((a for a in sys.argv[1:] if a.isdigit()), PORT))
     BENCH["on"] = "--single" not in sys.argv
+    FAKE["on"] = "--data" in sys.argv                    # generated rows instead of empty answers: every panel draws something
+    ROLE["role"] = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--role=")), "admin")
     start(port)
     base = f"http://localhost:{port}/_seed?to="
-    print("Mock dashboard (no data behind it: the header, banner and filters are real, the charts are empty). Open in your browser:")
-    print(f"  live            {base}%2F%3Fdemo%3D1")
+    kind = "generated data (the numbers mean nothing)" if FAKE["on"] else "no data behind it: the charts are empty"
+    print(f"Mock stack, signed in as {ROLE['role']}, {kind}. Open in your browser (the first link fakes the sign-in):")
+    print(f"  sales dashboard  {base}%2F%3Fdemo%3D1")
+    print(f"  dashboards       {base}%2Fd%2F        (the list), then /d/sales-overview, /d/envanter-sagligi, /d/regional-sales")
     if BENCH["on"]:
-        print(f"  250M benchmark  {base}%2F%3Fdataset%3D250m%26demo%3D1")
-    print("Ctrl-C to stop. The status line is put into its normal state a moment after load and flips to 'Stale' at the next 30 s poll.")
+        print(f"  250M benchmark   {base}%2F%3Fdataset%3D250m%26demo%3D1")
+    print("Options: --data  --role=rep|manager|purchasing|marketing  --single (one dataset)   Ctrl-C to stop.")
     threading.Event().wait()

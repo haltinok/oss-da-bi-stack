@@ -1,0 +1,123 @@
+"""The rule-based stand-in: every prompt it is given ends in a spec the role can render or a clear refusal, never an invalid file."""
+import pathlib
+
+import pytest
+import yaml
+from dashspec import catalog as cat
+
+from builder import core
+from builder.standin import StandInClient
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+CATALOG = cat.from_model(REPO / "cube" / "model")
+
+SALES = [
+    "monthly revenue by channel", "revenue and orders by region", "top 5 products by revenue", "a table of the latest orders",
+    "revenue by country with a treemap of the product mix", "yearly revenue trend as a line chart", "quarterly units and orders over time",
+    "average order value and revenue by category", "sales by region and country and category, click to filter", "show me revenue", "internet sales only by month",
+    "reseller revenue by product, top 8", "a dashboard", "Türkçe satış panosu: aylık gelir, bölgeye göre gelir, son siparişler", "revenue for Germany by month",
+    "revenue, orders, units and average order value with a fiscal year filter and a region filter",
+]
+INVENTORY = ["inventory dashboard", "stock status and reorder list", "overstock and excess stock table", "tedarikçiye göre envanter, Türkçe", "vendors and suppliers, top 5", "stockouts"]
+PROFIT = ["profit by month", "gross margin by region", "revenue, profit and margin by category"]
+
+
+def build(role, prompt, current=None):
+    return core.run_build(StandInClient(CATALOG, role), CATALOG, role, prompt, current, mode="standin")
+
+
+@pytest.mark.parametrize("role", core.ROLES)
+@pytest.mark.parametrize("prompt", SALES + INVENTORY + PROFIT)
+def test_every_prompt_ends_in_a_valid_spec_or_a_refusal(role, prompt):
+    out = build(role, prompt)
+    assert out["status"] in ("ok", "cannot"), (role, prompt, out.get("problems"), out["message"])
+    if out["status"] == "ok":
+        assert out["attempts"] == 1, "the stand-in's file passes the checks the first time"
+        assert out["spec"]["roles"] == [role]
+    else:
+        assert out["message"] and out["spec"] is None
+
+
+def kinds(out):
+    return [p["type"] for p in out["spec"]["panels"]]
+
+
+def test_what_was_asked_for_is_in_the_dashboard():
+    out = build("admin", "monthly revenue by channel, top 5 products, a table of latest orders, a treemap")
+    assert kinds(out) == ["kpi", "timeseries", "bar", "treemap", "table"] or set(kinds(out)) >= {"kpi", "timeseries", "bar", "table", "treemap"}
+    bar = next(p for p in out["spec"]["panels"] if p["type"] == "bar")
+    assert bar["by"] == "products.name" and bar["limit"] == 5 and len(bar["stack"]) == 2
+    trend = next(p for p in out["spec"]["panels"] if p["type"] == "timeseries")
+    assert trend["granularity"] == "month" and trend["style"] == "stacked-bar" and trend["on_click"] == {"set_filter": "fy"}
+    assert any(f["id"] == "fy" for f in out["spec"]["filters"])
+
+
+def test_a_single_channel_and_the_chosen_measures():
+    out = build("admin", "internet orders and units by region")
+    kpi = out["spec"]["panels"][0]
+    assert [m.get("label") for m in kpi["measures"]] == ["Orders", "Units sold"]
+    assert all(m["member"].startswith("internet_sales.") for m in kpi["measures"] if "member" in m)
+
+
+def test_turkish_gives_turkish_labels_lira_and_locale():
+    out = build("admin", "Türkçe satış panosu: aylık gelir ve bölgeye göre gelir")
+    spec = out["spec"]
+    assert spec["locale"] == "tr-TR" and spec["currency"] == "TRY" and spec["title"] == "Satış panosu"
+    assert any(p.get("title") == "Bölge bazında gelir" for p in spec["panels"]) and spec["panels"][0]["measures"][0]["label"] == "Gelir"
+
+
+def test_a_rep_never_gets_profit_and_is_told_what_was_left_out():
+    out = build("rep", "revenue and margin by region")
+    assert "gross_profit" not in str(out["spec"]) and "Left out because your role cannot read it" in out["message"]
+    refused = build("rep", "profit by region")
+    assert refused["status"] == "cannot" and "hidden from reps" in refused["message"]
+
+
+def test_inventory_follows_the_role():
+    assert build("manager", "inventory dashboard")["status"] == "cannot"
+    assert build("purchasing", "revenue by region")["status"] == "cannot"
+    mk = build("marketing", "stock status and excess stock")
+    assert mk["status"] == "ok" and "vendor" not in str(mk["spec"]) and "Supplier and order figures are left out" in mk["message"]
+    pu = build("purchasing", "reorder list and vendors")
+    assert any(p["id"].startswith("reorder") for p in pu["spec"]["panels"]) and "vendor_name" in str(pu["spec"])
+
+
+def test_layout_adds_up_and_places_every_panel_once():
+    out = build("admin", "revenue by month, by region, by country, by category, a treemap and a table")
+    seen = []
+    for row in out["spec"]["layout"]:
+        assert sum(c["span"] for c in row) == 12
+        seen += [c["panel"] for c in row]
+    assert sorted(seen) == sorted(p["id"] for p in out["spec"]["panels"])
+
+
+def test_a_fixed_region_is_explained_not_faked():
+    out = build("admin", "revenue for Germany by month")
+    assert "region filter" in out["message"] and any(f["id"] == "region" for f in out["spec"]["filters"])
+
+
+def current(role="admin", prompt="monthly revenue by channel and top products"):
+    return build(role, prompt)["yaml"]
+
+
+def test_refining_changes_the_style_the_limit_and_adds_and_removes_panels():
+    base = current()
+    line = build("admin", "make the chart a line", base)
+    assert next(p for p in line["spec"]["panels"] if p["type"] == "timeseries")["style"] == "line"
+    top3 = build("admin", "top 3", base)
+    assert next(p for p in top3["spec"]["panels"] if p["type"] == "bar")["limit"] == 3
+    table = build("admin", "add a table of the latest orders", base)
+    assert "table" in kinds(table) and "timeseries" in kinds(table)
+    gone = build("admin", "remove the trend", table["yaml"])
+    assert "timeseries" not in kinds(gone) and "table" in kinds(gone)
+    region = build("admin", "also show revenue by region", base)
+    assert any(p.get("by") == "territories.region" for p in region["spec"]["panels"])
+    for out in (line, top3, table, gone, region):
+        assert out["status"] == "ok"
+
+
+def test_a_refinement_it_does_not_understand_says_so_and_changes_nothing():
+    base = current()
+    out = build("admin", "make it prettier and more corporate", base)
+    assert out["status"] == "ok" and "understood nothing to change" in out["message"]
+    assert yaml.safe_load(out["yaml"])["panels"] == yaml.safe_load(base)["panels"]

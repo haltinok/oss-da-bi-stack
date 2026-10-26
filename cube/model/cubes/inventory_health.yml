@@ -1,5 +1,6 @@
 cubes:
   - name: inventory_health
+    description: "One row per product that is stocked, sold or on order: its stock position, a status and what to do. Not territory-bound: purchasing and admin see everything, marketing no supplier or order-size members; managers and reps none of it."
     sql_table: mart.inventory_health
     data_source: default
     # One row per product (a few hundred), so no pre-aggregation: StarRocks answers it directly.
@@ -13,103 +14,134 @@ cubes:
 
     dimensions:
       - name: key
+        description: "Product key."
         sql: product_key
         type: number
         primary_key: true
         public: true   # list queries group by it so identical rows are not collapsed
       - name: product_name
+        description: "Product name."
         sql: product_name
         type: string
       - name: status
+        description: "Stock status: stockout, reorder_now, dead_stock, overstock, healthy, not_stocked or discontinued."
         sql: status
         type: string
       - name: replenishment_type
+        description: "How it is replenished: purchase, manufacture or none. Supplier data."
         sql: replenishment_type
         type: string
       - name: vendor_id
+        description: "Vendor key. Supplier data."
         sql: vendor_id
         type: number
       - name: vendor_name
+        description: "Vendor name. Supplier data."
         sql: vendor_name
         type: string
       - name: reason
+        description: "Why the status was given (in words)."
         sql: reason
         type: string
       - name: on_hand
+        description: "Units in stock."
         sql: on_hand
         type: number
       - name: on_order
+        description: "Units on open purchase or work orders."
         sql: on_order
         type: number
       - name: daily_demand
+        description: "Average units sold per day over the demand window."
         sql: daily_demand
         type: number
       - name: days_of_cover
+        description: "Days the stock lasts at the current demand."
         sql: days_of_cover
         type: number
       - name: lead_time_days
+        description: "Days from order to delivery. Supplier data."
         sql: lead_time_days
         type: number
       - name: unit_cost
+        description: "Cost per unit. Supplier data."
         sql: unit_cost
         type: number
       - name: suggested_order_qty
+        description: "Suggested quantity to order or make. Supplier data."
         sql: suggested_order_qty
         type: number
       - name: min_order_qty
+        description: "Vendor minimum order quantity. Supplier data."
         sql: min_order_qty
         type: number
       - name: max_order_qty
+        description: "Vendor maximum order quantity. Supplier data."
         sql: max_order_qty
         type: number
       - name: suggested_order_value
+        description: "Suggested quantity times unit cost. Supplier data."
         sql: suggested_order_value
         type: number
       - name: excess_units
+        description: "Units above the target stock (overstock and dead stock)."
         sql: excess_units
         type: number
       - name: excess_value
+        description: "Value of the excess units."
         sql: excess_value
         type: number
       - name: suggested_discount_pct
+        description: "Suggested discount depth for the excess, in percent."
         sql: suggested_discount_pct
         type: number
       - name: last_sale_date
+        description: "Date of the product's last sale (a time dimension)."
         sql: last_sale_date
         type: time
 
     measures:
       - name: product_count
+        description: "Number of products."
         type: count
       - name: stockout_items
+        description: "Products with status stockout."
         type: count
         filters:
           - sql: "{CUBE}.status = 'stockout'"
       - name: reorder_items
+        description: "Products with status reorder_now."
         type: count
         filters:
           - sql: "{CUBE}.status = 'reorder_now'"
       - name: items_at_risk
+        description: "Stockouts plus products to reorder now."
         type: count
         filters:
           - sql: "{CUBE}.status IN ('stockout', 'reorder_now')"
       - name: overstock_items
+        description: "Overstock plus dead stock products."
         type: count
         filters:
           - sql: "{CUBE}.status IN ('overstock', 'dead_stock')"
       - name: dead_stock_items
+        description: "Dead stock only: in stock, no recent sale."
         type: count
         filters:
           - sql: "{CUBE}.status = 'dead_stock'"
       - name: suggested_order_value_total
+        description: "Sum of the suggested order values. Supplier data."
         sql: suggested_order_value
         type: sum
       - name: suggested_order_qty_total
+        description: "Sum of the suggested order quantities. Supplier data."
         sql: suggested_order_qty
         type: sum
       - name: excess_value_total
+        description: "Value of all excess stock."
         sql: excess_value
         type: sum
       - name: excess_units_total
+        description: "Units of all excess stock."
         sql: excess_units
         type: sum

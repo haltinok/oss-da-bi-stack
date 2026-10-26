@@ -268,6 +268,25 @@ SUPPLIER_MEMBERS = {
 }
 
 
+def denied(role, member):
+    """Why Cube would refuse `role` this member, or None. The per-member part of the role rules (a panel must also reach an inventory cube
+    for purchasing and marketing: see _role_errors)."""
+    cube, _, name = member.partition(".")
+    if role == "rep" and name in PROFIT_MEMBERS:
+        return "profit and margin are hidden from reps"
+    if role in ROLE_CUBES:
+        if cube not in ROLE_CUBES[role]:
+            return f"cube '{cube}' is not available to {role}"
+        if role == "marketing" and cube == "inventory_health" and name in SUPPLIER_MEMBERS:
+            return "supplier and order data are not available to marketing"
+    if role in ("manager", "rep"):
+        if cube in INVENTORY_CUBES:
+            return "inventory data is not available for this role"
+        if cube == "customers":
+            return "customer data is admin-only"
+    return None
+
+
 def _role_errors(spec, errs):
     for p in spec["panels"]:
         w = f"panel '{p['id']}' ({p['type']})"
@@ -280,27 +299,12 @@ def _role_errors(spec, errs):
             continue
         cubes = {m.partition(".")[0] for m in members}
         for role in spec.get("roles", []):
-            def no(m, why, role=role, w=w):
-                errs.append(f"{w}: role '{role}' cannot read '{m}' ({why}): remove the role from `roles` or the member from the panel")
-            if role == "rep":
-                for m in members:
-                    if m.partition(".")[2] in PROFIT_MEMBERS:
-                        no(m, "profit and margin are hidden from reps")
-            if role in ROLE_CUBES:
-                for c in sorted(cubes - ROLE_CUBES[role]):
-                    no(next(m for m in members if m.startswith(c + ".")), f"cube '{c}' is not available to {role}")
-                if not cubes & INVENTORY_CUBES:
-                    no(members[0], f"{role} may only query inventory data")
-                if role == "marketing":
-                    for m in members:
-                        if m.startswith("inventory_health.") and m.partition(".")[2] in SUPPLIER_MEMBERS:
-                            no(m, "supplier and order data are not available to marketing")
-            if role in ("manager", "rep"):
-                for m in members:
-                    if m.partition(".")[0] in INVENTORY_CUBES:
-                        no(m, "inventory data is not available for this role")
-                    if m.partition(".")[0] == "customers":
-                        no(m, "customer data is admin-only")
+            for m in dict.fromkeys(members):
+                why = denied(role, m)
+                if why:
+                    errs.append(f"{w}: role '{role}' cannot read '{m}' ({why}): remove the role from `roles` or the member from the panel")
+            if role in ROLE_CUBES and not cubes & INVENTORY_CUBES:
+                errs.append(f"{w}: role '{role}' cannot read '{members[0]}' ({role} may only query inventory data): remove the role from `roles` or the member from the panel")
 
 
 def validate(spec, catalog):

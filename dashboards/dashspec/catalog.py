@@ -7,8 +7,8 @@ import yaml
 
 
 class Catalog:
-    """cubes: {cube: {"measures": {name: type}, "dimensions": {name: type}, "joins": set | None}}.
-    joins is None when the source does not say (Cube's /v1/meta), which turns the join check off."""
+    """cubes: {cube: {"measures": {name: type}, "dimensions": {name: type}, "joins": set | None, "description": str, "docs": {name: str}}}.
+    joins is None when the source does not say (Cube's /v1/meta), which turns the join check off. `docs` holds the description of each member."""
 
     def __init__(self, cubes):
         self.cubes = cubes
@@ -53,10 +53,13 @@ def from_model(model_dir):
     cubes = {}
     for path in sorted(pathlib.Path(model_dir).rglob("*.y*ml")):
         for cube in (yaml.safe_load(path.read_text()) or {}).get("cubes", []):
+            members = [*cube.get("measures", []), *cube.get("dimensions", [])]
             cubes[cube["name"]] = {
                 "measures": {m["name"]: m["type"] for m in cube.get("measures", [])},
                 "dimensions": {d["name"]: d["type"] for d in cube.get("dimensions", [])},
                 "joins": {j["name"] for j in cube.get("joins", [])},
+                "description": cube.get("description", ""),
+                "docs": {m["name"]: m["description"] for m in members if m.get("description")},
             }
     if not cubes:
         raise SystemExit(f"no cubes found under {model_dir}")
@@ -75,5 +78,7 @@ def from_cube(url, token):
             "measures": {short(m): m["type"] for m in c["measures"]},
             "dimensions": {short(d): d["type"] for d in c["dimensions"]},
             "joins": None,
+            "description": c.get("description", ""),
+            "docs": {short(m): m["description"] for m in [*c["measures"], *c["dimensions"]] if m.get("description")},
         }
     return Catalog(cubes)

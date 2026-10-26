@@ -1,19 +1,24 @@
 cubes:
   - name: territories
+    description: "Sales territories: join target for the sales facts. The unit of row-level security."
     sql_table: mart.dim_sales_territory
     data_source: default
 
     dimensions:
       - name: key
+        description: "Territory key."
         sql: sales_territory_key
         type: number
         primary_key: true
       - name: region
+        description: "Sales territory region (Southwest, Canada, Germany, ...). Reps and managers only ever see the regions assigned to them."
         sql: sales_territory_region
         type: string
       - name: group_name
+        description: "Territory group (North America, Europe, Pacific)."
         sql: sales_territory_group
         type: string
       - name: country
+        description: "Territory country."
         sql: sales_territory_country
         type: string

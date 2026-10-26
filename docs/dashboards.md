@@ -9,6 +9,8 @@ skill can write it from a request.
 *[`dashboards/sales-overview.yml`](../dashboards/sales-overview.yml) rendered from generated data (the numbers mean nothing; the layout, formats and interactions are real).*
 
 - Reference of every field: [dashboard-spec-reference.md](dashboard-spec-reference.md) (generated from the schema).
+- What you can ask for: the semantic layer, with every cube, measure and dimension, what it means and who may read it: [semantic-layer.md](semantic-layer.md) (generated from the Cube model). `scripts/dashspec meta` prints the same in the terminal.
+- Describe a dashboard instead of writing it: [the builder](../builder/README.md).
 - Why and how it was built, phase by phase: [dashboard-spec-plan.md](dashboard-spec-plan.md).
 - The hand-written sales dashboard at `/` stays as it is: it is the showcase and the reference for look and behaviour. The inventory
   actions (Approve, campaigns, proposals) are an application, not a dashboard, and live only there.

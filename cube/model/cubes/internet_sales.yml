@@ -1,5 +1,6 @@
 cubes:
   - name: internet_sales
+    description: "Internet (online) channel order lines of the sales fact: one row per product on an order. Rejected and cancelled orders are left out. Row-level security limits reps and managers to their own territories."
     # Rejected (4) and cancelled (6) orders are not revenue; the dashboard leaves
     # them out everywhere, so the cube does too.
     sql: >
@@ -22,43 +23,55 @@ cubes:
 
     dimensions:
       - name: order_line_id
+        description: "Key of the order line (order number and line number)."
         sql: "CONCAT({CUBE}.sales_order_number, '-', {CUBE}.sales_order_line_number)"
         type: string
         primary_key: true
       - name: order_number
+        description: "The sales order number."
         sql: sales_order_number
         type: string
       - name: order_date
+        description: "When the order was placed (a time dimension: use it for a time axis)."
         sql: order_date
         type: time
       - name: order_status
+        description: "Order status code: 1 in process, 2 approved, 3 backordered, 5 shipped (4 rejected and 6 cancelled are not in this cube)."
         sql: order_status
         type: number
 
     measures:
       - name: revenue
+        description: "Sales amount of the order lines."
         sql: sales_amount
         type: sum
       - name: product_cost
+        description: "Standard cost of the products sold. Hidden from reps."
         sql: "COALESCE({CUBE}.total_product_cost, 0)"
         type: sum
       - name: gross_profit
+        description: "Revenue minus product cost. Hidden from reps."
         sql: "{CUBE}.sales_amount - COALESCE({CUBE}.total_product_cost, 0)"
         type: sum
       - name: margin_pct
+        description: "Gross profit as a percentage of revenue, 0-100 (not a fraction). Hidden from reps. For a margin across both channels use a ratio of gross_profit over revenue with format pct."
         sql: "100 * {gross_profit} / NULLIF({revenue}, 0)"
         type: number
       - name: units
+        description: "Quantity sold."
         sql: order_quantity
         type: sum
       - name: discount
+        description: "Discount amount given on the order lines."
         sql: discount_amount
         type: sum
       - name: lines
+        description: "Number of order lines."
         type: count
       # Exact distinct orders. Not additive, so only a rollup with exactly the query's dimensions
       # can serve it (see orders_mix* below); everything else scans the fact.
       - name: orders
+        description: "Exact number of distinct orders. Right under any filter, but a rollup cannot serve it, so it can be slow at large scale."
         sql: sales_order_number
         type: count_distinct
       # Orders counted once, on their first line. An order has one territory, date and channel,
@@ -66,9 +79,11 @@ cubes:
       # territory, multi-region security filters). It is NOT the number of orders containing a
       # given product: use `orders` when a product category/subcategory is involved.
       - name: orders_placed
+        description: "Orders counted once, on their first line: exact and fast for any grouping or filter on the order's own date, territory or channel. Not the number of orders containing a given product: use orders for that."
         sql: "CASE WHEN {CUBE}.sales_order_line_number = 1 THEN 1 ELSE 0 END"
         type: sum
       - name: aov
+        description: "Revenue per placed order (a ratio inside one cube; across both channels use a ratio of revenue over orders)."
         sql: "{revenue} / NULLIF({orders_placed}, 0)"
         type: number
 
