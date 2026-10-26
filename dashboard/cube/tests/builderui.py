@@ -229,6 +229,26 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors on the Turkish draft {page.problems[:2]}")
     ctx.close()
 
+    # ---- the request that started this: drill-down line chart, pie by subcategory, cross-filtering, in Turkish
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector("#bb-prompt")
+    page.fill("#bb-prompt", "Detaya Yıl Ay ve Gün bazında detaya inen çizgi grafiği şeklinde ve pasta grafiği şeklinde ürün alt kategorilerine göre bir dashboard istiyorum ayrıca tıklamalar cross filtering ile sonuçlanmalı\n\nDashboard Türkçe olmalı")
+    page.click("#bb-go")
+    page.wait_for_url("**/d/draft")
+    settled(page)
+    check(page.get_attribute("html", "lang") == "tr" and page.locator("[data-panel] .crumbs").count() == 1 and page.locator("[data-panel] path.slice").count() >= 3, "a drill-down line chart and a pie by subcategory, in Turkish")
+    check("Tümü" in page.inner_text(".crumbs") and "Detaya inmek" in page.inner_text('[data-panel="trend"]'), "with a Turkish trail and hint")
+    page.locator('[data-panel="trend"] .hit').nth(1).click()
+    settled(page)
+    check("period=" in page.url and page.locator('[data-panel="trend"] .crumb').count() == 2 and "Dönem" in page.inner_text("#period-bar"), "a click drills down and sets the period (Turkish chip)")
+    page.locator('[data-panel="pie"] .pie-legend li').first.click()
+    settled(page)
+    check("subcategory=" in page.url and "period=" in page.url, "and a slice filters at the same time (drill-down and cross-filtering together)")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    if KEEP:
+        page.screenshot(path=str(SHOTS / "builder-turkish-drill.png"), full_page=True)
+    ctx.close()
+
     # ---- the pages at other widths
     for width in (1024, 390):
         ctx, page = open_page(browser, "/d/", width=width)

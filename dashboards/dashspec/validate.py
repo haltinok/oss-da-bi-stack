@@ -113,6 +113,9 @@ def _panel_members(p):
         yield "by", p["by"], "dimension"
         if "split" in p:
             yield "split", p["split"], "dimension"
+    elif t == "pie":
+        yield "measure", p["measure"], "measure"
+        yield "by", p["by"], "dimension"
     elif t == "treemap":
         yield "measure", p["measure"], "measure"
         for i, g in enumerate(p["group"]):
@@ -165,7 +168,7 @@ def semantic_errors(spec, catalog):
         for field, member, want in _panel_members(p):
             kinds[member] = check(w, field, member, want)
         for fid in p.get("ignore_filters", []):
-            if fid not in filter_ids:
+            if fid not in filter_ids and fid != PERIOD:
                 errs.append(f"{w}: ignore_filters: no filter with id '{fid}'")
         click = p.get("on_click", {}).get("set_filter")
         if click is not None:
@@ -174,6 +177,8 @@ def semantic_errors(spec, catalog):
                 if fid not in filter_ids:
                     errs.append(f"{w}: on_click.set_filter: no filter with id '{fid}'")
             _click_errors(p, w, ids, filters, catalog, errs)
+        if p["type"] == "timeseries" and "drill" in p:
+            _drill_errors(p, w, errs)
         if p["type"] == "timeseries" and p.get("granularities") and p["granularity"] not in p["granularities"]:
             errs.append(f"{w}: granularities: must include the default granularity '{p['granularity']}'")
         if p["type"] == "bar" and "stack" in p and "split" in p:
@@ -191,6 +196,24 @@ def semantic_errors(spec, catalog):
 
 
 TIME_FILTERS = ("fiscal_year", "calendar_year")
+PERIOD = "period"            # the reserved filter id of the date range a drill-down sets; a panel lists it in ignore_filters to opt out
+FINENESS = ["year", "quarter", "month", "week", "day", "hour"]
+
+
+def _drill_errors(p, w, errs):
+    levels = p["drill"]
+    order = [FINENESS.index(g) for g in levels]
+    if order != sorted(order) or len(set(order)) != len(order):
+        errs.append(f"{w}: drill: the levels must go from coarse to fine ({', '.join(FINENESS)}), got {levels}")
+    if p["granularity"] != levels[0]:
+        errs.append(f"{w}: granularity: must be the first drill level '{levels[0]}'")
+    if "granularities" in p:
+        errs.append(f"{w}: granularities: a drill-down already changes the granularity; remove `granularities` or `drill`")
+    if "on_click" in p:
+        errs.append(f"{w}: on_click: a drill-down click also filters the other panels by the period it opens; remove `on_click` (use ignore_filters: [period] on a panel that should not follow it)")
+    for a, b in zip(levels, levels[1:], strict=False):
+        if b == "week" and a in ("month", "quarter"):
+            errs.append(f"{w}: drill: a week does not fit inside a {a}; drill {a} -> day instead")
 
 
 def _click_errors(p, w, ids, filters, catalog, errs):
@@ -206,10 +229,10 @@ def _click_errors(p, w, ids, filters, catalog, errs):
             dim = by_id[i]["dimension"]
             if dim.partition(".")[2] not in TIME_FILTERS:
                 errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}'; a click on a time chart can set a filter on a fiscal_year or calendar_year dimension")
-    elif kind in ("bar", "treemap", "table"):
-        carried = {"bar": [p.get("by")], "treemap": p.get("group", []), "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
-        if kind == "bar" and len(ids) > 1:
-            errs.append(f"{w}: on_click.set_filter: a click on a bar carries one value, {len(ids)} filters are named")
+    elif kind in ("bar", "pie", "treemap", "table"):
+        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
+        if kind in ("bar", "pie") and len(ids) > 1:
+            errs.append(f"{w}: on_click.set_filter: a click on a {kind} carries one value, {len(ids)} filters are named")
         for pos, i in enumerate(ids):
             dim = by_id[i]["dimension"]
             if kind == "treemap" and pos < len(carried) and dim != carried[pos]:

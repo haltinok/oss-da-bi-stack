@@ -37,8 +37,11 @@ time: { dimension: <a time dimension>, fiscal_year_start: 7 }
 filters: list of { id, dimension, label, parent? }  (selects above the panels; every panel applies them unless it lists the id in ignore_filters)
 panels: list of { id, type, title?, ignore_filters?, ... }, types:
   kpi        measures: [ {member|sum|ratio, label, format} ... max 8 ], sparkline: { granularity: month }
-  timeseries series: [ {member|sum|ratio, label, color?, format} ], granularity, granularities?: [month, quarter, year], style: line | bar | stacked-bar, on_click?: { set_filter: <id of a fiscal_year filter> }
-  bar        measure: <m>  OR  stack: [ {member, label, color?} x2+ ]   by: <dimension>, sort, limit, format, on_click?: { set_filter: <filter on the by dimension> }
+  timeseries series: [ {member|sum|ratio, label, color?, format} ], granularity, style: line | area | stacked-area | bar | stacked-bar,
+             and EITHER granularities?: [month, quarter, year] (a switch) + on_click?: { set_filter: <id of a fiscal_year filter> }
+             OR drill: [year, month, day] (a drill-down: a click opens the next finer level for that period and filters every other panel to it; granularity = the first level; no on_click)
+  bar        measure: <m>  OR  stack: [ {member, label, color?} x2+ ]   by: <dimension>, sort, limit, orientation?: horizontal | vertical, format, on_click?: { set_filter: <filter on the by dimension> }
+  pie        measure: <m>, by: <dimension>, limit (slices before "Other", 2-30), style: pie | donut, format, on_click?: { set_filter: <filter on the by dimension> }
   treemap    measure, group: [dim] or [dim, dim], format, on_click?: { set_filter: [<filter on group[0]>, <filter on group[1]>] }
   table      columns: [ member | {member, label, format} ], order: { member: asc|desc }, limit, on_click?
   text       markdown
@@ -47,7 +50,7 @@ format: money | int | pct (a fraction) | decimal | number.   color: internet | r
 layout: rows of 12 columns, every panel exactly once: - [kpis: 12]  - [trend: 8, lines: 4]
 Rules: use only members from the catalog. Cube cannot join two fact cubes in one query, so combine channels with sum/ratio/stack, nothing else:
 no other arithmetic. A filter must be on a dimension the panel's measures can join to (else add it to that panel's ignore_filters).
-A click rule: bar -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; time chart -> a year filter.
+A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; time chart -> a year filter.
 Write titles and labels in the language of locale. If the request needs a metric the catalog does not have, call cannot_build and say which."""
 
 SYSTEM = """You build dashboards for a bank's BI team from a short request. The data is a simulated AdventureWorks company. A person looks at the \
@@ -145,7 +148,7 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     errors, used = validate(spec, catalog)
     if errors:
         return None, errors[:12]
-    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used), "notes": notes}, []
+    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used, catalog), "notes": notes}, []
 
 
 # ------------------------------------------------------------------------------------------------------------------ the loop

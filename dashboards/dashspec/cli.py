@@ -61,7 +61,7 @@ def cmd_compile(args):
         for e in errs:
             print(f"{args.file}: {e}", file=sys.stderr)
         return 1
-    text = json.dumps(compile_spec(spec, used), indent=2, ensure_ascii=False) + "\n"
+    text = json.dumps(compile_spec(spec, used, _catalog(args)), indent=2, ensure_ascii=False) + "\n"
     if args.output:
         out = pathlib.Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -90,7 +90,7 @@ def cmd_build(args):
             print(f"{path}: the file name must be the dashboard id ('{spec['id']}.yml')", file=sys.stderr)
             continue
         out.mkdir(parents=True, exist_ok=True)
-        (out / f"{spec['id']}.json").write_text(json.dumps(compile_spec(spec, used), indent=2, ensure_ascii=False) + "\n")
+        (out / f"{spec['id']}.json").write_text(json.dumps(compile_spec(spec, used, catalog), indent=2, ensure_ascii=False) + "\n")
         index.append({"id": spec["id"], "title": spec["title"], "description": spec.get("description", ""), "roles": spec.get("roles", [])})
     if bad:
         return 1
@@ -116,7 +116,7 @@ def cmd_lint(args):
             print(f"{path}: {len(errs)} problem(s) (run validate)")
             status = 1
             continue
-        found = lint(compile_spec(spec, used), plan)
+        found = lint(compile_spec(spec, used, catalog), plan)
         print(f"{path}: " + ("every query is served by a pre-aggregation" if not found else f"{len(found)} warning(s)"))
         for severity, message in found:
             print(f"  - {severity}: {message}")

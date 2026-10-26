@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createFormat, ratio } from "../../static/lib/format.js";
-import { barPath, niceTicks, shade, squarify, stackBarHtml } from "../../static/lib/charts.js";
+import { arcPath, barPath, niceTicks, pieSlices, shade, squarify, stackBarHtml } from "../../static/lib/charts.js";
 import { buildXlsx } from "../../static/lib/xlsx.js";
 
 test("en-US / USD formats as the dashboard always did", () => {
@@ -95,4 +95,22 @@ test("buildXlsx formats money with the page's currency sign", async () => {
   const text = async (opts) => new TextDecoder("utf-8").decode(new Uint8Array(await buildXlsx(sheet, opts).arrayBuffer()));
   assert.ok((await text({ symbol: "₺" })).includes('formatCode="&quot;₺&quot;#,##0.00"'), "the lira sign is in the number format");
   assert.ok((await text()).includes('formatCode="&quot;$&quot;#,##0.00"'), "the dollar sign is the default");
+});
+
+test("arcPath draws a slice, a donut segment and a full circle", () => {
+  assert.equal(arcPath(100, 100, 50, 0, 0, Math.PI / 2), "M100,100L100,50A50,50 0 0 1 150,100Z");
+  const seg = arcPath(100, 100, 50, 25, 0, Math.PI);
+  assert.match(seg, /^M100,50A50,50 0 0 1 100,150L100,125A25,25 0 0 0 100,75Z$/);
+  assert.match(arcPath(100, 100, 50, 0, 0, 2 * Math.PI), /^M100,50A50,50 0 1 1 100,150A50,50 0 1 1 100,50Z$/);
+  assert.equal((arcPath(100, 100, 50, 25, 0, 2 * Math.PI).match(/Z/g) || []).length, 2, "a full donut is two rings");
+  assert.match(arcPath(100, 100, 50, 0, 0, 4), /A50,50 0 1 1/, "a slice over half the circle takes the long way");
+});
+
+test("pieSlices keeps the largest slices, groups the rest, and drops zero and negative values", () => {
+  const items = [{ label: "a", value: 5 }, { label: "b", value: 50 }, { label: "c", value: 0 }, { label: "d", value: 20 }, { label: "e", value: 10 }, { label: "f", value: -3 }];
+  assert.deepEqual(pieSlices(items, 8, "Other").map((s) => s.label), ["b", "d", "e", "a"]);
+  const grouped = pieSlices(items, 3, "Other");
+  assert.deepEqual(grouped.map((s) => s.label), ["b", "d", "Other"]);
+  assert.deepEqual(grouped[2], { label: "Other", value: 15, other: true, count: 2 });
+  assert.deepEqual(pieSlices([], 5, "Other"), []);
 });

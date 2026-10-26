@@ -29,7 +29,30 @@ POOLS = {
     "suggested_order_value": [4200, 900], "excess_units": [30, 0], "excess_value": [1500, 80], "suggested_discount_pct": [10, 30],
     "order_date": ["2021-06-30T10:00:00.000", "2021-06-29T09:30:00.000"], "order_number": ["SO1", "SO2", "SO3", "SO4"], "order_status": [5], "status": ["stockout", "reorder_now", "overstock"],
 }
-MONTHS = [f"{2020 + (6 + i) // 12}-{(6 + i) % 12 + 1:02d}-01T00:00:00.000" for i in range(12)]     # Jul 2020 .. Jun 2021
+MONTHS = [f"{2020 + (6 + i) // 12}-{(6 + i) % 12 + 1:02d}-01T00:00:00.000" for i in range(12)]     # Jul 2020 .. Jun 2021 (kept for older tests)
+
+
+def buckets(granularity, date_range=None):
+    """Time buckets of one granularity inside a date range (default: the fiscal year Jul 2020 - Jun 2021; years: 2019-2021), as Cube writes them."""
+    import datetime as dt
+    a, b = ([dt.date.fromisoformat(x[:10]) for x in date_range] if date_range else [dt.date(2019 if granularity == "year" else 2020, 1 if granularity == "year" else 7, 1),
+                                                                                    dt.date(2021, 12 if granularity == "year" else 6, 31 if granularity == "year" else 30)])
+    out, d = [], a
+    while d <= b and len(out) < 62:
+        if granularity == "year":
+            d = dt.date(d.year, 1, 1)
+            nxt = dt.date(d.year + 1, 1, 1)
+        elif granularity == "quarter":
+            d = dt.date(d.year, (d.month - 1) // 3 * 3 + 1, 1)
+            nxt = dt.date(d.year + (d.month + 2) // 12, (d.month + 2) % 12 + 1, 1)
+        elif granularity == "month":
+            d = dt.date(d.year, d.month, 1)
+            nxt = dt.date(d.year + d.month // 12, d.month % 12 + 1, 1)
+        else:
+            nxt = d + dt.timedelta(days=1)
+        out.append(f"{d.isoformat()}T00:00:00.000")
+        d = nxt
+    return out or [f"{a.isoformat()}T00:00:00.000"]
 
 
 def fake_rows(query):
@@ -41,7 +64,7 @@ def fake_rows(query):
         axes.append((d, POOLS.get(d.partition(".")[2], ["a", "b"])))
     for t in query.get("timeDimensions", []):
         if t.get("granularity"):
-            axes.append((f"{t['dimension']}.{t['granularity']}", MONTHS if t["granularity"] == "month" else MONTHS[:1]))
+            axes.append((f"{t['dimension']}.{t['granularity']}", buckets(t["granularity"], t.get("dateRange"))))
     rows = [{}]
     for key, values in axes:
         rows = [{**r, key: v} for r in rows for v in values][:80]

@@ -19,6 +19,11 @@ SALES = [
     "revenue, orders, units and average order value with a fiscal year filter and a region filter",
 ]
 INVENTORY = ["inventory dashboard", "stock status and reorder list", "overstock and excess stock table", "tedarikçiye göre envanter, Türkçe", "vendors and suppliers, top 5", "stockouts"]
+CHARTS = [
+    "Detaya Yıl Ay ve Gün bazında detaya inen çizgi grafiği şeklinde ve pasta grafiği şeklinde ürün alt kategorilerine göre bir dashboard istiyorum ayrıca tıklamalar cross filtering ile sonuçlanmalı Dashboard Türkçe olmalı",
+    "a line chart that drills down year, month and day, and a pie chart of revenue by product subcategory", "donut of revenue by category", "area chart of revenue by month",
+    "revenue by category as columns", "drill down from year to month", "yıl ay gün detay çizgi grafik", "quarterly revenue line chart", "pie of orders by region",
+]
 PROFIT = ["profit by month", "gross margin by region", "revenue, profit and margin by category"]
 
 
@@ -27,7 +32,7 @@ def build(role, prompt, current=None):
 
 
 @pytest.mark.parametrize("role", core.ROLES)
-@pytest.mark.parametrize("prompt", SALES + INVENTORY + PROFIT)
+@pytest.mark.parametrize("prompt", SALES + INVENTORY + PROFIT + CHARTS)
 def test_every_prompt_ends_in_a_valid_spec_or_a_refusal(role, prompt):
     out = build(role, prompt)
     assert out["status"] in ("ok", "cannot"), (role, prompt, out.get("problems"), out["message"])
@@ -121,3 +126,36 @@ def test_a_refinement_it_does_not_understand_says_so_and_changes_nothing():
     out = build("admin", "make it prettier and more corporate", base)
     assert out["status"] == "ok" and "understood nothing to change" in out["message"]
     assert yaml.safe_load(out["yaml"])["panels"] == yaml.safe_load(base)["panels"]
+
+
+USER_REQUEST = CHARTS[0]
+
+
+def test_the_request_that_started_this_a_drill_down_line_chart_a_pie_by_subcategory_and_cross_filtering_in_turkish():
+    out = build("admin", USER_REQUEST)
+    spec = out["spec"]
+    assert out["status"] == "ok" and spec["locale"] == "tr-TR" and spec["currency"] == "TRY"
+    trend = next(p for p in spec["panels"] if p["type"] == "timeseries")
+    assert trend["drill"] == ["year", "month", "day"] and trend["granularity"] == "year" and trend["style"] == "line"
+    pie = next(p for p in spec["panels"] if p["type"] == "pie")
+    assert pie["by"] == "products.subcategory" and pie["on_click"] == {"set_filter": "subcategory"} and pie["title"] == "Alt kategori bazında gelir"
+    assert not [p for p in spec["panels"] if p["type"] == "bar"], "no extra bars for the words 'ürün alt kategori'"
+    assert any(f["id"] == "subcategory" for f in spec["filters"]) and "on_click" not in trend, "a drill-down filters the others by period; the pie filters by subcategory"
+
+
+def test_chart_words_choose_the_chart():
+    def kinds(prompt, role="admin"):
+        spec = build(role, prompt)["spec"]
+        return {p["type"]: p for p in spec["panels"]}
+    assert kinds("area chart of revenue by month")["timeseries"]["style"] == "area"
+    assert kinds("donut of revenue by category")["pie"]["style"] == "donut" and kinds("pie of orders by region")["pie"]["style"] == "pie"
+    assert kinds("revenue by category as columns")["bar"]["orientation"] == "vertical"
+    assert "orientation" not in kinds("revenue by category")["bar"]
+    assert kinds("quarterly revenue line chart")["timeseries"]["granularity"] == "quarter"
+    assert "drill" not in kinds("monthly revenue by channel")["timeseries"]
+    assert kinds("drill down from year to month")["timeseries"]["drill"] == ["year", "month"]
+
+
+def test_a_rep_gets_the_drill_down_and_the_pie_without_profit():
+    out = build("rep", USER_REQUEST)
+    assert out["status"] == "ok" and "gross_profit" not in str(out["spec"])

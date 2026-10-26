@@ -155,7 +155,7 @@ export function panelMeasures(p, members = {}) {
     case "kpi": return p.measures.flatMap((m) => term(m).members);
     case "timeseries": return p.series.flatMap((s) => term(s).members);
     case "bar": return p.stack ? p.stack.map((s) => s.member) : [p.measure];
-    case "treemap": return [p.measure];
+    case "pie": case "treemap": return [p.measure];
     case "table": return tableParts(p, members).measures;
     default: return [];
   }
@@ -213,6 +213,65 @@ export function pick(current, ids, values, saved) {
 export const isSelected = (current, ids, values, only = false) =>
   ids.every((id, i) => (only && i >= values.length ? !current[id] : String(current[id] ?? "") === String(values[i])));
 
+// ------------------------------------------------------------------ the period (a drill-down's date range, applied to the other panels)
+export const PERIOD = "_period";                 // the key in the page's filter values; not a filter id (those start with a letter)
+const iso = (d) => d.toISOString().slice(0, 10);
+const utc = (y, m, d) => new Date(Date.UTC(y, m, d));
+
+export function parsePeriod(v) {
+  const m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(v || "");
+  return m ? [m[1], m[2]] : null;
+}
+export const formatPeriod = (from, to) => `${from}..${to}`;
+
+/** The first and last day (ISO dates) of the period a time bucket stands for: "2021-03-01T00:00:00.000" at month -> ["2021-03-01", "2021-03-31"]. */
+export function rangeOf(bucket, granularity) {
+  const [y, m, d] = day(bucket).split("-").map(Number);
+  switch (granularity) {
+    case "year": return [iso(utc(y, 0, 1)), iso(utc(y, 11, 31))];
+    case "quarter": { const q = Math.floor((m - 1) / 3) * 3; return [iso(utc(y, q, 1)), iso(utc(y, q + 3, 0))]; }
+    case "month": return [iso(utc(y, m - 1, 1)), iso(utc(y, m, 0))];
+    case "week": return [iso(utc(y, m - 1, d)), iso(utc(y, m - 1, d + 6))];
+    default: return [iso(utc(y, m - 1, d)), iso(utc(y, m - 1, d))];      // day, hour: the date
+  }
+}
+
+/** Can a query of cube `src` use the time dimension of cube `dst`? Follows the joins the compiled spec carries (no `cubes` means: assume so). */
+function reaches(spec, src, dst) {
+  if (src === dst || !spec.cubes) return true;
+  const seen = new Set([src]);
+  const todo = [src];
+  while (todo.length) {
+    for (const next of spec.cubes[todo.pop()]?.joins || []) {
+      if (next === dst) return true;
+      if (!seen.has(next)) { seen.add(next); todo.push(next); }
+    }
+  }
+  return false;
+}
+
+/** Does the page's period narrow this panel? Not text, not the drill panel itself (it keeps its own range), not one that opted out with ignore_filters: [period], and only if its measures can join the time dimension. */
+export function appliesPeriod(spec, def) {
+  if (def.type === "text" || def.drill || (def.ignore_filters || []).includes("period")) return false;
+  const measures = panelMeasures(def, spec.members);
+  const timeCube = cubeOf(spec.time.dimension);
+  return measures.length > 0 && measures.every((m) => reaches(spec, cubeOf(m), timeCube));
+}
+
+/** The query with a date range on the dashboard's time dimension (merged into the entry the query already has for it, if any). */
+export function withRange(spec, query, range) {
+  const dim = spec.time.dimension;
+  const td = query.timeDimensions || [];
+  const has = td.some((t) => t.dimension === dim);
+  return { ...query, timeDimensions: has ? td.map((t) => (t.dimension === dim ? { ...t, dateRange: range } : t)) : [...td, { dimension: dim, dateRange: range }] };
+}
+
+/** `queries` ([{ cube, query }]) narrowed by the page's period when this panel follows it. */
+export function followPeriod(spec, def, values, queries) {
+  const range = parsePeriod(values[PERIOD]);
+  return range && appliesPeriod(spec, def) ? queries.map((q) => ({ ...q, query: withRange(spec, q.query, range) })) : queries;
+}
+
 // ------------------------------------------------------------------ the queries of each panel type
 // One place builds them: the panels run them, and `dashspec lint` (which asks Cube whether a rollup serves each) mirrors them in Python;
 // dashboards/tests checks the two agree on every dashboard.
@@ -221,27 +280,33 @@ export const isSelected = (current, ids, values, only = false) =>
 export function kpiQueries(spec, def, t, values) {
   const filters = activeFilters(spec, values, def);
   return {
-    now: queriesPerCube(t.members, { filters }),
+    now: followPeriod(spec, def, values, queriesPerCube(t.members, { filters })),
     series: def.sparkline
-      ? queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: spec.time.dimension, granularity: def.sparkline.granularity }] }) : null,
+      ? followPeriod(spec, def, values, queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: spec.time.dimension, granularity: def.sparkline.granularity }] })) : null,
   };
 }
 
-export function timeseriesQueries(spec, def, values, granularity) {
+/** `range` is the drill-down's own date range (the period of the bucket drilled into); a chart that does not drill follows the page's period instead. */
+export function timeseriesQueries(spec, def, values, granularity, range = null) {
   const members = [...new Set(def.series.flatMap((s) => term(s).members))];
-  return queriesPerCube(members, { timeDimensions: [{ dimension: spec.time.dimension, granularity }], filters: activeFilters(spec, values, def) });
+  const queries = queriesPerCube(members, { timeDimensions: [{ dimension: spec.time.dimension, granularity, ...(range ? { dateRange: range } : {}) }], filters: activeFilters(spec, values, def) });
+  return range ? queries : followPeriod(spec, def, values, queries);
 }
 
 export function barQueries(spec, def, values) {
   const measures = def.stack ? def.stack.map((s) => s.member) : [def.measure];
   const single = !def.stack && !def.split;       // then the database ranks and limits; otherwise totals per row are needed first
-  return queriesPerCube(measures, {
+  return followPeriod(spec, def, values, queriesPerCube(measures, {
     dimensions: [def.by, ...(def.split ? [def.split] : [])], filters: activeFilters(spec, values, def),
     ...(single ? { order: { [def.measure]: def.sort || "desc" }, limit: def.limit || 10 } : {}),
-  });
+  }));
 }
 
-export const treemapQueries = (spec, def, values) => queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) });
+/** A pie reads every slice (up to 100) so that the tail past `limit` can be grouped as "Other" with an exact total. */
+export const pieQueries = (spec, def, values) => followPeriod(spec, def, values,
+  queriesPerCube([def.measure], { dimensions: [def.by], filters: activeFilters(spec, values, def), order: { [def.measure]: "desc" }, limit: 100 }));
+
+export const treemapQueries = (spec, def, values) => followPeriod(spec, def, values, queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) }));
 
 export function tableQueries(spec, def, values) {
   const { measures, dimensions } = tableParts(def, spec.members);
@@ -249,7 +314,7 @@ export function tableQueries(spec, def, values) {
   const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
   const base = { dimensions, filters: activeFilters(spec, values, def), ...(single ? { order, limit: def.limit || 100 } : {}) };
   if (!measures.length) return [{ cube: "", query: { ...base, order, limit: def.limit || 100 } }];
-  return queriesPerCube(measures, base);
+  return followPeriod(spec, def, values, queriesPerCube(measures, base));
 }
 
 /** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
@@ -258,6 +323,7 @@ export function panelQueries(spec, def, values) {
     case "kpi": return def.measures.map(term).flatMap((t) => { const q = kpiQueries(spec, def, t, values); return [...q.now, ...(q.series || [])]; });
     case "timeseries": return timeseriesQueries(spec, def, values, def.granularity);
     case "bar": return barQueries(spec, def, values);
+    case "pie": return pieQueries(spec, def, values);
     case "treemap": return treemapQueries(spec, def, values);
     case "table": return tableQueries(spec, def, values);
     default: return [];

@@ -69,6 +69,11 @@ measure that already holds percentage points), `decimal`, `number`.
 measures can join to its dimension; for a panel that cannot, list the filter in that panel's `ignore_filters` (the validator tells you).
 `parent` groups a filter's options under another dimension, and narrows them when the dashboard has a filter on that dimension too.
 
+**Drill down:** `drill: [year, month, day]` on a time chart. A click on a point opens the next, finer level for that period and, at the same time, filters every other panel
+to that date range (the "period", shown as a chip and kept in the URL); a trail above the chart (`All › 2020 › Mar 2020`) goes back up, the chip's x clears it, and
+a panel that should not follow lists `period` in its `ignore_filters`. On the last level a click picks one day. Years are calendar years. Chart styles: `line`,
+`area`, `stacked-area`, `bar`, `stacked-bar`.
+
 **Click to filter:** `on_click: { set_filter: <id> | [<id>, <id>] }` makes marks clickable. A click sets those filters from what was clicked;
 clicking again undoes it and brings back what they held before. The clicked panel does not narrow itself with the filters it sets, so it keeps
 showing every choice and marks the selected one. What a click carries: a bar its `by` value, a treemap tile its `group` values in order
@@ -81,7 +86,9 @@ showing every choice and marks the selected one. What a click carries: a bar its
 | **`kpi`**: one tile per measure, optional sparkline. Each tile loads on its own. | ![kpi](images/dashboards/kpi.png) |
 | **`timeseries`**: line, bar or stacked bar over a granularity (`granularities` adds a switch); a click sets a year filter. | ![timeseries](images/dashboards/timeseries.png) |
 | **`timeseries`, `style: line`** with a `ratio` series: a margin over both channels. | ![line](images/dashboards/line.png) |
-| **`bar`**: ranked; one `measure`, a `stack` of measures from several cubes, or a `split` by a dimension. | ![bar](images/dashboards/bar.png) |
+| **`timeseries` with `drill: [year, month, day]`**: a click opens the next level for that period, a trail goes back up, and every other panel follows the period. | ![drill](images/dashboards/drill.png) |
+| **`bar`**: ranked; one `measure`, a `stack` of measures from several cubes, or a `split` by a dimension; `orientation: vertical` draws columns. | ![bar](images/dashboards/bar.png) |
+| **`pie`** (`style: pie` or `donut`): slices by a dimension, the tail grouped as "Other"; a click filters. | ![pie](images/dashboards/pie.png) |
 | **`treemap`**: one or two dimensions; with two, tiles sit under headings. | ![treemap](images/dashboards/treemap.png) |
 | **`table`**: members or `{ member, label, format }`, `order`, `limit`; a row can set filters. | ![table](images/dashboards/table.png) |
 | **`text`**: a short Markdown note. | ![text](images/dashboards/text.png) |

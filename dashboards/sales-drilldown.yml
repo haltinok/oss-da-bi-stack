@@ -1,0 +1,75 @@
+spec: 1
+id: sales-drilldown
+title: Sales drill-down
+description: Revenue over time that drills from year to month to day, a donut by subcategory and columns by category. Every click filters the rest.
+locale: en-US
+currency: USD
+roles: [admin, manager]
+time:
+  dimension: dates.full_date
+  fiscal_year_start: 7
+filters:
+  - id: category
+    dimension: products.category
+    label: Category
+  - id: subcategory
+    dimension: products.subcategory
+    label: Subcategory
+    parent: products.category
+  - id: region
+    dimension: territories.region
+    label: Region
+panels:
+  - id: kpis
+    type: kpi
+    measures:
+      - { sum: [internet_sales.revenue, reseller_sales.revenue], label: Revenue, format: money }
+      - { sum: [internet_sales.orders, reseller_sales.orders], label: Orders, format: int }
+      - { ratio: { num: [internet_sales.revenue, reseller_sales.revenue], den: [internet_sales.orders, reseller_sales.orders] }, label: Avg order value, format: money }
+      - { sum: [internet_sales.units, reseller_sales.units], label: Units sold, format: int }
+    sparkline: { granularity: month }
+  - id: trend
+    type: timeseries
+    title: Revenue by channel
+    series:
+      - { member: internet_sales.revenue, label: Internet, color: internet, format: money }
+      - { member: reseller_sales.revenue, label: Reseller, color: reseller, format: money }
+    granularity: year
+    drill: [year, month, day]
+    style: stacked-area
+  - id: donut
+    type: pie
+    title: Internet revenue by subcategory
+    measure: internet_sales.revenue
+    by: products.subcategory
+    limit: 8
+    style: donut
+    format: money
+    on_click: { set_filter: subcategory }
+  - id: categories
+    type: bar
+    title: Revenue by category
+    orientation: vertical
+    stack:
+      - { member: internet_sales.revenue, label: Internet, color: internet }
+      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+    by: products.category
+    sort: desc
+    limit: 6
+    format: money
+    on_click: { set_filter: category }
+  - id: regions
+    type: bar
+    title: Revenue by region
+    stack:
+      - { member: internet_sales.revenue, label: Internet, color: internet }
+      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+    by: territories.region
+    sort: desc
+    limit: 10
+    format: money
+    on_click: { set_filter: region }
+layout:
+  - [kpis: 12]
+  - [trend: 7, donut: 5]
+  - [categories: 6, regions: 6]

@@ -77,7 +77,7 @@ with sync_playwright() as p:
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".dlist a", timeout=20000)
     names = page.locator(".dlist h2").all_inner_texts()
-    check(sorted(names) == ["Envanter sağlığı", "Sales overview"], f"/d/ lists the dashboards the role may open ({names})")
+    check(sorted(names) == ["Envanter sağlığı", "Sales drill-down", "Sales overview"], f"/d/ lists the dashboards the role may open ({names})")
     check(page.get_attribute(".dlist a >> nth=0", "href").startswith("/d/"), "the list links to /d/<id>")
     check(not page.problems, f"the list loads without console errors {page.problems[:2]}")
     ctx.close()
@@ -322,6 +322,111 @@ with sync_playwright() as p:
     check(page.get_attribute("#logo", "src") == "/render/none.svg" and not page.eval_on_selector("#logo", "n => n.hidden"), "the theme's logo is set")
     check(page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--internet').trim()") == "#112233", "the theme's colours replace the tokens")
     check(page.evaluate("getComputedStyle(document.querySelector('[data-panel=\"trend\"] .legend .swatch')).backgroundColor") == "rgb(17, 34, 51)", "a series coloured `internet` follows the theme")
+    ctx.close()
+
+    # ---- drill-down, pie, columns, area
+    ctx, page = open_page(browser, "/d/sales-drilldown")
+    settled(page)
+    trend = '[data-panel="trend"]'
+    crumbs = lambda: page.locator(f"{trend} .crumb").all_inner_texts()  # noqa: E731
+    hits = lambda: page.locator(f"{trend} .hit").count()  # noqa: E731
+    check(not page.problems, f"the drill-down dashboard loads without console errors {page.problems[:2]}")
+    check(crumbs() == ["All"] and hits() == 3 and "2019" in page.inner_text(trend) and "Click a point to drill down" in page.inner_text(trend), "the chart starts at the year level with a trail")
+    check(page.locator(f"{trend} svg path[fill-opacity]").count() >= 2, "a stacked area is drawn")
+    check(page.locator('[data-panel="donut"] path.slice').count() == 4 and page.locator('[data-panel="donut"] .pie-legend li').count() == 4, "the donut has a slice and a legend row per subcategory")
+    check("Total" in page.inner_text('[data-panel="donut"]') and "$5.46K" in page.inner_text('[data-panel="donut"]'), "with the total in the middle")
+    check(page.locator('[data-panel="categories"] svg .hit').count() == 4 and page.locator('[data-panel="categories"] svg rect[fill]').count() >= 4, "vertical columns are drawn for the category bars")
+    check(page.locator("#period-bar").is_hidden(), "no period yet")
+
+    page.queries.clear()
+    page.locator(f"{trend} .hit").nth(1).click()
+    settled(page)
+    check(crumbs() == ["All", "2020"] and hits() == 12, f"a click on 2020 opens its twelve months ({crumbs()}, {hits()} points)")
+    check("period=2020-01-01..2020-12-31" in page.url and "drill_trend=2020-01-01" in page.url, f"the period and the drill path are in the URL ({page.url})")
+    check(page.locator("#period-bar .chip").is_visible() and "2020" in page.inner_text("#period-bar"), "a chip names the period")
+    qs = sent(page)
+    own = [q for q in qs if q.get("timeDimensions", [{}])[0].get("granularity") == "month" and q.get("measures") == ["internet_sales.revenue"]]
+    check(own and own[0]["timeDimensions"] == [{"dimension": "dates.full_date", "granularity": "month", "dateRange": ["2020-01-01", "2020-12-31"]}], "the chart queries months of that year, with one time entry")
+    donut = [q for q in qs if q.get("dimensions") == ["products.subcategory"]]
+    check(donut and donut[0]["timeDimensions"] == [{"dimension": "dates.full_date", "dateRange": ["2020-01-01", "2020-12-31"]}], "the donut follows the period (cross-filtering)")
+    kpi = [q for q in qs if q.get("measures") == ["internet_sales.revenue"] and "dimensions" not in q and q.get("timeDimensions", [{}])[0].get("granularity") != "month"]
+    check(kpi and kpi[0]["timeDimensions"][0].get("dateRange") == ["2020-01-01", "2020-12-31"], "so do the KPI tiles")
+    check(all(q.get("timeDimensions", [{}])[0].get("dateRange") == ["2020-01-01", "2020-12-31"] for q in qs if q.get("dimensions") in (["products.category"], ["territories.region"])), "and the other bars")
+
+    page.locator(f"{trend} .hit").nth(2).click()
+    settled(page)
+    check(crumbs() == ["All", "2020", "Mar 2020"] and hits() == 31 and "period=2020-03-01..2020-03-31" in page.url, f"then March: its 31 days ({crumbs()}, {hits()})")
+    page.locator(f"{trend} .hit").nth(4).click()
+    settled(page)
+    check("period=2020-03-05..2020-03-05" in page.url and crumbs() == ["All", "2020", "Mar 2020"], "on the last level a click picks the day")
+    page.locator(f"{trend} .hit").nth(4).click()
+    settled(page)
+    check("period=2020-03-01..2020-03-31" in page.url, "and the same day again goes back to the month")
+    page.click(f"{trend} .crumb >> text=2020")
+    settled(page)
+    check(crumbs() == ["All", "2020"] and hits() == 12 and "period=2020-01-01..2020-12-31" in page.url and "drill_trend=2020-01-01" in page.url and "2020-03" not in page.url, "the trail goes back up a level")
+    page.click(f"{trend} .crumb >> text=All")
+    settled(page)
+    check(crumbs() == ["All"] and hits() == 3 and "period=" not in page.url and page.locator("#period-bar").is_hidden() and "drill_trend" not in page.url, "and to the top: no period, no chip")
+
+    # the pie and the drill-down work together: a slice filters everything, the chart keeps its place
+    page.locator(f"{trend} .hit").nth(1).click()
+    settled(page)
+    page.queries.clear()
+    page.locator('[data-panel="donut"] .pie-legend li').first.click()
+    settled(page)
+    check("subcategory=" in page.url and "period=2020-01-01..2020-12-31" in page.url and crumbs() == ["All", "2020"], "a slice sets the subcategory while the drill-down keeps its place")
+    own = [q for q in sent(page) if q.get("timeDimensions", [{}])[0].get("granularity") == "month"]
+    check(own and own[0]["filters"] and own[0]["timeDimensions"][0]["dateRange"] == ["2020-01-01", "2020-12-31"], "the chart's queries carry the subcategory filter and its own range")
+    check(page.locator('[data-panel="donut"] path.slice.dim').count() == 3 and page.locator('[data-panel="donut"] .pie-legend li.sel').count() == 1, "the chosen slice is marked and the others fade")
+    page.locator('[data-panel="donut"] .pie-legend li').first.click()
+    settled(page)
+    check("subcategory=" not in page.url, "clicking it again undoes it")
+    page.locator('[data-panel="donut"] path.slice').nth(1).hover()
+    check(page.locator("#tip.on").count() == 1 and "%" in page.inner_text("#tip"), "hovering a slice shows its value and share")
+    page.locator('[data-panel="donut"] path.slice').nth(1).click()
+    settled(page)
+    check("subcategory=" in page.url and page.locator('[data-panel="donut"] path.slice.dim').count() == 3, "a slice can be clicked too")
+    page.locator('[data-panel="categories"] .hit').nth(0).click()
+    settled(page)
+    check("category=" in page.url and page.locator('[data-panel="categories"] svg g.dim').count() == 3, "a column sets the category and the others fade")
+    page.click('[data-panel="donut"] .tbl-toggle:not(.xls-btn)')
+    check(page.locator('[data-panel="donut"] tbody tr').count() >= 1 and "Share" in page.inner_text('[data-panel="donut"] thead'), "the donut has a Table view with its shares")
+
+    # reload restores the place; the chip's x puts the chart back
+    page.reload()
+    settled(page)
+    check(crumbs() == ["All", "2020"] and hits() == 12, "a reload keeps the drill-down (from the URL)")
+    page.click("#period-bar .chip-x")
+    settled(page)
+    check(crumbs() == ["All"] and hits() == 3 and page.locator("#period-bar").is_hidden() and "period=" not in page.url, "the chip's x clears the period and the chart goes back to years")
+    page.click("#filters .reset")
+    settled(page)
+    check("category=" not in page.url and "subcategory=" not in page.url, "Reset filters clears the filters too")
+    ctx.close()
+
+    # a panel can opt out of the period; the Table, Excel and phone widths
+    ctx, page = open_page(browser, "/d/sales-drilldown")
+    def optout(route):
+        spec = json.loads(route.fetch().text())
+        next(p for p in spec["panels"] if p["id"] == "kpis")["ignore_filters"] = ["period"]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+    page.route("**/dashboards/sales-drilldown.json", optout)
+    page.reload()
+    settled(page)
+    page.queries.clear()
+    page.locator(f"{trend} .hit").nth(1).click()
+    settled(page)
+    qs = sent(page)
+    dated = lambda q: any(t.get("dateRange") for t in q.get("timeDimensions", []))  # noqa: E731
+    check([q for q in qs if q.get("dimensions") == ["products.subcategory"] and dated(q)] and not [q for q in qs if "internet_sales.orders" in q.get("measures", []) and dated(q)],
+          "ignore_filters: [period] keeps a panel out of the drill-down's period while the others follow it")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/sales-drilldown", width=390)
+    settled(page)
+    page.locator(f"{trend} .hit").nth(1).click()
+    settled(page)
+    check(page.evaluate("document.documentElement.scrollWidth - window.innerWidth") <= 0, "390px: the drill-down page has no sideways scroll")
     ctx.close()
 
     # ---- unknown dashboard, wrong role

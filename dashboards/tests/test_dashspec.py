@@ -72,8 +72,8 @@ BROKEN = [
      ["panel 'trend' (timeseries)", "series[2].member", "is a dimension"]),
     ("bad granularity", _set("trend", "granularity", "fortnight"),
      ["panel 'trend' (timeseries)", "granularity:", "'fortnight' is not one of"]),
-    ("unknown panel type", _set("top", "type", "pie"),
-     ["panel 'top' (pie)", "type:", "'pie' is not one of"]),
+    ("unknown panel type", _set("top", "type", "radar"),
+     ["panel 'top' (radar)", "type:", "'radar' is not one of"]),
     ("missing required field", _drop("top", "by"),
      ["panel 'top' (bar)", "'by' is a required property"]),
     ("unknown field", _set("top", "colour", "red"),
@@ -140,6 +140,30 @@ BROKEN = [
      ["panel 'kpis' (kpi)", "role 'rep' cannot read 'internet_sales.gross_profit'", "profit and margin are hidden from reps"]),
     ("role purchasing on a sales dashboard", lambda s: s.update(roles=["purchasing"]),
      ["role 'purchasing' cannot read", "is not available to purchasing"]),
+    ("drill levels out of order", lambda s: panel(s, "trend").update(drill=["month", "year"], granularity="month", granularities=None) or panel(s, "trend").pop("granularities") or panel(s, "trend").pop("on_click"),
+     ["panel 'trend' (timeseries)", "drill:", "must go from coarse to fine"]),
+    ("drill whose first level is not the granularity", lambda s: panel(s, "trend").update(drill=["year", "month"]),
+     ["panel 'trend'", "granularity:", "must be the first drill level 'year'"]),
+    ("drill together with granularities", lambda s: panel(s, "trend").update(drill=["month", "day"]),
+     ["panel 'trend'", "granularities:", "a drill-down already changes the granularity"]),
+    ("drill together with on_click", lambda s: panel(s, "trend").update(drill=["month", "day"]),
+     ["panel 'trend'", "on_click:", "also filters the other panels by the period"]),
+    ("a week inside a month", lambda s: (panel(s, "trend").update(drill=["month", "week"]), panel(s, "trend").pop("granularities"), panel(s, "trend").pop("on_click")),
+     ["panel 'trend'", "a week does not fit inside a month"]),
+    ("a drill with one level", lambda s: panel(s, "trend").update(drill=["month"]),
+     ["panel 'trend'", "drill:", "is too short"]),
+    ("a chart style that does not exist", _set("trend", "style", "radar"),
+     ["panel 'trend' (timeseries)", "style:", "'radar' is not one of"]),
+    ("a bar orientation that does not exist", _set("top", "orientation", "diagonal"),
+     ["panel 'top' (bar)", "orientation:", "'diagonal' is not one of"]),
+    ("a pie with a stack", lambda s: s["panels"].append({"id": "p", "type": "pie", "stack": [], "by": "products.category"}) or s["layout"].append([{"p": 12}]),
+     ["panel 'p' (pie)", "stack:"]),
+    ("a pie click on another dimension", lambda s: (s["panels"].append({"id": "p", "type": "pie", "measure": "internet_sales.revenue", "by": "products.category", "on_click": {"set_filter": "region"}}), s["layout"].append([{"p": 12}])),
+     ["panel 'p' (pie)", "filter 'region' is on 'territories.region', which this pie does not show"]),
+    ("a pie with one slice", lambda s: (s["panels"].append({"id": "p", "type": "pie", "measure": "internet_sales.revenue", "by": "products.category", "limit": 1}), s["layout"].append([{"p": 12}])),
+     ["panel 'p' (pie)", "limit:", "less than the minimum of 2"]),
+    ("a pie by an unknown dimension", lambda s: (s["panels"].append({"id": "p", "type": "pie", "measure": "internet_sales.revenue", "by": "products.nope"}), s["layout"].append([{"p": 12}])),
+     ["panel 'p' (pie)", "by:", "'products.nope' is not in the Cube model"]),
     ("ignore_filters names an unknown filter", _set("top", "ignore_filters", ["nope"]),
      ["panel 'top'", "ignore_filters:", "no filter with id 'nope'"]),
     ("table order on a column that is not shown", _set("lines", "order", {"internet_sales.units": "desc"}),
@@ -181,7 +205,7 @@ def test_ignore_filters_fixes_the_join_error():
 
 
 def test_a_bad_panel_type_is_reported_once_not_as_noise():
-    errors = run(_set("top", "type", "pie"))
+    errors = run(_set("top", "type", "radar"))
     assert len(errors) == 1, errors
 
 
@@ -435,7 +459,7 @@ def test_links_and_images_in_the_dashboard_docs_resolve():
     for anchor in re.findall(r"\]\(#([^)]+)\)", guide):
         heads = [re.sub(r"[^a-z0-9 -]", "", h.lower()).strip().replace(" ", "-") for h in re.findall(r"^#+ (.+)$", guide, re.M)]
         assert anchor in heads, f"dashboards.md: no heading for #{anchor}"
-    for panel_type in ("kpi", "timeseries", "bar", "treemap", "table", "text"):
+    for panel_type in ("kpi", "timeseries", "bar", "pie", "treemap", "table", "text"):
         assert f"**`{panel_type}`" in guide, f"the gallery lacks {panel_type}"
 
 
@@ -465,3 +489,25 @@ def test_catalog_json_hides_what_a_role_cannot_read():
     gp = next(m for m in admin["internet_sales"]["measures"] if m["name"] == "gross_profit")
     assert gp["hidden_from"] == ["rep", "purchasing", "marketing"] and gp["description"]
     assert admin["internet_sales"]["joins"] == ["customers", "dates", "products", "territories"] and admin["internet_sales"]["fact"]
+
+
+def test_a_drill_down_a_pie_and_the_new_styles_are_valid_and_compile_with_cube_joins():
+    spec = copy.deepcopy(GOOD)
+    trend = panel(spec, "trend")
+    trend.pop("granularities")
+    trend.pop("on_click")
+    trend.update(drill=["year", "month", "day"], granularity="year", style="stacked-area")
+    spec["panels"].append({"id": "p", "type": "pie", "measure": "internet_sales.revenue", "by": "products.subcategory", "style": "donut", "limit": 6, "format": "money", "on_click": {"set_filter": "subcategory"}})
+    panel(spec, "top")["orientation"] = "vertical"
+    panel(spec, "kpis")["ignore_filters"] = ["period"]
+    spec["layout"].append([{"p": 12}])
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    assert out["cubes"]["internet_sales"]["joins"] == ["customers", "dates", "products", "territories"] and out["cubes"]["dates"]["joins"] == []
+    assert next(p for p in out["panels"] if p["id"] == "trend")["drill"] == ["year", "month", "day"]
+
+
+def test_ignore_filters_only_accepts_filters_and_the_period():
+    errors = run(_set("top", "ignore_filters", ["period", "nope"]))
+    assert errors == ["panel 'top' (bar): ignore_filters: no filter with id 'nope'"]
