@@ -212,3 +212,54 @@ export function pick(current, ids, values, saved) {
 /** Is exactly this selection active? (every named filter holds its value; with `only`, the filters after the first are empty.) */
 export const isSelected = (current, ids, values, only = false) =>
   ids.every((id, i) => (only && i >= values.length ? !current[id] : String(current[id] ?? "") === String(values[i])));
+
+// ------------------------------------------------------------------ the queries of each panel type
+// One place builds them: the panels run them, and `dashspec lint` (which asks Cube whether a rollup serves each) mirrors them in Python;
+// dashboards/tests checks the two agree on every dashboard.
+
+/** KPI tile `t` (a term): { now, series } queries per cube; series is null without a sparkline. */
+export function kpiQueries(spec, def, t, values) {
+  const filters = activeFilters(spec, values, def);
+  return {
+    now: queriesPerCube(t.members, { filters }),
+    series: def.sparkline
+      ? queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: spec.time.dimension, granularity: def.sparkline.granularity }] }) : null,
+  };
+}
+
+export function timeseriesQueries(spec, def, values, granularity) {
+  const members = [...new Set(def.series.flatMap((s) => term(s).members))];
+  return queriesPerCube(members, { timeDimensions: [{ dimension: spec.time.dimension, granularity }], filters: activeFilters(spec, values, def) });
+}
+
+export function barQueries(spec, def, values) {
+  const measures = def.stack ? def.stack.map((s) => s.member) : [def.measure];
+  const single = !def.stack && !def.split;       // then the database ranks and limits; otherwise totals per row are needed first
+  return queriesPerCube(measures, {
+    dimensions: [def.by, ...(def.split ? [def.split] : [])], filters: activeFilters(spec, values, def),
+    ...(single ? { order: { [def.measure]: def.sort || "desc" }, limit: def.limit || 10 } : {}),
+  });
+}
+
+export const treemapQueries = (spec, def, values) => queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) });
+
+export function tableQueries(spec, def, values) {
+  const { measures, dimensions } = tableParts(def, spec.members);
+  const order = Object.fromEntries(Object.entries(def.order || {}));
+  const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
+  const base = { dimensions, filters: activeFilters(spec, values, def), ...(single ? { order, limit: def.limit || 100 } : {}) };
+  if (!measures.length) return [{ cube: "", query: { ...base, order, limit: def.limit || 100 } }];
+  return queriesPerCube(measures, base);
+}
+
+/** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
+export function panelQueries(spec, def, values) {
+  switch (def.type) {
+    case "kpi": return def.measures.map(term).flatMap((t) => { const q = kpiQueries(spec, def, t, values); return [...q.now, ...(q.series || [])]; });
+    case "timeseries": return timeseriesQueries(spec, def, values, def.granularity);
+    case "bar": return barQueries(spec, def, values);
+    case "treemap": return treemapQueries(spec, def, values);
+    case "table": return tableQueries(spec, def, values);
+    default: return [];
+  }
+}

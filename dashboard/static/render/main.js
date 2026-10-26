@@ -8,6 +8,7 @@ import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
 import { optionMeasures, optionsOf, pick, queriesPerCube, runAll } from "./plan.js";
+import { stringsFor } from "./strings.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -63,25 +64,43 @@ function setStatus(text, cls = "") {
   $("#live-text").innerHTML = text;
 }
 
+/** A dashboard's own look: a name and logo in the header, and colours for the theme tokens (a series `color: internet` follows them). */
+function applyTheme(theme = {}) {
+  if (theme.name) { $("#brand-name").textContent = theme.name; $("#brand-name").hidden = false; }
+  if (theme.logo) { $("#logo").src = theme.logo; $("#logo").hidden = false; }
+  for (const [token, hex] of Object.entries(theme.colors || {})) document.documentElement.style.setProperty(`--${token}`, hex);
+}
+
 // ------------------------------------------------------------------ the list
 async function showList() {
   document.title = "Dashboards";
   const index = await (await fetch("/dashboards/index.json", { cache: "no-store" })).json().catch(() => []);
   const role = client.session().role;
   const mine = index.filter((d) => !d.roles?.length || d.roles.includes(role));
-  setStatus("<strong>Signed in</strong>");
+  const t = stringsFor(navigator.language);
+  document.title = t.dashboards;
+  $("#title").textContent = t.dashboards;
+  $("#export-label").textContent = t.exportAll;
+  setStatus(`<strong>${esc(t.signedIn)}</strong>`);
   $("#main").innerHTML = mine.length
     ? `<div class="dlist">${mine.map((d) => `<a href="/d/${encodeURIComponent(d.id)}"><div class="card"><h2>${esc(d.title)}</h2><p>${esc(d.description)}</p></div></a>`).join("")}</div>`
-    : `<div class="empty">No dashboards are available for your role.</div>`;
+    : `<div class="empty">${esc(t.noDashboards)}</div>`;
 }
 
 // ------------------------------------------------------------------ one dashboard
 async function showDashboard() {
   const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
-  if (!res.ok) throw new Error(res.status === 404 ? `There is no dashboard '${id}'. Open /d/ for the list.` : `The dashboard could not be loaded (HTTP ${res.status})`);
+  const t0 = stringsFor(navigator.language);
+  if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
   const spec = await res.json();
   const role = client.session().role;
-  if (spec.roles?.length && !spec.roles.includes(role)) throw new Error(`The dashboard '${spec.title}' is not available for your role (${role}).`);
+  const t = stringsFor(spec.locale);
+  document.documentElement.lang = (spec.locale || "en-US").split("-")[0];
+  if (spec.roles?.length && !spec.roles.includes(role)) throw new Error(t.notForRole(spec.title, role));
+  applyTheme(spec.theme);
+  $("#export-label").textContent = t.exportAll;
+  $("#refresh").title = $("#refresh").ariaLabel = t.refresh;
+  if ($("#signout")) $("#signout").textContent = t.signOut;
 
   document.title = `${spec.title} · ${dataset.label}`;
   $("#title").textContent = spec.title;
@@ -96,7 +115,7 @@ async function showDashboard() {
   const span = Object.fromEntries(spec.layout.flat().map((c) => [c.panel, c.span]));
 
   const ctx = {
-    spec, run: (q, signal) => client.run(q, signal), tooltip,
+    spec, t, run: (q, signal) => client.run(q, signal), tooltip,
     filterValues: () => values,
     formatter: (format, full = false) => {
       const f = format === "money" && full ? fmt.moneyFull : fmt[format || "number"] || fmt.number;
@@ -116,9 +135,9 @@ async function showDashboard() {
     dateTime: (v) => dateTimeFmt.format(new Date(v)),
     subtitle() {
       const parts = (spec.filters || []).filter((f) => values[f.id]).map((f) => `${f.label || f.id}: ${values[f.id]}`);
-      return `Filters: ${parts.length ? parts.join(" · ") : "none"} · exported ${dateTimeFmt.format(new Date())} from ${dataset.mart}`;
+      return `${t.filters}: ${parts.length ? parts.join(" · ") : t.none} · ${t.exported} ${dateTimeFmt.format(new Date())} ${t.from} ${dataset.mart}`;
     },
-    exportSheets: (sheets, name) => downloadXlsx(sheets.filter(Boolean), { prefix: spec.id, slug: slugify(name) }),
+    exportSheets: (sheets, name) => downloadXlsx(sheets.filter(Boolean), { prefix: spec.id, slug: slugify(name), symbol: fmt.symbol }),
     // A click on a panel sets filters (see plan.js `pick`): the page applies them like a change in the filter bar.
     pick: (ids, vals) => apply(pick(values, ids, vals, saved)),
   };
@@ -151,7 +170,7 @@ async function showDashboard() {
     }
     const opt = (o) => el("option", { value: o.value }, esc(o.value));
     const optgroup = (label, os) => { const og = el("optgroup", { label }); og.append(...os.map(opt)); return og; };
-    sel.replaceChildren(el("option", { value: "" }, "All"), ...[...groups].flatMap(([g, os]) => (g ? [optgroup(g, os)] : os.map(opt))));
+    sel.replaceChildren(el("option", { value: "" }, esc(t.all)), ...[...groups].flatMap(([g, os]) => (g ? [optgroup(g, os)] : os.map(opt))));
     sel.value = values[f.id];
     sel.classList.toggle("set", !!values[f.id]);
   }
@@ -181,7 +200,7 @@ async function showDashboard() {
         loadAll();
       });
     }
-    const reset = el("button", { class: "reset", type: "button", hidden: "" }, "Reset filters");
+    const reset = el("button", { class: "reset", type: "button", hidden: "" }, esc(t.reset));
     reset.addEventListener("click", () => {
       for (const k of Object.keys(saved)) delete saved[k];
       for (const f of spec.filters) values[f.id] = "";
@@ -220,8 +239,8 @@ async function showDashboard() {
     const failed = results.filter((r) => r.status === "rejected" && r.reason?.name !== "AbortError");
     lastLoad = Date.now();
     const clock = new Date().toLocaleTimeString(fmt.locale, { hour12: false });
-    if (failed.length === results.length && failed.length) { setStatus("<strong>Stale</strong> · could not load", "stale"); show(readable(failed[0].reason)); }
-    else setStatus(`<strong>Updated</strong> ${clock}`);
+    if (failed.length === results.length && failed.length) { setStatus(`<strong>${esc(t.stale)}</strong> · ${esc(t.couldNotLoad)}`, "stale"); show(readable(failed[0].reason)); }
+    else setStatus(`<strong>${esc(t.updated)}</strong> ${clock}`);
   }
   window.__render = { spec, values, panels, loadAll, ready: null };
 
@@ -231,7 +250,7 @@ async function showDashboard() {
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
   buildFilters();
   ctx.syncReset?.();
-  setStatus("Loading…");
+  setStatus(esc(t.loading));
   await loadOptions(new AbortController().signal).catch((e) => console.warn("filter options failed:", e?.message || e));
   await loadAll();
   setInterval(() => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); }, 30_000);

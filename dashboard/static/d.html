@@ -13,7 +13,8 @@
 <div class="wrap" id="app">
   <header class="top">
     <div class="brand">
-      <h1><span id="title">Dashboards</span> <span class="dataset-badge" id="dataset-badge" hidden></span></h1>
+      <span class="brand-name" id="brand-name" hidden></span>
+      <h1><img class="logo" id="logo" alt="" hidden><span id="title">Dashboards</span> <span class="dataset-badge" id="dataset-badge" hidden></span></h1>
       <span class="sub" id="brand-sub"></span>
     </div>
     <div class="tools" id="tools">
@@ -22,7 +23,7 @@
         <span class="dot" aria-hidden="true"></span><span id="live-text">Connecting…</span>
       </div>
       <button class="export-all" id="export-all" type="button" hidden>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v8m0 0L5 7m3 3 3-3M3 13h10"/></svg>Export all
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v8m0 0L5 7m3 3 3-3M3 13h10"/></svg><span id="export-label">Export all</span>
       </button>
       <button class="icon-btn" id="refresh" title="Refresh" aria-label="Refresh" type="button" hidden>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>

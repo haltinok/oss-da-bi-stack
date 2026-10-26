@@ -5,7 +5,7 @@
 // header row, and an uncompressed ("stored") zip -- dashboard exports are
 // small, so compression would not buy anything. No dependencies.
 //
-//   const blob = buildXlsx([{ name, title, subtitle, columns: [{ label, type }], rows: [[...]] }]);
+//   const blob = buildXlsx([{ name, title, subtitle, columns: [{ label, type }], rows: [[...]] }], { symbol: "₺" });
 //
 // Column types: "text", "int", "money", "pct" (a fraction: 0.153 -> 15.3%),
 // "number" (#,##0.00), "date" (ISO string or Date); a cell given as { v, t } overrides its column's
@@ -69,9 +69,9 @@ ${rows.length ? `<autoFilter ref="A${headerRow}:${last}"/>` : ""}
 </worksheet>`;
   }
 
-  const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  const styles = (symbol) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="3"><numFmt numFmtId="164" formatCode="&quot;$&quot;#,##0.00"/><numFmt numFmtId="165" formatCode="0.0%"/><numFmt numFmtId="166" formatCode="yyyy-mm-dd hh:mm"/></numFmts>
+<numFmts count="3"><numFmt numFmtId="164" formatCode="&quot;${xml(symbol)}&quot;#,##0.00"/><numFmt numFmtId="165" formatCode="0.0%"/><numFmt numFmtId="166" formatCode="yyyy-mm-dd hh:mm"/></numFmts>
 <fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font><font><i/><sz val="10"/><color rgb="FF52514E"/><name val="Calibri"/></font></fonts>
 <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF3F2EE"/></patternFill></fill></fills>
 <borders count="2"><border/><border><bottom style="thin"><color rgb="FFC3C2B7"/></bottom></border></borders>
@@ -102,7 +102,7 @@ ${rows.length ? `<autoFilter ref="A${headerRow}:${last}"/>` : ""}
     });
   }
 
-  function parts(sheets) {
+  function parts(sheets, symbol) {
     const names = sheetNames(sheets);
     const files = {
       "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -128,7 +128,7 @@ ${sheets.some((s) => s.rows.length) ? `<definedNames>${sheets.map((s, i) => s.ro
 ${names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("\n")}
 <Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`,
-      "xl/styles.xml": STYLES,
+      "xl/styles.xml": styles(symbol),
     };
     sheets.forEach((s, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = sheetXml(s); });
     return files;
@@ -174,5 +174,6 @@ ${names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openx
     return new Blob([...chunks, ...central, end], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   }
 
-  return (sheets) => zip(parts(sheets));
+  // `symbol` is the currency sign of the money columns (the page's currency); the default is the dollar sign.
+  return (sheets, { symbol = "$" } = {}) => zip(parts(sheets, symbol));
 })();

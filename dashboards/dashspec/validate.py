@@ -186,6 +186,7 @@ def semantic_errors(spec, catalog):
         _join_errors(spec, p, w, catalog, errs)
 
     _layout_errors(spec, panel_ids, errs)
+    _role_errors(spec, errs)
     return errs, used
 
 
@@ -254,6 +255,52 @@ def _layout_errors(spec, panel_ids, errs):
         n = placed.count(pid)
         if n != 1:
             errs.append(f"layout: panel '{pid}' is placed {n} times, it must be placed once")
+
+
+# What each role may read, mirrored from cube/cube.js (a test compares the two): a dashboard listing a role must not ask for what Cube
+# refuses that role, or the panel would show an error for every reader.
+PROFIT_MEMBERS = {"gross_profit", "margin_pct", "product_cost"}
+INVENTORY_CUBES = {"inventory_health", "offer_performance"}
+ROLE_CUBES = {"purchasing": {"inventory_health", "products"}, "marketing": {"inventory_health", "offer_performance", "products"}}
+SUPPLIER_MEMBERS = {
+    "vendor_id", "vendor_name", "unit_cost", "lead_time_days", "replenishment_type", "suggested_order_qty", "suggested_order_value",
+    "suggested_order_qty_total", "suggested_order_value_total", "min_order_qty", "max_order_qty",
+}
+
+
+def _role_errors(spec, errs):
+    for p in spec["panels"]:
+        w = f"panel '{p['id']}' ({p['type']})"
+        members = [m for _, m, _ in _panel_members(p)]
+        ignored = set(p.get("ignore_filters", []))
+        members += [f["dimension"] for f in spec.get("filters", []) if f["id"] not in ignored] if members else []
+        if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
+            members.append(spec["time"]["dimension"])
+        if not members:
+            continue
+        cubes = {m.partition(".")[0] for m in members}
+        for role in spec.get("roles", []):
+            def no(m, why, role=role, w=w):
+                errs.append(f"{w}: role '{role}' cannot read '{m}' ({why}): remove the role from `roles` or the member from the panel")
+            if role == "rep":
+                for m in members:
+                    if m.partition(".")[2] in PROFIT_MEMBERS:
+                        no(m, "profit and margin are hidden from reps")
+            if role in ROLE_CUBES:
+                for c in sorted(cubes - ROLE_CUBES[role]):
+                    no(next(m for m in members if m.startswith(c + ".")), f"cube '{c}' is not available to {role}")
+                if not cubes & INVENTORY_CUBES:
+                    no(members[0], f"{role} may only query inventory data")
+                if role == "marketing":
+                    for m in members:
+                        if m.startswith("inventory_health.") and m.partition(".")[2] in SUPPLIER_MEMBERS:
+                            no(m, "supplier and order data are not available to marketing")
+            if role in ("manager", "rep"):
+                for m in members:
+                    if m.partition(".")[0] in INVENTORY_CUBES:
+                        no(m, "inventory data is not available for this role")
+                    if m.partition(".")[0] == "customers":
+                        no(m, "customer data is admin-only")
 
 
 def validate(spec, catalog):
