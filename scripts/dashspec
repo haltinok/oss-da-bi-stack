@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Validate / compile dashboard specs: scripts/dashspec validate dashboards/*.yml  (see docs/dashboard-spec-plan.md)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+PYTHONPATH=dashboards exec uv run --with pyyaml --with 'jsonschema>=4.18' python -m dashspec "$@"

@@ -1,6 +1,6 @@
 # Plan: dashboards defined in YAML, rendered from Cube, authored by an agent
 
-Status: **plan, not started**. Written to be implemented with Claude Code, one phase per PR, like
+Status: **Phase 1 done** (spec, validator, compiler: `dashboards/`, `scripts/dashspec`); later phases not started. Written to be implemented with Claude Code, one phase per PR, like
 [`inventory-actions-plan.md`](inventory-actions-plan.md).
 
 ## Goal

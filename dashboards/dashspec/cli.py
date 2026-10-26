@@ -1,0 +1,105 @@
+import argparse
+import json
+import os
+import pathlib
+import sys
+
+import yaml
+
+from . import catalog as cat
+from .compile import compile_spec
+from .validate import validate
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _catalog(args):
+    if args.cube_url:
+        token = os.environ.get("CUBE_TOKEN")
+        if not token:
+            sys.exit("--cube-url needs a Cube JWT in the CUBE_TOKEN environment variable")
+        return cat.from_cube(args.cube_url, token)
+    return cat.from_model(args.model)
+
+
+def _load(path):
+    try:
+        spec = yaml.safe_load(pathlib.Path(path).read_text())
+    except yaml.YAMLError as e:
+        return None, [f"not valid YAML: {e}"]
+    if not isinstance(spec, dict):
+        return None, ["the file must be a YAML mapping"]
+    return spec, []
+
+
+def _check(path, catalog):
+    spec, errs = _load(path)
+    used = {}
+    if spec is not None:
+        errs, used = validate(spec, catalog)
+    return spec, used, errs
+
+
+def cmd_validate(args):
+    catalog, bad = _catalog(args), 0
+    for path in args.files:
+        _, _, errs = _check(path, catalog)
+        if errs:
+            bad += 1
+            print(f"{path}: {len(errs)} problem(s)")
+            for e in errs:
+                print(f"  - {e}")
+        else:
+            print(f"{path}: ok")
+    return 1 if bad else 0
+
+
+def cmd_compile(args):
+    spec, used, errs = _check(args.file, _catalog(args))
+    if errs:
+        for e in errs:
+            print(f"{args.file}: {e}", file=sys.stderr)
+        return 1
+    text = json.dumps(compile_spec(spec, used), indent=2, ensure_ascii=False) + "\n"
+    if args.output:
+        out = pathlib.Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text)
+        print(f"wrote {out}")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def cmd_meta(args):
+    catalog = _catalog(args)
+    if args.json:
+        json.dump({c: {**v, "joins": sorted(v["joins"]) if v["joins"] is not None else None} for c, v in sorted(catalog.cubes.items())},
+                  sys.stdout, indent=2)
+        print()
+        return 0
+    for name, c in sorted(catalog.cubes.items()):
+        print(f"cube {name}" + (f"  (joins: {', '.join(sorted(c['joins']))})" if c["joins"] else ""))
+        print("  measures:   " + ", ".join(f"{m} [{t}]" for m, t in sorted(c["measures"].items())))
+        print("  dimensions: " + ", ".join(f"{d} [{t}]" for d, t in sorted(c["dimensions"].items())))
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="dashspec", description="Validate and compile dashboard specs (YAML) against the Cube model.")
+    src = argparse.ArgumentParser(add_help=False)
+    src.add_argument("--model", default=str(REPO / "cube" / "model"), help="Cube model directory (default: cube/model)")
+    src.add_argument("--cube-url", help="read the members from a running Cube instead (a Cube JWT in $CUBE_TOKEN; no join check)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    v = sub.add_parser("validate", parents=[src], help="schema and member checks; exit 1 on any problem")
+    v.add_argument("files", nargs="+")
+    v.set_defaults(fn=cmd_validate)
+    c = sub.add_parser("compile", parents=[src], help="validate, then write the JSON the renderer loads")
+    c.add_argument("file")
+    c.add_argument("-o", "--output")
+    c.set_defaults(fn=cmd_compile)
+    m = sub.add_parser("meta", parents=[src], help="the catalog of cubes, measures and dimensions (for the authoring agent)")
+    m.add_argument("--json", action="store_true")
+    m.set_defaults(fn=cmd_meta)
+    args = ap.parse_args(argv)
+    return args.fn(args)

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dashboard.schema.json",
+  "title": "Dashboard spec v1",
+  "type": "object",
+  "required": ["spec", "id", "title", "time", "panels", "layout"],
+  "additionalProperties": false,
+  "properties": {
+    "spec": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$" },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "roles": {
+      "type": "array",
+      "items": { "enum": ["admin", "manager", "rep", "purchasing", "marketing"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "time": {
+      "type": "object",
+      "required": ["dimension"],
+      "additionalProperties": false,
+      "properties": {
+        "dimension": { "$ref": "#/$defs/member" },
+        "fiscal_year_start": { "type": "integer", "minimum": 1, "maximum": 12 }
+      }
+    },
+    "filters": { "type": "array", "items": { "$ref": "#/$defs/filter" } },
+    "panels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/panel" } },
+    "layout": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 12 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+    "member": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" },
+    "format": { "enum": ["money", "int", "decimal", "pct"] },
+    "granularity": { "enum": ["hour", "day", "week", "month", "quarter", "year"] },
+    "direction": { "enum": ["asc", "desc"] },
+    "filter": {
+      "type": "object",
+      "required": ["id", "dimension"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "dimension": { "$ref": "#/$defs/member" },
+        "label": { "type": "string" },
+        "parent": { "$ref": "#/$defs/member" }
+      }
+    },
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "member": { "$ref": "#/$defs/member" },
+        "sum": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 2 },
+        "label": { "type": "string" },
+        "format": { "$ref": "#/$defs/format" }
+      },
+      "oneOf": [{ "required": ["member"] }, { "required": ["sum", "label"] }]
+    },
+    "on_click": {
+      "type": "object",
+      "required": ["set_filter"],
+      "additionalProperties": false,
+      "properties": {
+        "set_filter": {
+          "oneOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "array", "items": { "$ref": "#/$defs/id" }, "minItems": 1, "maxItems": 2 }
+          ]
+        }
+      }
+    },
+    "panel": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["kpi", "timeseries", "bar", "treemap", "table", "text"] },
+        "title": { "type": "string" },
+        "ignore_filters": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
+      },
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "kpi" } } },
+          "then": {
+            "required": ["measures"],
+            "properties": {
+              "measures": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/measure" } },
+              "sparkline": {
+                "type": "object",
+                "required": ["granularity"],
+                "additionalProperties": false,
+                "properties": { "granularity": { "$ref": "#/$defs/granularity" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "timeseries" } } },
+          "then": {
+            "required": ["series", "granularity"],
+            "properties": {
+              "series": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["member"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "member": { "$ref": "#/$defs/member" },
+                    "label": { "type": "string" },
+                    "color": { "type": "string" },
+                    "format": { "$ref": "#/$defs/format" }
+                  }
+                }
+              },
+              "granularity": { "$ref": "#/$defs/granularity" },
+              "style": { "enum": ["line", "bar", "stacked-bar"] },
+              "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "bar" } } },
+          "then": {
+            "required": ["measure", "by"],
+            "properties": {
+              "measure": { "$ref": "#/$defs/member" },
+              "by": { "$ref": "#/$defs/member" },
+              "split": { "$ref": "#/$defs/member" },
+              "sort": { "$ref": "#/$defs/direction" },
+              "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
+              "format": { "$ref": "#/$defs/format" },
+              "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "treemap" } } },
+          "then": {
+            "required": ["measure", "group"],
+            "properties": {
+              "measure": { "$ref": "#/$defs/member" },
+              "group": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 2 },
+              "format": { "$ref": "#/$defs/format" },
+              "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "table" } } },
+          "then": {
+            "required": ["columns"],
+            "properties": {
+              "columns": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 20 },
+              "order": { "type": "object", "additionalProperties": { "$ref": "#/$defs/direction" } },
+              "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
+              "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "text" } } },
+          "then": {
+            "required": ["markdown"],
+            "properties": { "markdown": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    }
+  }
+}
