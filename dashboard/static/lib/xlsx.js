@@ -10,9 +10,7 @@
 // Column types: "text", "int", "money", "pct" (a fraction: 0.153 -> 15.3%),
 // "date" (ISO string or Date); a cell given as { v, t } overrides its column's
 // type. null / undefined / NaN cells are left empty.
-"use strict";
-
-(function (global) {
+export const buildXlsx = (() => {
   // Style indexes into cellXfs below.
   const STYLE = { text: 0, int: 1, money: 2, pct: 3, date: 4, header: 5, title: 6, note: 7 };
 
@@ -175,5 +173,5 @@ ${names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openx
     return new Blob([...chunks, ...central, end], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   }
 
-  global.buildXlsx = (sheets) => zip(parts(sheets));
-})(window);
+  return (sheets) => zip(parts(sheets));
+})();

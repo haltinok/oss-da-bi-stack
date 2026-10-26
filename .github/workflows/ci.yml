@@ -379,6 +379,21 @@ jobs:
           python -m dashspec validate dashboards/*.yml
           for f in dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
 
+  # The dashboard page without any service: the shared JS modules (node tests) and the page in a real Chrome against the mock stack
+  # (every panel renders from generated data without a console error, the Excel export downloads, the header and the dataset switch).
+  dashboard-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install playwright
+      - run: node --test dashboard/cube/tests/lib.test.mjs
+      - run: python -I dashboard/cube/tests/render.py
+      - run: python -I dashboard/cube/tests/header.py
+      - run: python -I dashboard/cube/tests/dataset.py
+
   # The public overlay (docker-compose.public.yml): Keycloak under /kc, the auth service and the dashboard behind Caddy at one
   # address. Plain HTTP on a local port stands in for the HTTPS front door; the routing, issuer, admin-console block and browser
   # config are the same. (The certificate itself needs a real domain and ports 80/443: see docs/deploy-demo.md.)

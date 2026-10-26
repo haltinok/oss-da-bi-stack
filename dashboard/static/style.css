@@ -88,6 +88,13 @@ button, select { font: inherit; color: inherit; }
 .tools .field select { padding-top: 0; padding-bottom: 0; }
 .tools .live { padding-top: 0; padding-bottom: 0; }
 .tools .field { white-space: nowrap; }
+/* From 1100 to 1440px the tools must still fit beside the title on a machine whose font is wider than ours: the dataset switch drops its
+   word "Dataset" (the select has an aria-label, and the title badge names the dataset) and the gaps tighten. */
+@media (min-width: 1100px) and (max-width: 1440px) {
+  .tools { gap: 8px; }
+  .tools #dataset-field { font-size: 0; }
+  .tools #dataset-field select { font-size: 13.5px; }
+}
 .who { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .who a { color: inherit; }
 @media (max-width: 760px) { .tools { margin-left: 0; justify-content: flex-start; width: 100%; } }
