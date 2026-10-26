@@ -52,7 +52,7 @@ Member names and descriptions describe the bank's data model, so **demo data onl
 4. **No invented metrics.** The model must call `cannot_build` for a metric the catalog lacks; the validator rejects a member that does not exist.
 5. **Output is text, not markup.** Everything the model writes is escaped when shown; links in text panels and a logo are removed from drafts, so a draft cannot point
    readers at another site or load an image.
-6. **A draft lives in the browser** (localStorage) until a person downloads it and sends it through a pull request.
+6. **A draft lives in the browser** (localStorage) until a person saves it to the server (below) or downloads it and sends it through a pull request.
 
 What it does **not** protect against: a model that writes a *wrong but valid* dashboard (the numbers are right, the choice of chart or measure may not be what you
 meant: you see it and can ask for changes), and a person pasting sensitive text into the request (it is sent in LLM mode and kept, truncated, in the log).
@@ -69,10 +69,26 @@ meant: you see it and can ask for changes), and a person pasting sensitive text 
 A build is roughly 6-9k input tokens (the format guide and the role's catalog; cached by the API after the first call) and 1-3k output tokens, so 20 builds an hour is a few
 hundred thousand tokens at most. Control characters are stripped from the request. The API key is read from the environment only and is never logged or returned.
 
+## Saved dashboards
+A person can **Save…** a draft: it is stored in Postgres (schema `builder`, tables `saved_dashboards` and `saved_versions`) and opens at `/d/s/<id>`.
+- **Private by default.** The owner can share with chosen roles or with everyone who is signed in, and change that later. A dashboard that is not shared with you
+  looks like it does not exist (404). The one exception is the `admin` role, which can see (and share, rename or delete, not edit) every saved dashboard so it can
+  moderate; say so to users, and keep that role small.
+- **Role rules still apply to the viewer.** Opening re-validates the YAML for the *viewer's* role: a rep cannot open a dashboard that reads profit, and the list
+  greys it out with the reason. The owner's share form shows which roles can open it. Cube's row-level security is untouched: a viewer sees their own territories.
+- **Who can do what.** Only the owner changes the YAML, restores a version or sees versions; the owner or an admin changes the sharing, the title, or deletes. A
+  viewer can *Save a copy* or *Edit a copy* (their own private copy).
+- **Versions.** Saving changed YAML makes version N+1 at the same address; the last 10 are kept; the owner can view or restore one (a restore is a new version).
+- **Limits.** `BUILDER_MAX_SAVED` (50) dashboards per person; YAML up to 30,000 characters; title up to 120.
+- **The login.** The service connects as `builder_app`, which can read and write only the two tables (it cannot create objects or touch other schemas). Saving is off, and
+  the page says so, until `BUILDER_DB_PASSWORD` is set. A new database gets the schema from `postgres/init/02_builder_schema.sql` and `03_builder_user.sh`; on an
+  existing volume run `postgres/sync-builder.sh` once (it is idempotent) and then `docker compose --profile starrocks up -d --no-deps builder`.
+- **Backups.** The data is in the `postgres` service's volume: back it up like the rest of that database. Only the YAML and names are stored, never data rows.
+
 ## Logging and audit
 One JSON line per build, to the container's stdout (`docker compose logs builder | grep '"event": "build"'`) and, if `BUILDER_LOG_FILE` is set, appended to that file:
 `at`, `user`, `role`, `mode` (llm | standin), `status` (ok | cannot | failed | error), `attempts`, `seconds`, `usage` (tokens, turns), `refine`, and the first 160
-characters of the request. A model failure is logged as `status: error` with the kind of error only. `GET /usage` returns a user's own counters.
+characters of the request. Saving writes `event: saved | saved_update | saved_delete | saved_restore` lines (who, role, dashboard id, version, visibility; never the YAML). A model failure is logged as `status: error` with the kind of error only. `GET /usage` returns a user's own counters.
 
 ## Configuration (`.env`)
 | Setting | Default | |
@@ -84,6 +100,7 @@ characters of the request. A model failure is logged as `status: error` with the
 | `BUILDER_MODE` | `auto` | `auto` (Claude when a key is set), `llm` (refuse to start a build without a key), `standin` |
 | `BUILDER_MODEL` | `claude-opus-5-5` (`deepseek-flash` with DeepSeek) | the model |
 | `BUILDER_EFFORT` | `medium` | the model's effort setting |
+| `BUILDER_DB_PASSWORD`, `BUILDER_MAX_SAVED` | empty, `50` | the `builder_app` login that turns saving on; saved dashboards per person |
 | `BUILDER_PORT` | `8350` | the published port (127.0.0.1); public deployments reach it at `/builder-api` through Caddy |
 | the limits above, `BUILDER_LOG_FILE` | | |
 To switch a running stack to Claude: add the key to `.env`, then `docker compose --profile starrocks up -d --no-deps builder`. The page says which one answered.

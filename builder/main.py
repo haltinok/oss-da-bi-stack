@@ -2,6 +2,7 @@
 
   GET  /healthz
   GET  /info      the mode (llm | standin), the model, the caller's role
+  GET  /saved, POST /saved, GET|PUT|DELETE /saved/{id}, GET /saved/{id}/versions, POST /saved/{id}/restore   saved dashboards (private, shared with roles, or with everyone)
   GET  /usage     the caller's builds this hour and tokens today, against their limits
   GET  /catalog   the semantic layer as the caller's role may read it (cubes, measures, dimensions, descriptions, joins)
   POST /build     { prompt, current_yaml? } -> { status: ok | cannot | failed, yaml, spec, message, notes, attempts, mode, model, usage }
@@ -26,12 +27,13 @@ from typing import Annotated
 import jwt
 from dashspec import catalog as cat
 from dashspec.semantic import catalog_json
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from builder import core, provider
+from builder import core, provider, saved
 from builder.standin import StandInClient
+from builder.store import PgStore
 
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
@@ -42,6 +44,8 @@ DAILY_TOKENS = int(os.environ.get("BUILDER_DAILY_TOKENS", "300000"))           #
 MAX_CONCURRENT = int(os.environ.get("BUILDER_MAX_CONCURRENT", "4"))
 TIMEOUT = float(os.environ.get("BUILDER_TIMEOUT", "120"))
 LOG_FILE = os.environ.get("BUILDER_LOG_FILE", "")
+MAX_SAVED = int(os.environ.get("BUILDER_MAX_SAVED", "50"))
+STORE = PgStore.from_env()                                                   # None when BUILDER_DB_PASSWORD is not set: saving is off
 MODE = os.environ.get("BUILDER_MODE", "auto").lower()
 if MODE not in ("auto", "llm", "standin"):
     raise SystemExit(f"BUILDER_MODE must be auto, llm or standin, got {MODE!r}")
@@ -64,7 +68,7 @@ def make_client(m: str, role: str):
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="builder")
 app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ALLOWED_ORIGINS", "http://localhost:8250").split(","),
-                   allow_methods=["POST", "GET"], allow_headers=["Authorization", "Content-Type"])
+                   allow_methods=["POST", "GET", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 
 class User(BaseModel):
@@ -121,9 +125,9 @@ def spend(user: User, usage: dict) -> None:
     _tokens[user.name] = (day, _tokens_today(user) + int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0)))
 
 
-def audit(entry: dict) -> None:
-    """One line per build: who, what role, how it went and what it cost (the prompt is kept short). To stdout and, if BUILDER_LOG_FILE is set, to that file."""
-    line = json.dumps({"event": "build", "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
+def audit(entry: dict, event: str = "build") -> None:
+    """One line per build or saved-dashboard change: who, what role, how it went and what it cost (the prompt is kept short). To stdout and, if BUILDER_LOG_FILE is set, to that file."""
+    line = json.dumps({"event": event, "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
     print(line, flush=True)
     if LOG_FILE:
         try:
@@ -154,19 +158,101 @@ def healthz() -> dict:
 @app.get("/info")
 def info(user: User_) -> dict:
     m = mode()
-    return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role),
+    return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role), "saving": STORE is not None,
             "note": f"A language model ({provider.label()}, {provider.model()}) reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
 
 
 @app.get("/usage")
 def usage(user: User_) -> dict:
     return {"builds_last_hour": _builds_last_hour(user), "builds_per_hour": RATE_LIMIT, "tokens_today": _tokens_today(user), "tokens_per_day": DAILY_TOKENS,
-            "concurrent": MAX_CONCURRENT, "mode": mode()}
+            "concurrent": MAX_CONCURRENT, "mode": mode(), "saving": STORE is not None}
 
 
 @app.get("/catalog")
 def catalog(user: User_) -> list[dict]:
     return catalog_json(CATALOG, user.role)
+
+
+def need_store():
+    if STORE is None:
+        raise HTTPException(503, "Saving is not set up on this server (BUILDER_DB_PASSWORD is empty).")
+    return STORE
+
+
+def who(user: User) -> saved.Who:
+    return saved.Who(name=user.name, role=user.role)
+
+
+def saved_call(fn, *args, **kw):
+    """Run a saved-dashboards rule and turn its refusals into HTTP errors (a refusal carries the validator's problems when there are some)."""
+    try:
+        return fn(*args, **kw)
+    except saved.SavedError as e:
+        detail = {"message": e.message, "problems": e.problems} if e.problems else e.message
+        raise HTTPException(e.status, detail) from None
+    except saved.NotFound:
+        raise HTTPException(404, "There is no such dashboard.") from None
+
+
+class SaveRequest(BaseModel):
+    yaml: str = Field(min_length=1, max_length=core.MAX_YAML)
+    title: str | None = Field(default=None, max_length=120)
+    visibility: str = "private"
+    shared_roles: list[str] = []
+
+
+class UpdateRequest(BaseModel):
+    yaml: str | None = Field(default=None, min_length=1, max_length=core.MAX_YAML)
+    title: str | None = Field(default=None, max_length=120)
+    visibility: str | None = None
+    shared_roles: list[str] | None = None
+
+
+class RestoreRequest(BaseModel):
+    version: int
+
+
+@app.get("/saved")
+def saved_list(user: User_, everything: bool = False) -> list[dict]:
+    return saved_call(saved.list_saved, need_store(), CATALOG, who(user), everything=everything)
+
+
+@app.post("/saved", status_code=201)
+def saved_create(req: SaveRequest, user: User_) -> dict:
+    out = saved_call(saved.save_new, need_store(), CATALOG, who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, max_saved=MAX_SAVED)
+    audit({"user": user.name, "role": user.role, "id": out["id"], "visibility": out["visibility"], "shared_roles": out["shared_roles"], "title": out["title"][:80]}, "saved")
+    return out
+
+
+@app.get("/saved/{id}")
+def saved_open(id: str, user: User_, version: int | None = None) -> dict:
+    return saved_call(saved.open_saved, need_store(), CATALOG, who(user), id, version)
+
+
+@app.put("/saved/{id}")
+def saved_update(id: str, req: UpdateRequest, user: User_) -> dict:
+    out = saved_call(saved.update_saved, need_store(), CATALOG, who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles)
+    audit({"user": user.name, "role": user.role, "id": id, "version": out["version"], "visibility": out["visibility"], "shared_roles": out["shared_roles"]}, "saved_update")
+    return out
+
+
+@app.delete("/saved/{id}", status_code=204, response_class=Response)
+def saved_delete(id: str, user: User_) -> Response:
+    saved_call(saved.delete_saved, need_store(), who(user), id)
+    audit({"user": user.name, "role": user.role, "id": id}, "saved_delete")
+    return Response(status_code=204)
+
+
+@app.get("/saved/{id}/versions")
+def saved_versions(id: str, user: User_) -> list[dict]:
+    return saved_call(saved.versions, need_store(), who(user), id)
+
+
+@app.post("/saved/{id}/restore")
+def saved_restore(id: str, req: RestoreRequest, user: User_) -> dict:
+    out = saved_call(saved.restore, need_store(), CATALOG, who(user), id, req.version)
+    audit({"user": user.name, "role": user.role, "id": id, "restored": req.version, "version": out["version"]}, "saved_restore")
+    return out
 
 
 class ValidateRequest(BaseModel):

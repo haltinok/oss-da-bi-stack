@@ -4,22 +4,16 @@
 import { el, esc } from "../lib/dom.js";
 
 // ------------------------------------------------------------------------------------------------------------------ drafts (this browser only)
-const KEY = { current: "builder.draft", list: "builder.drafts" };
+const KEY = { current: "builder.draft" };
 const read = (k, fallback) => { try { return JSON.parse(localStorage.getItem(k)) ?? fallback; } catch { return fallback; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 
 export const drafts = {
   current: () => read(KEY.current, null),
   setCurrent: (d) => write(KEY.current, d),
-  list: () => read(KEY.list, []),
-  /** Keep a copy of the current draft in the saved list (newest first, at most 10). */
-  save(d) {
-    const entry = { id: String(Date.now()), title: d.spec?.title || "Draft", at: new Date().toISOString(), draft: d };
-    return write(KEY.list, [entry, ...drafts.list()].slice(0, 10)) ? entry : null;
-  },
-  remove: (id) => write(KEY.list, drafts.list().filter((e) => e.id !== id)),
-  open(id) { const e = drafts.list().find((x) => x.id === id); return e ? drafts.setCurrent(e.draft) : false; },
 };
+
+const ROLES = ["admin", "manager", "rep", "purchasing", "marketing"];
 
 // ------------------------------------------------------------------------------------------------------------------ the service
 export function createBuilderApi({ stack, client, t }) {
@@ -32,7 +26,13 @@ export function createBuilderApi({ stack, client, t }) {
       });
       if (res.status === 401 && attempt === 0) { client.dropKeycloakToken(); continue; }
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : Array.isArray(data.detail) ? t.badRequest : `HTTP ${res.status}`);
+      if (!res.ok) {
+        const d = data.detail;
+        const err = new Error(typeof d === "string" ? d : d?.message ? d.message : Array.isArray(d) ? t.badRequest : `HTTP ${res.status}`);
+        err.status = res.status;
+        err.problems = d?.problems || [];                                  // the validator's messages, when a refusal has some
+        throw err;
+      }
       return data;
     }
     throw new Error("not signed in");
@@ -44,6 +44,13 @@ export function createBuilderApi({ stack, client, t }) {
     catalog: () => (catalog ||= call("GET", "/catalog")),
     build: (prompt, currentYaml) => call("POST", "/build", { prompt, ...(currentYaml ? { current_yaml: currentYaml } : {}) }),
     validate: (yaml) => call("POST", "/validate", { yaml }),
+    listSaved: () => call("GET", "/saved"),
+    save: (body) => call("POST", "/saved", body),
+    openSaved: (id, version) => call("GET", `/saved/${encodeURIComponent(id)}${version ? `?version=${version}` : ""}`),
+    updateSaved: (id, body) => call("PUT", `/saved/${encodeURIComponent(id)}`, body),
+    deleteSaved: (id) => call("DELETE", `/saved/${encodeURIComponent(id)}`),
+    savedVersions: (id) => call("GET", `/saved/${encodeURIComponent(id)}/versions`),
+    restoreSaved: (id, version) => call("POST", `/saved/${encodeURIComponent(id)}/restore`, { version }),
   };
 }
 
@@ -107,20 +114,27 @@ export function mountPromptBox(host, api, t) {
   prompt.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) build(); });
 }
 
-/** The saved drafts of this browser (list page). */
-export function mountDrafts(host, t) {
-  const list = drafts.list();
-  host.hidden = !list.length;
-  if (!list.length) return;
-  host.innerHTML = `<h2>${esc(t.yourDrafts)}</h2><ul class="drafts">${list.map((e) => `<li data-id="${esc(e.id)}"><span>${esc(e.title)} <small>${esc(new Date(e.at).toLocaleString())}</small></span>
-    <button type="button" data-act="open">${esc(t.open)}</button><button type="button" data-act="remove">${esc(t.remove)}</button></li>`).join("")}</ul>`;
-  host.addEventListener("click", (ev) => {
-    const b = ev.target.closest("button[data-act]");
-    if (!b) return;
-    const id = b.closest("li").dataset.id;
-    if (b.dataset.act === "open" && drafts.open(id)) location.assign("/d/draft");
-    if (b.dataset.act === "remove") { drafts.remove(id); mountDrafts(host, t); }
-  }, { once: true });
+const visBadge = (d, t) => (d.visibility === "private" ? t.badgePrivate : d.visibility === "everyone" ? t.badgeEveryone : `${t.badgeRoles}: ${d.shared_roles.join(", ")}`);
+
+/** The saved dashboards on /d/: yours, and those shared with you (greyed, with the reason, when your role cannot open one). */
+export async function mountSavedList(host, api, t) {
+  let list;
+  try { list = await api.listSaved(); } catch { host.hidden = true; return; }
+  host.hidden = false;
+  const card = (d) => `<li class="saved ${d.readable ? "" : "unreadable"}" data-id="${esc(d.id)}">
+      <div class="saved-main">${d.readable ? `<a href="/d/s/${encodeURIComponent(d.id)}">${esc(d.title)}</a>` : `<span>${esc(d.title)}</span>`} <span class="badge">${esc(visBadge(d, t))}</span>
+        <div class="hint">${esc(d.description || "")}${d.description ? " · " : ""}${d.mine ? "" : `${esc(t.by)} ${esc(d.owner)} · `}${esc(t.updated)} ${esc(new Date(d.updated_at).toLocaleString())}</div>
+        ${d.readable ? "" : `<div class="hint warn">${esc(t.cannotOpen)}: ${esc(d.problems[0] || "")}</div>`}</div>
+      ${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
+  const mine = list.filter((d) => d.mine), others = list.filter((d) => !d.mine);
+  host.innerHTML = `<h2>${esc(t.yourSaved)}</h2>${mine.length ? `<ul class="drafts">${mine.map(card).join("")}</ul>` : `<p class="hint">${esc(t.noSaved)}</p>`}
+    ${others.length ? `<h2>${esc(t.sharedWithYou)}</h2><ul class="drafts">${others.map(card).join("")}</ul>` : ""}`;
+  host.onclick = async (ev) => {
+    const b = ev.target.closest('button[data-act="delete"]');
+    if (!b || !confirm(t.confirmDelete)) return;
+    try { await api.deleteSaved(b.closest("li").dataset.id); } catch (e) { alert(e.message); }
+    mountSavedList(host, api, t);
+  };
 }
 
 // ------------------------------------------------------------------------------------------------------------------ the semantic layer
@@ -164,16 +178,20 @@ export function mountDraftBar(host, api, t, draft) {
   host.innerHTML = `<section class="card builder-bar" aria-label="${esc(t.draft)}">
     <div class="bb-head"><span class="badge">${esc(t.draft)}</span><span class="hint" id="bd-mode"></span><span class="spacer"></span>
       <button type="button" data-tab="yaml">${esc(t.yaml)}</button><button type="button" data-tab="semantic">${esc(t.semantic)}</button>
-      <button type="button" id="bd-download">${esc(t.download)}</button><button type="button" id="bd-save">${esc(t.saveDraft)}</button>
+      <button type="button" id="bd-download">${esc(t.download)}</button><button type="button" data-tab="save" id="bd-save-tab" hidden>${esc(t.saveBtn)}</button>
       <a class="btn" href="/d/">${esc(t.newOne)}</a></div>
     <div id="bd-msg" class="bmsg" hidden></div>
     <div class="bb-row"><input type="text" id="bd-change" maxlength="2000" placeholder="${esc(t.changePlaceholder)}" aria-label="${esc(t.change)}"><button type="button" id="bd-go" class="primary">${esc(t.change)}</button></div>
     <div class="bb-tab" id="tab-yaml" hidden><p class="hint">${esc(t.yamlHint)}</p><textarea id="bd-yaml" rows="22" spellcheck="false" aria-label="${esc(t.yaml)}"></textarea>
       <div class="bb-row"><button type="button" id="bd-apply" class="primary">${esc(t.apply)}</button></div><div id="bd-problems" class="bmsg" hidden></div></div>
+    <div class="bb-tab" id="tab-save" hidden></div>
     <div class="bb-tab" id="tab-semantic" hidden></div></section>`;
   const $ = (s) => host.querySelector(s), msg = $("#bd-msg"), yamlBox = $("#bd-yaml");
   yamlBox.value = draft.yaml;
-  api.info().then((i) => { $("#bd-mode").textContent = `${t.builtBy}: ${draft.mode === "llm" ? draft.model || "model" : i.mode === "llm" && draft.mode !== "standin" ? "model" : "rule-based stand-in"} · ${modeNote({ mode: draft.mode }, t)}`; }).catch(() => {});
+  mountSavePane($("#tab-save"), api, t, draft, () => yamlBox.value);
+  api.info().then((i) => {
+    if (i.saving) $("#bd-save-tab").hidden = false;
+    else show($("#bd-msg"), { kind: "ok", title: "", lines: [t.savingOff] }); $("#bd-mode").textContent = `${t.builtBy}: ${draft.mode === "llm" ? draft.model || "model" : i.mode === "llm" && draft.mode !== "standin" ? "model" : "rule-based stand-in"} · ${modeNote({ mode: draft.mode }, t)}`; }).catch(() => {});
   show(msg, outcome({ status: "ok", message: draft.message, notes: draft.notes }, t));
   let semanticMounted = false;
   for (const b of host.querySelectorAll("[data-tab]")) {
@@ -229,5 +247,112 @@ export function mountDraftBar(host, api, t, draft) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   });
-  $("#bd-save").addEventListener("click", () => show(msg, { kind: "ok", title: "", lines: [drafts.save(draft) ? t.saved : "The browser would not store it"] }));
+}
+
+// ------------------------------------------------------------------------------------------------------------------ saving a draft
+/** The visibility choice shared by the save and share forms: who may open it. Returns { read() -> { visibility, shared_roles }, el }. */
+function visibilityForm(t, initial = { visibility: "private", shared_roles: [] }, readableBy = null) {
+  const box = el("div", { class: "vis" });
+  const opts = [["private", t.visPrivate], ["roles", t.visRoles], ["everyone", t.visEveryone]];
+  box.innerHTML = `${opts.map(([v, label]) => `<label class="radio"><input type="radio" name="vis" value="${v}" ${v === initial.visibility ? "checked" : ""}> ${esc(label)}</label>`).join("")}
+    <div class="roles" ${initial.visibility === "roles" ? "" : "hidden"}>${ROLES.map((r) => `<label class="check"><input type="checkbox" value="${r}" ${initial.shared_roles.includes(r) ? "checked" : ""}> ${esc(r)}${
+      readableBy ? (readableBy.includes(r) ? ' <span class="ok" title="can open it">✓</span>' : ' <span class="no" title="cannot read one of its members">✗</span>') : ""}</label>`).join("")}</div>
+    ${readableBy ? `<p class="hint">${esc(t.canOpen)}: ${esc(readableBy.join(", ") || "—")}.${ROLES.some((r) => !readableBy.includes(r)) ? ` ${esc(t.cannotOpenRoles)}: ${esc(ROLES.filter((r) => !readableBy.includes(r)).join(", "))}.` : ""}</p>` : ""}`;
+  const sync = () => { box.querySelector(".roles").hidden = box.querySelector("input[name=vis]:checked").value !== "roles"; };
+  box.addEventListener("change", sync);
+  return {
+    el: box,
+    read: () => ({ visibility: box.querySelector("input[name=vis]:checked").value, shared_roles: [...box.querySelectorAll(".roles input:checked")].map((i) => i.value) }),
+  };
+}
+
+function mountSavePane(pane, api, t, draft, currentYaml) {
+  const editing = !!draft.savedId;
+  const form = visibilityForm(t, draft.savedMeta ? { visibility: draft.savedMeta.visibility, shared_roles: draft.savedMeta.shared_roles } : undefined);
+  pane.innerHTML = `${editing ? `<p class="hint">${esc(t.editing)}: <strong>${esc(draft.savedMeta?.title || "")}</strong></p>` : ""}
+    <label class="field-l">${esc(t.saveName)} <input type="text" id="sv-name" maxlength="120" value="${esc(draft.savedMeta?.title || draft.spec?.title || "")}"></label>
+    <div id="sv-vis"></div>
+    <div class="bb-row"><button type="button" id="sv-go" class="primary">${esc(editing ? t.saveNewVersion : t.saveGo)}</button>${editing ? `<button type="button" id="sv-new">${esc(t.saveAsNew)}</button>` : ""}</div>
+    <div id="sv-msg" class="bmsg" hidden></div>`;
+  pane.querySelector("#sv-vis").append(form.el);
+  const msg = pane.querySelector("#sv-msg");
+  async function go(asNew) {
+    const body = { yaml: currentYaml(), title: pane.querySelector("#sv-name").value.trim() || undefined, ...form.read() };
+    for (const b of pane.querySelectorAll("button")) b.disabled = true;
+    try {
+      const out = asNew || !editing ? await api.save(body) : await api.updateSaved(draft.savedId, body);
+      location.assign(`/d/s/${encodeURIComponent(out.id)}`);
+    } catch (e) {
+      show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] });
+      for (const b of pane.querySelectorAll("button")) b.disabled = false;
+    }
+  }
+  pane.querySelector("#sv-go").addEventListener("click", () => go(false));
+  pane.querySelector("#sv-new")?.addEventListener("click", () => go(true));
+}
+
+// ------------------------------------------------------------------------------------------------------------------ a saved dashboard (/d/s/<id>)
+export function mountSavedBar(host, api, t, opened) {
+  const m = opened.meta;
+  const owner = m.can_edit, manage = m.can_manage;
+  host.innerHTML = `<section class="card builder-bar" aria-label="${esc(m.title)}">
+    <div class="bb-head"><span class="badge">${esc(visBadge(m, t))}</span>
+      <span class="hint">${esc(owner ? t.yours : `${t.sharedBy} ${m.owner}`)} · ${esc(t.versionNo)} ${m.version} · ${esc(t.updated)} ${esc(new Date(m.updated_at).toLocaleString())}</span><span class="spacer"></span>
+      <button type="button" data-tab="yaml">${esc(t.yaml)}</button><button type="button" id="sb-download">${esc(t.download)}</button>
+      ${owner ? `<button type="button" id="sb-edit" class="primary">${esc(t.edit)}</button>` : `<button type="button" id="sb-copy">${esc(t.copy)}</button><button type="button" id="sb-editcopy">${esc(t.editCopy)}</button>`}
+      ${manage ? `<button type="button" data-tab="share">${esc(t.sharing)}</button>` : ""}${owner ? `<button type="button" data-tab="versions">${esc(t.versions)}</button>` : ""}
+      ${manage ? `<button type="button" id="sb-delete">${esc(t.deleteBtn)}</button>` : ""}<a class="btn" href="/d/">${esc(t.dashboards)}</a></div>
+    <div id="sb-msg" class="bmsg" hidden></div>
+    <div class="bb-tab" id="tab-yaml" hidden><textarea id="sb-yaml" rows="20" spellcheck="false" readonly aria-label="${esc(t.yaml)}"></textarea></div>
+    <div class="bb-tab" id="tab-share" hidden></div><div class="bb-tab" id="tab-versions" hidden></div></section>`;
+  const $ = (q) => host.querySelector(q), msg = $("#sb-msg");
+  $("#sb-yaml").value = opened.yaml;
+  for (const b of host.querySelectorAll("[data-tab]")) b.addEventListener("click", () => { const pane = $(`#tab-${b.dataset.tab}`); pane.hidden = !pane.hidden; });
+  const asDraft = (extra) => { drafts.setCurrent({ yaml: opened.yaml, spec: opened.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", ...extra }); location.assign("/d/draft"); };
+  $("#sb-edit")?.addEventListener("click", () => asDraft({ savedId: m.id, savedMeta: { title: m.title, visibility: m.visibility, shared_roles: m.shared_roles } }));
+  $("#sb-editcopy")?.addEventListener("click", () => asDraft({}));
+  $("#sb-copy")?.addEventListener("click", async () => {
+    try { const out = await api.save({ yaml: opened.yaml, title: m.title }); location.assign(`/d/s/${encodeURIComponent(out.id)}`); }
+    catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
+  });
+  $("#sb-download")?.addEventListener("click", () => {
+    const a = el("a", { href: URL.createObjectURL(new Blob([opened.yaml], { type: "text/yaml" })), download: `${m.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.yml` });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  });
+  $("#sb-delete")?.addEventListener("click", async () => {
+    if (!confirm(t.confirmDelete)) return;
+    try { await api.deleteSaved(m.id); location.assign("/d/"); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message] }); }
+  });
+  if (manage) {
+    const form = visibilityForm(t, { visibility: m.visibility, shared_roles: m.shared_roles }, opened.readable_by || null);
+    const pane = $("#tab-share");
+    pane.append(form.el, el("div", { class: "bb-row" }, `<button type="button" id="sb-share-go" class="primary">${esc(t.saveGo)}</button>`));
+    pane.querySelector("#sb-share-go").addEventListener("click", async () => {
+      try { await api.updateSaved(m.id, form.read()); location.reload(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
+    });
+  }
+  if (owner) {
+    const pane = $("#tab-versions");
+    let loaded = false;
+    $('[data-tab="versions"]').addEventListener("click", async () => {
+      if (loaded || pane.hidden) return;
+      loaded = true;
+      try {
+        const vs = await api.savedVersions(m.id);
+        pane.innerHTML = vs.length > 1 ? `<ul class="drafts">${vs.map((v) => `<li data-v="${v.version}"><span>${esc(t.versionNo)} ${v.version} <small>${esc(v.title)} · ${esc(v.saved_by)} · ${esc(new Date(v.saved_at).toLocaleString())}</small></span>
+          ${v.version === m.version ? "" : `<button type="button" data-act="view">${esc(t.viewVersion)}</button><button type="button" data-act="restore">${esc(t.restore)}</button>`}</li>`).join("")}</ul>` : `<p class="hint">${esc(t.noVersions)}</p>`;
+      } catch (e) { pane.textContent = e.message; }
+    });
+    pane.addEventListener("click", async (ev) => {
+      const b = ev.target.closest("button[data-act]");
+      if (!b) return;
+      const v = Number(b.closest("li").dataset.v);
+      try {
+        if (b.dataset.act === "restore") { await api.restoreSaved(m.id, v); location.reload(); return; }
+        const old = await api.openSaved(m.id, v);
+        drafts.setCurrent({ yaml: old.yaml, spec: old.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", savedId: m.id, savedMeta: { title: old.meta.title, visibility: m.visibility, shared_roles: m.shared_roles } });
+        location.assign("/d/draft");
+      } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
+    });
+  }
 }

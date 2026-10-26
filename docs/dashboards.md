@@ -33,7 +33,7 @@ Or ask Claude Code: the [`dashboard-author`](../skills/dashboard-author/SKILL.md
 ## Describe a dashboard instead of writing it
 On `/d/` there is a box: say what you want ("monthly revenue by channel and the top 5 products, with a table of the latest orders") and the
 [builder](../builder/README.md) drafts the YAML for **your role**, checks it with the same validator, and draws it at `/d/draft`. Change it in words, edit the
-YAML, browse the [semantic layer](semantic-layer.md) next to it, download the file, and send it through a pull request when it should be kept.
+YAML, browse the [semantic layer](semantic-layer.md) next to it, save it (private, or shared with roles or everyone; [details](builder.md#saved-dashboards)), download the file, and send it through a pull request when it should become part of the product.
 Until an API key is configured, a rule-based stand-in answers (a fixed set of phrases, not free text); with a key, Claude does.
 
 ![A draft built from a request](images/dashboards/builder.png)

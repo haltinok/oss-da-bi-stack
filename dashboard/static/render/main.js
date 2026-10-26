@@ -9,7 +9,7 @@ import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
 import { formatPeriod, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, queriesPerCube, runAll } from "./plan.js";
 import { stringsFor } from "./strings.js";
-import { createBuilderApi, drafts, mountDraftBar, mountDrafts, mountPromptBox, mountSemantic } from "./builder.js";
+import { createBuilderApi, drafts, mountDraftBar, mountPromptBox, mountSavedBar, mountSavedList, mountSemantic } from "./builder.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -89,16 +89,20 @@ async function showList() {
     : `<div class="empty">${esc(t.noDashboards)}</div>`) + (api.available ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
   if (!api.available) return;
   mountPromptBox($("#builder-host"), api, t);
-  mountDrafts($("#drafts-host"), t);
+  mountSavedList($("#drafts-host"), api, t);
   $("#sem-wrap").addEventListener("toggle", () => { if ($("#sem-wrap").open && !$("#sem-host").dataset.ready) { $("#sem-host").dataset.ready = "1"; mountSemantic($("#sem-host"), api, t); } });
 }
 
 // ------------------------------------------------------------------ one dashboard
 async function showDashboard() {
   const t0 = stringsFor(navigator.language);
-  const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); every other id is a built file
-  let spec;
-  if (id === "draft") {
+  const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); a saved dashboard (s/<id>) comes from the builder service; every other id is a built file
+  let spec, savedDash = null;
+  if (id.startsWith("s/")) {
+    const api = createBuilderApi({ stack: C, client, t: t0 });
+    try { savedDash = await api.openSaved(id.slice(2)); } catch (e) { throw new Error(e.problems?.length ? `${e.message} ${e.problems[0]}` : e.message); }
+    spec = savedDash.spec;
+  } else if (id === "draft") {
     if (!draft?.spec) throw new Error(t0.noDraft);
     spec = draft.spec;
   } else {
@@ -289,9 +293,9 @@ async function showDashboard() {
   $("#export-all").addEventListener("click", () => ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard"));
   $("#refresh").hidden = false;
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
-  if (draft) {
+  if (draft || savedDash) {
     const api = createBuilderApi({ stack: C, client, t });
-    if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); mountDraftBar(host, api, t, draft); }
+    if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); if (draft) mountDraftBar(host, api, t, draft); else mountSavedBar(host, api, t, savedDash); }
   }
   buildFilters();
   ctx.syncReset?.();
