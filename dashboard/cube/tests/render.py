@@ -92,6 +92,13 @@ with sync_playwright() as p:
         if not same:
             for line in list(difflib.unified_diff(before.splitlines(), html.splitlines(), "before", "after", lineterm="", n=1))[:40]:
                 print("   " + line)
+    # the theme menu works on the sales page too, and its charts follow the choice
+    page.click("#theme")
+    check(page.locator(".theme-menu [role=menuitemradio]").count() == 8, "the sales page has the same theme menu (system and seven themes)")
+    page.click(".theme-menu [data-id=navy]")
+    page.wait_for_timeout(300)
+    check(page.evaluate("document.documentElement.dataset.theme") == "navy" and page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(10, 26, 51)", "choosing Navy changes the page")
+    check(page.locator("#trend svg").count() > 0 and not [p for p in problems if "pageerror" in p], "the charts are redrawn without errors")
     browser.close()
 server.shutdown()
 if failures:

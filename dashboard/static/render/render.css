@@ -66,7 +66,7 @@ tr.clickable:hover { background: var(--surface-2); }
   display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box;
 }
 .builder-box button:hover, .builder-bar button:hover, .btn:hover, .drafts button:hover { background: var(--surface-2); }
-button.primary { background: var(--focus); border-color: var(--focus); color: #fff; font-weight: 600; }
+button.primary { background: var(--focus); border-color: var(--focus); color: var(--on-focus, #fff); font-weight: 600; }
 button.primary:hover { background: var(--focus); filter: brightness(1.08); }
 button[disabled] { opacity: .6; cursor: progress; }
 .bb-examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }

@@ -9,6 +9,7 @@ import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
 import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, pickTab, queriesPerCube, runAll, tabKeyTarget, tabPanelIds } from "./plan.js";
 import { langOf, stringsFor, uiLocale } from "./strings.js";
+import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
 import { mountList } from "./list.js";
@@ -17,13 +18,8 @@ const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
 const show = (msg) => { const e = $("#error"); e.textContent = msg; e.hidden = !msg; };
 
-try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch { /* storage unavailable */ }
-$("#theme").addEventListener("click", () => {
-  const root = document.documentElement;
-  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  root.dataset.theme = dark ? "light" : "dark";
-  try { localStorage.setItem("theme", root.dataset.theme); } catch { /* ignore */ }
-});
+initTheme();
+mountThemeMenu($("#theme"), { locale: () => document.documentElement.lang || "en" });
 
 // ------------------------------------------------------------------ dataset (the same choice and storage as the sales dashboard)
 const DATASETS = C.datasets || [{ id: "live", label: "Live (simulator)", mart: "mart", cube: C.cube }];

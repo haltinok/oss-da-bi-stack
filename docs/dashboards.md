@@ -64,6 +64,18 @@ hears), its dates and its number formats (`1,234.56` or `1.234,56`, month names)
 What is **not** translated is what someone wrote: a dashboard's titles, labels and notes, the data-set name from the configuration, and the builder's explanations
 (`notes`, validator messages). The currency stays the dashboard's: a lira dashboard read in English shows `TRY 4,200`, in Turkish `₺4.200`.
 
+## Themes
+The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
+**Sand** (warm light), **Mint** (cool light with a green accent) and **High contrast** (black and white with a yellow focus ring), or **System**, which follows the
+operating system and is the default. The choice belongs to the viewer and is kept in this browser; it works on the sales page and on every `/d` page. The words
+follow the page's language ("Siyah", "Lacivert"…).
+
+A theme is a block of colour tokens in [`dashboard/static/themes.css`](../dashboard/static/themes.css) (Light and Black are in `style.css`); to add one, copy a block,
+change the colours, add a line to `THEMES` in `dashboard/static/lib/theme.js`, and run `node --test dashboard/cube/tests/themes.test.mjs`, which checks every theme for
+body and secondary text at 4.5:1 on the page, the cards and the shaded cells, series, status and focus colours at 3:1, and the text on a primary button at 4.5:1.
+A dashboard's own `theme.colors` (its brand) still win over the viewer's theme, so a branded dashboard keeps its colours in every theme. The categorical palette of
+the treemap, the pie and the heat shades is the same in every theme.
+
 ## Finding a dashboard
 Every dashboard page has a **Dashboards** link above its title that leads back to the list at `/d/`. On the list, the search box above the dashboards filters
 as you type: the built dashboards and, when the builder keeps them, your saved ones and those shared with you. It looks at the title and description (and, for
@@ -161,7 +173,7 @@ rows and an Excel button; the header has Export all, a refresh, the theme toggle
 ### Language, currency, theme
 `locale: tr-TR` and `currency: TRY` give Turkish separators, month names, the lira sign and the page's own words in Turkish (titles and labels
 are yours to write in Turkish). Currency is display only: amounts are not converted, so say so on the page when the data is in another
-currency ([`envanter-sagligi.yml`](../dashboards/envanter-sagligi.yml) has a note panel for it). `theme` sets a name, a logo and colours.
+currency ([`envanter-sagligi.yml`](../dashboards/envanter-sagligi.yml) has a note panel for it). `theme` sets a name, a logo and colours (the dashboard's own look; the viewer's light/dark choice is separate, see [Themes](#themes)).
 
 ![A Turkish inventory page](images/dashboards/turkish.png)
 

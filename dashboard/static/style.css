@@ -419,3 +419,19 @@ td.act-done, .act-done { color: var(--good, #1a7f4b); white-space: nowrap; }
 
 .dataset-badge { display: inline-block; vertical-align: middle; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; border: 1px solid var(--border, rgba(127,127,127,.4)); color: var(--ink-2); }
 .dataset-badge.ro { color: var(--warn, #b45309); border-color: currentColor; }
+
+/* The theme menu in the header (lib/theme.js) */
+.theme-wrap { position: relative; display: inline-flex; }
+.theme-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 190px; padding: 4px; display: grid; gap: 1px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+.theme-menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: 7px; background: none;
+  color: var(--ink); font-size: 13px; text-align: left; cursor: pointer;
+}
+.theme-menu button:hover, .theme-menu button:focus-visible { background: var(--surface-2); }
+.theme-menu button[aria-checked="true"] { font-weight: 600; }
+.theme-menu button[aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--focus); }
+.theme-menu .swatch { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--axis); background: linear-gradient(135deg, var(--a) 50%, var(--b) 50%); }
+.theme-menu .swatch[data-system] { background: linear-gradient(135deg, #f9f9f7 50%, #0d0d0d 50%); }

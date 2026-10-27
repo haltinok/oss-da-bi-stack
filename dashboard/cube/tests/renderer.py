@@ -35,7 +35,7 @@ def check(ok, msg):
 
 def open_page(browser, path, dataset="live", width=1440, theme="light", init="", routes=()):
     ctx = browser.new_context(viewport={"width": width, "height": 1500}, accept_downloads=True)
-    ctx.add_init_script(ms.SEED + f'try {{ localStorage.setItem("theme", "{theme}"); localStorage.setItem("dataset", "{dataset}"); }} catch (e) {{}}' + init)
+    ctx.add_init_script(ms.SEED + f'try {{ if (localStorage.getItem("theme") === null) localStorage.setItem("theme", "{theme}"); localStorage.setItem("dataset", "{dataset}"); }} catch (e) {{}}' + init)   # the theme only when none is kept: a reload keeps what the page chose
     page = ctx.new_page()
     page.problems, page.queries, page.aborted = [], [], []
     page.on("pageerror", lambda e: page.problems.append(f"pageerror: {e}"))
@@ -1141,6 +1141,53 @@ with sync_playwright() as p:
     done = page.locator(".timer.done b").all_inner_texts()
     check(done and all(re.fullmatch(r"\d+\.\ds", d) for d in done), f"a loaded panel keeps its time ({done[:3]})")
     check(page.evaluate("getComputedStyle(document.querySelector('.timer.done')).display") != "none", "the finished time is visible")
+    ctx.close()
+
+    # ---- themes: a menu of seven (and the system), kept in this browser, drawn by tokens
+    ctx, page = open_page(browser, "/d/sales-overview", theme="light")
+    settled(page)
+    page.click("#theme")
+    names = page.locator(".theme-menu [role=menuitemradio] span").all_inner_texts()
+    check(names == ["System", "Light", "Black", "Slate", "Navy", "Sand", "Mint", "High contrast"], f"the menu lists the system choice and seven themes ({names})")
+    check(page.get_attribute("#theme", "aria-expanded") == "true" and page.locator(".theme-menu [aria-checked=true] span").inner_text() == "Light", "it opens with the chosen theme marked")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("ArrowDown")
+    check(page.evaluate("document.activeElement.textContent.trim()") == "Slate", "the arrow keys move through it")
+    page.keyboard.press("Escape")
+    check(page.locator(".theme-menu").is_hidden() and page.evaluate("document.activeElement.id") == "theme", "Escape closes it and returns to the button")
+    def page_colour():
+        return page.evaluate("getComputedStyle(document.body).backgroundColor")
+    light = page_colour()
+    page.click("#theme")
+    page.click(".theme-menu [data-id=navy]")
+    check(page.evaluate("document.documentElement.dataset.theme") == "navy" and page_colour() != light and page.locator(".theme-menu").is_hidden(), "choosing Navy applies it at once and closes the menu")
+    check(page.evaluate("localStorage.getItem('theme')") == "navy" and page_colour() == "rgb(10, 26, 51)", "it is kept, and the page background is the theme's")
+    page.reload()
+    settled(page)
+    check(page.evaluate("document.documentElement.dataset.theme") == "navy", "a reload keeps it")
+    check(not page.problems, f"no console errors with a theme chosen ({page.problems[:1]})")
+    for theme in ("slate", "sand", "mint", "contrast", "dark"):
+        page.click("#theme")
+        page.click(f".theme-menu [data-id={theme}]")
+        ink = page.evaluate("getComputedStyle(document.querySelector('.card h2')).color")
+        check(page.evaluate("document.documentElement.dataset.theme") == theme and ink != page_colour(), f"{theme}: applied, and a panel title is not the colour of the page")
+        if KEEP:
+            page.screenshot(path=str(SHOTS / f"theme-{theme}.png"))
+    page.click("#theme")
+    page.click(".theme-menu [data-id='']")
+    check(page.evaluate("document.documentElement.dataset.theme === undefined && localStorage.getItem('theme') === null"), "System removes the choice, so the page follows the system again")
+    page.evaluate("localStorage.setItem('theme', 'no-such-theme')")
+    page.reload()
+    settled(page)
+    check(page.evaluate("document.documentElement.dataset.theme === undefined"), "a kept value this version does not know is ignored")
+    page.click("#theme")
+    page.mouse.click(5, 300)
+    check(page.locator(".theme-menu").is_hidden(), "a click elsewhere closes the menu")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/sales-overview?lang=tr", theme="light")
+    settled(page)
+    page.click("#theme")
+    check(page.locator(".theme-menu [role=menuitemradio] span").all_inner_texts() == ["Sistem", "Açık", "Siyah", "Arduvaz", "Lacivert", "Kum", "Nane", "Yüksek karşıtlık"] and page.get_attribute("#theme", "aria-label") == "Tema", "the menu and the button speak Turkish on a Turkish page")
     ctx.close()
 
     # ---- unknown dashboard, wrong role
