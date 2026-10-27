@@ -20,7 +20,7 @@ catalog has no joins, so the join check is skipped). Needs `uv`; nothing else is
 - Filters and `on_click` point at filters that exist; `ignore_filters` too; filter parents are dimensions.
 - A measure is only combined with dimensions its cube can join to (a filter on `territories.region` on an `inventory_health` panel is an
   error: add the filter id to that panel's `ignore_filters`).
-- The layout: every row is 12 columns wide, every panel is placed exactly once.
+- The layout: every row is 12 columns wide, every panel is placed exactly once (across all the tabs, when the file has `tabs` instead of `layout`: 2 to 8 pages, each with an `id`, a `title` and its own rows; `pivot-gallery.yml` is an example).
 
 Every message names the panel (or filter) and the field, for example
 `panel 'top' (bar): by: 'products.nme' is not in the Cube model (products has: ...)`.

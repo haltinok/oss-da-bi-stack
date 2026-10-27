@@ -43,6 +43,10 @@ A dashboard can have **pages** instead of one long page: write `tabs` instead of
 characters) and its own `layout` rows. `panels` stays one flat list and each panel is placed in exactly one tab. The validator names the tab in its messages
 (`tab 'details': row 2: the widths add up to 11`, `tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`).
 
+![The pivot gallery: a tab bar and the open tab](images/dashboards/tabs.png)
+
+`dashboards/pivot-gallery.yml` is a real example: three tabs (Overview, Groups and shares, Heat), so opening it asks Cube for 12 of its 33 queries; the rest wait for their tab.
+
 On the page a tab bar sits under the filters. **The filters and a drill-down's period are shared by all tabs**, so a filter chosen on one tab applies on the others. **Only the open
 tab's panels are loaded**: a dashboard with three tabs costs one tab's queries when it opens, a tab loads the first time you open it, and going back to one you have seen
 sends nothing. A tab always shows numbers for the current filters (it reloads when a filter changed while you were elsewhere) and is reloaded when you open it after the refresh

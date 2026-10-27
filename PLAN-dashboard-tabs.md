@@ -1,6 +1,6 @@
 # Plan 3: tab pages in dashboards
 
-Status: **approved; reviewed against the code on 2026-10-27; phases 1-3 done**. It was written before the pivot, search/tags and language-switch work; those did not touch the layout contract, so the design stands, and the review below records what the current code adds. It changes the layout contract that the validator, compiler, renderer, builder, saved dashboards and docs all read.
+Status: **approved; reviewed against the code on 2026-10-27; all four phases done**. It was written before the pivot, search/tags and language-switch work; those did not touch the layout contract, so the design stands, and the review below records what the current code adds. It changes the layout contract that the validator, compiler, renderer, builder, saved dashboards and docs all read.
 
 ## Review against the current code (2026-10-27)
 Read `render/main.js` (`showDashboard`), `dashspec/validate.py`, `compile.py`, `docs.py`, `builder/composer.py` and `core.py`. What changes in the plan:
@@ -78,9 +78,11 @@ Built as planned, with these notes:
 - **Authoring skill:** `skills/dashboard-author/SKILL.md` has the tabs rule, the YAML shape in its spec page, the messages to expect and the "put the KPIs and the main chart first" advice (only the open tab loads, which matters at 250M rows).
 - Not done: the stand-in does not split a long request into tabs (it never writes them; the plan's "more than 8 panels" rule was dropped on purpose, a model decides).
 
-### Phase 4: gallery, real dashboard, docs
-- Convert one real dashboard to tabs where it helps (e.g. `sales-drilldown.yml` → Overview / Breakdown), keeping the old single-page version as a test fixture so both paths stay covered.
-- Gallery/doc screenshots; `dashboards/README.md` and `docs/builder.md` updated; CI `dashspec` job validates and compiles the new file.
+### Phase 4: gallery, real dashboard, docs — done
+- **The real dashboard is `pivot-gallery.yml`** (not `sales-drilldown`, as the plan suggested): it is the heaviest page (33 queries and five pivots on open) and the one tabs help most. Three tabs: Overview (the intro, the plain cross-tab, two measures side by side: 12 queries), Groups and shares (15), Heat (6). Opening it now asks Cube for 12 of the 33.
+- **The old single-page version is not kept as a fixture:** four other checked-in dashboards (`sales-overview`, `sales-drilldown`, `regional-sales`, `envanter-sagligi`) keep a plain `layout`, and every test of the plain path still runs on them; a dashspec test requires that both kinds exist.
+- **Tests moved with it** (`renderer.py`): the pivot-gallery test now checks the three tab titles, that only two pivots are drawn on open and the other tabs' panels are not, that opening the second and the third tab draws their panels, that **opening the gallery asked Cube for under 60% of what its three tabs need** (the plan's acceptance criterion, asserted against the mock stack), and that a click on a cell still filters the whole page.
+- **Picture:** `gallery.py` writes `tabs.png` (the bar and the open tab) and opens the right tab before it shoots the groups, heat and share pictures; the docs show it. `dashboards/README.md` and `docs/dashboards.md` describe tabs; `dashspec`'s CI job validates and compiles the new file with the others.
 
 ## Acceptance
 - All existing dashboards, compiled JSON and saved dashboards open exactly as before.

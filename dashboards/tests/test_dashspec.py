@@ -824,3 +824,14 @@ def test_lint_and_the_queries_do_not_care_about_tabs():
     flat = compile_spec(GOOD, validate(copy.deepcopy(GOOD), CATALOG)[1], CATALOG)
     for p in out["panels"]:
         assert panel_queries(out, p, {"fy": "2021"}) == panel_queries(flat, panel(flat, p["id"]), {"fy": "2021"}), p["id"]
+
+
+def test_a_checked_in_dashboard_uses_tabs_so_the_real_path_is_exercised_as_well_as_the_plain_one():
+    specs = {p.stem: yaml.safe_load(p.read_text()) for p in (REPO / "dashboards").glob("*.yml")}
+    tabbed_ones = {k: v for k, v in specs.items() if "tabs" in v}
+    assert "pivot-gallery" in tabbed_ones and len(tabbed_ones["pivot-gallery"]["tabs"]) == 3
+    assert any("layout" in v for v in specs.values()), "and some dashboards keep a plain layout"
+    built = json.loads((REPO / "dashboards" / "build" / "pivot-gallery.json").read_text())
+    assert "layout" not in built and [t["id"] for t in built["tabs"]] == ["overview", "groups", "heat"]
+    placed = [c["panel"] for t in built["tabs"] for row in t["layout"] for c in row]
+    assert sorted(placed) == sorted(p["id"] for p in built["panels"]), "every panel is on one tab"
