@@ -98,7 +98,7 @@ Either a member string, or an object with these fields.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `set_filter` | object | yes | A filter id, or a list of up to two. A click on a mark sets those filters from what was clicked; a second click undoes it and restores what the filters held before. The panel that was clicked does not narrow itself with these filters. See the click rules below. |
+| `set_filter` | id \| list of id (1+) | yes | A filter id, or a list of up to two. A click on a mark sets those filters from what was clicked; a second click undoes it and restores what the filters held before. The panel that was clicked does not narrow itself with these filters. See the click rules below. |
 
 ## Panels
 
@@ -187,12 +187,13 @@ Exactly one of `measure` or `stack`.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `rows` | list of member (`cube.name`) (1+) | yes | One or two dimensions down the side. With two, the first groups the second: a group row with its own figures, then its rows. |
-| `columns` | member (`cube.name`) | yes | One dimension across the top (a different one from `rows`). The first `limit.columns` values by name are shown. |
+| `columns` | member (`cube.name`) \| object | yes | One dimension across the top (a different one from `rows`), or `{ member, granularity }`: a time dimension grouped by that granularity (months across, say). The first `limit.columns` values in order are shown. |
 | `measures` | list of column (1+) | yes | One to three measures in the cells: members or `{ member, label, format }`. With several, each column shows all of them. |
+| `heat` | object |  | `{ measure }`: shade the cells of one of the `measures` from light (the smallest cell) to strong (the largest); totals are not shaded and every cell still shows its number. |
 | `totals` | `both` \| `rows` \| `columns` \| `none` |  | `both` (default): a total for every row and every column, and a grand total. `rows`: only the total for every row (a last column). `columns`: only the total for every column (a last row). `none`: no totals and no group figures. Totals are asked from Cube over the whole filtered set, so a ratio is the ratio of the totals and they stay true when `limit` hides rows or columns. |
 | `order` | object |  | How the rows are ordered: `{ by: total | label, dir: asc | desc }`. `total` (default, `desc`) orders by the first measure's row total; `label` orders by the row names (`asc` unless said). |
 | `limit` | object |  | `{ rows, columns }`: how many rows (default 25, at most 200) and columns (default 12, at most 24) are shown. The panel says when more exist. |
-| `on_click` | on_click |  | A click on a cell sets the filters named, from the row's and the column's values (each filter's dimension must be one of `rows` or `columns`; up to two filters). |
+| `on_click` | on_click |  | A click on a cell sets the filters named, from the row's and the column's values (each filter's dimension must be one of `rows`, or the `columns` dimension when it is a plain dimension: a time column carries no filter; up to two filters). |
 
 ### `text`
 

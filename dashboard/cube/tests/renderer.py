@@ -410,6 +410,47 @@ with sync_playwright() as p:
     check(page.locator(f"{xt} tfoot").count() == 0 and page.locator(f"{xt} th.tc").count() == 1, "totals: rows has a total column and no total row")
     ctx.close()
 
+    # time columns and heat: months across, the first six; shading on revenue; a title click filters nothing; contrast in both themes
+    MONTHS_HEAT = dict(columns={"member": "dates.full_date", "granularity": "month"}, limit={"columns": 6}, heat={"measure": "internet_sales.revenue"}, on_click={"set_filter": ["category"]})
+    contrast = """() => {
+      const td = [...document.querySelectorAll('[data-panel="xtab"] td.heat')].reduce((a, b) => (+b.style.getPropertyValue('--heat') > +a.style.getPropertyValue('--heat') ? b : a));
+      const parse = (c) => c.match(/[\\d.]+/g).map(Number);
+      const over = (fg, bg) => { const a = fg[3] ?? 1; return [0, 1, 2].map((i) => fg[i] * a + bg[i] * (1 - a)); };
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const card = parse(getComputedStyle(td.closest('.card')).backgroundColor), bg = over(parse(getComputedStyle(td).backgroundColor), card), fg = parse(getComputedStyle(td).color);
+      const [l1, l2] = [lum(fg.slice(0, 3)), lum(bg)].sort((x, y) => y - x);
+      return (l1 + 0.05) / (l2 + 0.05);
+    }"""
+    for theme in ("light", "dark"):
+        ctx, page = open_page(browser, "/d/sales-overview", theme=theme)
+        page.route("**/dashboards/sales-overview.json", with_pivot(**MONTHS_HEAT))
+        page.reload()
+        settled(page)
+        page.wait_for_selector(f"{xt} table.pivot", timeout=20000)
+        if theme == "light":
+            titles = page.locator(f"{xt} thead th.ck").all_inner_texts()
+            check(len(titles) == 6 and titles[0] == "Jul '20", f"the columns are months, the first six, labelled by month ({titles})")
+            check("(month)" in page.inner_text(f"{xt} th.corner"), "and the corner names the granularity")
+            check(any(q.get("timeDimensions", [{}])[0].get("dateRange") == ["2020-07-01", "2020-12-31"] and q.get("dimensions") == ["products.category"] for q in sent(page)), "the cells are asked for those six months only")
+            check(page.locator(f"{xt} td.heat").count() == 24, "every cell is shaded (4 rows x 6 months)")
+            levels = sorted(float(v) for v in page.eval_on_selector_all(f"{xt} td.heat", "ns => ns.map(n => n.style.getPropertyValue('--heat'))"))
+            check(levels[0] == 0 and levels[-1] == 1, f"from the smallest cell (0) to the largest (1) ({levels[0]}..{levels[-1]})")
+            check(page.locator(f"{xt} tfoot td.heat, {xt} td.tc.heat").count() == 0, "totals are not shaded")
+            check(all(t.strip() for t in page.locator(f"{xt} td.heat").all_inner_texts()), "every shaded cell still shows its number")
+            check("Shading: Internet sales revenue" in page.inner_text(xt) or "Shading: Revenue" in page.inner_text(xt) or "Shading:" in page.inner_text(xt), "a legend explains the shading")
+            check("Only the first 6 columns are shown" in page.inner_text(xt), "and the panel says more months exist")
+            url = page.url
+            page.locator(f"{xt} thead th.ck").first.click()
+            page.wait_for_timeout(300)
+            check(page.url == url and page.locator(f"{xt} thead th.ck.clickable").count() == 0, "a time column's title filters nothing")
+            page.locator(f"{xt} tbody tr").first.locator("td").nth(2).click()
+            settled(page)
+            check("category=" in page.url and "fy=" not in page.url, "a cell sets the row's filter only")
+        ratio = page.evaluate(contrast)
+        check(ratio >= 4.5, f"the strongest shade keeps the text readable in the {theme} theme (contrast {ratio:.1f}:1)")
+        check(not page.problems, f"no console errors ({theme}) {page.problems[:2]}")
+        ctx.close()
+
     # a total that fails must not take the rows with it
     ctx, page = open_page(browser, "/d/sales-overview")
     def no_total(route):

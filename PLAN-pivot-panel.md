@@ -1,6 +1,6 @@
 # Plan 2: pivot table panels
 
-Status: **Phases 1 and 2 done** (spec, validator, query plan, pure model; the renderer: crosstab, groups, several measures, totals, clicks, Excel). Depends on the totals query from [`PLAN-table-totals.md`](PLAN-table-totals.md) (Phase 1 there). The user asked for a "pivot table visuals collection"; this plan delivers one new panel type, `pivot`, with a small set of variants, and a gallery section that shows them.
+Status: **Phases 1, 2 and 3 done** (spec, validator, query plan, pure model; the renderer: crosstab, groups, several measures, totals, clicks, Excel). Depends on the totals query from [`PLAN-table-totals.md`](PLAN-table-totals.md) (Phase 1 there). The user asked for a "pivot table visuals collection"; this plan delivers one new panel type, `pivot`, with a small set of variants, and a gallery section that shows them.
 
 ## Goal
 A `pivot` panel: row dimension(s) down the side, one column dimension across the top, measures in the cells, with row totals, column totals and a grand total, plus optional heat shading. Read-only and spec-driven like every other panel; no drag-and-drop field picker.
@@ -69,7 +69,8 @@ Built as below, with these differences: no header-click sorting (a click on a ti
 - `strings.js`: Total / Toplam, a "more rows/columns not shown" note, empty-pivot message.
 - Tests: `lib_render.test.mjs` for `pivotHtml` (header structure, escaping, totals placement, `colspan` for multi-measure); browser test in `dashboard/cube/tests/render.py` against the mock stack: cells equal the mock, totals equal the totals queries, a click sets filters and the other panels reload, Excel download opens and has the same numbers.
 
-### Phase 3: heat shading, multi-measure, time pivot
+### Phase 3: heat shading, multi-measure, time pivot — done
+Built with these notes: multi-measure shipped in Phase 2; `heat` is `{ measure }` with one sequential scale; the shade is at most 38% of the theme's focus colour because 55% gave 4.1:1 text contrast in the light theme, and a browser test now measures contrast in both themes; a time column is a `timeDimensions` entry at its granularity (the chosen buckets become a date range in wave 2); a time column carries no click filter (a year filter would need a conversion this phase does not do); a diverging scale is not built.
 - Heat: a sequential scale from the theme tokens (works in light and dark), computed over the non-total cells of the chosen measure; the cell text colour switches for contrast; a legend line with min and max. Never red/green alone: also a number in every cell.
 - Multi-measure header level; time pivot with `columns` granularity and the existing `bucketLabel`.
 - Tests: contrast rule unit-tested for both themes; scale bounds ignore totals; null cells are unshaded; screenshot in `gallery.py` for each variant (light and dark).

@@ -264,8 +264,24 @@
             "required": ["rows", "columns", "measures"],
             "properties": {
               "rows": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 2, "uniqueItems": true },
-              "columns": { "$ref": "#/$defs/member" },
+              "columns": {
+                "oneOf": [
+                  { "$ref": "#/$defs/member" },
+                  {
+                    "type": "object",
+                    "required": ["member", "granularity"],
+                    "additionalProperties": false,
+                    "properties": { "member": { "$ref": "#/$defs/member" }, "granularity": { "$ref": "#/$defs/granularity" } }
+                  }
+                ]
+              },
               "measures": { "type": "array", "items": { "$ref": "#/$defs/column" }, "minItems": 1, "maxItems": 3 },
+              "heat": {
+                "type": "object",
+                "required": ["measure"],
+                "additionalProperties": false,
+                "properties": { "measure": { "$ref": "#/$defs/member" } }
+              },
               "totals": { "enum": ["both", "rows", "columns", "none"] },
               "order": {
                 "type": "object",

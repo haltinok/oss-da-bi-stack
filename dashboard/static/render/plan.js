@@ -357,6 +357,8 @@ const PIVOT_CELLS = 50000;                       // Cube's own ceiling on a resu
 
 const pivotOrder = (def) => { const by = def.order?.by || "total"; return { by, dir: def.order?.dir || (by === "label" ? "asc" : "desc") }; };
 const keyFilter = (member, values) => ({ member, operator: "equals", values });
+/** A pivot's columns are a dimension (`"dates.fiscal_year"`) or a time dimension at a granularity (`{ member, granularity }`) -> { member, granularity? }. */
+export const pivotColumn = (def) => (typeof def.columns === "string" ? { member: def.columns } : def.columns);
 
 /**
  * { axes: { rows, groups, cols }, values: { cells, groupCells, rowTotals, groupTotals, colTotals, grand } }, each a list of { cube, query }.
@@ -364,31 +366,41 @@ const keyFilter = (member, values) => ({ member, operator: "equals", values });
  */
 export function pivotQueries(spec, def, values, keys = null) {
   const measures = def.measures.map((m) => m.member), lead = measures[0];
-  const [r0, r1] = def.rows, col = def.columns, totalsMode = def.totals || "both";
+  const [r0, r1] = def.rows, { member: col, granularity: gran } = pivotColumn(def), totalsMode = def.totals || "both";
   const lim = { ...PIVOT_LIMIT, ...def.limit }, { by, dir } = pivotOrder(def);
+  // The grouping of a query by these rows and, with `withCol`, the column: a time column is a timeDimension at its granularity, narrowed
+  // (once the axes are known) to the span of the chosen buckets; any other column is one more dimension.
+  const colRange = keys && gran && keys.cols.length ? [rangeOf(keys.cols[0], gran)[0], rangeOf(keys.cols[keys.cols.length - 1], gran)[1]] : null;
+  const shape = (rowDims, withCol) => {
+    const dimensions = withCol && !gran ? [...rowDims, col] : rowDims;
+    return { ...(dimensions.length ? { dimensions } : {}), ...(withCol && gran ? { timeDimensions: [{ dimension: col, granularity: gran, ...(colRange ? { dateRange: colRange } : {}) }] } : {}) };
+  };
   const base = activeFilters(spec, values, def);
   const follow = (qs) => followPeriod(spec, def, values, qs);
   const leadQuery = (query) => follow([{ cube: cubeOf(lead), query: { measures: [lead], filters: base, ...query } }]);
   const dimsAsc = Object.fromEntries(def.rows.map((d) => [d, "asc"]));
   const axes = {
-    rows: leadQuery({ dimensions: def.rows, order: by === "total" ? { [lead]: dir, ...dimsAsc } : Object.fromEntries(def.rows.map((d) => [d, dir])), limit: lim.rows + 1 }),
-    groups: r1 ? leadQuery({ dimensions: [r0], order: by === "total" ? { [lead]: dir, [r0]: "asc" } : { [r0]: dir }, limit: PIVOT_MAX_ROWS }) : [],
-    cols: leadQuery({ dimensions: [col], order: { [col]: "asc" }, limit: lim.columns + 1 }),
+    rows: leadQuery({ ...shape(def.rows, false), order: by === "total" ? { [lead]: dir, ...dimsAsc } : Object.fromEntries(def.rows.map((d) => [d, dir])), limit: lim.rows + 1 }),
+    groups: r1 ? leadQuery({ ...shape([r0], false), order: by === "total" ? { [lead]: dir, [r0]: "asc" } : { [r0]: dir }, limit: PIVOT_MAX_ROWS }) : [],
+    cols: leadQuery({ ...shape([], true), order: { [col]: "asc" }, limit: lim.columns + 1 }),
   };
   const rowF = !keys ? [] : [keyFilter(r0, [...new Set(keys.rows.map((k) => k[0]))]), ...(r1 ? [keyFilter(r1, [...new Set(keys.rows.map((k) => k[1]))])] : [])];
   const groupF = !keys ? [] : [rowF[0]];
-  const colF = !keys ? [] : [keyFilter(col, keys.cols)];
-  const per = (dimensions, filters, limit = PIVOT_CELLS) => follow(queriesPerCube(measures, { filters: [...base, ...filters], ...(dimensions.length ? { dimensions, limit } : {}) }));
+  const colF = !keys || gran ? [] : [keyFilter(col, keys.cols)];
+  const per = (rowDims, withCol, filters) => {
+    const grouping = shape(rowDims, withCol);
+    return follow(queriesPerCube(measures, { filters: [...base, ...filters], ...grouping, ...(Object.keys(grouping).length ? { limit: PIVOT_CELLS } : {}) }));
+  };
   const rowTot = totalsMode === "both" || totalsMode === "rows", colTot = totalsMode === "both" || totalsMode === "columns", any = totalsMode !== "none";
   return {
     axes,
     values: {
-      cells: per([...def.rows, col], [...rowF, ...colF]),
-      groupCells: r1 && any ? per([r0, col], [...groupF, ...colF]) : [],
-      rowTotals: rowTot ? per(def.rows, rowF) : [],
-      groupTotals: r1 && rowTot ? per([r0], groupF) : [],
-      colTotals: colTot ? per([col], colF) : [],
-      grand: any ? per([], []) : [],
+      cells: per(def.rows, true, [...rowF, ...colF]),
+      groupCells: r1 && any ? per([r0], true, [...groupF, ...colF]) : [],
+      rowTotals: rowTot ? per(def.rows, false, rowF) : [],
+      groupTotals: r1 && rowTot ? per([r0], false, groupF) : [],
+      colTotals: colTot ? per([], true, colF) : [],
+      grand: any ? per([], false, []) : [],
     },
   };
 }
@@ -408,7 +420,8 @@ export function pivotQueryList(spec, def, values) {
  * in groups (a group is a first-dimension value, with its own cells and total), in the order of the first dimension then the rows' own order.
  */
 export function pivotModel(def, axes, vals) {
-  const [r0, r1] = def.rows, col = def.columns, lim = { ...PIVOT_LIMIT, ...def.limit };
+  const [r0, r1] = def.rows, { member, granularity: gran } = pivotColumn(def), lim = { ...PIVOT_LIMIT, ...def.limit };
+  const col = gran ? timeKey(member, gran) : member;             // the key a row of Cube's answer carries the column under
   const str = (v) => (v == null ? "" : String(v));
   const join = (...parts) => parts.join("\u0000");
   const index = (results, dims) => new Map(byDims(results || [], dims).map((r) => [join(...dims.map((d) => str(r.dims[d]))), r.values]));
@@ -433,6 +446,17 @@ export function pivotModel(def, axes, vals) {
     hidden: { rows: leavesAll.length > lim.rows, cols: colsAll.length > lim.columns },
     truncated: results.some((r) => (r.rows || []).length >= PIVOT_CELLS),
   };
+}
+
+/**
+ * The shading of a pivot's cells for one measure: { min, max, level(v) } over the cells (not the totals), `level` 0..1, or null when no
+ * cell has a number. An empty cell has no level; when every cell is equal they all sit in the middle.
+ */
+export function heatScale(model, member) {
+  const values = model.rows.flatMap((r) => r.cells.map((c) => c?.get(member))).filter((v) => v != null && Number.isFinite(v));
+  if (!values.length) return null;
+  const min = Math.min(...values), max = Math.max(...values);
+  return { min, max, level: (v) => (v == null || !Number.isFinite(v) ? null : max === min ? 0.5 : (v - min) / (max - min)) };
 }
 
 /** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
