@@ -8,7 +8,7 @@ import {
   pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, pivotShare, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
 import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
-import { stringsFor, translations } from "../../static/render/strings.js";
+import { stringsFor, translations, langOf, uiLocale, readLang, writeLang } from "../../static/render/strings.js";
 
 const spec = {
   time: { dimension: "dates.full_date" },
@@ -636,4 +636,28 @@ test("pivotShare keeps groups pointing at the same rows, and divides a group's f
   close(c.groups[0].cells[0], "a.rev", 4 / 8);
   close(c.rows[0].cells[0], "a.rev", 3 / 8);
   close(c.groups[0].total, "a.rev", 4 / 8);
+});
+
+test("langOf maps a locale to the two languages the page has words for", () => {
+  assert.equal(langOf("tr-TR"), "tr");
+  assert.equal(langOf("tr"), "tr");
+  assert.equal(langOf("en-US"), "en");
+  assert.equal(langOf("de-DE"), "en", "a language it has no words for shows English");
+  assert.equal(langOf(undefined), "en");
+});
+
+test("without a browser there is no remembered choice: uiLocale gives the fallback and writing says it did not stick", () => {
+  assert.equal(readLang(), null);
+  assert.equal(uiLocale("tr-TR"), "tr-TR");
+  assert.equal(uiLocale(undefined), "en-US");
+  assert.equal(writeLang("tr"), false);
+});
+
+test("every string table has the words the language switch and the page chrome need, and the date locale names its language", () => {
+  for (const key of ["languageLabel", "dateLocale", "connecting", "datasetLabel", "themeToggle", "notLoaded", "sparkAria", "seriesAria", "datasetTitle", "signedInAs"]) assert.ok(translations.en[key] !== undefined && translations.tr[key] !== undefined, key);
+  assert.equal(translations.en.dateLocale, "en-US");
+  assert.equal(translations.tr.dateLocale, "tr-TR");
+  assert.equal(translations.tr.sparkAria("Gelir", "ay", "Haz 2021", "$1"), "Gelir, ay bazında, son Haz 2021: $1");
+  assert.equal(translations.en.seriesAria("A, B", "month"), "A, B by month");
+  assert.equal(stringsFor("tr-TR").signedInAs("admin", "admin"), "admin olarak oturum açıldı, rol: admin");
 });

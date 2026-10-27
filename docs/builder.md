@@ -78,6 +78,7 @@ A person can **Save…** a draft: it is stored in Postgres (schema `builder`, ta
   greys it out with the reason. The owner's share form shows which roles can open it. Cube's row-level security is untouched: a viewer sees their own territories.
 - **Who can do what.** Only the owner changes the YAML, restores a version or sees versions; the owner or an admin changes the sharing, the title, or deletes. A
   viewer can *Save a copy* or *Edit a copy* (their own private copy).
+- **Language.** `GET /info?lang=tr` returns the example requests in Turkish (`en` by default; any other language gets English); the page asks in the language of its EN | TR switch.
 - **Tags.** The Save dialog has a **Tags** field (chips; Enter or a comma adds one; at most 5), and the owner of a saved dashboard has a **Tags** button for changing them
   later. The page never edits YAML: the request carries `tags` (`POST /saved`, `PUT /saved/{id}`), the service writes them into the spec after its description and runs the
   same validator as for every other field, so a bad tag is refused with the usual message (`'Board' is not lower case; write 'board'`) before anything is stored. An untouched

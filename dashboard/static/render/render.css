@@ -176,6 +176,6 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .te-chip button:hover { background: var(--surface-2); color: var(--ink); }
 .te-chip button:focus-visible, .te-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .te-input { flex: 1 1 160px; min-width: 120px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
-.te-input:disabled { opacity: .5; }
+.te-input[readonly] { opacity: .6; }
 .tag-editor .hint { flex-basis: 100%; margin: 2px 0 0; }
 @media (max-width: 480px) { .te-input { height: 44px; } .te-chip button { width: 32px; height: 32px; } }

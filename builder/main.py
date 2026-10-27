@@ -156,9 +156,9 @@ def healthz() -> dict:
 
 
 @app.get("/info")
-def info(user: User_) -> dict:
+def info(user: User_, lang: str = "en") -> dict:
     m = mode()
-    return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role), "saving": STORE is not None,
+    return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role, lang), "saving": STORE is not None,
             "note": f"A language model ({provider.label()}, {provider.model()}) reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
 
 

@@ -62,7 +62,10 @@ export function mountList({ main, mine, api, t }) {
   }
 
   function writeUrl() {
-    try { history.replaceState(null, "", location.pathname + listSearch(query, selected)); } catch { /* an unusual page: the state just is not in the URL */ }
+    const params = new URLSearchParams(listSearch(query, selected));
+    const lang = new URLSearchParams(location.search).get("lang");              // a link that carried the language keeps it
+    if (lang) params.set("lang", lang);
+    try { history.replaceState(null, "", location.pathname + (params.toString() ? `?${params}` : "")); } catch { /* an unusual page: the state just is not in the URL */ }
   }
 
   function apply() {
