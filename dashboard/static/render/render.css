@@ -192,3 +192,20 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 /* A key-figure tile has no header: its load timer sits in the top-right corner, out of the label's text. */
 .kpi { position: relative; }
 .kpi > .timer { position: absolute; top: 8px; right: 10px; margin: 0; }
+
+/* The sections of the list page (/d/): each has its own heading, a one-line purpose and a rule down its left edge; the rules differ by weight and
+   tone of the page's neutral colours, not by hue, so the page stays calm and the sections still tell apart. */
+.lsec { margin: 0 0 22px; padding: 2px 0 2px 14px; border-left: 3px solid var(--axis); }
+.lsec > h2 { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 2px; }
+.lsec-hint { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+.lsec-mine { border-left-color: var(--ink-2); }
+.lsec-shared { border-left-color: var(--muted); border-left-style: dashed; }
+.lsec-samples { border-left-color: var(--grid); }
+.card.lsec-create { border-left: 3px solid var(--focus); padding-left: 14px; }
+.builder-box textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+.list-search { margin-top: 4px; }
+.saved-main a, .saved-main > span:first-child { overflow-wrap: anywhere; }
+.saved > button { flex: none; }
+.dlist .card { padding-top: 12px; }
+.lsec .drafts { margin-top: 0; margin-bottom: 0; }
+@media (max-width: 480px) { .lsec { padding-left: 10px; } .saved { flex-wrap: wrap; } }
