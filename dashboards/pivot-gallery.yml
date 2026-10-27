@@ -1,7 +1,7 @@
 spec: 1
 id: pivot-gallery
 title: Pivot gallery
-description: "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares."
+description: "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares. Three tabs: only the one you open is loaded."
 tags: [sales, reference]
 locale: en-US
 currency: USD
@@ -76,9 +76,18 @@ panels:
     show: share_of_column
     heat: { measure: internet_sales.revenue }
     on_click: { set_filter: [category, fy] }
-layout:
-  - [intro: 12]
-  - [crosstab: 6, sidebyside: 6]
-  - [groups: 12]
-  - [heatmap: 12]
-  - [share: 12]
+tabs:
+  - id: overview
+    title: Overview
+    layout:
+      - [intro: 12]
+      - [crosstab: 6, sidebyside: 6]
+  - id: groups
+    title: Groups and shares
+    layout:
+      - [groups: 12]
+      - [share: 12]
+  - id: heat
+    title: Heat
+    layout:
+      - [heatmap: 12]

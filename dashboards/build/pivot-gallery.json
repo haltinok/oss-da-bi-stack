@@ -2,7 +2,7 @@
   "spec": 1,
   "id": "pivot-gallery",
   "title": "Pivot gallery",
-  "description": "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares.",
+  "description": "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares. Three tabs: only the one you open is loaded.",
   "tags": [
     "sales",
     "reference"
@@ -181,41 +181,59 @@
       }
     }
   ],
-  "layout": [
-    [
-      {
-        "panel": "intro",
-        "span": 12
-      }
-    ],
-    [
-      {
-        "panel": "crosstab",
-        "span": 6
-      },
-      {
-        "panel": "sidebyside",
-        "span": 6
-      }
-    ],
-    [
-      {
-        "panel": "groups",
-        "span": 12
-      }
-    ],
-    [
-      {
-        "panel": "heatmap",
-        "span": 12
-      }
-    ],
-    [
-      {
-        "panel": "share",
-        "span": 12
-      }
-    ]
+  "tabs": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "layout": [
+        [
+          {
+            "panel": "intro",
+            "span": 12
+          }
+        ],
+        [
+          {
+            "panel": "crosstab",
+            "span": 6
+          },
+          {
+            "panel": "sidebyside",
+            "span": 6
+          }
+        ]
+      ]
+    },
+    {
+      "id": "groups",
+      "title": "Groups and shares",
+      "layout": [
+        [
+          {
+            "panel": "groups",
+            "span": 12
+          }
+        ],
+        [
+          {
+            "panel": "share",
+            "span": 12
+          }
+        ]
+      ]
+    },
+    {
+      "id": "heat",
+      "title": "Heat",
+      "layout": [
+        [
+          {
+            "panel": "heatmap",
+            "span": 12
+          }
+        ]
+      ]
+    }
   ],
   "members": {
     "dates.fiscal_year": {
