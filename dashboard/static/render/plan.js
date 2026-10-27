@@ -310,13 +310,38 @@ export const pieQueries = (spec, def, values) => followPeriod(spec, def, values,
 
 export const treemapQueries = (spec, def, values) => followPeriod(spec, def, values, queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) }));
 
-export function tableQueries(spec, def, values) {
+/**
+ * The order a table is read in. `sort` is the viewer's header click: undefined = untouched (the author's `order`, else every dimension
+ * ascending, left to right), null = cleared (every dimension ascending), { member, dir } = that column first, then the dimensions ascending
+ * so that equal values keep a steady order.
+ */
+export function tableOrder(def, dimensions, sort) {
+  const dimsAsc = (skip = "") => Object.fromEntries(dimensions.filter((d) => d !== skip).map((d) => [d, "asc"]));
+  if (sort === undefined) return Object.keys(def.order || {}).length ? { ...def.order } : dimsAsc();
+  return sort === null ? dimsAsc() : { [sort.member]: sort.dir, ...dimsAsc(sort.member) };
+}
+
+/** What a header click on `member` does: measures cycle desc, asc, none; dimensions asc, desc, none. null is "none". */
+export function nextSort(sort, member, isMeasure) {
+  const [first, second] = isMeasure ? ["desc", "asc"] : ["asc", "desc"];
+  if (!sort || sort.member !== member) return { member, dir: first };
+  return sort.dir === first ? { member, dir: second } : null;
+}
+
+export function tableQueries(spec, def, values, sort) {
   const { measures, dimensions } = tableParts(def, spec.members);
-  const order = Object.fromEntries(Object.entries(def.order || {}));
+  const order = tableOrder(def, dimensions, sort);
   const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
   const base = { dimensions, filters: activeFilters(spec, values, def), ...(single ? { order, limit: def.limit || 100 } : {}) };
   if (!measures.length) return [{ cube: "", query: { ...base, order, limit: def.limit || 100 } }];
   return followPeriod(spec, def, values, queriesPerCube(measures, base));
+}
+
+/** A table's total row (`def.totals`): its measures with no grouping and no limit, one query per cube, so Cube aggregates over the whole set. */
+export function tableTotalQueries(spec, def, values) {
+  if (!def.totals) return [];
+  const { measures } = tableParts(def, spec.members);
+  return measures.length ? followPeriod(spec, def, values, queriesPerCube(measures, { filters: activeFilters(spec, values, def) })) : [];
 }
 
 /** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
@@ -327,7 +352,7 @@ export function panelQueries(spec, def, values) {
     case "bar": return barQueries(spec, def, values);
     case "pie": return pieQueries(spec, def, values);
     case "treemap": return treemapQueries(spec, def, values);
-    case "table": return tableQueries(spec, def, values);
+    case "table": return [...tableQueries(spec, def, values), ...tableTotalQueries(spec, def, values)];
     default: return [];
   }
 }

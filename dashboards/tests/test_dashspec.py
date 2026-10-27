@@ -168,6 +168,10 @@ BROKEN = [
      ["panel 'top'", "ignore_filters:", "no filter with id 'nope'"]),
     ("table order on a column that is not shown", _set("lines", "order", {"internet_sales.units": "desc"}),
      ["panel 'lines' (table)", "order.internet_sales.units", "not one of the table's columns"]),
+    ("a table total with no measure column", lambda s: panel(s, "lines").update(columns=["internet_sales.order_number", "territories.country"], order={}, totals="footer"),
+     ["panel 'lines' (table)", "totals:", "needs at least one measure column"]),
+    ("a table total somewhere else than header or footer", _set("lines", "totals", "side"),
+     ["panel 'lines' (table)", "totals:", "'side' is not one of"]),
     ("layout row not 12 wide", lambda s: s["layout"].__setitem__(1, [{"trend": 8}, {"lines": 3}]),
      ["layout:", "row 2", "add up to 11"]),
     ("layout names an unknown panel", lambda s: s["layout"].append([{"ghost": 12}]),
@@ -535,3 +539,31 @@ def test_pie_bar_and_treemap_can_name_their_measure_and_dimensions_in_your_langu
 def test_a_pie_has_a_measure_or_a_labelled_sum(pie, needle):
     errors = run(lambda s: (s["panels"].append({"id": "p", "type": "pie", "by": "products.category", **pie}), s["layout"].append([{"p": 12}])))
     assert errors and needle in "\n".join(errors), errors
+
+
+# ---------------------------------------------------------------------------------------------------------------- table totals
+@pytest.mark.parametrize("where", ["header", "footer"])
+def test_a_table_total_validates_and_asks_for_the_whole_set_per_cube(where):
+    spec = copy.deepcopy(GOOD)
+    panel(spec, "lines")["totals"] = where
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used)
+    lines = panel(out, "lines")
+    assert lines["totals"] == where
+    queries = panel_queries(out, lines, {"fy": "2021"})
+    rows, total = queries[:-1], queries[-1]
+    assert all("limit" in q["query"] for q in rows)
+    assert "dimensions" not in total["query"] and "limit" not in total["query"] and "order" not in total["query"]
+    assert total["query"]["measures"] == [m for m in total["query"]["measures"] if out["members"][m]["kind"] == "measure"]
+    assert total["query"]["filters"] == rows[0]["query"]["filters"], "the total covers the same set as the rows"
+
+
+def test_a_table_without_an_order_is_read_by_every_dimension_ascending():
+    spec = copy.deepcopy(GOOD)
+    del panel(spec, "lines")["order"]
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used)
+    query = panel_queries(out, panel(out, "lines"), {})[0]["query"]
+    assert query["order"] == {"internet_sales.order_number": "asc", "internet_sales.order_date": "asc", "territories.country": "asc"}

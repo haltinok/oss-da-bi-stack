@@ -71,7 +71,21 @@ panels:
     limit: 10
     format: money
     on_click: { set_filter: region }
+  - id: detail
+    type: table
+    title: Revenue by subcategory
+    columns:
+      - { member: products.category, label: Category }
+      - { member: products.subcategory, label: Subcategory }
+      - { member: internet_sales.revenue, label: Internet revenue, format: money }
+      - { member: reseller_sales.revenue, label: Reseller revenue, format: money }
+      - { member: internet_sales.margin_pct, label: Internet margin, format: pct }
+      - { member: reseller_sales.margin_pct, label: Reseller margin, format: pct }
+    order: { internet_sales.revenue: desc }
+    limit: 50
+    totals: footer
 layout:
   - [kpis: 12]
   - [trend: 7, donut: 5]
   - [categories: 6, regions: 6]
+  - [detail: 12]

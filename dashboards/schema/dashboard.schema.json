@@ -253,6 +253,7 @@
               "columns": { "type": "array", "items": { "$ref": "#/$defs/column" }, "minItems": 1, "maxItems": 20 },
               "order": { "type": "object", "additionalProperties": { "$ref": "#/$defs/direction" } },
               "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
+              "totals": { "enum": ["header", "footer"] },
               "on_click": { "$ref": "#/$defs/on_click" }
             }
           }
