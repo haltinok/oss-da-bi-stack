@@ -40,10 +40,16 @@ Until an API key is configured, a rule-based stand-in answers (a fixed set of ph
 
 ## Tabs
 A dashboard can have **pages** instead of one long page: write `tabs` instead of `layout`, 2 to 8 entries, each with an `id` (used in the address), a `title` (up to 40
-characters) and its own `layout` rows. `panels` stays one flat list and each panel is placed in exactly one tab; the filters and a drill-down's period are shared by all tabs.
-The validator names the tab in its messages (`tab 'details': row 2: the widths add up to 11`, `tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`).
-**Status:** the spec, the validator and the compiler know tabs; until the page draws a tab bar (the next step of `PLAN-dashboard-tabs.md`) it shows the tabs one below the other,
-and the rule-based builder will not change a dashboard that has tabs (it would flatten them): edit the YAML, or use a language model.
+characters) and its own `layout` rows. `panels` stays one flat list and each panel is placed in exactly one tab. The validator names the tab in its messages
+(`tab 'details': row 2: the widths add up to 11`, `tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`).
+
+On the page a tab bar sits under the filters. **The filters and a drill-down's period are shared by all tabs**, so a filter chosen on one tab applies on the others. **Only the open
+tab's panels are loaded**: a dashboard with three tabs costs one tab's queries when it opens, a tab loads the first time you open it, and going back to one you have seen
+sends nothing. A tab always shows numbers for the current filters (it reloads when a filter changed while you were elsewhere) and is reloaded when you open it after the refresh
+interval (5 minutes); Refresh and the automatic refresh reload the open tab. **Export all** takes every tab (it loads the ones you never opened first). The open tab is in the address
+(`?tab=details`; the first tab leaves it out), so it can be linked and survives a reload and a change of language; a name the dashboard does not have opens the first tab.
+Keyboard: Tab reaches the open tab, the arrow keys move to the next or previous tab and open it (they wrap), Home and End go to the first and the last. On a phone the bar scrolls sideways
+inside itself. The rule-based builder does not write tabs and will not change a dashboard that has them (it would flatten them): edit the YAML, or use a language model.
 
 ## Language
 Every `/d` page has a small **EN | TR** switch in its header. The choice is kept in this browser (or, when the browser keeps nothing, in the address as `?lang=tr`, which also

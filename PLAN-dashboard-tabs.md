@@ -1,6 +1,6 @@
 # Plan 3: tab pages in dashboards
 
-Status: **approved; reviewed against the code on 2026-10-27; phase 1 done**. It was written before the pivot, search/tags and language-switch work; those did not touch the layout contract, so the design stands, and the review below records what the current code adds. It changes the layout contract that the validator, compiler, renderer, builder, saved dashboards and docs all read.
+Status: **approved; reviewed against the code on 2026-10-27; phases 1 and 2 done**. It was written before the pivot, search/tags and language-switch work; those did not touch the layout contract, so the design stands, and the review below records what the current code adds. It changes the layout contract that the validator, compiler, renderer, builder, saved dashboards and docs all read.
 
 ## Review against the current code (2026-10-27)
 Read `render/main.js` (`showDashboard`), `dashspec/validate.py`, `compile.py`, `docs.py`, `builder/composer.py` and `core.py`. What changes in the plan:
@@ -57,17 +57,15 @@ Built as planned, with these notes:
 - **Added to this phase (they were Phase 2 and 3):** the page lays a tabbed file's tabs out one below the other (`layoutRows`), so a tabbed file cannot break a page before the tab bar exists; and the stand-in's `refine` refuses a tabbed dashboard (it rebuilds `layout` from `panels` and would flatten the tabs). The builder's model guide does not mention tabs yet (Phase 3), but the field reference in its prompt, generated from the schema, does.
 - Tests: 25 dashspec cases (valid at three split points, compile shape, the plain layout still compiles to `layout`, 17 broken setups naming the tab, panel and role checks still run, a filter error is reported once, queries do not care), a stand-in test, and a browser test (the tabbed dashboard draws every panel in order, loads, no console errors).
 
-### Phase 2: renderer
-- `render/main.js`: `normalizeTabs(spec)` → always a list; the grid builds one `.rgrid` per tab (`hidden` for the inactive), panels created once up front like now (`createPanel` is cheap; the **load** is deferred). `span` map is built from all tabs.
-- Tab bar: `role="tablist"`, buttons `role="tab"` with `aria-selected`, `aria-controls`; arrow keys move, Home/End jump; hidden when only the implicit tab exists. Styled in `render.css` with theme tokens, horizontally scrollable on a phone, with a visible focus ring.
-- State: `?tab=<id>` in the URL (`writeUrl`), unknown or role-hidden value falls back to the first tab. Switching uses `history.replaceState`, like filters.
-- Loading: `loadAll()` loads the active tab's panels; `activateTab` loads the panels whose `loadedKey` (filter values + period) is stale. Hidden panels do not redraw on resize; on show they redraw once (charts need a laid-out width: SVG panels read `clientWidth`, so redraw after un-hiding).
-- Export all loads the tabs never opened, then exports every panel; per-panel download unchanged. Auto-refresh and Refresh reload the active tab; a tab older than `REFRESH_MS` reloads with `force` when it is opened.
-- `strings.js`: no new words needed unless a tab-level error message is added.
-- Tests:
-  - JS unit (`lib_render.test.mjs`): `normalizeTabs` for `layout` and `tabs`; tab fallback for an unknown id.
-  - Browser (`dashboard/cube/tests/renderer.py`, mock stack, tabs patched into a compiled dashboard with `page.route`): a two-tab spec opens on tab 1 and sends **no** queries for tab 2's panels (count them in the mock); switching sends them; `?tab=products` opens directly there; a filter set on tab 1 is applied on first load of tab 2 and in its queries; reload keeps the tab; keyboard navigation works; a single-layout dashboard shows no tab bar and is pixel-identical to before (existing `shot.py` baselines).
-  - Existing e2e tests (`e2e.py`, `progressive.py`, `header.py`, `dataset.py`) pass unchanged.
+### Phase 2: renderer — done
+Built as planned, with these notes:
+- **Pure parts** in `render/plan.js`: `normalizeTabs` (a plain `layout` is one untitled tab with id `main`, and no tab bar), `pickTab` (the address's tab, else the first), `tabPanelIds`, `tabKeyTarget` (arrows wrap, Home and End jump).
+- **`showDashboard`:** all panels are created once; one `.rgrid` per tab (`role="tabpanel"`, hidden unless open); a `role="tablist"` bar of `role="tab"` buttons (roving `tabindex`, `aria-selected`, `aria-controls`), named by a new string `tabsLabel` (Tabs / Sekmeler). `loadAll` loads the **open tab's** panels (a newer load cancels an older one, so moving quickly costs nothing); `openTab` shows the tab, writes `?tab=` (the first tab leaves the address clean) and loads it. The period bar and the filters stay above the tabs.
+- **Freshness:** a panel's own cache (`loadedKey`: filters and period) already reloads a stale panel, so a filter changed on another tab is applied when you come back; a tab whose data is older than `REFRESH_MS` is reloaded with `force` when it is opened (`tabLoadedAt`, exposed on `window.__render` for the test). Refresh and the automatic refresh reload the open tab.
+- **Export all** loads every panel first (the never-opened tabs, and any left stale by a filter change), then exports all of them.
+- **Hidden panels:** `modelPanel`'s `ResizeObserver` now skips a redraw while its panel has no width (its tab is hidden); it redraws by itself when the tab is shown. Panels of an unopened tab are never loaded, so they never measure 0.
+- **Automatic activation:** an arrow key both moves the focus and opens the tab (loading is cached and a quicker move cancels the previous load, so it stays cheap).
+- Tests: `lib_render.test.mjs` (84), `renderer.py` (330): a plain layout has no bar; the bar, its names and its semantics; opens on the first tab; only the open tab asks Cube for data; choosing a tab shows, loads and writes the address; the first tab keeps the address clean; back and forth sends nothing; an old tab reloads; a filter chosen before, and one changed while away, both apply; `?tab=` opens and loads only that tab and survives a reload; an unknown tab falls back quietly; the period is shared; arrows, wrap, Home, End and the focus; Export all takes every tab; the language switch keeps the tab; 390 px; contrast in both themes.
 
 ### Phase 3: builder, saved dashboards, authoring skill
 - `builder/composer.py` cheat sheet and `builder/core.py` prompt: how and when to use tabs (more than ~8 panels, distinct audiences/questions per page; otherwise one page); one valid example with two tabs for the role; the reference table comes from the schema so it updates itself (test asserts `tabs` is in it).
