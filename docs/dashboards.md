@@ -78,8 +78,14 @@ put on the time axis) and a grouping its cube can join to, and goes in a full-wi
 **deleted**; the neighbours in its row widen so the row still adds up to 12. A filter on a field some panels cannot join to is added to those panels' `ignore_filters` for you (the drawer says so), and removing a
 filter cleans up every mention of it.
 
+**Layout.** In design mode each panel has a **grip** on its top edge. Drag it onto the top or bottom edge of another panel to give it a row of its own there, onto the left or right edge to put it
+beside that panel (the two share its width), onto a tab to move it to the end of that tab, or onto the empty end of the page. The window scrolls by itself when you drag near its top or bottom, and Escape drops nothing.
+Between two neighbours in a row there is a **bar**: drag it sideways to change their widths one of the 12 columns at a time (a tip shows the widths). The same moves are buttons in the drawer for a picked panel
+(Up, Down, Left, Right, Narrower, Wider, Join the row above or below, Own row, Move to tab), so a keyboard needs no pointer; a button that would do nothing is off. Every row always adds up to 12 and every panel is placed
+once. With tabs, the page view lists them: rename a tab or move it earlier or later.
+
 The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
-formulas (`sum`, `ratio`), moving panels and their widths, tabs; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
+formulas (`sum`, `ratio`), adding and deleting tabs, and turning a plain layout into tabs; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),

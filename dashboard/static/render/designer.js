@@ -5,6 +5,8 @@
 import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setPageField, timeDimensions } from "../lib/designer-structure.js";
+import { dropPanel, moveCommand, moveTab, moveToTab, renameTab, rowOf, tabsOf } from "../lib/designer-layout.js";
+import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
 
 const KEY = "designer";                                           // { on, panel, scroll }: what design mode was doing when the page last loaded
@@ -20,6 +22,7 @@ const PAGE_FIELDS = [
   { path: "locale", kind: "choice", key: "locale", options: ["en-US", "tr-TR"], optional: true }, { path: "currency", kind: "choice", key: "currency", options: ["USD", "TRY"], optional: true },
   { path: "time.dimension", kind: "timedim", key: "timeDimension" },
 ];
+const LAYOUT_COMMANDS = ["up", "down", "left", "right", "narrower", "wider", "join-up", "join-down", "own-row"];
 const FILTER_FIELDS = [
   { path: "label", kind: "text", key: "label", optional: true }, { path: "dimension", kind: "anydim", key: "dimension" }, { path: "parent", kind: "anydim", key: "parent", optional: true },
 ];
@@ -50,12 +53,24 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     drawer.innerHTML = `<div class="dz-head"><h2>${esc(dz.page)}</h2>${closeBtn}</div><div id="dz-msg" class="bmsg" role="alert" hidden></div>
       <p class="hint">${esc(dz.pick)}</p>
       <form class="dz-form" id="dz-page" onsubmit="return false"></form>
+      ${tabsOf(source).length ? `<h3 class="dz-section">${esc(dz.tabs)}</h3><div id="dz-tabs" class="dz-tabs"></div>` : ""}
       <h3 class="dz-section">${esc(dz.filters)}</h3><div id="dz-filters" class="dz-filters"></div>
       <div class="dz-add-filter"><select id="dz-newfilter" aria-label="${esc(dz.addFilter)}"></select><button type="button" id="dz-addfilter">${esc(dz.addFilter)}</button></div>
       <h3 class="dz-section">${esc(dz.addPanel)}</h3>
       <div class="dz-gallery" id="dz-gallery">${PANEL_TYPES.map((ty) => `<button type="button" class="dz-type" data-add="${ty}"><strong>${esc(typeName(ty))}</strong><span>${esc(dz.typeHint[ty])}</span></button>`).join("")}</div>`;
     const form = drawer.querySelector("#dz-page");
     for (const fd of PAGE_FIELDS) form.append(field(fd, source, (v) => commit(setPageField(source, fd.path, v), { message: dz.pageChanged, panel: null })));
+    const tabList = drawer.querySelector("#dz-tabs");
+    tabsOf(source).forEach((tab, i, all) => {
+      const row = el("div", { class: "dz-tab" });
+      const input = el("input", { type: "text", maxlength: 60, "aria-label": dz.tabName, "data-tab-title": tab.id });
+      input.value = tab.title;
+      input.addEventListener("change", () => commit(renameTab(source, tab.id, input.value), { message: dz.tabRenamed, panel: null }));
+      row.append(input,
+        el("button", { type: "button", "data-tab-move": `${tab.id}:-1`, "aria-label": `${dz.tabEarlier}: ${tab.title}`, ...(i === 0 ? { disabled: "" } : {}) }, "↑"),
+        el("button", { type: "button", "data-tab-move": `${tab.id}:1`, "aria-label": `${dz.tabLater}: ${tab.title}`, ...(i === all.length - 1 ? { disabled: "" } : {}) }, "↓"));
+      tabList.append(row);
+    });
     const list = drawer.querySelector("#dz-filters");
     if (!(source.filters || []).length) list.innerHTML = `<p class="hint">${esc(dz.noFilters)}</p>`;
     for (const f of source.filters || []) {
@@ -80,6 +95,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     }).join("");
     drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn}</div>
       <div id="dz-msg" class="bmsg" role="alert" hidden></div><form class="dz-form" onsubmit="return false">${rows}</form>
+      <h3 class="dz-section">${esc(dz.layout)}</h3>
+      <div class="dz-layout" role="group" aria-label="${esc(dz.layout)}">${LAYOUT_COMMANDS.map((cmd) => `<button type="button" data-cmd="${cmd}" ${moveCommand(source, panel.id, cmd).problem ? "disabled" : ""}>${esc(dz.cmd[cmd])}</button>`).join("")}</div>
+      <p class="hint">${esc(dz.width(rowOf(source, panel.id).find((c) => c.id === panel.id)?.span ?? 12))}</p>
+      ${tabsOf(source).length > 1 ? `<label class="dz-field"><span>${esc(dz.toTab)}</span><span class="dz-input"><select id="dz-totab"><option value="">—</option>${tabsOf(source).filter((tab) => !tab.panels.includes(panel.id)).map((tab) => `<option value="${esc(tab.id)}">${esc(tab.title)}</option>`).join("")}</select></span></label>` : ""}
       <div class="dz-actions"><button type="button" id="dz-back">${esc(dz.back)}</button><button type="button" id="dz-dup">${esc(dz.duplicate)}</button><button type="button" id="dz-del" class="dz-danger">${esc(dz.remove)}</button></div>
       <p class="hint">${esc(dz.footer)}</p>`;
     for (const slot of drawer.querySelectorAll(".dz-input")) {
@@ -176,6 +195,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   const titleOf = (ty, m, d) => dz.defaultTitle(ty, humanize(m), d && humanize(d));
 
   drawer.addEventListener("click", (e) => {
+    const cmd = e.target.closest("[data-cmd]");
+    if (cmd) { commit(moveCommand(source, selected, cmd.dataset.cmd), { message: dz.moved }); return; }
+    const tabMove = e.target.closest("[data-tab-move]");
+    if (tabMove) { const [id, dir] = tabMove.dataset.tabMove.split(":"); commit(moveTab(source, id, Number(dir)), { message: dz.tabMoved, panel: null }); return; }
     const add = e.target.closest("[data-add]");
     if (add) { commit(addPanel(source, add.dataset.add, catalog, { tab: activeTab(), title: titleOf }), { message: dz.added(typeName(add.dataset.add)) }); return; }
     const rm = e.target.closest("[data-rm-filter]");
@@ -189,6 +212,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       return;
     }
     if (e.target.closest(".dz-close")) { select(null); setMode(false); }
+  });
+
+  drawer.addEventListener("change", (e) => {
+    if (e.target.id === "dz-totab" && e.target.value) commit(moveToTab(source, selected, e.target.value), { message: dz.moved });
   });
 
   // ---------------------------------------------------------------------------------------------------------------- picking a panel, the mode
@@ -211,12 +238,15 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   document.addEventListener("click", pick, true);                                 // before the panel's own click (which would filter the page)
   document.addEventListener("keydown", (e) => {
     if (!on) return;
-    if (e.key === "Escape" && selected && drawer.contains(document.activeElement)) { select(null); return; }
+    if (e.key === "Escape" && selected && !dnd.active()) { select(null); return; }                // while a drag is held, Escape cancels the drag instead
     if ((e.key === "Enter" || e.key === " ") && hit(e) && !drawer.contains(e.target)) pick(e);
   }, true);
 
+  const dnd = mountDnd({ panels, getSource: () => source, getActiveTab: activeTab, commit: (edit, o) => commit(edit, o), dz });
+
   function setMode(next) {
     on = next;
+    if (on) dnd.enable(); else dnd.disable();
     button.setAttribute("aria-pressed", String(on));
     document.body.classList.toggle("designing", on);
     drawer.hidden = !on;

@@ -5,7 +5,7 @@ import { membersIn, cubeOf, reachableCubes } from "./designer-model.js";
 
 export const PANEL_TYPES = ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"];
 
-const clone = (x) => JSON.parse(JSON.stringify(x));
+export const clone = (x) => JSON.parse(JSON.stringify(x));
 export const humanize = (name) => String(name).split(".").pop().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const PREFERRED_MEASURES = ["revenue", "orders", "units", "stock"];
 const PREFERRED_DIMENSIONS = ["category", "region", "country", "name", "status", "group_name"];
@@ -91,7 +91,7 @@ export function addPanel(source, type, catalog, { tab = null, title } = {}) {
 }
 
 /** Takes a panel out of every layout; a row it leaves empty goes, and the others in its row widen so the row still adds up to 12. */
-function unplace(next, id) {
+export function unplace(next, id) {
   for (const { rows } of layoutsOf(next)) {
     for (let r = rows.length - 1; r >= 0; r--) {
       const cells = rows[r].filter((c) => !(id in c));
