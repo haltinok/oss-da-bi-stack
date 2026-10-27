@@ -199,7 +199,15 @@ with sync_playwright() as p:
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".saved", timeout=10000)
     check("Shared with you" in page.inner_text("#drafts-host") and "olga" in page.inner_text("#drafts-host"), "another user sees it under 'Shared with you', with its owner")
-    page.click(".saved a")
+    check(page.locator(".lsec-shared").count() == 1 and page.locator(".lsec-shared .saved [data-act=copy]").count() == 1 and page.locator(".lsec-shared [data-act=delete]").count() == 0, "the shared section has its own place, a Save a copy button on each row and no Delete")
+    check(page.locator(".lsec").count() >= 3 and page.eval_on_selector("#bb-prompt", "n => n.getBoundingClientRect().height") >= 110, "every part of the page is a section, and the description box is tall enough to write in")
+    page.click(".lsec-shared [data-act=copy]")
+    page.wait_for_url("**/d/s/**")
+    settled(page)
+    check("Yours" in page.inner_text(".builder-bar .bb-head") and page.locator("#sb-edit").is_visible(), "the list's copy button saves a copy of it as theirs and opens it for editing")
+    page.go_back()
+    page.wait_for_selector(".saved", timeout=10000)
+    page.click(".lsec-shared .saved a")
     page.wait_for_url("**/d/s/**")
     settled(page)
     check("Shared by olga" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone") and page.locator("#sb-edit").count() == 0 and page.locator("#sb-delete").count() == 0 and page.locator("#sb-copy").is_visible(),
@@ -210,7 +218,7 @@ with sync_playwright() as p:
     check("Yours" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone") and "Only you" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "'Save a copy' makes their own private copy")
     page.goto(f"{BASE}/d/")
     page.wait_for_selector(".saved")
-    check(page.locator(".saved").count() == 2, "and the list shows the copy and the shared one")
+    check(page.locator(".saved").count() == 3, "and the list shows both copies (one from the list, one from the page) and the shared one")
     ctx.close()
 
     # a dashboard with profit, shared with everyone: a rep sees why it cannot be opened
@@ -432,7 +440,7 @@ with sync_playwright() as p:
     page.fill(inp, "z")
     check(chips(tab) == ["q3", "board", "x", "y"], "four tags so far")
     page.click("#sb-tags-go")                                  # "z" was typed but not confirmed: it is kept, not lost
-    page.wait_for_function("document.querySelector('.builder-bar .bb-head').textContent.includes('version 2')", timeout=20000)
+    page.wait_for_function("document.querySelector('.builder-bar .bb-head')?.textContent.includes('version 2')", timeout=20000)
     page.click('[data-tab="tags"]')
     check(chips(tab) == ["q3", "board", "x", "y", "z"], "a half-typed tag is kept when you press Save (and it is a new version)")
     check(not page.is_editable(inp) and not page.is_disabled(inp) and "most" in page.get_attribute(inp, "placeholder"), "at five tags the box takes no more text (read-only, and it says so): that is the most a dashboard carries")

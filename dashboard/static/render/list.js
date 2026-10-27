@@ -16,8 +16,7 @@ export function mountList({ main, mine, api, t }) {
   const counts = { built: { shown: mine.length, total: mine.length }, saved: { shown: 0, total: 0 } };
   const label = (tag) => t.tagFilterAria(tag);
 
-  main.innerHTML = (api.available ? `<div id="builder-host"></div>` : "")
-    + `<div class="list-search" role="search"><label for="list-q" class="sr-only">${esc(t.searchLabel)}</label>
+  main.innerHTML = `<div class="list-search" role="search"><label for="list-q" class="sr-only">${esc(t.searchLabel)}</label>
         <input id="list-q" type="search" autocomplete="off" spellcheck="false" placeholder="${esc(t.searchPlaceholder)}">
         <button type="button" id="list-q-clear" class="icon-btn" aria-label="${esc(t.searchClear)}" title="${esc(t.searchClear)}" hidden>✕</button>
         <span id="list-q-status" class="hint" role="status" aria-live="polite"></span></div>
@@ -25,8 +24,9 @@ export function mountList({ main, mine, api, t }) {
         <span class="tag-chips" id="tag-chips" data-scope="bar" role="group" aria-labelledby="tag-bar-label"></span>
         <button type="button" id="group-switch" class="tag-switch" aria-pressed="false">${esc(t.groupByTag)}</button></div>
       <div id="list-q-none" class="empty" hidden></div>`
+    + (api.available ? `<div id="builder-host"></div>` : "")
     + (api.available ? `<div id="drafts-host" class="drafts-host" data-scope="saved" hidden></div>` : "")
-    + `<div id="built-host" data-scope="built"></div>`
+    + `<section class="lsec lsec-samples"><h2>${esc(t.samples)}</h2><p class="hint lsec-hint">${esc(t.samplesHint)}</p><div id="built-host" data-scope="built"></div></section>`
     + (api.available ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
   const box = $("#list-q"), clear = $("#list-q-clear"), status = $("#list-q-status"), none = $("#list-q-none"), bar = $("#tag-bar"), chips = $("#tag-chips"), sw = $("#group-switch");
   box.value = query;

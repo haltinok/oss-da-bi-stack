@@ -75,9 +75,9 @@ const modeNote = (info, t) => (info.mode === "llm" ? `${t.modeLlm}${info.provide
 
 // ------------------------------------------------------------------------------------------------------------------ the prompt box (/d/)
 export function mountPromptBox(host, api, t) {
-  host.innerHTML = `<section class="card builder-box" aria-labelledby="bb-h">
+  host.innerHTML = `<section class="card builder-box lsec lsec-create" aria-labelledby="bb-h">
     <h2 id="bb-h">${esc(t.describe)}</h2><p class="hint">${esc(t.describeHint)}</p>
-    <textarea id="bb-prompt" rows="3" maxlength="2000" placeholder="${esc(t.placeholder)}" aria-label="${esc(t.describe)}"></textarea>
+    <textarea id="bb-prompt" rows="6" maxlength="2000" placeholder="${esc(t.placeholder)}" aria-label="${esc(t.describe)}"></textarea>
     <div class="bb-row"><button type="button" id="bb-go" class="primary">${esc(t.build)}</button><span class="hint" id="bb-mode"></span></div>
     <div class="bb-examples" id="bb-ex" hidden><span class="hint">${esc(t.examples)}:</span></div>
     <div id="bb-out" class="bmsg" hidden></div></section>`;
@@ -136,26 +136,36 @@ export async function mountSavedList(host, api, t, { query = () => "", tags = ()
         <div class="hint">${esc(d.description || "")}${d.description ? " · " : ""}${d.mine ? "" : `${esc(t.by)} ${esc(d.owner)} · `}${esc(t.updated)} ${esc(new Date(d.updated_at).toLocaleString(t.dateLocale))}</div>
         ${tagsOf(d).length ? `<div class="tagrow">${chipsHtml(tagsOf(d), tags(), label)}</div>` : ""}
         ${d.readable ? "" : `<div class="hint warn">${esc(t.cannotOpen)}: ${esc(d.problems[0] || "")}</div>`}</div>
-      ${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
+      ${!d.mine && d.readable ? `<button type="button" data-act="copy">${esc(t.copy)}</button>` : ""}${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
   const render = () => {
     const q = query().trim(), selected = tags();
     const filtering = !!q || selected.length > 0;
     const keep = (d) => (!q || filterItems([d], q, ["title", "description", "owner"]).length > 0) && withTags([d], selected).length > 0;
     const mine = list.filter((d) => d.mine), others = list.filter((d) => !d.mine);
     const mineShown = mine.filter(keep), othersShown = others.filter(keep);
-    const heading = (text, shown, all) => `<h2>${esc(text)}${filtering ? ` <span class="hint">(${esc(t.searchCount(shown.length, all.length))})</span>` : ""}</h2>`;
+    const heading = (text, hint, shown, all) => `<h2>${esc(text)}${filtering ? ` <span class="hint">(${esc(t.searchCount(shown.length, all.length))})</span>` : ""}</h2><p class="hint lsec-hint">${esc(hint)}</p>`;
     const body = (shown) => (group()
       ? groupByFirstTag(shown).map((g) => `<h3 class="tg-h">${esc(g.tag ?? t.untagged)} <span class="hint">(${g.items.length})</span></h3><ul class="drafts">${g.items.map(card).join("")}</ul>`).join("")
       : `<ul class="drafts">${shown.map(card).join("")}</ul>`);
-    const section = (text, shown, all, none) => heading(text, shown, all) + (shown.length ? body(shown) : `<p class="hint">${esc(none)}</p>`);
-    host.innerHTML = section(t.yourSaved, mineShown, mine, mine.length ? t.searchNoSaved : t.noSaved)
-      + (others.length && (othersShown.length || !filtering) ? section(t.sharedWithYou, othersShown, others, t.searchNoSaved) : "");
+    const section = (kind, text, hint, shown, all, none) => `<section class="lsec lsec-${kind}">${heading(text, hint, shown, all)}${shown.length ? body(shown) : `<p class="hint">${esc(none)}</p>`}</section>`;
+    host.innerHTML = section("mine", t.yourSaved, t.yourSavedHint, mineShown, mine, mine.length ? t.searchNoSaved : t.noSaved)
+      + (others.length && (othersShown.length || !filtering) ? section("shared", t.sharedWithYou, t.sharedHint, othersShown, others, t.searchNoSaved) : "");
     onCount({ shown: mineShown.length + othersShown.length, total: list.length });
   };
   render();
   host.onclick = async (ev) => {
     const chip = ev.target.closest("button[data-tag]");
     if (chip) { onTag(chip.dataset.tag); return; }
+    const cp = ev.target.closest('button[data-act="copy"]');
+    if (cp) {                                           // someone else's dashboard: a copy of its latest version, saved as yours, then opened
+      cp.disabled = true;
+      try {
+        const src = await api.openSaved(cp.closest("li").dataset.id);
+        const out = await api.save({ yaml: src.yaml, title: src.meta.title });
+        location.assign(`/d/s/${encodeURIComponent(out.id)}`);
+      } catch (e) { cp.disabled = false; alert([e.message, ...(e.problems || [])].join("\n")); }
+      return;
+    }
     const b = ev.target.closest('button[data-act="delete"]');
     if (!b || !confirm(t.confirmDelete)) return;
     try { await api.deleteSaved(b.closest("li").dataset.id); } catch (e) { alert(e.message); }

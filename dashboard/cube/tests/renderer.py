@@ -330,7 +330,7 @@ with sync_playwright() as p:
     page.wait_for_selector(".saved", timeout=20000)
     page.wait_for_selector(".bb-examples .chip", timeout=20000)
     check(pressed(page) == ["tr"] and page.get_attribute("html", "lang") == "tr" and page.title() == "Panolar" and page.get_attribute(sw, "aria-label") == "Dil", "choosing TR turns the list Turkish (page title, language, the switch's own name)")
-    check("Etiketler" in page.inner_text("#tag-bar") and page.get_attribute("#list-q", "placeholder").startswith("Ada, açıklamaya") and "Çıkış" in page.inner_text("#who") and "Pano tarif et" in page.inner_text("#builder-host"), "its words, the search box, the sign-out link and the builder box are Turkish")
+    check("Etiketler" in page.inner_text("#tag-bar") and page.get_attribute("#list-q", "placeholder").startswith("Kayıtlı, paylaşılan") and "Çıkış" in page.inner_text("#who") and "Pano tarif et" in page.inner_text("#builder-host"), "its words, the search box, the sign-out link and the builder box are Turkish")
     check(re.search(r"Güncellendi \d{1,2}\.\d{1,2}\.\d{4}", page.inner_text(".saved")) is not None, "a saved dashboard's date is written the Turkish way")
     check(page.inner_text(".bb-examples .chip").startswith("Kanala göre") and page.evaluate("localStorage.getItem('dashLang')") == "tr", "the builder's examples come in Turkish, and the choice is kept")
     check(page.locator("#tag-bar [aria-pressed]").first.get_attribute("aria-label").endswith("etiketine göre filtrele (4)") or "etiketine göre filtrele" in page.get_attribute("#tag-chips button", "aria-label"), "even the tag chips' names are Turkish")
