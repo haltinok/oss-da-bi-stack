@@ -73,12 +73,22 @@ function applyTheme(theme = {}) {
 }
 
 // ------------------------------------------------------------------ the list
+/** The link back to the list, in the page's own language; the whole line is hidden on the list itself. */
+function setHomeLink(t, hidden = false) {
+  const link = $("#home-link");
+  if (!link) return;
+  $("#home-label").textContent = t.dashboards;
+  link.title = t.dashboards;
+  link.closest("nav").hidden = hidden;
+}
+
 async function showList() {
   document.title = "Dashboards";
   const index = await (await fetch("/dashboards/index.json", { cache: "no-store" })).json().catch(() => []);
   const role = client.session().role;
   const mine = index.filter((d) => !d.roles?.length || d.roles.includes(role));
   const t = stringsFor(navigator.language);
+  setHomeLink(t, true);
   document.title = t.dashboards;
   $("#title").textContent = t.dashboards;
   $("#export-label").textContent = t.exportAll;
@@ -96,6 +106,7 @@ async function showList() {
 // ------------------------------------------------------------------ one dashboard
 async function showDashboard() {
   const t0 = stringsFor(navigator.language);
+  setHomeLink(t0);                                              // visible from the start, so an error page (no such dashboard, wrong role) still leads back
   const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); a saved dashboard (s/<id>) comes from the builder service; every other id is a built file
   let spec, savedDash = null;
   if (id.startsWith("s/")) {
@@ -112,6 +123,7 @@ async function showDashboard() {
   }
   const role = client.session().role;
   const t = stringsFor(spec.locale);
+  setHomeLink(t);
   document.documentElement.lang = (spec.locale || "en-US").split("-")[0];
   if (spec.roles?.length && !spec.roles.includes(role)) throw new Error(t.notForRole(spec.title, role));
   applyTheme(spec.theme);

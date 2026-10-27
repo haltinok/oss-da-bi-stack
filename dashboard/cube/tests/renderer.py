@@ -89,6 +89,36 @@ with sync_playwright() as p:
     ctx.close()
     ms.ROLE["role"] = "admin"
 
+    # ---- the way back to the list
+    home = "#home-link"
+    ctx, page = open_page(browser, "/d/sales-overview")
+    settled(page)
+    check(page.locator(home).is_visible() and page.get_attribute(home, "href") == "/d/" and page.inner_text(home).strip() == "Dashboards", "a dashboard page has a Dashboards link to /d/")
+    page.locator(home).click()
+    page.wait_for_selector(".dlist a", timeout=20000)
+    check(page.url.endswith("/d/") and page.locator(".dlist a").count() >= 3, "and it opens the list")
+    check(not page.locator(home).is_visible(), "the list itself does not show it")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+    for path, why in (("/d/draft", "a draft page with nothing to show"), ("/d/no-such-dashboard", "a dashboard that does not exist")):
+        ctx, page = open_page(browser, path)
+        page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
+        check(page.locator(home).is_visible() and page.get_attribute(home, "href") == "/d/", f"an error page still leads back to the list ({why})")
+        ctx.close()
+    ms.ROLE["role"] = "purchasing"
+    ctx, page = open_page(browser, "/d/envanter-sagligi")
+    settled(page)
+    check(page.inner_text(home).strip() == "Panolar" and page.get_attribute(home, "title") == "Panolar", "the link speaks the dashboard's language (Turkish)")
+    ctx.close()
+    ms.ROLE["role"] = "admin"
+    ctx, page = open_page(browser, "/d/sales-overview", width=390)
+    settled(page)
+    box = page.locator(home).bounding_box()
+    check(page.locator(home).is_visible() and page.inner_text(home).strip() == "Dashboards", "on a phone the link keeps its word")
+    check(box["width"] >= 44 and box["height"] >= 44, f"with a 44px touch target ({box['width']:.0f}x{box['height']:.0f})")
+    check(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "and the page does not overflow sideways")
+    ctx.close()
+
     # ---- a whole dashboard
     ctx, page = open_page(browser, "/d/sales-overview")
     settled(page)
