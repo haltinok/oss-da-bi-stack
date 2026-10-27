@@ -299,6 +299,13 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th, td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: left; white-space: nowrap; }
 th { color: var(--muted); font-weight: 550; position: sticky; top: 0; background: var(--surface); }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover, th.sortable[aria-sort="ascending"], th.sortable[aria-sort="descending"] { color: var(--ink); }
+th.sortable .arr { display: inline-block; width: 1em; font-style: normal; text-align: center; }
+/* A total row (table `totals`): bold, opaque and pinned inside .tbl-wrap, so the rows scroll under it. */
+tr.tot td { font-weight: 700; background: var(--surface); position: sticky; z-index: 1; }
+thead tr.tot td { top: var(--head-h, 30px); border-bottom: 2px solid var(--border); }
+tfoot tr.tot td { bottom: 0; border-top: 2px solid var(--border); border-bottom: 0; }
 
 /* Tooltip */
 .tip {

@@ -134,10 +134,13 @@ def panel_queries(spec, panel, values):
         return follow_period(spec, panel, values, per_cube([panel["measure"]], {"dimensions": panel["group"], "filters": filters}))
     if kind == "table":
         measures, dims = table_parts(panel, spec["members"])
-        order, limit = dict(panel.get("order", {})), panel.get("limit", DEFAULT_LIMIT["table"])
+        order = dict(panel.get("order") or {}) or {d: "asc" for d in dims}   # the author's order, else every dimension ascending
+        limit = panel.get("limit", DEFAULT_LIMIT["table"])
         base = {"dimensions": dims, "filters": filters}
         if not measures:
             return [{"cube": "", "query": {**base, "order": order, "limit": limit}}]
         single = len({cube_of(m) for m in measures}) <= 1
-        return follow_period(spec, panel, values, per_cube(measures, {**base, **({"order": order, "limit": limit} if single else {})}))
+        rows = follow_period(spec, panel, values, per_cube(measures, {**base, **({"order": order, "limit": limit} if single else {})}))
+        total = follow_period(spec, panel, values, per_cube(measures, {"filters": filters})) if panel.get("totals") else []
+        return rows + total
     return []

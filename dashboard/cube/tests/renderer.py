@@ -260,6 +260,102 @@ with sync_playwright() as p:
     check(page.locator('[data-panel="lines"] tr.sel').count() >= 1, "the matching rows are marked")
     ctx.close()
 
+    # a table's total row (patched into the spec): bold, dimension cells empty, from its own query over the whole set, and frozen
+    def with_totals(where):
+        def patch_totals(route):
+            spec = json.loads(route.fetch().text())
+            next(p for p in spec["panels"] if p["id"] == "lines")["totals"] = where
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+        return patch_totals
+    geom = """() => { const w = document.querySelector('[data-panel="lines"] .tbl-wrap'), r = w.querySelector('tr.tot td').getBoundingClientRect(),
+        h = w.querySelector('thead th').getBoundingClientRect(), b = w.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, wrapTop: b.top, wrapBottom: b.bottom, titleBottom: h.bottom, scrollTop: w.scrollTop, scrollable: w.scrollHeight > w.clientHeight }; }"""
+    for where in ("footer", "header"):
+        ctx, page = open_page(browser, "/d/sales-overview")
+        page.route("**/dashboards/sales-overview.json", with_totals(where))
+        page.reload()
+        settled(page)
+        tot = page.locator('[data-panel="lines"] tr.tot')
+        check(tot.count() == 1 and page.locator(f'[data-panel="lines"] {"tfoot" if where == "footer" else "thead"} tr.tot').count() == 1, f"totals: {where} puts one total row in the {where}")
+        cells = tot.locator("td").all_inner_texts()
+        check(cells[:3] == ["", "", ""] and cells[3].startswith("$") and cells[3] != "–", f"the dimension cells are empty and the revenue cell has a figure ({cells})")
+        check(int(tot.locator("td").nth(3).evaluate("n => getComputedStyle(n).fontWeight")) >= 600, "the total row is bold")
+        whole = [q for q in sent(page) if q.get("measures") == ["internet_sales.revenue"] and not q.get("dimensions") and not q.get("timeDimensions") and "limit" not in q]
+        check(len(whole) >= 1, "the total is its own query: no grouping, no limit")
+        g = page.evaluate(geom)
+        check(g["scrollable"], "the table is taller than its scroll area, so freezing means something")
+        page.eval_on_selector('[data-panel="lines"] .tbl-wrap', "w => { w.scrollTop = 160; }")
+        page.wait_for_timeout(100)
+        g = page.evaluate(geom)
+        if where == "footer":
+            check(g["scrollTop"] > 0 and abs(g["bottom"] - g["wrapBottom"]) <= 2, f"the footer total stays at the bottom edge while the rows scroll ({g['bottom']} vs {g['wrapBottom']})")
+        else:
+            check(g["scrollTop"] > 0 and abs(g["top"] - g["titleBottom"]) <= 2 and g["top"] >= g["wrapTop"], f"the header total stays under the column titles while the rows scroll ({g['top']} vs {g['titleBottom']})")
+        btn = page.locator('[data-panel="lines"] .tot-btn')
+        check(btn.get_attribute("aria-pressed") == "true", "the Totals button is on by default")
+        queries_before = len(page.queries)
+        btn.click()
+        check(page.locator('[data-panel="lines"] tr.tot').count() == 0 and btn.get_attribute("aria-pressed") == "false", "the Totals button hides the total row")
+        check(page.locator('[data-panel="lines"] tbody tr').count() > 3 and len(page.queries) == queries_before, "without asking Cube again")
+        btn.click()
+        check(page.locator('[data-panel="lines"] tr.tot').count() == 1, "and shows it again")
+        check(not page.problems, f"no console errors {page.problems[:2]}")
+        if where == "footer":
+            with page.expect_download(timeout=10000) as dl:
+                page.locator('[data-panel="lines"] .xls-btn').click()
+            sheet = zipfile.ZipFile(io.BytesIO(pathlib.Path(dl.value.path()).read_bytes())).read("xl/worksheets/sheet1.xml").decode()
+            check(sheet.count("<row") >= page.locator('[data-panel="lines"] tbody tr').count() + 1, "the Excel sheet has the total row too")
+        ctx.close()
+
+    # click a column title to sort: measures desc/asc/none, dimensions asc/desc/none; none = every dimension ascending, left to right
+    ctx, page = open_page(browser, "/d/sales-overview")
+    settled(page)
+    def table_order():
+        qs = [q for q in sent(page) if "internet_sales.order_number" in q.get("dimensions", []) and "limit" in q]
+        return list(qs[-1].get("order", {}).items())
+    DIMS_ASC = [["internet_sales.order_number", "asc"], ["internet_sales.order_date", "asc"], ["territories.country", "asc"]]
+    check(table_order() == [("internet_sales.order_date", "desc")], f"the table opens in the spec's order ({table_order()})")
+    th = lambda label: page.locator('[data-panel="lines"] th.sortable', has_text=label)
+    def click(label):
+        n = len(page.queries)
+        th(label).click()
+        page.wait_for_function("document.querySelector('[data-panel=lines]') && !document.querySelector('[data-panel=lines]').classList.contains('pending')", timeout=10000)
+        page.wait_for_timeout(150)
+        check(len(page.queries) > n, f"clicking '{label}' asks Cube for the new order")
+    click("Revenue")
+    check(table_order() == [("internet_sales.revenue", "desc")] + [tuple(x) for x in DIMS_ASC] and th("Revenue").get_attribute("aria-sort") == "descending" and "↓" in th("Revenue").inner_text(), f"a measure sorts descending first ({table_order()})")
+    click("Revenue")
+    check(table_order()[0] == ("internet_sales.revenue", "asc") and th("Revenue").get_attribute("aria-sort") == "ascending", "then ascending")
+    click("Revenue")
+    check(table_order() == [tuple(x) for x in DIMS_ASC] and th("Revenue").get_attribute("aria-sort") == "none", f"then none: every dimension ascending, left to right ({table_order()})")
+    click("Country")
+    check(table_order()[0] == ("territories.country", "asc") and th("Country").get_attribute("aria-sort") == "ascending", "a dimension sorts ascending first")
+    click("Country")
+    check(table_order()[0] == ("territories.country", "desc") and "↓" in th("Country").inner_text(), "then descending")
+    click("Country")
+    check(table_order() == [tuple(x) for x in DIMS_ASC] and page.locator('[data-panel="lines"] th[aria-sort="ascending"], [data-panel="lines"] th[aria-sort="descending"]').count() == 0, "then none")
+    th("Order").focus()
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(400)
+    check(th("Order").get_attribute("aria-sort") == "ascending", "the keyboard sorts too")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    # a total that fails must not take the rows with it
+    ctx, page = open_page(browser, "/d/sales-overview")
+    def no_total(route):
+        q = json.loads(parse_qs(urlparse(route.request.url).query).get("query", ["{}"])[0])
+        if q.get("measures") == ["internet_sales.revenue"] and not q.get("dimensions") and not q.get("timeDimensions"):
+            route.fulfill(status=500, content_type="application/json", body='{"error":"boom"}')
+        else:
+            route.continue_()
+    page.route("**/dashboards/sales-overview.json", with_totals("footer"))
+    page.route("**/cube-*/**/load*", no_total)
+    page.reload()
+    page.wait_for_function("document.querySelectorAll('[data-panel=lines] tbody tr').length > 3", timeout=20000)
+    check(page.locator('[data-panel="lines"] tr.tot td').nth(3).inner_text() == "–", "when only the total fails its cells show a dash and the rows stay")
+    ctx.close()
+
     # ---- one failing panel does not blank the rest
     ms.FAIL["members"] = {"internet_sales.gross_profit"}
     ctx, page = open_page(browser, "/d/sales-overview")

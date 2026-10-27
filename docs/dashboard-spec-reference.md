@@ -177,8 +177,9 @@ Exactly one of `measure` or `stack`.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `columns` | list of column (1+) | yes | The columns, up to 20: members or `{ member, label, format }`. With measures, the dimension columns are the grouping. |
-| `order` | object |  | Sort order: `{ member: asc | desc }`, members that are columns. |
+| `order` | object |  | The order the table opens in: `{ member: asc | desc }`, members that are columns. Without it the rows are sorted by every dimension column, left to right, ascending. Viewers re-sort by clicking a column title (measures: descending, ascending, none; dimensions: ascending, descending, none; none is the dimension order above). |
 | `limit` | integer 1-1000 |  | How many rows. Default 100. |
+| `totals` | `header` \| `footer` |  | `header` or `footer`: a bold total row, frozen while the rows scroll. Dimension cells are empty; each measure is aggregated over all matching rows (not only the ones shown), so a ratio is the ratio of the totals. Needs a measure column. |
 | `on_click` | on_click |  | A click on a row sets each named filter from the row's value of that filter's dimension (the dimension must be one of the shown columns). |
 
 ### `text`

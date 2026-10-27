@@ -5,8 +5,9 @@ import { test } from "node:test";
 import {
   appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
-  pick, queriesPerCube, tableParts, term, totals, yearOf,
+  pick, nextSort, tableOrder, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
+import { tableHtml, pinTotals } from "../../static/lib/table.js";
 import { stringsFor, translations } from "../../static/render/strings.js";
 
 const spec = {
@@ -264,4 +265,80 @@ test("a pie that sums two cubes asks each for its slices, ranked by its own meas
   assert.deepEqual(q.map((x) => x.cube), ["internet_sales", "reseller_sales"]);
   assert.deepEqual(q.map((x) => x.query.order), [{ "internet_sales.revenue": "desc" }, { "reseller_sales.revenue": "desc" }]);
   assert.ok(q.every((x) => x.query.limit === 100 && x.query.dimensions[0] === "products.name"));
+});
+
+test("tableTotalQueries asks for the measures of the whole set: no grouping, no limit, same filters and period", () => {
+  const withTotals = { ...spec.panels[1], totals: "footer", limit: 5 };
+  assert.deepEqual(tableTotalQueries(spec, spec.panels[1], {}), [], "no totals asked, none queried");
+  const q = tableTotalQueries(spec, withTotals, { category: "Bikes", fy: "2021", _period: "2021-03-01..2021-03-31" });
+  assert.equal(q.length, 1);
+  assert.deepEqual(q[0].query.measures, ["a.rev"]);
+  for (const k of ["dimensions", "limit", "order"]) assert.ok(!(k in q[0].query), k);
+  assert.deepEqual(q[0].query.filters, [{ member: "products.category", operator: "equals", values: ["Bikes"] }], "the table ignores 'fy' (ignore_filters)");
+  assert.deepEqual(q[0].query.timeDimensions[0].dateRange, ["2021-03-01", "2021-03-31"]);
+  assert.deepEqual(panelQueries(spec, withTotals, {}).at(-1), tableTotalQueries(spec, withTotals, {})[0], "lint and the page see the total query");
+});
+
+test("tableTotalQueries sends one query per measure cube", () => {
+  const two = { id: "m", type: "table", totals: "header", columns: [{ member: "p.name" }, { member: "a.rev" }, { member: "b.rev" }] };
+  assert.deepEqual(tableTotalQueries(spec, two, {}).map((q) => q.query.measures), [["a.rev"], ["b.rev"]]);
+  assert.deepEqual(tableTotalQueries(spec, { ...two, columns: [{ member: "p.name" }] }, {}), [], "no measure column, no total");
+});
+
+const cols = [
+  { label: "Name", type: "text", get: (r) => r.n, fmt: (v) => v },
+  { label: "Revenue", type: "money", get: (r) => r.v, fmt: (v) => `$${v}` },
+  { label: "Margin", type: "pct", get: (r) => r.m, fmt: (v) => `${v * 100}%` },
+];
+const rows = [{ n: "<b>x</b>", v: 1, m: 0.1 }];
+
+test("tableHtml puts a bold total row in the footer or under the titles, dimension cells empty and a missing value as a dash", () => {
+  const cells = [undefined, 10, null];
+  const foot = tableHtml({ columns: cols, rows, totals: { position: "footer", cells } });
+  assert.match(foot, /<tfoot><tr class="tot"><td class=""><\/td><td class="n">\$10<\/td><td class="n">–<\/td><\/tr><\/tfoot>/);
+  assert.ok(foot.indexOf("<tbody>") < foot.indexOf("<tfoot>"));
+  const head = tableHtml({ columns: cols, rows, totals: { position: "header", cells } });
+  assert.ok(head.indexOf('class="tot"') < head.indexOf("<tbody>") && head.indexOf('class="tot"') > head.indexOf("<th"));
+  assert.ok(!head.includes("<tfoot>"));
+  assert.ok(!tableHtml({ columns: cols, rows }).includes("tot"), "no totals, no total row");
+  assert.ok(tableHtml({ columns: cols, rows }).includes("&#60;b&#62;x&#60;/b&#62;"), "cells are escaped");
+});
+
+test("pinTotals hands the height of the title row to the stylesheet, and ignores a table without one", () => {
+  const set = [];
+  const wrap = { querySelector: () => ({ getBoundingClientRect: () => ({ height: 31 }) }), style: { setProperty: (k, v) => set.push([k, v]) } };
+  pinTotals({ querySelector: () => wrap });
+  assert.deepEqual(set, [["--head-h", "31px"]]);
+  pinTotals({ querySelector: () => null });
+});
+
+test("tableOrder: the author's order, else all dimensions ascending; a header click puts its column first", () => {
+  const dims = ["p.name", "a.day"];
+  assert.deepEqual(tableOrder({}, dims, undefined), { "p.name": "asc", "a.day": "asc" });
+  assert.deepEqual(tableOrder({ order: { "a.rev": "desc" } }, dims, undefined), { "a.rev": "desc" });
+  assert.deepEqual(tableOrder({ order: { "a.rev": "desc" } }, dims, null), { "p.name": "asc", "a.day": "asc" }, "cleared: dimensions, left to right");
+  const q = tableOrder({}, dims, { member: "a.day", dir: "desc" });
+  assert.deepEqual(Object.entries(q), [["a.day", "desc"], ["p.name", "asc"]], "the clicked column first, then the other dimensions");
+  assert.deepEqual(Object.entries(tableOrder({}, dims, { member: "a.rev", dir: "asc" })), [["a.rev", "asc"], ["p.name", "asc"], ["a.day", "asc"]]);
+  assert.deepEqual(tableOrder({}, [], null), {}, "no dimensions, nothing to order by");
+});
+
+test("nextSort cycles measures desc, asc, none and dimensions asc, desc, none; another column starts over", () => {
+  let s;
+  s = nextSort(s, "a.rev", true); assert.deepEqual(s, { member: "a.rev", dir: "desc" });
+  s = nextSort(s, "a.rev", true); assert.deepEqual(s, { member: "a.rev", dir: "asc" });
+  assert.equal(nextSort(s, "a.rev", true), null);
+  s = nextSort(undefined, "p.name", false); assert.deepEqual(s, { member: "p.name", dir: "asc" });
+  s = nextSort(s, "p.name", false); assert.deepEqual(s, { member: "p.name", dir: "desc" });
+  assert.equal(nextSort(s, "p.name", false), null);
+  assert.deepEqual(nextSort({ member: "p.name", dir: "desc" }, "a.rev", true), { member: "a.rev", dir: "desc" });
+  assert.deepEqual(nextSort(null, "a.rev", true), { member: "a.rev", dir: "desc" }, "after 'none' the next click starts again");
+});
+
+test("tableHtml makes titles with a sortKey clickable and marks the sorted one", () => {
+  const sortable = cols.map((c, i) => ({ ...c, sortKey: `m.c${i}` }));
+  const html = tableHtml({ columns: sortable, rows, sort: { member: "m.c1", dir: "desc" } });
+  assert.match(html, /<th class="n sortable" data-sort="m.c1" tabindex="0" aria-sort="descending">Revenue<i class="arr" aria-hidden="true">↓<\/i><\/th>/);
+  assert.match(html, /data-sort="m.c0" tabindex="0" aria-sort="none">Name<i class="arr" aria-hidden="true"><\/i>/);
+  assert.ok(!tableHtml({ columns: cols, rows }).includes("sortable"), "columns without a sortKey stay plain");
 });

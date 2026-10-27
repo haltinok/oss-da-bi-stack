@@ -191,6 +191,8 @@ def semantic_errors(spec, catalog):
             for col in p.get("order", {}):
                 if col not in shown:
                     errs.append(f"{w}: order.{col}: not one of the table's columns")
+            if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown):
+                errs.append(f"{w}: totals: a total row needs at least one measure column")
         _join_errors(spec, p, w, catalog, errs)
 
     _layout_errors(spec, panel_ids, errs)

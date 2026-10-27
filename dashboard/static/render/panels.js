@@ -2,10 +2,10 @@
 // page's filter values and `pick`); `load(signal)` runs its queries and draws, and `sheet()` returns the loaded data as an Excel sheet.
 import { el, esc, svgEl } from "../lib/dom.js";
 import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade, arcPath, pieSlices } from "../lib/charts.js";
-import { tableHtml } from "../lib/table.js";
+import { pinTotals, tableHtml } from "../lib/table.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
-  PERIOD, pieQueries, rangeOf, runAll, tableParts, tableQueries, term, timeKey, timeseriesQueries, totals, treemapQueries, yearOf,
+  PERIOD, nextSort, pieQueries, rangeOf, runAll, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
 const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
@@ -36,6 +36,8 @@ function card(def, ctx, { table = true, hint = "", extra = "" } = {}) {
  * error in place of the body when it fails, a Table view of the same rows, and an Excel sheet of them. `cacheKey()` names what the queries
  * depend on: when it has not changed since the last load the panel only redraws (a click on this panel changes its selection, not its data).
  */
+const withTotal = (rows, totals) => (!totals ? rows : totals.position === "header" ? [totals.cells.map((v) => v ?? ""), ...rows] : [...rows, totals.cells.map((v) => v ?? "")]);
+
 function modelPanel(def, ctx, fetchModel, opts = {}) {
   const { root, body } = card(def, ctx, opts);
   let model = null, tableView = false, resizeTimer = 0, loadedKey = null;
@@ -46,12 +48,13 @@ function modelPanel(def, ctx, fetchModel, opts = {}) {
     if (!model.rows.length) { body.innerHTML = `<div class="empty">${esc(ctx.t.noRows)}</div>`; return; }
     if (tableView) { body.innerHTML = tableHtml({ columns: model.columns, rows: model.rows }); model.afterTable?.(body); } else model.draw(body);
   };
-  const toggle = root.querySelector(".tbl-toggle:not(.xls-btn)");
+  const toggle = root.querySelector(".tbl-toggle:not(.xls-btn):not(.tot-btn)");
   toggle?.addEventListener("click", () => { tableView = !tableView; toggle.setAttribute("aria-pressed", String(tableView)); redraw(); });
   root.querySelector(".xls-btn").addEventListener("click", () => model && ctx.exportSheets([sheet()], def.title || def.id));
   const sheet = () => model && ({
     name: (def.title || def.id).slice(0, 31), title: def.title || def.id, subtitle: ctx.subtitle(),
-    columns: model.columns.map((c) => ({ label: c.label, type: c.type })), rows: model.rows.map((r) => model.columns.map((c) => c.get(r))),
+    columns: model.columns.map((c) => ({ label: c.label, type: c.type })),
+    rows: withTotal(model.rows.map((r) => model.columns.map((c) => c.get(r))), model.totals),
   });
   new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => !tableView && model?.redrawOnResize && redraw(), 120); }).observe(body);
   return {
@@ -568,29 +571,62 @@ function tablePanel(def, ctx) {
     if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format, true));
     return colOf(label, "text", (r) => (r.dims[m] == null ? "" : String(r.dims[m])), (v) => v);
   };
-  return modelPanel(def, ctx, async (signal) => {
-    const order = Object.entries(def.order || {});
+  const columns = () => cols.map((c) => ({ ...colFor(c), sortKey: c.member }));
+  // The viewer can hide the total row (a per-viewer view setting, like the Table toggle; the spec's `totals` says where it goes when shown).
+  let showTotals = true;
+  // The viewer's header click (see plan.js tableOrder): undefined = untouched, null = cleared, { member, dir }. Cube re-sorts, because `limit` cuts the rows.
+  let sort;
+  let sorting = null;
+  const panel = modelPanel(def, ctx, async (signal) => {
+    const order = Object.entries(tableOrder(def, dimensions, sort));
     const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
-    const res = await runAll(ctx.run, tableQueries(ctx.spec, def, ctx.filterValues()), signal);
+    const [res, tot] = await Promise.all([
+      runAll(ctx.run, tableQueries(ctx.spec, def, ctx.filterValues(), sort), signal),
+      // A failed total must not take the rows down with it: its cells show "–".
+      runAll(ctx.run, tableTotalQueries(ctx.spec, def, ctx.filterValues()), signal).catch((e) => { if (signal?.aborted) throw e; return null; }),
+    ]);
     let rows = byDims(res, dimensions);
     if (!single) {                                    // several measure cubes were merged here: order and limit apply after the merge
       const get = (r, m) => (kindOf(m).kind === "measure" ? r.values.get(m) : r.dims[m]);
-      for (const [m, dir] of [...order].reverse()) rows.sort((a, b) => (get(a, m) > get(b, m) ? 1 : get(a, m) < get(b, m) ? -1 : 0) * (dir === "desc" ? -1 : 1));
+      const cmp = (x, y) => (x == null) - (y == null) || (x !== "" && y !== "" && isFinite(x) && isFinite(y) ? x - y : x > y ? 1 : x < y ? -1 : 0);
+      for (const [m, dir] of [...order].reverse()) rows.sort((a, b) => cmp(get(a, m), get(b, m)) * (dir === "desc" ? -1 : 1));
       rows = rows.slice(0, def.limit || 100);
     }
     // A click on a row sets each named filter from the row's value of that filter's dimension.
     const filterDims = ids.map((id) => ctx.spec.filters.find((x) => x.id === id).dimension);
     const rowValues = (r) => filterDims.map((d) => String(r.dims[d] ?? ""));
+    // The total row: dimension cells empty, each measure as Cube aggregated it over the whole set (a ratio is the set's ratio, not an average of rows).
+    let totalsRow = null;
+    if (def.totals) {
+      const t = tot && totals(tot);
+      totalsRow = { position: def.totals, cells: cols.map((c) => (kindOf(c.member).kind === "measure" ? (t?.get(c.member) ?? null) : undefined)) };
+    }
     const draw = (host) => {
-      host.innerHTML = tableHtml({ columns: cols.map(colFor), rows });
+      const shown = showTotals ? totalsRow : null;
+      host.innerHTML = tableHtml({ columns: columns(), rows, totals: shown, sort });
+      if (shown?.position === "header") pinTotals(host);
+      host.querySelectorAll("th.sortable").forEach((h) => {
+        const go = () => sortBy(h.dataset.sort);
+        h.addEventListener("click", go);
+        h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      });
       if (!ids.length) return;
       host.querySelectorAll("tbody tr").forEach((tr, i) => {
         clickable(tr, () => ctx.pick(ids, rowValues(rows[i])));
         tr.classList.toggle("sel", isSelected(ctx.filterValues(), ids, rowValues(rows[i])));
       });
     };
-    return { rows, columns: cols.map(colFor), draw };
-  }, { table: false });
+    return { rows, columns: columns(), draw, get totals() { return showTotals ? totalsRow : null; } };
+  }, { table: false, extra: def.totals ? `<button class="tbl-toggle tot-btn" aria-pressed="true">${esc(ctx.t.totals)}</button>` : "" });
+  function sortBy(member) {
+    sort = nextSort(sort, member, kindOf(member).kind === "measure");
+    sorting?.abort();
+    sorting = new AbortController();
+    panel.load(sorting.signal, { force: true }).catch(() => {});      // an older click's answer must not land after a newer one
+  }
+  const totBtn = panel.root.querySelector(".tot-btn");
+  totBtn?.addEventListener("click", () => { showTotals = !showTotals; totBtn.setAttribute("aria-pressed", String(showTotals)); panel.redraw(); });
+  return panel;
 }
 
 // ------------------------------------------------------------------------------------------------------------------ text / unsupported

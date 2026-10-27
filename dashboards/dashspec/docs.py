@@ -90,8 +90,9 @@ D = {  # "<section>.<field>": meaning
     "treemap.format": "How values are shown. Default `number`.",
     "treemap.on_click": "A click on a tile sets the filters in `group` order (a heading sets only the first). Name the filters in the order of the group.",
     "table.columns": "The columns, up to 20: members or `{ member, label, format }`. With measures, the dimension columns are the grouping.",
-    "table.order": "Sort order: `{ member: asc | desc }`, members that are columns.",
+    "table.order": "The order the table opens in: `{ member: asc | desc }`, members that are columns. Without it the rows are sorted by every dimension column, left to right, ascending. Viewers re-sort by clicking a column title (measures: descending, ascending, none; dimensions: ascending, descending, none; none is the dimension order above).",
     "table.limit": "How many rows. Default 100.",
+    "table.totals": "`header` or `footer`: a bold total row, frozen while the rows scroll. Dimension cells are empty; each measure is aggregated over all matching rows (not only the ones shown), so a ratio is the ratio of the totals. Needs a measure column.",
     "table.on_click": "A click on a row sets each named filter from the row's value of that filter's dimension (the dimension must be one of the shown columns).",
     "text.markdown": "A short note: paragraphs, `**bold**`, `` `code` ``, `[links](https://...)` and `- ` lists. Everything else is shown as text.",
 }
