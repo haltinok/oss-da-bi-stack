@@ -293,7 +293,10 @@ function tagEditor(t, initial = []) {
   const chips = box.querySelector(".te-chips"), input = box.querySelector(".te-input");
   const draw = () => {
     chips.innerHTML = tags.map((tag) => `<span class="te-chip">${esc(tag)}<button type="button" data-rm="${esc(tag)}" aria-label="${esc(t.tagRemove(tag))}">✕</button></span>`).join("");
-    input.disabled = tags.length >= MAX_TAGS;
+    // At the limit the box stays focusable (a disabled one cannot be, and gets no keys, so Backspace could not remove a tag): it just takes no more text.
+    const full = tags.length >= MAX_TAGS;
+    input.readOnly = full;
+    input.placeholder = full ? t.tagsMax : t.tagInputPlaceholder;
   };
   function add(text) {
     for (const part of text.split(",")) {
