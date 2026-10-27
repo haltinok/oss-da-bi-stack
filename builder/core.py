@@ -169,7 +169,8 @@ def system_blocks(catalog: cat.Catalog, role: str) -> list[dict]:
 
 # ------------------------------------------------------------------------------------------------------------------ checking a submission
 def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict | None, list[str]]:
-    """-> ({ yaml, spec, notes }, []) for a spec this role can render, or (None, problems) to give back to the model."""
+    """-> ({ yaml, spec, source, notes }, []) for a spec this role can render, or (None, problems) to give back to the model.
+    `spec` is the compiled one the page draws; `source` is the validated file as a mapping, which is what the designer edits (JSON is YAML, so it sends it back as it is)."""
     if len(text) > MAX_YAML:
         return None, [f"the file is too long ({len(text)} characters, at most {MAX_YAML})"]
     text = re.sub(r"^\s*```(?:ya?ml)?[ \t]*\n|\n[ \t]*```\s*$", "", text)             # a model sometimes wraps the file in a code fence
@@ -194,7 +195,7 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     errors, used = validate(spec, catalog)
     if errors:
         return None, errors[:12]
-    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used, catalog), "notes": notes}, []
+    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used, catalog), "source": spec, "notes": notes}, []
 
 
 # ------------------------------------------------------------------------------------------------------------------ the loop

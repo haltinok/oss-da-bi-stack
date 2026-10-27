@@ -12,6 +12,7 @@ import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
+import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
 
 const REFRESH_MS = 5 * 60_000;
@@ -369,7 +370,7 @@ async function showDashboard() {
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
   if (draft || savedDash) {
     const api = createBuilderApi({ stack: C, client, t });
-    if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); if (draft) mountDraftBar(host, api, t, draft); else mountSavedBar(host, api, t, savedDash); }
+    if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); if (draft) { mountDraftBar(host, api, t, draft); mountDesigner({ api, t, draft, spec, panels, host }); } else mountSavedBar(host, api, t, savedDash); }
   }
   buildFilters();
   ctx.syncReset?.();

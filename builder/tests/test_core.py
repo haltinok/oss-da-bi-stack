@@ -1,4 +1,5 @@
 """The builder loop against a scripted model: what it accepts, what it hands back, when it gives up, and what the model is shown."""
+import json
 import pathlib
 from types import SimpleNamespace
 
@@ -221,3 +222,19 @@ def test_the_tabs_example_shown_to_the_model_validates_for_every_role():
         spec.update(yaml.safe_load(tail.split("\n", 1)[1]))
         built, problems = core.check_submission(yaml.safe_dump(spec, allow_unicode=True), CATALOG, role)
         assert built is not None and len(built["spec"]["tabs"]) == 2, (role, problems)
+
+
+def test_the_source_comes_back_and_round_trips_as_json_for_the_designer():
+    """The designer edits `source` in the browser and sends it back as JSON (JSON is YAML): it must validate to the same page, for every checked-in dashboard and every role that may open it."""
+    for path in sorted((REPO / "dashboards").glob("*.yml")):
+        text = path.read_text()
+        roles = yaml.safe_load(text).get("roles") or list(core.ROLES)
+        for role in roles:
+            built, problems = core.check_submission(text, CATALOG, role)
+            if built is None:
+                continue                                       # a dashboard this role cannot read: nothing to design
+            assert built["source"]["id"] == "draft" and built["source"]["roles"] == [role]
+            assert "members" not in built["source"] and "cubes" not in built["source"], "the source has no compiled keys"
+            again, problems = core.check_submission(json.dumps(built["source"]), CATALOG, role)
+            assert again is not None, (path.name, role, problems)
+            assert again["spec"] == built["spec"] and again["source"] == built["source"], (path.name, role)
