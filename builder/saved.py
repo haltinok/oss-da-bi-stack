@@ -82,11 +82,36 @@ def _clean_share(visibility: str | None, shared_roles) -> tuple[str | None, list
     return visibility, roles
 
 
-def _validate(yaml_text: str, catalog, who: Who) -> dict:
+def _validate(yaml_text: str, catalog, who: Who, *, tags_given: bool = False) -> dict:
     built, problems = core.check_submission(yaml_text, catalog, who.role)
     if built is None:
-        raise SavedError(422, "The dashboard is not valid for your role.", problems)
+        only_tags = tags_given and problems and all(p.startswith("dashboard: tags") for p in problems)
+        raise SavedError(422, "Those tags are not valid." if only_tags else "The dashboard is not valid for your role.", problems)
     return built
+
+
+def retag(yaml_text: str, tags: list[str]) -> str:
+    """The YAML with its `tags` set to `tags` (none removes the key): the page's Tags field is applied here, on the server, so the same validator that
+    checks every other field checks the tags, the page never edits YAML text, and a bad tag is refused before anything is stored. Tags go after the
+    description (or the title). The text is returned untouched when it is not a mapping (the validator then says what is wrong) or when the tags are
+    already these, so asking for the tags a dashboard has is not a change."""
+    try:
+        spec = yaml.safe_load(yaml_text)
+    except yaml.YAMLError:
+        return yaml_text
+    if not isinstance(spec, dict) or spec.get("tags", []) == list(tags):
+        return yaml_text
+    anchor = "description" if "description" in spec else "title"
+    out: dict = {}
+    for key, value in spec.items():
+        if key == "tags":
+            continue
+        out[key] = value
+        if key == anchor and tags:
+            out["tags"] = list(tags)
+    if tags and "tags" not in out:
+        out["tags"] = list(tags)
+    return yaml.safe_dump(out, sort_keys=False, allow_unicode=True, width=140)
 
 
 def readable_by(yaml_text: str, catalog) -> list[str]:
@@ -105,9 +130,12 @@ def list_saved(store, catalog, who: Who, *, everything: bool = False) -> list[di
     return out
 
 
-def save_new(store, catalog, who: Who, yaml_text: str, *, title=None, visibility="private", shared_roles=(), max_saved=50) -> dict:
+def save_new(store, catalog, who: Who, yaml_text: str, *, title=None, visibility="private", shared_roles=(), tags=None, max_saved=50) -> dict:
+    """`tags` (a list, or None to keep what the YAML has) is written into the dashboard and checked with it."""
     visibility, roles = _clean_share(visibility, list(shared_roles))
-    built = _validate(yaml_text, catalog, who)
+    if tags is not None:
+        yaml_text = retag(yaml_text, tags)
+    built = _validate(yaml_text, catalog, who, tags_given=tags is not None)
     spec = built["spec"]
     name = (title or spec["title"]).strip()[:120] or "Untitled"
     try:
@@ -143,11 +171,15 @@ def open_saved(store, catalog, who: Who, id_: str, version: int | None = None) -
     return out
 
 
-def update_saved(store, catalog, who: Who, id_: str, *, yaml_text=None, title=None, visibility=None, shared_roles=None) -> dict:
+def update_saved(store, catalog, who: Who, id_: str, *, yaml_text=None, title=None, visibility=None, shared_roles=None, tags=None) -> dict:
+    """`tags` (a list, or None to leave them) changes the tags of the saved YAML (or of `yaml_text`, when it is given): a change to the YAML, so the owner's
+    alone and a new version; the same tags again are not a change."""
     row = _get_visible(store, who, id_)
     is_owner = row["owner"] == who.name
-    if yaml_text is not None and not is_owner:
+    if (yaml_text is not None or tags is not None) and not is_owner:
         raise SavedError(403, "Only the owner can change the dashboard.")
+    if tags is not None:
+        yaml_text = retag(yaml_text if yaml_text is not None else row["yaml"], tags)
     if (visibility is not None or shared_roles is not None or title is not None) and not (is_owner or who.role == "admin"):
         raise SavedError(403, "Only the owner can change how it is shared.")
     visibility, roles = _clean_share(visibility, shared_roles)
@@ -155,7 +187,7 @@ def update_saved(store, catalog, who: Who, id_: str, *, yaml_text=None, title=No
         visibility = row["visibility"]
         if visibility == "roles" and not roles:
             raise SavedError(422, "choose at least one role to share with")
-    built = _validate(yaml_text, catalog, who) if yaml_text is not None else None
+    built = _validate(yaml_text, catalog, who, tags_given=tags is not None) if yaml_text is not None else None
     new = store.update(id_, by=who.name, title=(title or None) and title.strip()[:120], description=(built["spec"].get("description") or "")[:300] if built else None,
                        yaml=built["yaml"] if built else None, visibility=visibility, shared_roles=roles, owner_role=who.role if built else None)
     return {**meta(new, who), "readable_by": readable_by(new["yaml"], catalog)}

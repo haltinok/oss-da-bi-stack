@@ -330,3 +330,28 @@ def test_saves_changes_and_deletions_are_logged(memory_store, monkeypatch, tmp_p
     events = [json.loads(line) for line in log.read_text().splitlines()]
     assert [e["event"] for e in events if e["user"] == "logger"][-3:] == ["saved", "saved_update", "saved_delete"]
     assert next(e for e in events if e["event"] == "saved")["visibility"] == "everyone"
+
+
+def test_tags_are_written_checked_and_changed_over_http(memory_store):
+    h, yml = token("manager", "tagger"), sales_yaml()
+    made = client.post("/saved", headers=h, json={"yaml": yml, "tags": ["sales", "board"]})
+    assert made.status_code == 201 and made.json()["tags"] == ["sales", "board"]
+    id_ = made.json()["id"]
+    assert client.get(f"/saved/{id_}", headers=h).json()["spec"]["tags"] == ["sales", "board"]
+    bad = client.post("/saved", headers=h, json={"yaml": yml, "tags": ["Sales"]})
+    assert bad.status_code == 422 and bad.json()["detail"]["message"] == "Those tags are not valid."
+    assert any("tags[0]: 'Sales' is not lower case; write 'sales'" in p for p in bad.json()["detail"]["problems"])
+    assert [d["id"] for d in client.get("/saved", headers=h).json()] == [id_], "the refused save stored nothing"
+    changed = client.put(f"/saved/{id_}", headers=h, json={"tags": ["board"]})
+    assert changed.status_code == 200 and changed.json()["version"] == 2 and changed.json()["tags"] == ["board"]
+    assert client.put(f"/saved/{id_}", headers=h, json={"tags": ["board"]}).json()["version"] == 2, "the same tags are not a new version"
+    assert client.put(f"/saved/{id_}", headers=h, json={"tags": ["x"] * 11}).status_code == 422, "the request itself is bounded"
+    assert client.put(f"/saved/{id_}", headers=h, json={"tags": ["Board"]}).status_code == 422
+
+
+def test_only_the_owner_changes_tags_over_http(memory_store):
+    owner, other, admin = token("manager", "tagger2"), token("manager", "otto2"), token("admin", "root2")
+    id_ = client.post("/saved", headers=owner, json={"yaml": sales_yaml(), "visibility": "everyone"}).json()["id"]
+    assert client.put(f"/saved/{id_}", headers=other, json={"tags": ["mine"]}).status_code == 403
+    assert client.put(f"/saved/{id_}", headers=admin, json={"tags": ["mine"]}).status_code == 403
+    assert client.put(f"/saved/{id_}", headers=owner, json={"tags": ["mine"]}).status_code == 200

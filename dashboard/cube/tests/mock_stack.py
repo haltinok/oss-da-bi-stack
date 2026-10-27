@@ -140,11 +140,11 @@ def saved_answer(path, body, method, c):
         if parts == ["saved"] and method == "GET":
             return 200, saved.list_saved(store, catalog, who)
         if parts == ["saved"] and method == "POST":
-            return 201, saved.save_new(store, catalog, who, body["yaml"], title=body.get("title"), visibility=body.get("visibility", "private"), shared_roles=body.get("shared_roles", []))
+            return 201, saved.save_new(store, catalog, who, body["yaml"], title=body.get("title"), visibility=body.get("visibility", "private"), shared_roles=body.get("shared_roles", []), tags=body.get("tags"))
         if len(parts) == 2 and method == "GET":
             return 200, saved.open_saved(store, catalog, who, parts[1])
         if len(parts) == 2 and method == "PUT":
-            return 200, saved.update_saved(store, catalog, who, parts[1], yaml_text=body.get("yaml"), title=body.get("title"), visibility=body.get("visibility"), shared_roles=body.get("shared_roles"))
+            return 200, saved.update_saved(store, catalog, who, parts[1], yaml_text=body.get("yaml"), title=body.get("title"), visibility=body.get("visibility"), shared_roles=body.get("shared_roles"), tags=body.get("tags"))
         if len(parts) == 2 and method == "DELETE":
             saved.delete_saved(store, who, parts[1])
             return 204, {}

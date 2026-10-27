@@ -167,3 +167,15 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .tg-h { font-size: 13px; font-weight: 620; margin: 18px 0 8px; color: var(--ink-2); }
 .tgroup:first-child .tg-h { margin-top: 4px; }
 @media (max-width: 480px) { .tag-chip { min-height: 36px; padding: 0 12px; } .tag-switch { min-height: 36px; margin-left: 0; } }
+
+/* The Tags field of the Save dialog and of a saved dashboard: chips with a remove button and a box that adds one on Enter or a comma */
+.tag-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tag-editor .te-chips { display: contents; }
+.te-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 4px 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 12.5px; }
+.te-chip button { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.te-chip button:hover { background: var(--surface-2); color: var(--ink); }
+.te-chip button:focus-visible, .te-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.te-input { flex: 1 1 160px; min-width: 120px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.te-input:disabled { opacity: .5; }
+.tag-editor .hint { flex-basis: 100%; margin: 2px 0 0; }
+@media (max-width: 480px) { .te-input { height: 44px; } .te-chip button { width: 32px; height: 32px; } }

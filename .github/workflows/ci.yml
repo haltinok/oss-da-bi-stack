@@ -393,6 +393,7 @@ jobs:
       - run: python -I dashboard/cube/tests/render.py
       - run: python -I dashboard/cube/tests/renderer.py
       - run: python -I dashboard/cube/tests/header.py
+      - run: python -I dashboard/cube/tests/builderui.py        # the builder's page: the Save dialog, saved dashboards, tags
       - run: python -I dashboard/cube/tests/dataset.py
 
   # The dashboard builder (builder/): its loop against a scripted model, the rule-based stand-in over every prompt x role, and the HTTP service

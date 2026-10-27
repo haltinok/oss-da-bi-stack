@@ -199,6 +199,7 @@ class SaveRequest(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     visibility: str = "private"
     shared_roles: list[str] = []
+    tags: list[Annotated[str, Field(max_length=100)]] | None = Field(default=None, max_length=10)      # the validator says what a tag may be; this only bounds the request
 
 
 class UpdateRequest(BaseModel):
@@ -206,6 +207,7 @@ class UpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     visibility: str | None = None
     shared_roles: list[str] | None = None
+    tags: list[Annotated[str, Field(max_length=100)]] | None = Field(default=None, max_length=10)
 
 
 class RestoreRequest(BaseModel):
@@ -219,7 +221,7 @@ def saved_list(user: User_, everything: bool = False) -> list[dict]:
 
 @app.post("/saved", status_code=201)
 def saved_create(req: SaveRequest, user: User_) -> dict:
-    out = saved_call(saved.save_new, need_store(), CATALOG, who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, max_saved=MAX_SAVED)
+    out = saved_call(saved.save_new, need_store(), CATALOG, who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED)
     audit({"user": user.name, "role": user.role, "id": out["id"], "visibility": out["visibility"], "shared_roles": out["shared_roles"], "title": out["title"][:80]}, "saved")
     return out
 
@@ -231,7 +233,7 @@ def saved_open(id: str, user: User_, version: int | None = None) -> dict:
 
 @app.put("/saved/{id}")
 def saved_update(id: str, req: UpdateRequest, user: User_) -> dict:
-    out = saved_call(saved.update_saved, need_store(), CATALOG, who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles)
+    out = saved_call(saved.update_saved, need_store(), CATALOG, who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags)
     audit({"user": user.name, "role": user.role, "id": id, "version": out["version"], "visibility": out["visibility"], "shared_roles": out["shared_roles"]}, "saved_update")
     return out
 
