@@ -1,6 +1,6 @@
 # Plan 3: tab pages in dashboards
 
-Status: **approved; reviewed against the code on 2026-10-27; phase 1 in progress**. It was written before the pivot, search/tags and language-switch work; those did not touch the layout contract, so the design stands, and the review below records what the current code adds. It changes the layout contract that the validator, compiler, renderer, builder, saved dashboards and docs all read.
+Status: **approved; reviewed against the code on 2026-10-27; phase 1 done**. It was written before the pivot, search/tags and language-switch work; those did not touch the layout contract, so the design stands, and the review below records what the current code adds. It changes the layout contract that the validator, compiler, renderer, builder, saved dashboards and docs all read.
 
 ## Review against the current code (2026-10-27)
 Read `render/main.js` (`showDashboard`), `dashspec/validate.py`, `compile.py`, `docs.py`, `builder/composer.py` and `core.py`. What changes in the plan:
@@ -48,11 +48,14 @@ Compiler: `dashspec compile` turns each tab's rows into explicit `{ panel, span 
 
 ## Phases (one PR each)
 
-### Phase 1: spec and validator
-- Schema: `tabs` array; `layout` no longer required, `oneOf` required `layout` / `tabs` at top level.
-- `validate.py` `_layout_errors` generalized to a list of `(where, layout)`: each tab's rows add up to 12; a panel is placed exactly once **across all tabs**; unknown panel ids named with the tab id (`tab 'products': row 2: no panel with id 'top'`); duplicate tab ids; a tab with no panels. A panel not placed in any tab is an error, as today.
-- `docs.py` regenerates `docs/dashboard-spec-reference.md`; `docs/dashboards.md` gets a Tabs section.
-- Tests (`dashboards/tests/test_dashspec.py`): valid two-tab file; both `layout` and `tabs` fail; neither fails; panel placed in two tabs fails; panel placed nowhere fails; row not 12 wide in tab 2 names the tab; duplicate tab id; one tab only (schema min 2) fails; every existing `dashboards/*.yml` still validates; role checks still run per panel.
+### Phase 1: spec and validator — done
+Built as planned, with these notes:
+- Schema: `layout` moved to `$defs/layout` (shared by the file and each tab), `tabs` (2 to 8 entries; `id`, `title` of 1-40 characters, `layout`), and a top-level `oneOf` of `required: [layout]` / `required: [tabs]`; the existing message for that reads `needs exactly one of: layout, tabs`. A tab count outside 2-8 gets its own message (`a dashboard has 2 to 8 tabs, this one has 9`).
+- `validate.py`: `layouts_of(spec)` gives the file's layout or each tab's; `_layout_errors` checks the rows (12 wide, panels that exist) per layout with the tab named, that a panel is placed once across all of them (naming the tabs when it is twice), and that tab ids are unique. Messages for a plain `layout` are unchanged.
+- `compile.py`: each tab's rows become explicit `{ panel, span }` cells and a tabbed file has `tabs` and no `layout`.
+- `docs.py` and `docs/dashboard-spec-reference.md`: `tabs`, a "A tab" table and the rule.
+- **Added to this phase (they were Phase 2 and 3):** the page lays a tabbed file's tabs out one below the other (`layoutRows`), so a tabbed file cannot break a page before the tab bar exists; and the stand-in's `refine` refuses a tabbed dashboard (it rebuilds `layout` from `panels` and would flatten the tabs). The builder's model guide does not mention tabs yet (Phase 3), but the field reference in its prompt, generated from the schema, does.
+- Tests: 25 dashspec cases (valid at three split points, compile shape, the plain layout still compiles to `layout`, 17 broken setups naming the tab, panel and role checks still run, a filter error is reported once, queries do not care), a stand-in test, and a browser test (the tabbed dashboard draws every panel in order, loads, no console errors).
 
 ### Phase 2: renderer
 - `render/main.js`: `normalizeTabs(spec)` → always a list; the grid builds one `.rgrid` per tab (`hidden` for the inactive), panels created once up front like now (`createPanel` is cheap; the **load** is deferred). `span` map is built from all tabs.
