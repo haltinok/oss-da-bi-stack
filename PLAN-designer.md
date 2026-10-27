@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phases 1 and 2 done** (the rest is not started). One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1, 2 and 3 done** (the rest is not started). One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -44,7 +44,8 @@ Built as below. Notes: the grouping lists are filtered to the cubes **every** me
 Built as below, with these notes: a new panel is a full-width row at the end of the open tab (moving it is phase 3), with a measure chosen by preference (revenue, orders, units, stock) among those the role may read, for a time chart one whose cube joins to the time dimension; a filter on a dimension some panels cannot join to is added to those panels' `ignore_filters`; removing a filter removes its `ignore_filters` mentions and drops the click rules that named it; the page view also has language and currency. All eight starting panels were accepted by the validator on the first try for admin, manager, rep and purchasing. No "start from a template" yet (an open decision).
 A panel gallery (the types, with a picture), a first sensible default per type from the first measure the role may read, delete and duplicate, and the dashboard's title, description, filters and time dimension.
 
-### Phase 3: layout by drag and drop
+### Phase 3: layout by drag and drop — done
+Built as below, with these notes: the moves are pure functions in `lib/designer-layout.js` (a randomised test applies 400 moves and checks after each that every row adds up to 12 and every panel is placed once); the pointer layer (`render/designer-dnd.js`) only turns positions into those calls, and every move is also a button in the drawer, which is the keyboard path; a drop has four edges (top/bottom: a row of its own; left/right: beside, sharing the width) plus tabs and the end of the page; the window autoscrolls near its edges (a far tab bar could not be reached otherwise); resize is a bar between neighbours and moves whole columns; tabs can be renamed and reordered, but **adding and deleting tabs, and turning a layout into tabs, are not built** (they need a decision about what happens to the panels).
 Move panels between rows, resize by span (12 columns, the validator's limits shown as the snap points), reorder tabs and move a panel between tabs. Pointer and keyboard (the keyboard is not optional: the page must stay usable without a mouse).
 
 ### Phase 4: saved dashboards and history

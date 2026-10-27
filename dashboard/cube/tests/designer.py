@@ -48,6 +48,28 @@ def draft_yaml(page):
     return yaml.safe_load(json.loads(page.evaluate("localStorage.getItem('builder.draft')"))["yaml"])
 
 
+def drag(page, grip, x, y, shot=None):
+    """Presses on a panel's grip, moves to (x, y) in steps and lets go (a real pointer drag); `shot` names a screenshot taken while it is held (with --shots)."""
+    box = page.locator(grip).bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(x, y, steps=8)
+    if KEEP and shot:
+        page.wait_for_timeout(150)
+        page.screenshot(path=str(SHOTS / shot))
+    page.mouse.up()
+
+
+def rows_of(page, tab=None):
+    spec = yaml_of(page)
+    layout = next(t["layout"] for t in spec["tabs"] if t["id"] == tab) if tab else spec["layout"]
+    return [[(list(c)[0], list(c.values())[0]) for c in row] for row in layout]
+
+
+def row_with(rows, pid):
+    return next(row for row in rows if any(c[0] == pid for c in row))
+
+
 def yaml_of(page):
     return draft_yaml(page)
 
@@ -189,6 +211,71 @@ with sync_playwright() as p:
     settled(page)
     check(len(yaml_of(page).get("filters", [])) == filters_before, "and Remove takes it out again")
 
+    # ---- layout: commands in the drawer, dragging, resizing
+    page.keyboard.press("Escape")
+    page.click('[data-panel="pie"]', position={"x": 140, "y": 24})
+    check(page.locator('#designer [data-cmd]').count() == 9 and page.locator('#designer [data-cmd="narrower"]').is_disabled(), "a picked panel offers nine layout commands; Narrower is off while it is alone in its row")
+    before = [i for i, row in enumerate(rows_of(page)) if any(c[0] == "pie" for c in row)][0]
+    with page.expect_navigation():
+        page.click('#designer [data-cmd="up"]')
+    settled(page)
+    after = [i for i, row in enumerate(rows_of(page)) if any(c[0] == "pie" for c in row)][0]
+    check(after == before - 1 and page.locator('[data-panel="pie"].dz-selected').count() == 1, "Up swaps its row with the one above, and the panel stays picked")
+    with page.expect_navigation():
+        page.click('#designer [data-cmd="join-up"]')
+    settled(page)
+    shared = row_with(rows_of(page), "pie")
+    check(len(shared) == 2 and sum(w for _, w in shared) == 12, f"Join the row above puts it beside the panel there ({shared})")
+    check(page.locator('#designer [data-cmd="narrower"]').is_enabled(), "and now it can be made narrower")
+    with page.expect_navigation():
+        page.click('#designer [data-cmd="wider"]')
+    settled(page)
+    widths = [w for _, w in row_with(rows_of(page), "pie")]
+    check(widths == [5, 7] or widths == [7, 5] or sum(widths) == 12 and widths != [6, 6], f"Wider moves a column from its neighbour ({widths})")
+    with page.expect_navigation():
+        page.click('#designer [data-cmd="own-row"]')
+    settled(page)
+    check(len(row_with(rows_of(page), "pie")) == 1, "Own row takes it out again")
+
+    page.keyboard.press("Escape")
+    page.locator('[data-panel="pivot"]').scroll_into_view_if_needed()
+    check(page.locator('[data-panel="text"] .dz-grip').count() == 1, "every panel has a grip in design mode")
+    pivot = page.locator('[data-panel="pivot"]').bounding_box()
+    with page.expect_navigation():
+        drag(page, '[data-panel="text"] .dz-grip', pivot["x"] + pivot["width"] * 0.08, pivot["y"] + pivot["height"] / 2, shot="designer-drag.png")
+    settled(page)
+    shared = row_with(rows_of(page), "pivot")
+    check(sorted(c[0] for c in shared) == ["pivot", "text"] and [c[0] for c in shared][0] == "text" and sum(w for _, w in shared) == 12, f"dragging a panel onto another's left edge puts them side by side, dragged first ({shared})")
+    check(page.locator('[data-panel="text"].dz-selected').count() == 1, "and the dragged panel is the picked one")
+
+    page.locator('[data-panel="text"]').scroll_into_view_if_needed()
+    page.wait_for_timeout(500)                                  # the page puts the scroll position back after a redraw: measure after that
+    bars = page.locator(".dz-resize")
+    check(bars.count() >= 1, f"a bar between two neighbours in a row can be dragged ({bars.count()})")
+    text_box = page.locator('[data-panel="text"]').bounding_box()
+    box = next(bb for bb in (bars.nth(i).bounding_box() for i in range(bars.count())) if text_box["y"] <= bb["y"] + 5 <= text_box["y"] + text_box["height"])        # the bar of the text panel's row, not another row's
+    grid_w = page.evaluate("document.querySelector('.rgrid').getBoundingClientRect().width")
+    step = (grid_w + 16) / 12
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] / 2 + step * 2, box["y"] + box["height"] / 2, steps=6)
+    page.wait_for_timeout(150)
+    check(page.locator(".dz-tip").inner_text().replace(" ", "") == "8|4", "while dragging, a tip says the widths (8 | 4) and the panels follow")
+    with page.expect_navigation():
+        page.mouse.up()
+    settled(page)
+    check([w for _, w in row_with(rows_of(page), "text")] == [8, 4], "letting go sets the widths: two columns wider on the left")
+
+    page.locator('[data-panel="text"]').scroll_into_view_if_needed()
+    page.click('[data-panel="text"]', position={"x": 120, "y": 20})
+    start = page.locator('[data-panel="text"] .dz-grip').bounding_box()
+    page.mouse.move(start["x"] + 10, start["y"] + 10)
+    page.mouse.down()
+    page.mouse.move(start["x"] + 60, start["y"] - 80, steps=5)
+    page.keyboard.press("Escape")
+    page.mouse.up()
+    check(page.locator(".dz-ghost").count() == 0 and page.locator(".dz-drop").count() == 0 and [w for _, w in row_with(rows_of(page), "text")] == [8, 4], "Escape in the middle of a drag drops nothing")
+
     # ---- leaving
     page.keyboard.press("Escape")
     check("Click a panel" in page.inner_text("#designer"), "Escape lets go of the panel")
@@ -221,6 +308,35 @@ with sync_playwright() as p:
     settled(page)
     tabs = yaml_of(page)["tabs"]
     check(list(tabs[1]["layout"][-1][0]) == ["pie_2"] and not any("pie_2" in c for row in tabs[0]["layout"] for c in row), "with tabs, a new panel goes to the tab that is open (Details), not the first")
+    page.keyboard.press("Escape")
+    check(page.locator('#dz-tabs .dz-tab').count() == 2, "the page view lists the tabs")
+    page.locator('[data-panel="pie_2"]').scroll_into_view_if_needed()
+    page.evaluate("window.scrollTo(0, 0)")
+    page.click('[data-panel="pie_2"]', position={"x": 140, "y": 24})
+    page.locator('[data-panel="pie_2"] .dz-grip').scroll_into_view_if_needed()
+    grip = page.locator('[data-panel="pie_2"] .dz-grip').bounding_box()
+    with page.expect_navigation():
+        page.mouse.move(grip["x"] + 10, grip["y"] + 10)
+        page.mouse.down()
+        page.mouse.move(grip["x"] + 40, 4, steps=4)                    # to the top edge of the window: the page scrolls by itself
+        page.wait_for_function("window.scrollY === 0", timeout=15000)
+        tb = page.locator('[role="tab"][data-tab="overview"]').bounding_box()
+        page.mouse.move(tb["x"] + tb["width"] / 2, tb["y"] + tb["height"] / 2, steps=6)
+        page.wait_for_timeout(100)
+        page.mouse.up()
+    settled(page)
+    tabs = yaml_of(page)["tabs"]
+    check(list(tabs[0]["layout"][-1][0]) == ["pie_2"] and not any("pie_2" in c for row in tabs[1]["layout"] for c in row), "a panel dropped on a tab moves to the end of that tab")
+    page.keyboard.press("Escape")
+    with page.expect_navigation():
+        page.fill('#dz-tabs [data-tab-title="details"]', "More")
+        page.press('#dz-tabs [data-tab-title="details"]', "Tab")
+    settled(page)
+    check(page.locator('[role="tab"]').all_inner_texts() == ["Overview", "More"], "renaming a tab changes its title in the tab bar")
+    with page.expect_navigation():
+        page.click('#dz-tabs [data-tab-move="overview:1"]')
+    settled(page)
+    check([t["id"] for t in yaml_of(page)["tabs"]] == ["details", "overview"] and page.locator('[role="tab"]').all_inner_texts() == ["More", "Overview"], "the arrow moves a tab one place later")
     ctx.close()
 
     # ---- a role that may read less: the starting panels use only what it can read
