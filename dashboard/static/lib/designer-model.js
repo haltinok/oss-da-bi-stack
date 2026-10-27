@@ -1,0 +1,160 @@
+// The designer's logic without the page: which fields a panel offers, how an edit changes the dashboard's source spec, and which members may be offered.
+// Pure functions, no DOM. The designer never judges a spec itself: it edits the source (the YAML as an object) and the builder service's validator, the same one that
+// checks a model's answer, accepts or refuses the result.
+
+export const FORMATS = ["money", "int", "pct", "decimal", "number"];
+export const GRANULARITIES = ["hour", "day", "week", "month", "quarter", "year"];
+const DIRECTIONS = ["asc", "desc"];
+
+// What each field kind is: "text", "textarea", "color" (a theme name or #rrggbb), "number" (min, max), "choice" (options), "measure", "dimension".
+// `optional` means the field may be empty, which removes it from the spec (or, for an item of a list, removes the item).
+const f = (path, kind, extra = {}) => ({ path, kind, ...extra });
+
+/** The fields the drawer shows for a panel, in order. Each is { path, kind, key (the words' name), options?, min?, max?, optional?, group? (a heading for a repeated item) }. */
+export function fieldsFor(panel) {
+  const out = [];
+  const each = (list, make) => (Array.isArray(list) ? list : []).forEach((item, i) => make(item, i));
+  const measureItem = (name, list, extra = {}) => each(list, (m, i) => {
+    const g = { n: i + 1, of: list.length };
+    if (m && typeof m === "object" && m.member) out.push(f(`${name}.${i}.member`, "measure", { key: "measure", group: g }));
+    else out.push({ path: `${name}.${i}`, kind: "readonly", key: "formula", group: g });
+    if (m && typeof m === "object") {
+      out.push(f(`${name}.${i}.label`, "text", { key: "label", group: g, optional: extra.optionalLabel }));
+      if (extra.format !== false) out.push(f(`${name}.${i}.format`, "choice", { key: "format", options: FORMATS, optional: true, group: g }));
+    }
+  });
+  if (panel.type !== "text" && panel.type !== "kpi") out.push(f("title", "text", { key: "title", optional: true }));
+  switch (panel.type) {
+    case "kpi":
+      measureItem("measures", panel.measures);
+      if (panel.sparkline) out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES }));
+      break;
+    case "timeseries":
+      out.push(f("style", "choice", { key: "style", options: ["line", "area", "stacked-area", "bar", "stacked-bar"] }));
+      if (!panel.drill) out.push(f("granularity", "choice", { key: "granularity", options: GRANULARITIES }));
+      each(panel.series, (s, i) => {
+        const g = { n: i + 1, of: panel.series.length };
+        if (s.member) out.push(f(`series.${i}.member`, "measure", { key: "measure", group: g }));
+        else out.push({ path: `series.${i}`, kind: "readonly", key: "formula", group: g });
+        out.push(f(`series.${i}.label`, "text", { key: "label", group: g }), f(`series.${i}.color`, "color", { key: "color", optional: true, group: g }), f(`series.${i}.format`, "choice", { key: "format", options: FORMATS, optional: true, group: g }));
+      });
+      break;
+    case "bar":
+      if (panel.stack) each(panel.stack, (s, i) => { const g = { n: i + 1, of: panel.stack.length }; out.push(f(`stack.${i}.member`, "measure", { key: "measure", group: g }), f(`stack.${i}.label`, "text", { key: "label", group: g }), f(`stack.${i}.color`, "color", { key: "color", optional: true, group: g })); });
+      else if (panel.measure) out.push(f("measure", "measure", { key: "measure" }), f("label", "text", { key: "label", optional: true }));
+      out.push(f("by", "dimension", { key: "by" }), f("sort", "choice", { key: "sort", options: DIRECTIONS, optional: true }), f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }),
+        f("orientation", "choice", { key: "orientation", options: ["horizontal", "vertical"], optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }));
+      break;
+    case "pie":
+      if (panel.measure) out.push(f("measure", "measure", { key: "measure" }));
+      out.push(f("by", "dimension", { key: "by" }), f("style", "choice", { key: "style", options: ["pie", "donut"], optional: true }), f("limit", "number", { key: "limit", min: 2, max: 30, optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }));
+      break;
+    case "treemap":
+      out.push(f("measure", "measure", { key: "measure" }), f("group.0", "dimension", { key: "group" }), f("group.1", "dimension", { key: "group2", optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }));
+      break;
+    case "table":
+      each(panel.columns, (c, i) => {
+        const g = { n: i + 1, of: panel.columns.length };
+        const isObj = c && typeof c === "object";
+        out.push(f(isObj ? `columns.${i}.member` : `columns.${i}`, "member", { key: "column", group: g }));
+        if (isObj) out.push(f(`columns.${i}.label`, "text", { key: "label", optional: true, group: g }));
+      });
+      out.push(f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }), f("totals", "choice", { key: "totals", options: ["footer", "header"], optional: true }));
+      break;
+    case "pivot":
+      out.push(f("rows.0", "dimension", { key: "rows" }), f("rows.1", "dimension", { key: "rows2", optional: true }));
+      if (typeof panel.columns === "string") out.push(f("columns", "dimension", { key: "columns" }));
+      measureItem("measures", panel.measures);
+      out.push(f("totals", "choice", { key: "totals", options: ["both", "rows", "columns", "none"], optional: true }), f("show", "choice", { key: "show", options: ["value", "share_of_row", "share_of_column", "share_of_total"], optional: true }));
+      break;
+    case "text":
+      out.push(f("markdown", "textarea", { key: "markdown" }));
+      break;
+    default:
+  }
+  return out;
+}
+
+const tokens = (path) => path.split(".").map((p) => (/^\d+$/.test(p) ? Number(p) : p));
+
+/** The value at a path of a panel (undefined when any step is missing). */
+export function getAt(obj, path) {
+  let cur = obj;
+  for (const k of tokens(path)) { if (cur == null) return undefined; cur = cur[k]; }
+  return cur;
+}
+
+// Fields that name what a panel groups or lists by: a click rule (on_click.set_filter) depends on them.
+const GROUPING = /^(by|group\.\d+|rows\.\d+|columns|columns\.\d+(\.member)?)$/;
+
+/**
+ * Sets one field of one panel and returns { source, notes }: a copy of the source with the change (the argument is not touched), and what the person should be told.
+ * An empty value (null, "") on an optional field removes it; on an item of a list it removes the item; a number field takes numbers. Changing what a panel groups by
+ * drops its click rule (it points at a filter on the old dimension) and says so.
+ */
+export function setField(source, panelId, path, value, { optional = false } = {}) {
+  const next = JSON.parse(JSON.stringify(source));
+  const panel = next.panels.find((p) => p.id === panelId);
+  if (!panel) throw new Error(`no panel '${panelId}'`);
+  const notes = [];
+  const steps = tokens(path), last = steps.pop();
+  let cur = panel;
+  steps.forEach((k, i) => {
+    if (cur[k] == null || typeof cur[k] !== "object") cur[k] = typeof (steps[i + 1] ?? last) === "number" ? [] : {};      // a missing step is made: a list before an index, else an object
+    cur = cur[k];
+  });
+  if ((value === null || value === undefined || value === "") && optional) {
+    if (Array.isArray(cur)) cur.splice(last, 1); else delete cur[last];
+  } else cur[last] = value;
+  if (GROUPING.test(path) && panel.on_click) { delete panel.on_click; notes.push("click"); }
+  return { source: next, notes };
+}
+
+/** What a field's input is showing: the value as text ("" when absent). */
+export const shown = (panel, path) => { const v = getAt(panel, path); return v == null || typeof v === "object" ? "" : String(v); };
+
+// ------------------------------------------------------------------------------------------------------------------ members
+/** The cube of a member name "cube.member". */
+export const cubeOf = (member) => String(member).split(".")[0];
+
+const MEMBER = /^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/;
+/** Every "cube.member" string a panel mentions (its measures, series, columns...), once each. */
+export function membersIn(value, out = new Set()) {
+  if (typeof value === "string") { if (MEMBER.test(value)) out.add(value); }
+  else if (Array.isArray(value)) value.forEach((v) => membersIn(v, out));
+  else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) if (k !== "markdown" && k !== "on_click") membersIn(v, out);
+  return out;
+}
+
+/**
+ * The cubes whose dimensions a panel on `fromCubes` can use: those every one of the cubes reaches (their own, or through joins at any distance). A panel that
+ * adds two channels together needs a dimension both can join to, so this is the overlap, not the sum. A cube the catalog does not know allows everything (null).
+ */
+export function reachableCubes(catalog, fromCubes) {
+  const byName = Object.fromEntries(catalog.map((c) => [c.cube, c]));
+  if (fromCubes.some((c) => !byName[c])) return null;
+  const reach = (start) => {
+    const seen = new Set([start]), todo = [start];
+    while (todo.length) for (const j of byName[todo.pop()].joins || []) if (!seen.has(j) && byName[j]) { seen.add(j); todo.push(j); }
+    return seen;
+  };
+  const sets = fromCubes.map(reach);
+  return new Set([...sets[0]].filter((c) => sets.every((s) => s.has(c))));
+}
+
+/** Measure choices for a panel: every measure the role may read, as { value, label, cube, description }. */
+export const measureOptions = (catalog) => catalog.flatMap((c) => c.measures.map((m) => ({ value: m.member, label: m.member, cube: c.cube, description: m.description })));
+
+/**
+ * Dimension choices for a panel: the dimensions of the cubes its measures can reach, so the list never offers a grouping Cube could not answer.
+ * With no measure in the panel yet, every dimension is offered. The current value is always kept in the list.
+ */
+export function dimensionOptions(catalog, panel, current = "") {
+  const measureCubes = new Set([...membersIn(panel)].filter((m) => catalog.some((c) => c.measures.some((x) => x.member === m))).map(cubeOf));
+  const allowed = measureCubes.size ? reachableCubes(catalog, [...measureCubes]) : null;
+  return catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: d.description })))
+    .filter((o) => !allowed || allowed.has(o.cube) || o.value === current);
+}
+
+/** Table columns may be either kind. */
+export const anyMemberOptions = (catalog) => [...measureOptions(catalog), ...catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: d.description })))];

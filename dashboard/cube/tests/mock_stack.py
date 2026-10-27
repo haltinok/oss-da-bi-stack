@@ -106,7 +106,7 @@ def builder_answer(path, body, method="GET", query=None):
         return saved_answer(path, body, method, c)
     if path == "/validate":
         built, problems = c["core"].check_submission(body["yaml"], c["catalog"], role)
-        return 200, {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "notes": built["notes"] if built else [], "problems": problems}
+        return 200, {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "source": built and built["source"], "notes": built["notes"] if built else [], "problems": problems}
     return 404, {"detail": "not found"}
 
 

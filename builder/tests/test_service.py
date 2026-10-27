@@ -114,8 +114,9 @@ def test_validate_checks_a_hand_edited_file_for_the_callers_role():
     good = client.post("/build", headers=token("manager"), json={"prompt": "revenue by month"}).json()["yaml"]
     ok = client.post("/validate", headers=token("manager"), json={"yaml": good}).json()
     assert ok["ok"] and ok["spec"]["id"] == "draft" and ok["problems"] == []
+    assert ok["source"]["id"] == "draft" and "members" not in ok["source"] and ok["source"]["panels"], "the source comes back for the designer"
     broken = client.post("/validate", headers=token("manager"), json={"yaml": good.replace("internet_sales.revenue", "internet_sales.nope", 1)}).json()
-    assert not broken["ok"] and broken["spec"] is None and any("internet_sales.nope" in p for p in broken["problems"])
+    assert not broken["ok"] and broken["spec"] is None and broken["source"] is None and any("internet_sales.nope" in p for p in broken["problems"])
     as_rep = client.post("/validate", headers=token("rep"), json={"yaml": good.replace("internet_sales.revenue", "internet_sales.gross_profit")}).json()
     assert not as_rep["ok"] and any("role 'rep' cannot read" in p for p in as_rep["problems"])
     assert client.post("/validate", json={"yaml": good}).status_code == 401

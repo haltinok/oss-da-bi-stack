@@ -64,6 +64,17 @@ hears), its dates and its number formats (`1,234.56` or `1.234,56`, month names)
 What is **not** translated is what someone wrote: a dashboard's titles, labels and notes, the data-set name from the configuration, and the builder's explanations
 (`notes`, validator messages). The currency stays the dashboard's: a lira dashboard read in English shows `TRY 4,200`, in Turkish `₺4.200`.
 
+## The designer
+A draft has a third way to change it besides describing the change or editing the YAML: the **Design** button in the draft bar. In design mode every panel is outlined and
+a click picks one (it does not filter the page); a drawer on the right (a sheet at the bottom on a phone) shows the panel's fields: its title, the measures, what it groups
+by, the style and time step of a time chart, sort, limit, direction and format of a bar, the slices of a pie, the columns of a table, the text of a note. The lists hold only
+what you may read **and** what Cube can answer for that panel: a bar adding two sales channels offers only the groupings both channels join to. A change is checked by the same
+validator that checks a model's answer; if it is accepted the draft is updated and the page is drawn again with the panel still picked, and if not, the drawer says why and the draft
+stays as it was. Changing what a panel groups by removes its click rule (it pointed at a filter on the old grouping) and says so.
+
+The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
+formulas (`sum`, `ratio`), adding and removing panels, filters, tabs and the layout; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
+
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
 **Sand** (warm light), **Mint** (cool light with a green accent) and **High contrast** (black and white with a yellow focus ring), or **System**, which follows the

@@ -6,7 +6,7 @@
   GET  /usage     the caller's builds this hour and tokens today, against their limits
   GET  /catalog   the semantic layer as the caller's role may read it (cubes, measures, dimensions, descriptions, joins)
   POST /build     { prompt, current_yaml? } -> { status: ok | cannot | failed, yaml, spec, message, notes, attempts, mode, model, usage }
-  POST /validate  { yaml } -> { ok, yaml, spec, notes, problems }: the same checks for a file a person edited (no model, no cost)
+  POST /validate  { yaml } -> { ok, yaml, spec, source, notes, problems }: the same checks for a file a person edited (no model, no cost)
 
 Every request carries a Keycloak access token (verified like the actions service does). The role from the token decides what the model is shown and
 what the validator accepts; Cube still enforces access on every query the finished dashboard sends. Only member names and descriptions go to the model,
@@ -264,7 +264,7 @@ class ValidateRequest(BaseModel):
 @app.post("/validate")
 def validate(req: ValidateRequest, user: User_) -> dict:
     built, problems = core.check_submission(req.yaml, CATALOG, user.role)
-    return {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "notes": built["notes"] if built else [], "problems": problems}
+    return {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "source": built and built["source"], "notes": built["notes"] if built else [], "problems": problems}
 
 
 @app.post("/build")
