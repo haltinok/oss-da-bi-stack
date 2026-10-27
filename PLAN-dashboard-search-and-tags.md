@@ -31,16 +31,14 @@ Built as a slim **Dashboards** link (a small grid icon and the word) on a line o
 Why a line of its own: the first designs put it in the header (before the title, then as an icon in the tools row). `dashboard/cube/tests/header.py` rejected both: the sales page's header row has no spare width at 1280 px or with a wide fallback font (it wrapped to two rows, 94 px). A line above the header cannot disturb that row.
 Tests: `renderer.py` (link and its target on a built dashboard, on an error page and on a dashboard that does not exist; opens the list and is hidden there; Turkish; 390 px: visible, 44 px target, no sideways scroll), `render.py` (the sales page), `header.py` unchanged and passing.
 
-### Phase 1: search
-- New pure module `dashboard/static/lib/search.js`: `fold(text)` (lower-case with Turkish rules, strip diacritics), `matches(haystack, query)` (all words), `filterItems(items, query, fields)`. No DOM, unit tested.
-- `main.js` `showList`: a search field above the lists (`<input type="search">` with a label, in a `role="search"` region). Typing filters the built cards, your drafts and both saved lists; each list shows its own count when filtered ("2 of 7"), a "No dashboard matches" message when nothing is left, and a Clear (✕) control. `/` focuses the field when no input has focus; Escape clears.
-- `builder.js`: `mountSavedList` and the drafts list take the current query; filtering does not re-fetch and does not lose the delete buttons or the unreadable-for-your-role greying.
-- `strings.js`: English and Turkish words (placeholder, "n of m", empty message, clear).
-- Tests:
-  - `lib/search.js` (node): case, Turkish `İ`/`ı`/`ş`/`ğ`, diacritic folding, several words in any order, empty query matches everything, regex characters in the query are literal, the owner field matches only where it exists.
-  - Browser (`dashboard/cube/tests/renderer.py`, mock stack): typing narrows the built cards and the saved lists, `satis` finds a "Satış" dashboard, the count text, the empty message, Clear and Escape, `/` focuses, delete still works on a filtered saved list, an unreadable saved dashboard stays greyed, no console errors, results escape HTML in titles.
-  - Accessibility: the field has an accessible name; the count is in an `aria-live="polite"` region.
-- Acceptance: with 30 saved dashboards, typing a word leaves only the matching cards at every keystroke with no request sent (the test counts requests).
+### Phase 1: search — done
+Built as described, with these notes from the code and the tests:
+- There is **no "your drafts" list on `/d/`** (the one draft lives at `/d/draft` and has no card), so the search covers the **built dashboards**, **your saved dashboards** and **those shared with you**.
+- `dashboard/static/lib/search.js` (`fold`, `words`, `matches`, `filterItems`, pure); `main.js` `showList` (the field, the filtering, the count, `/`, Escape, Clear); `builder.js` `mountSavedList` now takes the query and returns a handle that redraws the lists from what it already has, and keeps the search after a delete. English and Turkish words in `strings.js`.
+- The count ("3 of 7") is one line for all lists; each saved list also shows its own ("Your saved dashboards (0 of 4)").
+- Matches title and description for built dashboards, plus the owner for saved ones. A description counts: "satis" finds *Envanter sağlığı* because its description says "satış panosundaki".
+- No stemming (`sağlık` and `sağlığı` differ by a letter, as in Turkish itself); documented in `docs/dashboards.md`.
+- Tests: `lib.test.mjs` (fold with Turkish rules, words, matches, literal pattern characters, `filterItems`), and `renderer.py` against seeded saved dashboards (`mock_stack.seed_saved`): Turkish folding, owner search, several words in any order, a bracket, no match and Clear, HTML in a title shown as text, Escape, `/` (and a slash typed in the field), delete from a filtered list, no request while typing, 390 px with a 44 px field and no sideways scroll, no console errors.
 
 ### Phase 2: tags in the spec
 - Schema: `tags` (array, max 5, strings 1-24 characters, unique); `dashspec/validate.py`: the character and lower-case rules with messages that name the field and say what to write (`tags[1]: 'Sales' has capitals; use 'sales'`); `docs.py` description; `docs/dashboard-spec-reference.md` regenerated.

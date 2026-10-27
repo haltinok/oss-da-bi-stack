@@ -38,6 +38,13 @@ Until an API key is configured, a rule-based stand-in answers (a fixed set of ph
 
 ![A draft built from a request](images/dashboards/builder.png)
 
+## Finding a dashboard
+Every dashboard page has a **Dashboards** link above its title that leads back to the list at `/d/`. On the list, the search box above the dashboards filters
+as you type: the built dashboards and, when the builder keeps them, your saved ones and those shared with you. It looks at the title and description (and, for
+saved dashboards, the owner), ignores case and accents with Turkish rules (`satis` finds "Satış", `SAGLIG` finds "sağlığı"), needs every word you type (in any
+order) and treats the text literally, so a bracket is just a bracket. Each saved list shows its own count while you search, `/` jumps to the box, Escape or
+the ✕ clears it, and nothing is asked of the server while you type. There is no word stemming: "sağlık" and "sağlığı" are different words.
+
 ## Anatomy of a file
 
 ```yaml
