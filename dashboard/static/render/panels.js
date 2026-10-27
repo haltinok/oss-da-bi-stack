@@ -121,7 +121,7 @@ function kpiPanel(def, ctx) {
         const buckets = byBucket(series, key);
         const line = buckets.map((b) => evaluate(t, (m) => b.values.get(m) ?? null));
         const full = ctx.formatter(t.format, true);
-        tile.append(sparkline(line, (li, lv) => `${t.label} by ${spark.granularity}, latest ${ctx.bucketLabel(buckets[li].bucket, spark.granularity)}: ${fmtOf(t)(lv)}`, {
+        tile.append(sparkline(line, (li, lv) => ctx.t.sparkAria(t.label, ctx.t.granularities?.[spark.granularity] ?? spark.granularity, ctx.bucketLabel(buckets[li].bucket, spark.granularity), fmtOf(t)(lv)), {
           tip: (i, v) => ctx.tooltip.tipAttr(ctx.tooltip.tipLines(ctx.bucketLabel(buckets[i].bucket, spark.granularity), [[t.label, full(v)]])),
         }));
       }
@@ -236,7 +236,7 @@ function drawTimeseries(host, rows, series, style, granularity, ctx, def, hooks 
   if (hooks) host.append(hooks.crumbs());
   if (series.length > 1) host.append(el("div", { class: "legend" }, series.map((s) => `<span><i class="swatch" style="background:${s.color}"></i>${esc(s.label)}</span>`).join("")));
   const chart = el("div", { class: "chart" });
-  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": `${series.map((s) => s.label).join(", ")} by ${granularity}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": ctx.t.seriesAria(series.map((s) => s.label).join(", "), ctx.t.granularities?.[granularity] ?? granularity) });
   for (const t of ticks) {
     svg.append(svgEl("line", { x1: L, x2: W - R, y1: y(t), y2: y(t), class: t === 0 ? "base-line" : "grid-line" }));
     const lab = svgEl("text", { x: L - 8, y: y(t) + 4, "text-anchor": "end" });

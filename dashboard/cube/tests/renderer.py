@@ -9,6 +9,7 @@ the dashboard is not for, and that the KPI tiles show the same figures as the sa
 import io
 import json
 import pathlib
+import re
 import sys
 import zipfile
 from urllib.parse import parse_qs, urlparse
@@ -31,9 +32,9 @@ def check(ok, msg):
     return ok
 
 
-def open_page(browser, path, dataset="live", width=1440, theme="light"):
+def open_page(browser, path, dataset="live", width=1440, theme="light", init=""):
     ctx = browser.new_context(viewport={"width": width, "height": 1500}, accept_downloads=True)
-    ctx.add_init_script(ms.SEED + f'try {{ localStorage.setItem("theme", "{theme}"); localStorage.setItem("dataset", "{dataset}"); }} catch (e) {{}}')
+    ctx.add_init_script(ms.SEED + f'try {{ localStorage.setItem("theme", "{theme}"); localStorage.setItem("dataset", "{dataset}"); }} catch (e) {{}}' + init)
     page = ctx.new_page()
     page.problems, page.queries, page.aborted = [], [], []
     page.on("pageerror", lambda e: page.problems.append(f"pageerror: {e}"))
@@ -304,6 +305,86 @@ with sync_playwright() as p:
         page.click(chip("sales"))
         got = page.evaluate(contrast)
         check(min(got.values()) >= 4.5, f"the chips and the switch keep 4.5:1 text contrast in the {theme} theme ({got['off']:.1f} / pressed {got['on']:.1f} / switch {got['sw']:.1f})")
+        ctx.close()
+    ms.reset_saved()
+
+    # ---- the EN | TR switch: two small buttons on every /d page; choosing one changes the page's own words, dates and number formats
+    ms.reset_saved()
+    ms.seed_saved("Quarterly review", "Numbers for the board", tags=["management"])
+    sw = "#lang-switch"
+    pressed = lambda pg: pg.eval_on_selector_all(f"{sw} button[aria-pressed=true]", "ns => ns.map(n => n.dataset.lang)")  # noqa: E731
+    def switch_to(pg, code):
+        with pg.expect_navigation():
+            pg.click(f"{sw} [data-lang={code}]")
+        pg.wait_for_selector("#title", timeout=20000)
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".saved", timeout=20000)
+    box = page.locator(sw).bounding_box()
+    check(page.locator(f"{sw} button").count() == 2 and box["width"] <= 80 and box["height"] <= 34, f"the switch is two small buttons ({box['width']:.0f}x{box['height']:.0f}px)")
+    check(pressed(page) == ["en"] and page.get_attribute("html", "lang") == "en" and page.get_attribute(sw, "aria-label") == "Language", "the list starts in English, the English button pressed")
+    check(page.get_attribute(f"{sw} [data-lang=tr]", "aria-label") == "Türkçe" and page.get_attribute(f"{sw} [data-lang=en]", "aria-label") == "English", "each button is named in its own language")
+    switch_to(page, "tr")
+    page.wait_for_selector(".saved", timeout=20000)
+    page.wait_for_selector(".bb-examples .chip", timeout=20000)
+    check(pressed(page) == ["tr"] and page.get_attribute("html", "lang") == "tr" and page.title() == "Panolar" and page.get_attribute(sw, "aria-label") == "Dil", "choosing TR turns the list Turkish (page title, language, the switch's own name)")
+    check("Etiketler" in page.inner_text("#tag-bar") and page.get_attribute("#list-q", "placeholder").startswith("Ada, açıklamaya") and "Çıkış" in page.inner_text("#who") and "Pano tarif et" in page.inner_text("#builder-host"), "its words, the search box, the sign-out link and the builder box are Turkish")
+    check(re.search(r"Güncellendi \d{1,2}\.\d{1,2}\.\d{4}", page.inner_text(".saved")) is not None, "a saved dashboard's date is written the Turkish way")
+    check(page.inner_text(".bb-examples .chip").startswith("Kanala göre") and page.evaluate("localStorage.getItem('dashLang')") == "tr", "the builder's examples come in Turkish, and the choice is kept")
+    check(page.locator("#tag-bar [aria-pressed]").first.get_attribute("aria-label").endswith("etiketine göre filtrele (4)") or "etiketine göre filtrele" in page.get_attribute("#tag-chips button", "aria-label"), "even the tag chips' names are Turkish")
+    page.goto(f"{BASE}/d/sales-overview?fy=2021")
+    settled(page)
+    check("Tümünü dışa aktar" in page.inner_text("#export-all") and page.inner_text("#home-link").strip() == "Panolar" and page.inner_text("#title") == "Sales overview", "a dashboard page follows: the page's words are Turkish, the author's title is left alone")
+    check(tiles(page)["Gross margin"].startswith("%"), f"numbers follow the language too ({tiles(page)['Gross margin']})")
+    check("bazında" in page.get_attribute(".kpi svg.spark", "aria-label") and page.get_attribute("#filters", "aria-label") == "Filtreler", "and what a screen reader hears")
+    switch_to(page, "en")
+    settled(page)
+    check("fy=2021" in page.url and tiles(page)["Gross margin"].endswith("%") and " by month" in page.get_attribute(".kpi svg.spark", "aria-label") and "Export all" in page.inner_text("#export-all"), "choosing EN turns it back, and the filter in the address is still there")
+    page.keyboard.press("Escape")
+    page.focus(f"{sw} [data-lang=tr]")
+    with page.expect_navigation():
+        page.keyboard.press("Enter")
+    page.wait_for_selector("#title", timeout=20000)
+    check(pressed(page) == ["tr"], "the keyboard works (Enter on the TR button)")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    # a dashboard written in Turkish starts in Turkish and can be read in English
+    ms.ROLE["role"] = "purchasing"
+    ctx, page = open_page(browser, "/d/envanter-sagligi")
+    settled(page)
+    check(pressed(page) == ["tr"] and "₺4.200" in page.inner_text('[data-panel="siparis"]'), "with no choice made, a Turkish dashboard shows TR pressed and Turkish number formats")
+    switch_to(page, "en")
+    settled(page)
+    check(pressed(page) == ["en"] and "Export all" in page.inner_text("#export-all") and "TRY\xa04,200" in page.inner_text('[data-panel="siparis"]') and "4.200" not in page.inner_text('[data-panel="siparis"]') and page.get_attribute("html", "lang") == "en", "EN makes its words and number formats English: TRY 4,200, not ₺4.200 (the author's Turkish labels stay)")
+    ctx.close()
+    ms.ROLE["role"] = "admin"
+
+    # the choice in a link, and a browser that keeps nothing
+    ctx, page = open_page(browser, "/d/", init="(() => { const s = Storage.prototype.setItem, g = Storage.prototype.getItem; Storage.prototype.setItem = function (k, v) { if (k === 'dashLang') throw new Error('blocked'); return s.call(this, k, v); }; })();")
+    page.wait_for_selector(".saved", timeout=20000)
+    switch_to(page, "tr")
+    check("lang=tr" in page.url and pressed(page) == ["tr"] and page.title() == "Panolar", "when the browser will not keep the choice it goes into the address (?lang=tr) and still works")
+    page.wait_for_selector("#list-q", timeout=20000)
+    page.fill("#list-q", "sales")
+    check("lang=tr" in page.url and "q=sales" in page.url, "and searching on the list keeps it in the address")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/?lang=tr", init="localStorage.setItem('dashLang', 'en');")
+    page.wait_for_selector(".saved", timeout=20000)
+    check(pressed(page) == ["tr"] and page.title() == "Panolar", "a link that says ?lang=tr wins over what the browser remembered")
+    switch_to(page, "en")
+    check("lang=en" in page.url and pressed(page) == ["en"], "and choosing EN rewrites it")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/no-such-dashboard", init="localStorage.setItem('dashLang', 'tr');")
+    page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
+    check(page.locator(sw).is_visible() and pressed(page) == ["tr"] and "adlı bir pano yok" in page.inner_text("#error") and page.inner_text("#title") == "Panolar", "an error page still has the switch, in the chosen language")
+    ctx.close()
+    for path in ("/d/", "/d/sales-overview"):
+        ctx, page = open_page(browser, path, width=390)
+        page.wait_for_selector(sw, timeout=20000)
+        page.wait_for_timeout(800)
+        b = page.locator(f"{sw} button").first.bounding_box()
+        check(b["height"] >= 44 and b["width"] >= 44 and page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), f"on a phone the buttons are {b['width']:.0f}x{b['height']:.0f}px and {path} does not scroll sideways")
         ctx.close()
     ms.reset_saved()
 

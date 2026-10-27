@@ -259,17 +259,27 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
 
 
 EXAMPLES = {
-    "sales": ["Monthly revenue by channel and the top 5 products, with a table of the latest orders",
-              "Revenue and orders by region and country; click a bar to filter the rest",
-              "Revenue by category as a treemap, and the product mix by month",
-              "Türkçe satış panosu: aylık gelir, bölgeye göre gelir ve son siparişler"],
-    "inventory": ["Stock status and the reorder list", "Overstock and excess stock, top 10", "Envanter durumu ve yeniden sipariş listesi, Türkçe"],
+    "sales": {
+        "en": ["Monthly revenue by channel and the top 5 products, with a table of the latest orders",
+               "Revenue and orders by region and country; click a bar to filter the rest",
+               "Revenue by category as a treemap, and the product mix by month",
+               "Türkçe satış panosu: aylık gelir, bölgeye göre gelir ve son siparişler"],
+        "tr": ["Kanala göre aylık gelir ve en iyi 5 ürün, son siparişlerin tablosuyla",
+               "Bölge ve ülkeye göre gelir ve siparişler; kalanı filtrelemek için bir çubuğa tıklayın",
+               "Kategoriye göre gelir ve aya göre ürün karması, ağaç haritası olarak",
+               "Yıl, ay ve gün detayına inen gelir çizgi grafiği ve alt kategoriye göre pasta grafiği"],
+    },
+    "inventory": {
+        "en": ["Stock status and the reorder list", "Overstock and excess stock, top 10", "Envanter durumu ve yeniden sipariş listesi, Türkçe"],
+        "tr": ["Stok durumu ve yeniden sipariş listesi", "Fazla stok ve ölü stok tablosu, ilk 10", "Tedarikçiye göre envanter durumu"],
+    },
 }
 
 
-def examples_for(role: str) -> list[str]:
-    """Requests that work for this role (the stand-in understands them; they are also good starting points for the model)."""
-    return EXAMPLES["inventory"] if role in ("purchasing", "marketing") else EXAMPLES["sales"]
+def examples_for(role: str, lang: str = "en") -> list[str]:
+    """Requests that work for this role, in the page's language (the stand-in understands them; they are also good starting points for the model)."""
+    kind = EXAMPLES["inventory"] if role in ("purchasing", "marketing") else EXAMPLES["sales"]
+    return kind.get(lang, kind["en"])
 
 
 def check_catalog(model_dir: str) -> cat.Catalog:

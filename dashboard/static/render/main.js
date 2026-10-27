@@ -8,7 +8,8 @@ import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
 import { formatPeriod, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, queriesPerCube, runAll } from "./plan.js";
-import { stringsFor } from "./strings.js";
+import { langOf, stringsFor, uiLocale } from "./strings.js";
+import { mountLangSwitch } from "./lang.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
 import { mountList } from "./list.js";
 
@@ -36,16 +37,35 @@ const client = createCubeClient({
   stack: C, apiUrl: dataset.cube, redirect: `${location.origin}${location.pathname}`,
   onSession(s) {
     if ($("#who")) return;
-    const who = el("div", { id: "who", class: "who", title: `Signed in as ${s.user}, role ${s.role}` }, `${esc(s.user)} · <a href="#" id="signout">Sign out</a>`);
+    const t = stringsFor(uiLocale(navigator.language));
+    const who = el("div", { id: "who", class: "who", title: t.signedInAs(s.user, s.role) }, `${esc(s.user)} · <a href="#" id="signout">${esc(t.signOut)}</a>`);
+    who.dataset.user = s.user;
+    who.dataset.role = s.role;
     $("#tools").append(who);
     $("#signout").addEventListener("click", (e) => { e.preventDefault(); client.signOut(); });
   },
 });
 
+/** The words the page's HTML holds in English (dataset, theme button, signed-in line, first status), in the page's language; the EN | TR switch too. */
+function localizeChrome(t, locale) {
+  const lang = langOf(locale);
+  document.documentElement.lang = lang;
+  mountLangSwitch(t, lang);
+  $("#dataset-badge").title = t.datasetTitle(dataset.label, dataset.mart);
+  $("#dataset-label").textContent = t.datasetLabel;
+  $("#f-dataset").setAttribute("aria-label", t.datasetLabel);
+  $("#theme").title = t.themeToggle;
+  $("#theme").setAttribute("aria-label", t.themeToggle);
+  const who = $("#who");
+  if (who) {
+    who.title = t.signedInAs(who.dataset.user, who.dataset.role);
+    if ($("#signout")) $("#signout").textContent = t.signOut;
+  }
+}
+
 function initDatasetControl() {
   const badge = $("#dataset-badge");
   badge.textContent = dataset.label;
-  badge.title = `Dataset: ${dataset.label} (${dataset.mart})`;
   badge.classList.toggle("ro", !!dataset.readOnly);
   badge.hidden = false;
   if (DATASETS.length < 2) return;
@@ -80,6 +100,7 @@ function setHomeLink(t, hidden = false) {
   if (!link) return;
   $("#home-label").textContent = t.dashboards;
   link.title = t.dashboards;
+  link.closest("nav").setAttribute("aria-label", t.dashboards);
   link.closest("nav").hidden = hidden;
 }
 
@@ -88,8 +109,10 @@ async function showList() {
   const index = await (await fetch("/dashboards/index.json", { cache: "no-store" })).json().catch(() => []);
   const role = client.session().role;
   const mine = index.filter((d) => !d.roles?.length || d.roles.includes(role));
-  const t = stringsFor(navigator.language);
+  const locale = uiLocale(navigator.language);
+  const t = stringsFor(locale);
   setHomeLink(t, true);
+  localizeChrome(t, locale);
   document.title = t.dashboards;
   $("#title").textContent = t.dashboards;
   $("#export-label").textContent = t.exportAll;
@@ -100,7 +123,9 @@ async function showList() {
 
 // ------------------------------------------------------------------ one dashboard
 async function showDashboard() {
-  const t0 = stringsFor(navigator.language);
+  const locale0 = uiLocale(navigator.language);
+  const t0 = stringsFor(locale0);
+  localizeChrome(t0, locale0);
   setHomeLink(t0);                                              // visible from the start, so an error page (no such dashboard, wrong role) still leads back
   const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); a saved dashboard (s/<id>) comes from the builder service; every other id is a built file
   let spec, savedDash = null;
@@ -117,9 +142,11 @@ async function showDashboard() {
     spec = await res.json();
   }
   const role = client.session().role;
-  const t = stringsFor(spec.locale);
+  const locale = uiLocale(spec.locale || "en-US");              // the person's choice (EN | TR), else the dashboard's own locale
+  const t = stringsFor(locale);
   setHomeLink(t);
-  document.documentElement.lang = (spec.locale || "en-US").split("-")[0];
+  localizeChrome(t, locale);
+  $("#filters").setAttribute("aria-label", t.filters);
   if (spec.roles?.length && !spec.roles.includes(role)) throw new Error(t.notForRole(spec.title, role));
   applyTheme(spec.theme);
   $("#export-label").textContent = t.exportAll;
@@ -129,7 +156,7 @@ async function showDashboard() {
   document.title = `${draft ? `${t.draft}: ` : ""}${spec.title} · ${dataset.label}`;
   $("#title").textContent = spec.title;
   $("#brand-sub").textContent = spec.description || "";
-  const fmt = createFormat({ locale: spec.locale || "en-US", currency: spec.currency || "USD" });
+  const fmt = createFormat({ locale, currency: spec.currency || "USD" });
   const tooltip = createTooltip($("#tip"));
   const dateFmt = new Intl.DateTimeFormat(fmt.locale, { dateStyle: "medium", timeZone: "UTC" });
   const dateTimeFmt = new Intl.DateTimeFormat(fmt.locale, { dateStyle: "medium", timeStyle: "short" });
@@ -316,11 +343,15 @@ async function showDashboard() {
 // ------------------------------------------------------------------ start
 (async () => {
   initDatasetControl();
+  localizeChrome(stringsFor(uiLocale(navigator.language)), uiLocale(navigator.language));      // the words that wait in the HTML, before anything loads
+  $("#live-text").textContent = stringsFor(uiLocale(navigator.language)).connecting;
   try {
     await client.token();                               // signs in (redirecting if needed) before the first request
     if (id) await showDashboard(); else await showList();
   } catch (e) {
-    setStatus("<strong>Stale</strong> · not loaded", "stale");
+    const t = stringsFor(uiLocale(navigator.language));
+    $("#title").textContent = document.title = t.dashboards;
+    setStatus(`<strong>${esc(t.stale)}</strong> · ${esc(t.notLoaded)}`, "stale");
     show(readable(e));
   }
 })();

@@ -1,6 +1,9 @@
 // The page's own words, per language (the language of the spec's `locale`, English when there is no translation). The words in a dashboard
 // (titles, labels, descriptions) are the author's and are not translated here.
 const EN = {
+  sparkAria: (label, gran, bucket, value) => `${label} by ${gran}, latest ${bucket}: ${value}`, seriesAria: (labels, gran) => `${labels} by ${gran}`,
+  languageLabel: "Language", dateLocale: "en-US", connecting: "Connecting…", datasetLabel: "Dataset", themeToggle: "Toggle light or dark theme", notLoaded: "not loaded",
+  datasetTitle: (label, mart) => `Dataset: ${label} (${mart})`, signedInAs: (user, role) => `Signed in as ${user}, role ${role}`,
   all: "All", reset: "Reset filters", table: "Table", totals: "Totals", excel: "Excel", exportAll: "Export all", refresh: "Refresh", loading: "Loading…",
   updated: "Updated", stale: "Stale", couldNotLoad: "could not load", signedIn: "Signed in", signOut: "Sign out", dashboards: "Dashboards",
   clickHint: "Click to filter the other panels; click again to undo", noRows: "No rows match these filters", total: "Total", share: "Share of total", period: "Period",
@@ -37,6 +40,9 @@ const EN = {
 };
 
 const TR = {
+  sparkAria: (label, gran, bucket, value) => `${label}, ${gran} bazında, son ${bucket}: ${value}`, seriesAria: (labels, gran) => `${labels}, ${gran} bazında`,
+  languageLabel: "Dil", dateLocale: "tr-TR", connecting: "Bağlanılıyor…", datasetLabel: "Veri seti", themeToggle: "Açık veya koyu temayı değiştir", notLoaded: "yüklenmedi",
+  datasetTitle: (label, mart) => `Veri seti: ${label} (${mart})`, signedInAs: (user, role) => `${user} olarak oturum açıldı, rol: ${role}`,
   all: "Tümü", reset: "Filtreleri sıfırla", table: "Tablo", totals: "Toplamlar", excel: "Excel", exportAll: "Tümünü dışa aktar", refresh: "Yenile", loading: "Yükleniyor…",
   updated: "Güncellendi", stale: "Eski", couldNotLoad: "yüklenemedi", signedIn: "Oturum açık", signOut: "Çıkış", dashboards: "Panolar",
   clickHint: "Diğer panelleri filtrelemek için tıklayın; geri almak için yeniden tıklayın", noRows: "Bu filtrelere uyan satır yok", total: "Toplam", share: "Toplam içindeki pay",
@@ -74,6 +80,25 @@ const TR = {
 
 const LANGS = { en: EN, tr: TR };
 export const translations = LANGS;
+
+// ------------------------------------------------------------------ the person's language
+// The page speaks the language the person chose with the EN | TR switch (kept in this browser, or in ?lang= when the browser will not keep it), else the
+// dashboard's own locale (on the list, the browser's). It covers the page's words, dates and number formats; a dashboard's own titles, labels and notes
+// are its author's and are not translated.
+const LANG_KEY = "dashLang";
+const CODES = ["en", "tr"];
+export function readLang() {
+  try { const q = new URLSearchParams(location.search).get("lang"); if (CODES.includes(q)) return q; } catch { /* no URL to read */ }
+  try { const v = localStorage.getItem(LANG_KEY); return CODES.includes(v) ? v : null; } catch { return null; }
+}
+/** Remember the choice; true when this browser kept it. */
+export function writeLang(code) {
+  try { localStorage.setItem(LANG_KEY, code); return localStorage.getItem(LANG_KEY) === code; } catch { return false; }
+}
+/** The locale the page uses: the person's choice, else `fallback` (the dashboard's locale, or the browser's). */
+export const uiLocale = (fallback) => ({ en: "en-US", tr: "tr-TR" })[readLang()] || fallback || "en-US";
+/** "en" or "tr" for a locale: the two languages the page has words for (anything else shows English). */
+export const langOf = (locale) => (String(locale).split("-")[0] === "tr" ? "tr" : "en");
 
 /** The strings for a locale such as "tr-TR": that language where there is one, English for what it lacks. */
 export const stringsFor = (locale = "en-US") => ({ ...EN, ...(LANGS[String(locale).split("-")[0]] || {}) });
