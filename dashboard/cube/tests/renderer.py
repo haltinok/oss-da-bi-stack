@@ -77,7 +77,7 @@ with sync_playwright() as p:
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".dlist a", timeout=20000)
     names = page.locator(".dlist h2").all_inner_texts()
-    check(sorted(names) == ["Envanter sağlığı", "Sales drill-down", "Sales overview"], f"/d/ lists the dashboards the role may open ({names})")
+    check(sorted(names) == ["Envanter sağlığı", "Pivot gallery", "Sales drill-down", "Sales overview"], f"/d/ lists the dashboards the role may open ({names})")
     check(page.get_attribute(".dlist a >> nth=0", "href").startswith("/d/"), "the list links to /d/<id>")
     check(not page.problems, f"the list loads without console errors {page.problems[:2]}")
     ctx.close()
@@ -450,6 +450,32 @@ with sync_playwright() as p:
         check(ratio >= 4.5, f"the strongest shade keeps the text readable in the {theme} theme (contrast {ratio:.1f}:1)")
         check(not page.problems, f"no console errors ({theme}) {page.problems[:2]}")
         ctx.close()
+
+    # shares: percentages from the totals Cube returned
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", with_pivot(show="share_of_column", measures=[{"member": "internet_sales.revenue", "format": "money"}]))
+    page.reload()
+    settled(page)
+    page.wait_for_selector(f"{xt} table.pivot", timeout=20000)
+    body = page.locator(f"{xt} tbody td:not(.tc)").all_inner_texts()
+    check(body and all(c.endswith("%") for c in body), f"the cells are percentages ({body[:3]})")
+    check(all(c == "100.0%" for c in page.locator(f"{xt} tfoot td:not(.tc)").all_inner_texts()), "each column's total is 100%")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    # the pivot gallery dashboard: every variant draws from the checked-in spec
+    ctx, page = open_page(browser, "/d/pivot-gallery")
+    settled(page)
+    page.wait_for_selector("table.pivot", timeout=20000)
+    page.wait_for_function("document.querySelectorAll('table.pivot').length === 5", timeout=20000)
+    check(not page.problems, f"the pivot gallery loads without console errors {page.problems[:2]}")
+    check(page.locator('[data-panel="groups"] tr.grp').count() > 0 and page.locator('[data-panel="heatmap"] td.heat').count() > 0, "it has groups and a heatmap")
+    check(page.locator('[data-panel="sidebyside"] th.mh').count() == 6 and page.locator('[data-panel="share"] td.heat').count() > 0, "two measures side by side, and a shaded share table")
+    check(all(c.endswith("%") for c in page.locator('[data-panel="share"] tbody td:not(.tc)').all_inner_texts()), "the share table shows percentages")
+    page.locator('[data-panel="crosstab"] tbody tr').first.locator("td").first.click()
+    settled(page)
+    check("category=" in page.url and "fy=" in page.url, "a click on a cell filters the whole page")
+    ctx.close()
 
     # a total that fails must not take the rows with it
     ctx, page = open_page(browser, "/d/sales-overview")

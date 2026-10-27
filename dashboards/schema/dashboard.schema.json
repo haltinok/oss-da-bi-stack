@@ -276,6 +276,7 @@
                 ]
               },
               "measures": { "type": "array", "items": { "$ref": "#/$defs/column" }, "minItems": 1, "maxItems": 3 },
+              "show": { "enum": ["value", "share_of_row", "share_of_column", "share_of_total"] },
               "heat": {
                 "type": "object",
                 "required": ["measure"],

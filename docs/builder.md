@@ -108,7 +108,7 @@ To switch a running stack to Claude: add the key to `.env`, then `docker compose
 ## The two models
 - **A language model** (Claude, DeepSeek, …). Free text, edits in conversation. **Not yet run against a real API here** (no key was available): the loop, prompts, limits and error handling are tested with
   a scripted model. Before relying on it, run [`builder/evals.md`](../builder/evals.md) with a real key.
-- **The rule-based stand-in.** Keywords in English and Turkish (measures, drill levels, chart styles, per-channel charts, breakdowns, top N, table, treemap, pie, filters, clicks, language),
+- **The rule-based stand-in.** Keywords in English and Turkish (measures, drill levels, chart styles, per-channel charts, breakdowns, top N, table, treemap, pie, a pivot ("by category and month", "heatmap", "crosstab": one measure, rows by a dimension or two, the fiscal year or months/quarters across, optional shading), filters, clicks, language),
   and edits (chart style, columns, top N, add or remove a panel, split a chart per channel). It says what it understood ("Understood: …") and, when it understood nothing
   of a change, says so and changes nothing. It is not an LLM and will miss phrasing it does not know; that is what Claude is for.
 

@@ -55,6 +55,7 @@ L = {  # label -> (English, Turkish)
     "excess": ("Excess stock value", "Fazla stok tutarı"), "vendor": ("Vendor", "Tedarikçi"), "on_hand": ("On hand", "Eldeki"), "on_order": ("On order", "Siparişte"),
     "cover": ("Days of cover", "Kapsama (gün)"), "qty": ("Suggested qty", "Önerilen adet"), "excess_units": ("Excess units", "Fazla adet"), "discount": ("Suggested discount %", "Önerilen indirim %"),
     "by": ("{m} by {d}", "{d} bazında {m}"), "monthly": ("{m} by month", "Aylık {m}"), "trend": ("{m} over time", "Zaman içinde {m}"), "sales": ("Sales dashboard", "Satış panosu"),
+    "pivot": ("{m} by {d} and {c}", "{d} ve {c} bazında {m}"), "month": ("month", "ay"), "quarter": ("quarter", "çeyrek"),
     "inventory": ("Inventory dashboard", "Envanter panosu"), "drilltitle": ("{m}: year, month, day", "{m}: yıl, ay, gün"), "built": ("Built from: {p}", "İstek: {p}"), "product_name": ("Product", "Ürün"),
     "stock_status": ("Products by status", "Duruma göre ürün sayısı"), "reorder_list": ("Reorder list", "Yeniden sipariş listesi"), "excess_list": ("Excess and dead stock", "Fazla ve ölü stok"),
     "vendor_value": ("Suggested order value by vendor", "Tedarikçiye göre önerilen sipariş tutarı"), "granularity": ("", ""),
@@ -99,6 +100,8 @@ def parse(prompt: str) -> dict:
         "dims": [d for d, rx in (("region", r"\b(region|territor|bolge)"), ("country", r"\b(country|countries|ulke)"),
                                  ("category", r"\b(?<!sub)categor|(?<!alt )\bkategori"), ("subcategory", r"subcategor|alt kategori"),
                                  ("product", r"\b(product|urun)(?!\w* (alt kategori|subcategor))")) if re.search(rx, t)],
+        "pivot": has(t, "pivot", "crosstab", "cross-tab", "cross tab", "matrix", "capraz", "heatmap", "heat map", "isi haritasi"),
+        "heat": has(t, "heatmap", "heat map", "heat", "shaded", "shade", "isi haritasi"),
         "table": has(t, "table", "list", "latest order", "last order", "detail", "tablo", "liste", "son siparis"),
         "treemap": has(t, "treemap", "mix", "composition", "share", "karma"),
         "clickable": has(t, "click", "cross filter", "interactive", "tikla"),
@@ -197,7 +200,10 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     b.panels.append({"id": "kpis", "type": "kpi", "measures": terms[:8], "sparkline": {"granularity": "month"}})
     fid = b.add_filter("fy", "dates.fiscal_year", "fy")
     dims = p["dims"] + ([] if p["dims"] else (["region"] if has(p["t"], "region", "territor", "bolge") else []))
-    want_time = p["trend"] or p["gran"] or p["drill"] or p["style"] in ("line", "area") or not (p["dims"] or p["table"] or p["treemap"] or p["pie"])
+    want_time = p["trend"] or p["gran"] or p["drill"] or p["style"] in ("line", "area") or not (p["dims"] or p["table"] or p["treemap"] or p["pie"] or p["pivot"])
+    if p["pivot"] and not (p["trend"] or p["drill"] or p["style"] in ("line", "area")):
+        want_time = False                                  # "revenue by category and month as a pivot" asks for the pivot, not also for a time chart
+    pivot_dims = (["category", "subcategory"] if "category" in dims and "subcategory" in dims else dims[:1] or ["category"]) if p["pivot"] else []
     clickable = True                                       # charts filter the other panels on a click: it is what a dashboard is for
     prim = next((k for k in keys if k in ("revenue", "orders", "units", "gross_profit")), "revenue")
     if len(p["chart_segments"]) >= 2:
@@ -249,6 +255,8 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
             pie["on_click"] = {"set_filter": pf}
         b.panels.append(pie)
     for d in dims:
+        if d in pivot_dims:
+            continue                                       # the pivot already shows it
         if d in ("category", "subcategory") and p["treemap"]:
             continue
         if d == pie_dim:
@@ -278,12 +286,28 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
         if cf and sf and clickable:
             t["on_click"] = {"set_filter": [cf, sf]}
         b.panels.append(t)
-    if p["table"]:
+    if p["table"] and not (p["pivot"] and not has(p["t"], "latest order", "last order", "list of order", "son siparis")):     # "çapraz tablo" is the pivot, not a list
         c = b.channels()[0]
         b.panels.append({"id": b.pid("lines"), "type": "table", "title": b.lab("latest"), "columns": [
             {"member": f"{c}.order_number", "label": b.lab("order")}, {"member": f"{c}.order_date", "label": b.lab("date")},
             *([{"member": "territories.country", "label": b.lab("country")}] if b.can("territories.country") else []),
             {"member": f"{c}.revenue", "label": b.lab("revenue"), "format": "money"}], "order": {f"{c}.order_date": "desc"}, "limit": p["top"] or 25})
+    lead = next((c for c in b.channels() if not denied(role, f"{c}.{prim}")), None)
+    if p["pivot"] and lead and all(b.can(dim_members[d]) for d in pivot_dims) and b.can("dates.fiscal_year") and b.can("dates.full_date"):
+        gran = p["gran"] if p["gran"] in ("month", "quarter") else None                      # months or quarters across the top; otherwise the fiscal year
+        col_label = b.lab(gran) if gran else b.lab("fy")
+        member = f"{lead}.{prim}"
+        pivot = {"id": b.pid("pivot"), "type": "pivot", "title": b.lab("pivot", m=b.lab(prim), d=" / ".join(b.lab("products" if d == "product" else d) if b.tr else b.lab("products" if d == "product" else d).lower() for d in pivot_dims), c=col_label.lower()),
+                 "rows": [dim_members[d] for d in pivot_dims], "columns": {"member": "dates.full_date", "granularity": gran} if gran else "dates.fiscal_year",
+                 "measures": [{"member": member, "label": b.lab(prim), "format": "money" if prim in ("revenue", "gross_profit") else "int"}]}
+        if p["heat"]:
+            pivot["heat"] = {"measure": member}
+        row_filter = b.add_filter(pivot_dims[-1], dim_members[pivot_dims[-1]], pivot_dims[-1]) if pivot_dims[-1] in ("region", "country", "category", "subcategory") else None
+        year_filter = b.add_filter("fy", "dates.fiscal_year", "fy") if not gran else None
+        click = [f for f in (row_filter, year_filter) if f]
+        if click and clickable:
+            pivot["on_click"] = {"set_filter": click}
+        b.panels.append(pivot)
     for want in p["filters"]:
         {"fy": lambda: b.add_filter("fy", "dates.fiscal_year", "fy"), "region": lambda: b.add_filter("region", "territories.region", "region"),
          "category": lambda: b.add_filter("category", "products.category", "category"), "country": lambda: b.add_filter("country", "territories.country", "country")}[want]()
@@ -292,7 +316,7 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
         b.add_filter("region", "territories.region", "region")
     levels_said = [f"{'Internet' if c == 'internet_sales' else 'Reseller'}: {' > '.join(lv)}" for c, lv in p["chart_segments"] if lv]
     heard = [f"measures: {', '.join(L[k][0].lower() for k in keys)}"] + ([f"chart style: {p['style']}"] if p["style"] else []) + ([f"drill-down {'; '.join(levels_said) or ' > '.join(p['levels'])}"] if p["drill"] or levels_said else []) \
-        + (["a separate chart per channel"] if len(p["chart_segments"]) >= 2 else []) + (["pie"] if p["pie"] else [])
+        + (["a separate chart per channel"] if len(p["chart_segments"]) >= 2 else []) + (["pie"] if p["pie"] else []) + (["a pivot" + (" with shading" if p["heat"] else "")] if p["pivot"] else [])
     b.notes.insert(0, ("Anladığım: " if b.tr else "Understood: ") + "; ".join(heard) + ".")
     return finish(b, prompt, "dates.full_date", "sales")
 

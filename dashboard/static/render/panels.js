@@ -5,7 +5,7 @@ import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade, arcPath, 
 import { pinTotals, pivotHtml, tableHtml } from "../lib/table.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
-  PERIOD, heatScale, nextSort, pieQueries, pivotColumn, pivotModel, pivotQueries, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
+  PERIOD, heatScale, nextSort, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
 const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
@@ -635,7 +635,8 @@ function tablePanel(def, ctx) {
 function pivotPanel(def, ctx) {
   const ids = ownFilterIds(def);
   const dimOf = (id) => ctx.spec.filters.find((x) => x.id === id).dimension;
-  const measures = def.measures.map((m) => ({ member: m.member, label: m.label || humanize(m.member), fmt: ctx.formatter(m.format, true), type: XLSX_TYPE[m.format || "number"] || "number" }));
+  const share = def.show && def.show !== "value" ? def.show : null;           // the cells as shares of a total: percentages, whatever the measure's own format
+  const measures = def.measures.map((m) => ({ member: m.member, label: m.label || humanize(m.member), fmt: share ? ctx.formatter("pct") : ctx.formatter(m.format, true), type: share ? "pct" : XLSX_TYPE[m.format || "number"] || "number" }));
   const rowLabels = def.rows.map(humanize);
   const { member: colMember, granularity: gran } = pivotColumn(def);
   const colLabel = gran ? (bucket) => ctx.shortBucketLabel(bucket, gran) : (key) => key;
@@ -652,6 +653,7 @@ function pivotPanel(def, ctx) {
     if (!chosen.rows.length || !chosen.cols.length) return { rows: [], columns: [], draw() {} };
     const answers = await waves(pivotQueries(ctx.spec, def, values, { rows: chosen.rows.map((r) => r.keys), cols: chosen.cols }).values, signal, ["cells", "groupCells"]);
     const model = pivotModel(def, axes, answers);
+    const shown = share ? pivotShare(model, share) : model;                 // what is drawn and exported; clicks use `model` (same rows and columns)
     const rowTot = model.totals === "both" || model.totals === "rows";
     // What a click on a piece of the pivot carries: the dimensions of its row (or group) and column, for the filters whose dimension is among them.
     const carry = ({ r, g, c }) => {
@@ -664,10 +666,10 @@ function pivotPanel(def, ctx) {
     };
     const draw = (host) => {
       const notes = [model.hidden.rows && ctx.t.moreRows(lim.rows), model.hidden.cols && ctx.t.moreCols(lim.columns), model.truncated && ctx.t.truncatedPivot].filter(Boolean);
-      const scale = heatMeasure && heatScale(model, heatMeasure.member);
+      const scale = heatMeasure && heatScale(shown, heatMeasure.member);
       const colTitle = `${humanize(colMember)}${gran ? ` (${ctx.t.granularities?.[gran] || gran})` : ""}`;
       host.innerHTML = pivotHtml({
-        model, measures, heat: scale && { member: heatMeasure.member, level: scale.level },
+        model: shown, measures, heat: scale && { member: heatMeasure.member, level: scale.level },
         texts: { corner: `${rowLabels.join(" / ")} ↓ · ${colTitle} →`, total: ctx.t.total, notes, colLabel,
           legend: scale && { label: `${ctx.t.shading}: ${heatMeasure.label}`, min: heatMeasure.fmt(scale.min), max: heatMeasure.fmt(scale.max) } },
       });
@@ -685,15 +687,15 @@ function pivotPanel(def, ctx) {
     };
     // Excel: one row per pivot row (a group is a row of its own with its figures), a column per column and measure, then the totals.
     const toSheet = () => {
-      const several = measures.length > 1, labelCols = model.groups ? 2 : 1;
+      const several = measures.length > 1, labelCols = shown.groups ? 2 : 1;
       const colName = (name, m) => (several ? `${name} · ${m.label}` : name);
       const cellsOf = (maps) => maps.flatMap((map) => measures.map((m) => map?.get(m.member) ?? null));
       const totalOf = (map) => (rowTot ? measures.map((m) => map?.get(m.member) ?? null) : []);
-      const columns = [...rowLabels.map((label) => ({ label, type: "text" })).slice(0, labelCols), ...model.cols.flatMap((c) => measures.map((m) => ({ label: colName(colLabel(c), m), type: m.type }))),
+      const columns = [...rowLabels.map((label) => ({ label, type: "text" })).slice(0, labelCols), ...shown.cols.flatMap((c) => measures.map((m) => ({ label: colName(colLabel(c), m), type: m.type }))),
         ...(rowTot ? measures.map((m) => ({ label: colName(ctx.t.total, m), type: m.type })) : [])];
-      const leafRow = (r) => [...(model.groups ? ["", r.keys[1]] : [r.keys[0]]), ...cellsOf(r.cells), ...totalOf(r.total)];
-      const rows = model.groups ? model.groups.flatMap((g) => [[g.key, "", ...cellsOf(g.cells), ...totalOf(g.total)], ...g.rows.map(leafRow)]) : model.rows.map(leafRow);
-      if (model.totals === "both" || model.totals === "columns") rows.push([ctx.t.total, ...(labelCols > 1 ? [""] : []), ...cellsOf(model.colTotals), ...totalOf(model.grand)]);
+      const leafRow = (r) => [...(shown.groups ? ["", r.keys[1]] : [r.keys[0]]), ...cellsOf(r.cells), ...totalOf(r.total)];
+      const rows = shown.groups ? shown.groups.flatMap((g) => [[g.key, "", ...cellsOf(g.cells), ...totalOf(g.total)], ...g.rows.map(leafRow)]) : shown.rows.map(leafRow);
+      if (shown.totals === "both" || shown.totals === "columns") rows.push([ctx.t.total, ...(labelCols > 1 ? [""] : []), ...cellsOf(shown.colTotals), ...totalOf(shown.grand)]);
       return { columns, rows };
     };
     return { rows: model.rows, columns: [], draw, toSheet };

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import {
   appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
-  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
+  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, pivotShare, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
 import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
 import { stringsFor, translations } from "../../static/render/strings.js";
@@ -595,4 +595,45 @@ test("pivotHtml: heat shades only the chosen measure's cells, never a total, alw
   const two = pivotHtml({ model: { ...flat, measures: ["a.rev", "a.pct"], rows: [{ keys: ["A"], cells: [M({ "a.rev": 1, "a.pct": 0.5 })], total: undefined }], cols: ["2020"], colTotals: [undefined] }, measures: meas, heat: { member: "a.pct", level: () => 0.25 }, texts });
   assert.equal((two.match(/--heat/g) || []).length, 1, "with two measures only the chosen one is shaded");
   assert.ok(!pivotHtml({ model: flat, measures: [meas[0]], texts }).includes("heat"), "no heat asked, no shading");
+});
+
+// ---- pivot: shares
+const close = (map, member, want) => assert.ok(Math.abs(map.get(member) - want) < 1e-9, `${member}: ${map.get(member)} is not ${want}`);
+
+test("pivotShare divides each cell by its row's, its column's or the grand total; totals become 100% or a share of the grand total", () => {
+  const row = pivotShare(flat, "share_of_row");
+  close(row.rows[0].cells[0], "a.rev", 10 / 40);
+  close(row.rows[0].cells[1], "a.rev", 30 / 40);
+  close(row.rows[0].total, "a.rev", 1);
+  assert.equal(row.rows[1].cells[0], undefined, "an empty cell stays empty");
+  assert.equal(row.rows[1].cells[1].get("a.rev"), null, "a cell whose row has no total has no share, not a guess");
+  assert.equal(row.rows[1].total, undefined);
+  close(row.colTotals[1], "a.rev", 35 / 45);
+  close(row.grand, "a.rev", 1);
+  const col = pivotShare(flat, "share_of_column");
+  close(col.rows[0].cells[0], "a.rev", 1);
+  close(col.rows[0].cells[1], "a.rev", 30 / 35);
+  close(col.rows[1].cells[1], "a.rev", 5 / 35);
+  close(col.rows[0].total, "a.rev", 40 / 45);
+  close(col.colTotals[0], "a.rev", 1);
+  const all = pivotShare(flat, "share_of_total");
+  close(all.rows[0].cells[1], "a.rev", 30 / 45);
+  close(all.colTotals[1], "a.rev", 35 / 45);
+  close(all.grand, "a.rev", 1);
+  assert.equal(flat.rows[0].cells[0].get("a.rev"), 10, "the model it was given is not changed");
+  assert.equal(pivotShare({ ...flat, grand: M({ "a.rev": 0 }) }, "share_of_total").rows[0].cells[0].get("a.rev"), null, "a zero total gives no share");
+});
+
+test("pivotShare keeps groups pointing at the same rows, and divides a group's figures by its own total", () => {
+  const leaf = (k, v) => ({ keys: ["Bikes", k], cells: [M({ "a.rev": v })], total: M({ "a.rev": v }) });
+  const rows = [leaf("Road", 3), leaf("Mtb", 1)];
+  const model = { ...flat, cols: ["2021"], rows, groups: [{ key: "Bikes", cells: [M({ "a.rev": 4 })], total: M({ "a.rev": 4 }), rows }], colTotals: [M({ "a.rev": 8 })], grand: M({ "a.rev": 8 }) };
+  const s = pivotShare(model, "share_of_row");
+  assert.ok(s.groups[0].rows[0] === s.rows[0], "one object per row, in the groups and in the flat list");
+  close(s.groups[0].cells[0], "a.rev", 1);
+  close(s.groups[0].total, "a.rev", 1);
+  const c = pivotShare(model, "share_of_column");
+  close(c.groups[0].cells[0], "a.rev", 4 / 8);
+  close(c.rows[0].cells[0], "a.rev", 3 / 8);
+  close(c.groups[0].total, "a.rev", 4 / 8);
 });

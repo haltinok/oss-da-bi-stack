@@ -9,6 +9,15 @@
     ]
   },
   {
+    "id": "pivot-gallery",
+    "title": "Pivot gallery",
+    "description": "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares.",
+    "roles": [
+      "admin",
+      "manager"
+    ]
+  },
+  {
     "id": "regional-sales",
     "title": "Regional sales",
     "description": "Revenue and orders by territory and product. No cost or profit figures, so it is the same for a manager and a rep; each sees only their own territories.",

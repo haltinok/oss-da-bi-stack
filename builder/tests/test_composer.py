@@ -27,6 +27,8 @@ CHARTS = [
 TWO_CHARTS = ("kolon chartlı yıl çeyrek ay gün drill eden internet satışını gösteren bir chart ayrıca yıl-çeyrek-ay reseller satışını gösteren ikinci bir chart "
               "ciro satış adedi ortalama sipariş tutarı")
 CHARTS += [TWO_CHARTS, "a column chart of internet revenue with drill-down year to month, and a second chart for reseller revenue", "revenue as columns by month"]
+PIVOTS = ["a pivot of revenue by category and month, shaded", "revenue by region and fiscal year crosstab", "pivot of units by category and subcategory",
+          "Türkçe: kategori ve aylık gelir çapraz tablo ısı haritası", "profit heatmap by region and month", "orders matrix by country and quarter"]
 PROFIT = ["profit by month", "gross margin by region", "revenue, profit and margin by category"]
 
 
@@ -35,7 +37,7 @@ def build(role, prompt, current=None):
 
 
 @pytest.mark.parametrize("role", core.ROLES)
-@pytest.mark.parametrize("prompt", SALES + INVENTORY + PROFIT + CHARTS)
+@pytest.mark.parametrize("prompt", SALES + INVENTORY + PROFIT + CHARTS + PIVOTS)
 def test_every_prompt_ends_in_a_valid_spec_or_a_refusal(role, prompt):
     out = build(role, prompt)
     assert out["status"] in ("ok", "cannot"), (role, prompt, out.get("problems"), out["message"])
@@ -216,3 +218,39 @@ def test_a_turkish_dashboard_labels_its_pie_bars_and_treemap_in_turkish():
 def test_an_english_pie_sums_both_channels_too_and_a_rep_gets_the_same_without_profit():
     pie = next(p for p in build("rep", "pie of revenue by category")["spec"]["panels"] if p["type"] == "pie")
     assert pie["sum"] == ["internet_sales.revenue", "reseller_sales.revenue"] and pie["label"] == "Revenue"
+
+
+def pivot_of(out):
+    return next(p for p in out["spec"]["panels"] if p["type"] == "pivot")
+
+
+def test_a_pivot_request_gets_a_pivot_and_not_the_charts_it_replaces():
+    out = build("admin", "a pivot of revenue by category and month, shaded")
+    pv = pivot_of(out)
+    assert pv["rows"] == ["products.category"] and pv["columns"] == {"member": "dates.full_date", "granularity": "month"}
+    assert pv["heat"] == {"measure": "internet_sales.revenue"} and pv["title"] == "Revenue by category and month"
+    assert pv["on_click"] == {"set_filter": ["category"]}, "a time column carries no click filter"
+    assert set(kinds(out)) == {"kpi", "pivot"}, "no bar by category and no time chart on top of it"
+
+
+def test_a_pivot_across_the_fiscal_year_filters_by_row_and_year():
+    pv = pivot_of(build("admin", "revenue by region and fiscal year crosstab"))
+    assert pv["columns"] == "dates.fiscal_year" and "heat" not in pv
+    assert pv["on_click"] == {"set_filter": ["region", "fy"]}
+
+
+def test_two_row_dimensions_and_a_rep_without_profit():
+    out = build("rep", "pivot of units by category and subcategory")
+    pv = pivot_of(out)
+    assert pv["rows"] == ["products.category", "products.subcategory"] and pv["on_click"] == {"set_filter": ["subcategory", "fy"]}
+    rep_profit = build("rep", "profit heatmap by region and month")
+    assert rep_profit["status"] in ("ok", "cannot")
+    if rep_profit["status"] == "ok":
+        assert "gross_profit" not in str(rep_profit["spec"]["panels"])
+
+
+def test_the_turkish_word_for_a_cross_table_is_the_pivot_not_also_a_table():
+    out = build("admin", "Türkçe: kategori ve aylık gelir çapraz tablo ısı haritası")
+    assert set(kinds(out)) == {"kpi", "pivot"}
+    assert pivot_of(out)["title"] == "Kategori ve ay bazında gelir" and pivot_of(out)["measures"][0]["label"] == "Gelir"
+    assert "table" in kinds(build("admin", "a pivot of revenue by category and month, plus a table of the latest orders"))

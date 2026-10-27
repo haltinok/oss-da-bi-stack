@@ -91,7 +91,11 @@ showing every choice and marks the selected one. What a click carries: a bar its
 | **`pie`** (`style: pie` or `donut`): slices by a dimension, the tail grouped as "Other"; a click filters. | ![pie](images/dashboards/pie.png) |
 | **`treemap`**: one or two dimensions; with two, tiles sit under headings. | ![treemap](images/dashboards/treemap.png) |
 | **`table`**: members or `{ member, label, format }`, `order`, `limit`; `totals: header\|footer` adds a bold, frozen total row; readers sort by clicking a column title; a row can set filters. | ![table](images/dashboards/table.png) |
-| **`pivot`**: one or two `rows` dimensions, one `columns` dimension, one to three `measures`, row/column/grand totals; a cell, a row name or a column title can set filters; a Total column and a frozen total row; groups when there are two row dimensions. `columns` can be a time dimension by month, quarter or year, and `heat` shades one measure's cells; shares come later (`PLAN-pivot-panel.md`). | (no picture yet) |
+| **`pivot`**: one or two `rows` dimensions down the side, one `columns` dimension across the top, one to three `measures` in the cells, a Total column and a frozen, bold total row. A cell, a row name or a column title sets filters. Totals come from Cube over the whole set, so a ratio is the ratio of the totals. See the variants below. | ![pivot](images/dashboards/pivot.png) |
+| **`pivot`, two `rows`**: the first groups the second; a group row has its own figures. | ![pivot groups](images/dashboards/pivot-groups.png) |
+| **`pivot` with `columns: { member, granularity }` and `heat: { measure }`**: months across the top and the cells shaded from the smallest to the largest (the number stays in every cell; totals are not shaded). | ![pivot heat](images/dashboards/pivot-heat.png) |
+| **`pivot` with several `measures`**: each column shows all of them, side by side. | ![pivot measures](images/dashboards/pivot-measures.png) |
+| **`pivot` with `show: share_of_column`** (or `share_of_row`, `share_of_total`): the cells as percentages of a total. Needs the total asked for in `totals` and measures that add up (`sum`, `count`). | ![pivot share](images/dashboards/pivot-share.png) |
 | **`text`**: a short Markdown note. | ![text](images/dashboards/text.png) |
 | **Filters** above the panels, with Reset when one is set. | ![filters](images/dashboards/filters.png) |
 

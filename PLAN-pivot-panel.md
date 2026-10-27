@@ -1,6 +1,6 @@
 # Plan 2: pivot table panels
 
-Status: **Phases 1, 2 and 3 done** (spec, validator, query plan, pure model; the renderer: crosstab, groups, several measures, totals, clicks, Excel). Depends on the totals query from [`PLAN-table-totals.md`](PLAN-table-totals.md) (Phase 1 there). The user asked for a "pivot table visuals collection"; this plan delivers one new panel type, `pivot`, with a small set of variants, and a gallery section that shows them.
+Status: **All four phases done** (spec, validator, query plan, pure model; the renderer: crosstab, groups, several measures, totals, clicks, Excel). Depends on the totals query from [`PLAN-table-totals.md`](PLAN-table-totals.md) (Phase 1 there). The user asked for a "pivot table visuals collection"; this plan delivers one new panel type, `pivot`, with a small set of variants, and a gallery section that shows them.
 
 ## Goal
 A `pivot` panel: row dimension(s) down the side, one column dimension across the top, measures in the cells, with row totals, column totals and a grand total, plus optional heat shading. Read-only and spec-driven like every other panel; no drag-and-drop field picker.
@@ -33,7 +33,7 @@ A `pivot` panel: row dimension(s) down the side, one column dimension across the
 Rules the validator enforces (messages name panel and field, like the others):
 - `rows` are dimensions of cubes the measures can join to; `columns` is one dimension (or time dimension + granularity from the allowed list); the same dimension cannot be in `rows` and `columns`.
 - Measures from several cubes are allowed when they share the dimensions (existing `_join_errors`), merged on `rows + columns`.
-- `limit` bounds: rows ≤ 200, columns ≤ 24 (a wider pivot is a table). `heat` and a time `columns` with a granularity come in Phase 3, `show` in Phase 4: the schema does not accept them before then.
+- `limit` bounds: rows ≤ 200, columns ≤ 24 (a wider pivot is a table). `heat`, a time `columns` with a granularity and `show` were added in Phases 3 and 4.
 - `on_click` ids must be filters whose dimension is a row dimension or the column dimension (extends `_click_errors`).
 - Role rules: a role-denied measure is rejected as for other panels.
 
@@ -47,7 +47,7 @@ Rules the validator enforces (messages name panel and field, like the others):
 | Time pivot | `columns` = time dimension | months across, years as a second header level when granularity is month |
 | Share-of-total | `show: share` (`value` default | `share_of_row` | `share_of_column` | `share_of_total`) | computed from the queried totals, so always consistent with them |
 
-`show` and the shares are a Phase 4 item; Phases 1-3 ship the first four rows.
+The first four rows shipped in Phases 1-3, the shares in Phase 4.
 
 ## Phases (one PR each)
 
@@ -75,7 +75,8 @@ Built with these notes: multi-measure shipped in Phase 2; `heat` is `{ measure }
 - Multi-measure header level; time pivot with `columns` granularity and the existing `bucketLabel`.
 - Tests: contrast rule unit-tested for both themes; scale bounds ignore totals; null cells are unshaded; screenshot in `gallery.py` for each variant (light and dark).
 
-### Phase 4: shares, gallery, docs, builder
+### Phase 4: shares, gallery, docs, builder — done
+Built as below, with these notes: a share is computed from the totals the model already holds (no new query), so the validator requires `totals` to ask for the one it divides by and the measures to be `sum` or `count`; `dashboards/pivot-gallery.yml` is the gallery dashboard (five variants) and its panels are the pictures in `docs/dashboards.md`; the stand-in builds one simple crosstab (one measure; rows by one or two dimensions; the fiscal year, months or quarters across; optional heat), shares are left to a model.
 - `show: share_of_*` derived from the queried totals.
 - **The collection:** a pivot section in the panel gallery (`dashboard/cube/tests/gallery.py`, `docs/dashboards.md` panel gallery) with one example per variant, and `dashboards/pivot-gallery.yml` as a validated, compiled example dashboard.
 - `skills/dashboard-author/SKILL.md`: when a pivot beats a bar chart or a table; `builder/composer.py` cheat sheet and one valid-for-role example in the prompt; `builder/standin.py` can emit a simple crosstab for "X by Y and Z".

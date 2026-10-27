@@ -28,7 +28,7 @@ Operating it, the limits, what is logged and what leaves the network: **[docs/bu
 - **A language model**: Claude, or DeepSeek / another Anthropic-compatible server (`BUILDER_PROVIDER=deepseek` + `DEEPSEEK_API_KEY`: [docs/builder.md](../docs/builder.md#which-model-claude-deepseek-or-another-compatible-server)). Claude: (`ANTHROPIC_API_KEY` set; `BUILDER_MODEL`, default `claude-opus-5-5`): reads free text, edits a dashboard in conversation. Not yet run against the real
   API in this repository (no key was available): the loop, the prompts and the checks are tested with a scripted model.
 - **The rule-based stand-in** (no key): keywords in English and Turkish for measures, a time axis with a drill-down (year, quarter, month, day), a chart per channel, column / line / area
-  styles, pie and donut, breakdowns (region, country, category, product), top N, a table, a treemap, filters, clicks, language, and edits (chart style, columns, top N, split a chart per
+  styles, pie and donut, breakdowns (region, country, category, product), top N, a table, a treemap, a pivot, filters, clicks, language, and edits (chart style, columns, top N, split a chart per
   channel, add or remove a panel). It says what it understood and what it did not. It is not an LLM and says so (`mode: standin`); it exists so everything else runs, and is tested on every prompt x every role.
 
 ## The page
