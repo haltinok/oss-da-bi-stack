@@ -7,7 +7,7 @@ import { createFormat } from "../lib/format.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { formatPeriod, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, queriesPerCube, runAll } from "./plan.js";
+import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, pickTab, queriesPerCube, runAll, tabKeyTarget, tabPanelIds } from "./plan.js";
 import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { mountLangSwitch } from "./lang.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
@@ -167,8 +167,10 @@ async function showDashboard() {
   values[PERIOD] = parsePeriod(qs.get("period")) ? qs.get("period") : "";             // the date range a drill-down sets (other panels follow it)
   const drills = Object.fromEntries(spec.panels.filter((p) => p.drill).map((p) => [p.id, (qs.get(`drill_${p.id}`) || "").split(",").filter((b) => /^\d{4}-\d{2}-\d{2}/.test(b))]));
   const clearedHooks = [];
-  const layoutRows = spec.layout ?? spec.tabs.flatMap((tab) => tab.layout);          // a tabbed file: its tabs one below the other, until the page draws a tab bar
-  const span = Object.fromEntries(layoutRows.flat().map((c) => [c.panel, c.span]));
+  const tabs = normalizeTabs(spec);
+  const tabbed = !!spec.tabs?.length;                    // a plain `layout` is one untitled tab and has no tab bar
+  let activeTab = pickTab(tabs, qs.get("tab"));
+  const span = Object.fromEntries(tabs.flatMap((tab) => tab.layout.flat()).map((c) => [c.panel, c.span]));
 
   const ctx = {
     spec, t, run: (q, signal) => client.run(q, signal), tooltip,
@@ -218,13 +220,25 @@ async function showDashboard() {
     x.addEventListener("click", () => ctx.setPeriod(null));
     periodBar.append(x);
   }
-  const grid = el("div", { class: "rgrid" });
-  for (const row of layoutRows) for (const cell of row) {
-    const root = panels.get(cell.panel).root;
-    root.style.gridColumn = `span ${span[cell.panel]}`;
-    grid.append(root);
+  // One grid per tab, all in the page; the open one is shown and only its panels are loaded (a panel's `load` is cached by filters and period).
+  const tabBar = tabbed ? el("div", { class: "rtabs", role: "tablist", "aria-label": t.tabsLabel }) : null;
+  const grids = new Map();
+  for (const tab of tabs) {
+    const grid = el("div", { class: "rgrid", ...(tabbed ? { id: `tabpanel-${tab.id}`, role: "tabpanel", "aria-labelledby": `tab-${tab.id}` } : {}) });
+    for (const row of tab.layout) for (const cell of row) {
+      const root = panels.get(cell.panel).root;
+      root.style.gridColumn = `span ${span[cell.panel]}`;
+      grid.append(root);
+    }
+    grid.hidden = tab.id !== activeTab;
+    grids.set(tab.id, grid);
+    if (tabbed) {
+      const b = el("button", { type: "button", role: "tab", id: `tab-${tab.id}`, "aria-controls": `tabpanel-${tab.id}`, "data-tab": tab.id, "aria-selected": String(tab.id === activeTab), tabindex: tab.id === activeTab ? "0" : "-1" });
+      b.textContent = tab.title;
+      tabBar.append(b);
+    }
   }
-  $("#main").replaceChildren(periodBar, grid);
+  $("#main").replaceChildren(periodBar, ...(tabbed ? [tabBar] : []), ...grids.values());
   renderPeriod();
 
   // ---- filters
@@ -303,29 +317,58 @@ async function showDashboard() {
     for (const f of spec.filters || []) { if (values[f.id]) q.set(f.id, values[f.id]); else q.delete(f.id); }
     if (values[PERIOD]) q.set("period", values[PERIOD]); else q.delete("period");
     for (const [id, path] of Object.entries(drills)) { if (path.length) q.set(`drill_${id}`, path.join(",")); else q.delete(`drill_${id}`); }
+    if (tabbed && activeTab !== tabs[0].id) q.set("tab", activeTab); else q.delete("tab");
     history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
     ctx.syncReset?.();
   }
 
   // ---- loading
   let ctrl = null, lastLoad = 0, seq = 0;
+  const tabLoadedAt = new Map();                        // tab id -> when its panels last finished loading
+  const openPanels = () => tabPanelIds(tabs.find((tab) => tab.id === activeTab)).map((id) => panels.get(id));
+  /** Loads the open tab's panels (a newer load cancels an older one, so moving quickly between tabs costs nothing). */
   async function loadAll({ force = false } = {}) {
     ctrl?.abort();
     ctrl = new AbortController();
-    const mine = ++seq, signal = ctrl.signal;
+    const mine = ++seq, signal = ctrl.signal, loading = activeTab;
     show("");
-    const results = await Promise.allSettled([...panels.values()].map((p) => p.load(signal, { force })));
+    const results = await Promise.allSettled(openPanels().map((p) => p.load(signal, { force })));
     if (mine !== seq) return;                           // a newer load took over
     const failed = results.filter((r) => r.status === "rejected" && r.reason?.name !== "AbortError");
     lastLoad = Date.now();
+    tabLoadedAt.set(loading, lastLoad);
     const clock = new Date().toLocaleTimeString(fmt.locale, { hour12: false });
     if (failed.length === results.length && failed.length) { setStatus(`<strong>${esc(t.stale)}</strong> · ${esc(t.couldNotLoad)}`, "stale"); show(readable(failed[0].reason)); }
     else setStatus(`<strong>${esc(t.updated)}</strong> ${clock}`);
   }
-  window.__render = { spec, values, panels, loadAll, ready: null };
+  /** Opens a tab: shows its grid, keeps the address, and loads it (reloading with `force` when its data is older than the refresh interval). */
+  function openTab(id, { focus = false } = {}) {
+    if (id === activeTab && !focus) return;
+    activeTab = id;
+    for (const [tid, grid] of grids) grid.hidden = tid !== id;
+    for (const b of tabBar.querySelectorAll('[role="tab"]')) { const on = b.dataset.tab === id; b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; }
+    if (focus) tabBar.querySelector(`[data-tab="${id}"]`).focus();
+    writeUrl();
+    loadAll({ force: tabLoadedAt.has(id) && Date.now() - tabLoadedAt.get(id) > REFRESH_MS });
+  }
+  if (tabbed) {
+    tabBar.addEventListener("click", (e) => { const b = e.target.closest('[role="tab"]'); if (b) openTab(b.dataset.tab); });
+    tabBar.addEventListener("keydown", (e) => {
+      const to = tabKeyTarget(e.key, tabs.findIndex((tab) => tab.id === activeTab), tabs.length);
+      if (to === null || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      openTab(tabs[to].id, { focus: true });
+    });
+  }
+  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, activeTab: () => activeTab, ready: null };
 
   $("#export-all").hidden = false;
-  $("#export-all").addEventListener("click", () => ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard"));
+  $("#export-all").addEventListener("click", async () => {
+    // Every tab goes in: the ones never opened (or left stale by a filter change) are loaded first; a failed panel just has no sheet.
+    const signal = new AbortController().signal;
+    await Promise.allSettled([...panels.values()].map((p) => p.load(signal)));
+    ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard");
+  });
   $("#refresh").hidden = false;
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
   if (draft || savedDash) {

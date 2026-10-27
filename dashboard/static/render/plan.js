@@ -345,6 +345,25 @@ export function tableTotalQueries(spec, def, values) {
   return measures.length ? followPeriod(spec, def, values, queriesPerCube(measures, { filters: activeFilters(spec, values, def) })) : [];
 }
 
+// ------------------------------------------------------------------ tabs
+/** The pages of a dashboard: its `tabs`, or its one `layout` as a single untitled tab (and then there is no tab bar). */
+export const normalizeTabs = (spec) => (spec.tabs?.length ? spec.tabs : [{ id: "main", title: "", layout: spec.layout }]);
+
+/** The tab to open: the one the address names, else the first (an unknown name is not an error). */
+export const pickTab = (tabs, wanted) => (tabs.some((t) => t.id === wanted) ? wanted : tabs[0].id);
+
+/** The ids of the panels a tab places, in layout order. */
+export const tabPanelIds = (tab) => tab.layout.flat().map((c) => c.panel);
+
+/** Where a key moves the focus in a tab bar: the index to go to, or null when the key is not one of ours (arrows wrap, Home and End jump). */
+export function tabKeyTarget(key, index, count) {
+  if (key === "ArrowRight" || key === "ArrowDown") return (index + 1) % count;
+  if (key === "ArrowLeft" || key === "ArrowUp") return (index - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
 // ------------------------------------------------------------------ pivot
 // Cube has no ROLLUP, so a pivot is several ordinary queries merged here, in two waves. Wave 1 (the axes) asks the first measure's cube which
 // rows and columns to show: the top rows by that measure (or by name) and the first columns by name. Wave 2 (the values) asks every

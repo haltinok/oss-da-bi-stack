@@ -2,7 +2,7 @@
 // (titles, labels, descriptions) are the author's and are not translated here.
 const EN = {
   sparkAria: (label, gran, bucket, value) => `${label} by ${gran}, latest ${bucket}: ${value}`, seriesAria: (labels, gran) => `${labels} by ${gran}`,
-  languageLabel: "Language", dateLocale: "en-US", connecting: "Connecting…", datasetLabel: "Dataset", themeToggle: "Toggle light or dark theme", notLoaded: "not loaded",
+  tabsLabel: "Tabs", languageLabel: "Language", dateLocale: "en-US", connecting: "Connecting…", datasetLabel: "Dataset", themeToggle: "Toggle light or dark theme", notLoaded: "not loaded",
   datasetTitle: (label, mart) => `Dataset: ${label} (${mart})`, signedInAs: (user, role) => `Signed in as ${user}, role ${role}`,
   all: "All", reset: "Reset filters", table: "Table", totals: "Totals", excel: "Excel", exportAll: "Export all", refresh: "Refresh", loading: "Loading…",
   updated: "Updated", stale: "Stale", couldNotLoad: "could not load", signedIn: "Signed in", signOut: "Sign out", dashboards: "Dashboards",
@@ -41,7 +41,7 @@ const EN = {
 
 const TR = {
   sparkAria: (label, gran, bucket, value) => `${label}, ${gran} bazında, son ${bucket}: ${value}`, seriesAria: (labels, gran) => `${labels}, ${gran} bazında`,
-  languageLabel: "Dil", dateLocale: "tr-TR", connecting: "Bağlanılıyor…", datasetLabel: "Veri seti", themeToggle: "Açık veya koyu temayı değiştir", notLoaded: "yüklenmedi",
+  tabsLabel: "Sekmeler", languageLabel: "Dil", dateLocale: "tr-TR", connecting: "Bağlanılıyor…", datasetLabel: "Veri seti", themeToggle: "Açık veya koyu temayı değiştir", notLoaded: "yüklenmedi",
   datasetTitle: (label, mart) => `Veri seti: ${label} (${mart})`, signedInAs: (user, role) => `${user} olarak oturum açıldı, rol: ${role}`,
   all: "Tümü", reset: "Filtreleri sıfırla", table: "Tablo", totals: "Toplamlar", excel: "Excel", exportAll: "Tümünü dışa aktar", refresh: "Yenile", loading: "Yükleniyor…",
   updated: "Güncellendi", stale: "Eski", couldNotLoad: "yüklenemedi", signedIn: "Oturum açık", signOut: "Çıkış", dashboards: "Panolar",

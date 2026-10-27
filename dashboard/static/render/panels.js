@@ -58,7 +58,7 @@ function modelPanel(def, ctx, fetchModel, opts = {}) {
       rows: withTotal(model.rows.map((r) => model.columns.map((c) => c.get(r))), model.totals),
     }),
   });
-  new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => !tableView && model?.redrawOnResize && redraw(), 120); }).observe(body);
+  new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => !tableView && body.clientWidth > 0 && model?.redrawOnResize && redraw(), 120); }).observe(body);          // a hidden tab has no width: redrawn when it is shown
   return {
     root, sheet, redraw,
     async load(signal, { force = false } = {}) {

@@ -179,3 +179,12 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .te-input[readonly] { opacity: .6; }
 .tag-editor .hint { flex-basis: 100%; margin: 2px 0 0; }
 @media (max-width: 480px) { .te-input { height: 44px; } .te-chip button { width: 32px; height: 32px; } }
+
+/* Tabs: a bar of pages above the panels (the filters stay above it); the open tab's panels are the only ones loaded */
+.rtabs { display: flex; gap: 2px; overflow-x: auto; margin: 0 0 14px; border-bottom: 1px solid var(--border); scrollbar-width: thin; }
+.rtabs [role="tab"] { flex: none; margin-bottom: -1px; padding: 9px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-2); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.rtabs [role="tab"]:hover { background: var(--surface-2); color: var(--ink); }
+.rtabs [role="tab"][aria-selected="true"] { border-bottom-color: var(--focus); color: var(--ink); font-weight: 620; }
+.rtabs [role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.rgrid[hidden] { display: none; }
+@media (max-width: 480px) { .rtabs [role="tab"] { min-height: 44px; } }

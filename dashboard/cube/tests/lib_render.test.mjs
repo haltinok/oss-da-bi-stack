@@ -5,7 +5,7 @@ import { test } from "node:test";
 import {
   appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
-  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, pivotShare, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
+  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, pivotShare, normalizeTabs, pickTab, tabPanelIds, tabKeyTarget, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
 import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
 import { stringsFor, translations, langOf, uiLocale, readLang, writeLang } from "../../static/render/strings.js";
@@ -660,4 +660,39 @@ test("every string table has the words the language switch and the page chrome n
   assert.equal(translations.tr.sparkAria("Gelir", "ay", "Haz 2021", "$1"), "Gelir, ay bazında, son Haz 2021: $1");
   assert.equal(translations.en.seriesAria("A, B", "month"), "A, B by month");
   assert.equal(stringsFor("tr-TR").signedInAs("admin", "admin"), "admin olarak oturum açıldı, rol: admin");
+});
+
+// ---- tabs
+test("normalizeTabs: a tabbed file's tabs as they are, a plain layout as one untitled tab", () => {
+  const tabs = [{ id: "a", title: "A", layout: [[{ panel: "x", span: 12 }]] }, { id: "b", title: "B", layout: [[{ panel: "y", span: 6 }, { panel: "z", span: 6 }]] }];
+  assert.deepEqual(normalizeTabs({ tabs }), tabs);
+  const layout = [[{ panel: "x", span: 12 }]];
+  assert.deepEqual(normalizeTabs({ layout }), [{ id: "main", title: "", layout }]);
+  assert.deepEqual(normalizeTabs({ layout, tabs: [] }), [{ id: "main", title: "", layout }], "an empty list of tabs is no tabs");
+});
+
+test("pickTab opens the tab the address names, else the first; an unknown name is not an error", () => {
+  const tabs = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  assert.equal(pickTab(tabs, "b"), "b");
+  assert.equal(pickTab(tabs, "nope"), "a");
+  assert.equal(pickTab(tabs, null), "a");
+  assert.equal(pickTab(tabs, undefined), "a");
+  assert.equal(pickTab(tabs, ""), "a");
+  assert.equal(pickTab([{ id: "main" }], "main"), "main");
+});
+
+test("tabPanelIds lists a tab's panels in layout order", () => {
+  assert.deepEqual(tabPanelIds({ layout: [[{ panel: "kpis", span: 12 }], [{ panel: "trend", span: 8 }, { panel: "lines", span: 4 }]] }), ["kpis", "trend", "lines"]);
+});
+
+test("tabKeyTarget: arrows move and wrap, Home and End jump, any other key is not ours", () => {
+  assert.equal(tabKeyTarget("ArrowRight", 0, 3), 1);
+  assert.equal(tabKeyTarget("ArrowRight", 2, 3), 0, "wraps");
+  assert.equal(tabKeyTarget("ArrowLeft", 0, 3), 2, "wraps");
+  assert.equal(tabKeyTarget("ArrowLeft", 2, 3), 1);
+  assert.equal(tabKeyTarget("ArrowDown", 0, 2), 1);
+  assert.equal(tabKeyTarget("ArrowUp", 0, 2), 1);
+  assert.equal(tabKeyTarget("Home", 2, 3), 0);
+  assert.equal(tabKeyTarget("End", 0, 3), 2);
+  for (const k of ["Enter", " ", "Tab", "a", "Escape", "PageDown"]) assert.equal(tabKeyTarget(k, 1, 3), null, k);
 });

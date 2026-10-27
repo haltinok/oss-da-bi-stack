@@ -32,7 +32,7 @@ def check(ok, msg):
     return ok
 
 
-def open_page(browser, path, dataset="live", width=1440, theme="light", init=""):
+def open_page(browser, path, dataset="live", width=1440, theme="light", init="", routes=()):
     ctx = browser.new_context(viewport={"width": width, "height": 1500}, accept_downloads=True)
     ctx.add_init_script(ms.SEED + f'try {{ localStorage.setItem("theme", "{theme}"); localStorage.setItem("dataset", "{dataset}"); }} catch (e) {{}}' + init)
     page = ctx.new_page()
@@ -41,6 +41,8 @@ def open_page(browser, path, dataset="live", width=1440, theme="light", init="")
     page.on("console", lambda m: page.problems.append(f"console.{m.type}: {m.text}") if m.type in ("error", "warning") else None)
     page.on("request", lambda r: page.queries.append(r.url) if "/cube-" in r.url and "/load" in r.url else None)
     page.on("requestfailed", lambda r: page.aborted.append(r.url) if "ERR_ABORTED" in (r.failure or "") and "/cube-" in r.url else None)
+    for pattern, handler in routes:                      # registered before the page opens, so its first load already sees them
+        page.route(pattern, handler)
     page.goto(f"{BASE}{path}")
     return ctx, page
 
@@ -388,25 +390,135 @@ with sync_playwright() as p:
         ctx.close()
     ms.reset_saved()
 
-    # ---- a dashboard written with tabs (patched into the compiled file) is not broken by the page: until the page draws a tab bar, its tabs sit one below the other
+    # ---- tabs (patched into the compiled dashboard): a bar of pages, only the open tab's panels are loaded, the tab and the filters are in the address
+    def tab_routes(split=2):
+        def handler(route):
+            spec = json.loads(route.fetch().text())
+            rows = spec.pop("layout")
+            spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:split]}, {"id": "details", "title": "Details", "layout": rows[split:]}]
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+        return [("**/dashboards/sales-overview.json", handler)]
+    TOP, LINES = ["products.name"], ["internet_sales.order_number", "internet_sales.order_date", "territories.country"]
+    asked = lambda pg, dims: [q for q in sent(pg) if q.get("dimensions") == dims]  # noqa: E731
+    selected = lambda pg: pg.eval_on_selector_all('[role="tab"][aria-selected="true"]', "ns => ns.map(n => n.dataset.tab)")  # noqa: E731
     ctx, page = open_page(browser, "/d/sales-overview")
     settled(page)
     plain = page.eval_on_selector_all("[data-panel]", "ns => ns.map(n => n.dataset.panel)")
+    check(page.locator('[role="tablist"]').count() == 0 and page.locator('[role="tabpanel"]').count() == 0, "a dashboard with a plain layout has no tab bar")
     ctx.close()
-    def as_tabs(route):
-        spec = json.loads(route.fetch().text())
-        rows = spec.pop("layout")
-        spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:1]}, {"id": "details", "title": "Details", "layout": rows[1:]}]
-        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
-    ctx, page = open_page(browser, "/d/sales-overview")
-    page.route("**/dashboards/sales-overview.json", as_tabs)
+    ctx, page = open_page(browser, "/d/sales-overview", routes=tab_routes())
+    settled(page)
+    check(page.locator('[role="tablist"] [role="tab"]').all_inner_texts() == ["Overview", "Details"] and page.get_attribute('[role="tablist"]', "aria-label") == "Tabs", "a tabbed dashboard has a tab bar with its titles, named for screen readers")
+    check(page.eval_on_selector_all("[data-panel]", "ns => ns.map(n => n.dataset.panel)") == plain, "every panel is in the page, in the order of its tabs")
+    check(selected(page) == ["overview"] and page.locator("#tabpanel-overview").is_visible() and page.locator("#tabpanel-details").is_hidden(), "it opens on the first tab")
+    check(page.get_attribute("#tab-overview", "aria-controls") == "tabpanel-overview" and page.get_attribute("#tabpanel-details", "aria-labelledby") == "tab-details" and page.get_attribute("#tabpanel-details", "role") == "tabpanel", "tabs and tab panels point at each other (tablist semantics)")
+    check(page.get_attribute("#tab-overview", "tabindex") == "0" and page.get_attribute("#tab-details", "tabindex") == "-1", "only the open tab is in the tab order (the arrows move between tabs)")
+    check(len(asked(page, TOP)) == 0 and len(asked(page, LINES)) >= 1 and page.locator(".kpi").count() >= 5, "only the open tab's panels asked Cube for data")
+    page.click("#tab-details")
+    settled(page)
+    check(selected(page) == ["details"] and page.locator("#tabpanel-overview").is_hidden() and page.locator("#tabpanel-details").is_visible() and "tab=details" in page.url, "choosing a tab shows it and writes it into the address")
+    check(len(asked(page, TOP)) >= 1 and page.locator('[data-panel="top"] .rrow').count() == 5, "and loads its panels, which draw")
+    n = len(sent(page))
+    page.click("#tab-overview")
+    settled(page)
+    check("tab=" not in page.url and selected(page) == ["overview"], "the first tab is the default: it leaves the address clean")
+    page.click("#tab-details")
+    settled(page)
+    check(len(sent(page)) == n, "going back and forth sends nothing: a tab that was loaded is kept")
+    page.evaluate("window.__render.tabLoadedAt.set('overview', 0)")          # as if it had been loaded long ago
+    page.click("#tab-overview")
+    settled(page)
+    check(len(sent(page)) > n and len(asked(page, LINES)) >= 2, "a tab whose data is older than the refresh interval is loaded again when it is opened")
+    check(not page.problems, f"no console errors, hidden panels included {page.problems[:2]}")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?fy=2021", routes=tab_routes())
+    settled(page)
+    page.click("#tab-details")
+    settled(page)
+    check(any(f.get("member") == "dates.fiscal_year" and f.get("values") == ["2021"] for f in asked(page, TOP)[-1].get("filters", [])), "a filter chosen before a tab was opened applies to it on its first load")
+    page.select_option('select[aria-label="Fiscal year"]', "2020")
+    settled(page)
+    before = len(asked(page, LINES))
+    page.click("#tab-overview")
+    settled(page)
+    last = asked(page, LINES)[-1]
+    check(len(asked(page, LINES)) > before and any(f.get("member") == "dates.fiscal_year" and f.get("values") == ["2020"] for f in last.get("filters", [])), "a filter changed on another tab is applied when you come back: a tab never shows numbers for the old filter")
+    check("fy=2020" in page.url, "and the filter is in the address")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?tab=details&fy=2021", routes=tab_routes())
+    settled(page)
+    check(selected(page) == ["details"] and len(asked(page, LINES)) == 0 and len(asked(page, TOP)) >= 1, "an address that names a tab opens on it and loads only that tab")
     page.reload()
     settled(page)
-    tabbed_ids = page.eval_on_selector_all("[data-panel]", "ns => ns.map(n => n.dataset.panel)")
-    check(len(plain) >= 6 and tabbed_ids == plain, f"a tabbed dashboard draws every panel, in the order of its tabs ({len(tabbed_ids)} panels)")
-    check(page.locator(".panel-error").count() == 0 and page.locator(".kpi").count() >= 5, "and every panel loads")
-    check(not page.problems, f"with no console errors {page.problems[:2]}")
+    check(selected(page) == ["details"] and "fy=2021" in page.url, "a reload keeps the tab and the filter")
     ctx.close()
+    ctx, page = open_page(browser, "/d/sales-overview?tab=nope", routes=tab_routes())
+    settled(page)
+    check(selected(page) == ["overview"] and not page.problems, f"an unknown tab in the address falls back to the first one, quietly {page.problems[:2]}")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?period=2021-03-01..2021-03-31", routes=tab_routes())
+    settled(page)
+    page.click("#tab-details")
+    settled(page)
+    check(page.locator("#period-bar").is_visible() and asked(page, TOP)[-1]["timeDimensions"][0]["dateRange"] == ["2021-03-01", "2021-03-31"], "the drill-down period is shared: its chip stays above the tabs and the other tab follows it")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=tab_routes())
+    settled(page)
+    page.focus("#tab-overview")
+    page.keyboard.press("ArrowRight")
+    settled(page)
+    check(selected(page) == ["details"] and page.evaluate("document.activeElement.id") == "tab-details" and page.get_attribute("#tab-details", "tabindex") == "0", "the right arrow moves to the next tab and opens it, the focus going with it")
+    page.keyboard.press("ArrowRight")
+    settled(page)
+    check(selected(page) == ["overview"], "and wraps round")
+    page.keyboard.press("End")
+    settled(page)
+    check(selected(page) == ["details"], "End goes to the last tab")
+    page.keyboard.press("Home")
+    settled(page)
+    check(selected(page) == ["overview"] and page.evaluate("document.activeElement.id") == "tab-overview", "Home goes to the first")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=tab_routes())
+    settled(page)
+    with page.expect_download(timeout=20000) as dl:
+        page.click("#export-all")
+    workbook = zipfile.ZipFile(io.BytesIO(pathlib.Path(dl.value.path()).read_bytes())).read("xl/workbook.xml").decode()
+    check("Top 10 products" in workbook and "Latest orders" in workbook and len(asked(page, TOP)) >= 1, "Export all takes every tab, loading the one that was never opened first")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?tab=details", routes=tab_routes())
+    settled(page)
+    with page.expect_navigation():
+        page.click("#lang-switch [data-lang=tr]")
+    page.wait_for_selector('[role="tablist"]', timeout=20000)
+    check("tab=details" in page.url and selected(page) == ["details"] and page.get_attribute('[role="tablist"]', "aria-label") == "Sekmeler", "choosing Turkish keeps the tab, and the bar is named in Turkish")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview", width=390, routes=tab_routes())
+    settled(page)
+    b = page.locator("#tab-overview").bounding_box()
+    check(b["height"] >= 44 and page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), f"on a phone the tabs are {b['height']:.0f}px high and the page does not scroll sideways")
+    ctx.close()
+
+    tab_contrast = """() => {
+      const num = (c) => { const v = c.match(/[\\d.]+/g).map(Number); return c.startsWith('color(') ? [v[0] * 255, v[1] * 255, v[2] * 255, v[3] ?? 1] : v; };
+      const over = (fg, bg) => { const a = fg[3] ?? 1; return [0, 1, 2].map((i) => fg[i] * a + bg[i] * (1 - a)); };
+      const lum = ([r, g, b]) => { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const page = num(getComputedStyle(document.body).backgroundColor);
+      const ratio = (el) => { const cs = getComputedStyle(el); const bg = over(num(cs.backgroundColor), page), fg = num(cs.color); const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+      return { open: ratio(document.querySelector('#tab-overview')), other: ratio(document.querySelector('#tab-details')) };
+    }"""
+    for theme in ("light", "dark"):
+        ctx, page = open_page(browser, "/d/sales-overview", theme=theme, routes=tab_routes())
+        settled(page)
+        got = page.evaluate(tab_contrast)
+        check(min(got.values()) >= 4.5, f"the tab titles keep 4.5:1 text contrast in the {theme} theme (open {got['open']:.1f}, the other {got['other']:.1f})")
+        ctx.close()
 
     # ---- a whole dashboard
     ctx, page = open_page(browser, "/d/sales-overview")
