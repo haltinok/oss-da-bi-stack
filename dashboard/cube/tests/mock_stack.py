@@ -114,6 +114,19 @@ def reset_saved():
     _builder_cache.pop("saved_store", None)
 
 
+def seed_saved(title, description, *, owner="admin", role="admin", visibility="private", shared_roles=()):
+    """Put a saved dashboard in the in-memory store as `owner`, without going through the page (for tests of the list)."""
+    import re
+    builder_answer("/info", {})                              # makes sure the builder pieces (catalog, checks) are loaded
+    from builder import saved
+    from builder.store import MemoryStore
+    store = _builder_cache.setdefault("saved_store", MemoryStore())
+    text = (ROOT / "dashboards" / "sales-overview.yml").read_text()
+    line = f"description: {json.dumps(description, ensure_ascii=False)}"
+    text = re.sub(r"(?m)^description: .*$", lambda _: line, text, count=1)      # a function: the text may hold backslashes
+    return saved.save_new(store, _builder_cache["catalog"], saved.Who(name=owner, role=role), text, title=title, visibility=visibility, shared_roles=list(shared_roles))
+
+
 def saved_answer(path, body, method, c):
     """The saved-dashboard endpoints on an in-memory store, through the same rules (builder/saved.py) the service uses."""
     from builder import saved

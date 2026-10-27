@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { createFormat, ratio } from "../../static/lib/format.js";
 import { arcPath, barPath, niceTicks, pieSlices, shade, squarify, stackBarHtml } from "../../static/lib/charts.js";
 import { buildXlsx } from "../../static/lib/xlsx.js";
+import { fold, words, matches, filterItems } from "../../static/lib/search.js";
 
 test("en-US / USD formats as the dashboard always did", () => {
   const f = createFormat({ locale: "en-US", currency: "USD" });
@@ -116,4 +117,55 @@ test("pieSlices keeps the largest slices, groups the rest, and drops zero and ne
   assert.deepEqual(grouped.map((s) => s.label), ["b", "d", "Other"]);
   assert.deepEqual(grouped[2], { label: "Other", value: 15, other: true, count: 2 });
   assert.deepEqual(pieSlices([], 5, "Other"), []);
+});
+
+// ---- search
+test("fold ignores case and accents with Turkish rules, and dotless i is i", () => {
+  assert.equal(fold("Satış"), "satis");
+  assert.equal(fold("SATIŞ"), "satis");
+  assert.equal(fold("İstanbul ışık"), "istanbul isik");
+  assert.equal(fold("ISI haritası"), "isi haritasi", "capital I is dotless in Turkish and still meets i");
+  assert.equal(fold("Çok güzel öğrenci ÜRÜN"), "cok guzel ogrenci urun");
+  assert.equal(fold("Café"), "cafe");
+  assert.equal(fold(null), "");
+  assert.equal(fold(undefined), "");
+  assert.equal(fold(42), "42");
+});
+
+test("words splits a query on any spaces and drops the empty ones", () => {
+  assert.deepEqual(words("  Revenue   by\tregion "), ["revenue", "by", "region"]);
+  assert.deepEqual(words("   "), []);
+  assert.deepEqual(words(""), []);
+});
+
+test("matches needs every word, in any order, anywhere in the text; an empty query matches everything", () => {
+  assert.ok(matches("Sales overview: revenue and margin", "margin sales"));
+  assert.ok(matches("Sales overview", "OVERVIEW"));
+  assert.ok(matches("Sales overview", "ales ove"), "a part of a word is enough");
+  assert.ok(!matches("Sales overview", "sales inventory"));
+  assert.ok(matches("anything", ""));
+  assert.ok(matches("anything", "   "));
+  assert.ok(matches("Envanter sağlığı", "saglig"), "ğ and ı fold");
+  assert.ok(!matches("Envanter sağlığı", "saglik"), "no stemming: sağlık and sağlığı differ by a letter, as in Turkish itself");
+  assert.ok(matches("Satış panosu", "SATIS"));
+  assert.ok(matches("Ürün stok", "urun"));
+});
+
+test("a query is plain text: pattern characters mean themselves", () => {
+  assert.ok(!matches("Sales overview", "("));
+  assert.ok(!matches("Sales overview", ".*"));
+  assert.ok(matches("Margin (%) by region", "(%)"));
+  assert.ok(matches("a+b", "a+b"));
+  assert.ok(!matches("aab", "a+b"));
+  assert.ok(!matches("Sales", "\\"));
+});
+
+test("filterItems keeps the matching items in their order, over named fields or functions of the item", () => {
+  const items = [{ title: "Sales overview", description: "Revenue by region", owner: "olga" }, { title: "Stok raporu", description: "Ürün", owner: "ahmet" }, { title: "Pivot gallery", description: "", owner: null }];
+  assert.deepEqual(filterItems(items, "olga", ["title", "owner"]).map((i) => i.title), ["Sales overview"]);
+  assert.deepEqual(filterItems(items, "olga", ["title"]).map((i) => i.title), [], "only the fields it was told to look in");
+  assert.deepEqual(filterItems(items, "urun", ["title", "description"]).map((i) => i.title), ["Stok raporu"]);
+  assert.deepEqual(filterItems(items, "", ["title"]), items, "no query, everything");
+  assert.deepEqual(filterItems(items, "pivot", ["title", (i) => i.owner]).map((i) => i.title), ["Pivot gallery"], "a null field does not break it");
+  assert.deepEqual(filterItems(items, "o", [(i) => i.title.toUpperCase()]).map((i) => i.title), ["Sales overview", "Stok raporu", "Pivot gallery"]);
 });

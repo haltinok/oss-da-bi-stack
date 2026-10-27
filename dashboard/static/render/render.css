@@ -135,3 +135,12 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .vis .ok { color: var(--good, #1a7f4b); } .vis .no { color: var(--bad, #c0392b); }
 .field-l { display: grid; gap: 3px; font-size: 12.5px; color: var(--muted); }
 .field-l input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+
+/* The search above the lists on /d/ */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.list-search { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 14px; }
+.list-search input { flex: 1 1 280px; max-width: 520px; height: 36px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.list-search input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.list-search input::-webkit-search-cancel-button { display: none; }      /* our own Clear button, the same in every browser */
+.dlist a[hidden] { display: none; }
+@media (max-width: 480px) { .list-search input { height: 44px; } .list-search .icon-btn { min-width: 44px; min-height: 44px; } }
