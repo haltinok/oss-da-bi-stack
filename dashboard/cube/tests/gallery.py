@@ -32,11 +32,15 @@ SHOTS = [
     ("pivot-heat.png", "pivot-gallery", "admin", '[data-panel="heatmap"]', 1280),
     ("pivot-measures.png", "pivot-gallery", "admin", '[data-panel="sidebyside"]', 1280),
     ("pivot-share.png", "pivot-gallery", "admin", '[data-panel="share"]', 1280),
+    ("list.png", "", "admin", "#main", 1100, lambda page: (page.click("#group-switch"), page.evaluate("document.querySelector('#builder-host').hidden = true"))),          # the list page: tags, the tag bar, grouped by the first tag
     ("pie.png", "sales-drilldown", "admin", '[data-panel="donut"]', 1280),
     ("drill.png", "sales-drilldown", "admin", '[data-panel="trend"]', 1280, lambda page: page.locator('[data-panel="trend"] .hit').nth(1).click()),
     ("phone.png", "regional-sales", "rep", None, 390),
 ]
 ms.start()
+ms.seed_saved("Quarterly review", "Numbers for the board", tags=["management", "sales"])      # saved dashboards for the list page's picture
+ms.seed_saved("Stok raporu", "Ürün stok durumu", tags=["stok"])
+ms.seed_saved("Loose notes", "No labels yet", tags=[])
 ms.FAKE["on"] = True
 ms.BENCH["on"] = False
 with sync_playwright() as p:
@@ -47,7 +51,11 @@ with sync_playwright() as p:
         ctx.add_init_script(ms.SEED + 'try { localStorage.setItem("theme", "light"); localStorage.setItem("dataset", "live"); } catch (e) {}')
         page = ctx.new_page()
         page.goto(f"http://localhost:{ms.PORT}/d/{dash}")
-        page.wait_for_function("document.querySelector('#live-text')?.textContent.match(/Updated|Güncellendi/)", timeout=30000)
+        if dash:
+            page.wait_for_function("document.querySelector('#live-text')?.textContent.match(/Updated|Güncellendi/)", timeout=30000)
+        else:                                                    # the list page has no live status: wait for its tag bar and saved lists
+            page.wait_for_selector("#tag-chips button", timeout=30000)
+            page.wait_for_selector(".saved", timeout=30000)
         page.wait_for_timeout(1200)
         if act:
             act[0](page)

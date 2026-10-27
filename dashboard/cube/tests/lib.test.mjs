@@ -6,6 +6,7 @@ import { createFormat, ratio } from "../../static/lib/format.js";
 import { arcPath, barPath, niceTicks, pieSlices, shade, squarify, stackBarHtml } from "../../static/lib/charts.js";
 import { buildXlsx } from "../../static/lib/xlsx.js";
 import { fold, words, matches, filterItems } from "../../static/lib/search.js";
+import { tagsOf, withTags, tagCounts, groupByFirstTag, parseListUrl, listSearch, chipsHtml, MAX_SELECTED } from "../../static/lib/tags.js";
 
 test("en-US / USD formats as the dashboard always did", () => {
   const f = createFormat({ locale: "en-US", currency: "USD" });
@@ -168,4 +169,64 @@ test("filterItems keeps the matching items in their order, over named fields or 
   assert.deepEqual(filterItems(items, "", ["title"]), items, "no query, everything");
   assert.deepEqual(filterItems(items, "pivot", ["title", (i) => i.owner]).map((i) => i.title), ["Pivot gallery"], "a null field does not break it");
   assert.deepEqual(filterItems(items, "o", [(i) => i.title.toUpperCase()]).map((i) => i.title), ["Sales overview", "Stok raporu", "Pivot gallery"]);
+});
+
+// ---- tags on the list
+const dash = (title, tags) => ({ title, tags });
+const sample = [dash("Sales overview", ["sales"]), dash("Sales drill-down", ["sales"]), dash("Envanter", ["envanter", "stok"]), dash("Gallery", ["sales", "reference"]), dash("Plain", []), { title: "No key" }];
+
+test("tagsOf reads the tags of an item and shrugs at anything else", () => {
+  assert.deepEqual(tagsOf(dash("x", ["a", "b"])), ["a", "b"]);
+  assert.deepEqual(tagsOf({ title: "x" }), []);
+  assert.deepEqual(tagsOf({ tags: "sales" }), []);
+  assert.deepEqual(tagsOf({ tags: ["a", 5, null, "b"] }), ["a", "b"]);
+  assert.deepEqual(tagsOf(null), []);
+  assert.deepEqual(tagsOf(undefined), []);
+});
+
+test("withTags keeps the items that carry every selected tag; no selection keeps all", () => {
+  assert.deepEqual(withTags(sample, []), sample);
+  assert.deepEqual(withTags(sample, ["sales"]).map((d) => d.title), ["Sales overview", "Sales drill-down", "Gallery"]);
+  assert.deepEqual(withTags(sample, ["sales", "reference"]).map((d) => d.title), ["Gallery"], "AND, not OR");
+  assert.deepEqual(withTags(sample, ["sales", "stok"]), [], "nothing carries both");
+  assert.deepEqual(withTags(sample, ["nope"]), []);
+});
+
+test("tagCounts: most used first, then Turkish order; selected tags are listed even when no item has them", () => {
+  assert.deepEqual(tagCounts(sample), [{ tag: "sales", count: 3 }, { tag: "envanter", count: 1 }, { tag: "reference", count: 1 }, { tag: "stok", count: 1 }]);
+  assert.deepEqual(tagCounts(sample, ["nope"]).at(-1), { tag: "nope", count: 0 });
+  assert.deepEqual(tagCounts([dash("a", ["çay", "cam", "şeker", "sade", "ısı", "iş"])]).map((c) => c.tag), ["cam", "çay", "ısı", "iş", "sade", "şeker"], "Turkish collation");
+  assert.deepEqual(tagCounts([dash("a", ["x", "x"])]), [{ tag: "x", count: 1 }], "a tag twice on one item counts once");
+  assert.deepEqual(tagCounts([]), []);
+});
+
+test("groupByFirstTag: one group per first tag, in Turkish order, the untagged last, every item once", () => {
+  const groups = groupByFirstTag(sample);
+  assert.deepEqual(groups.map((g) => g.tag), ["envanter", "sales", null]);
+  assert.deepEqual(groups.map((g) => g.items.map((d) => d.title)), [["Envanter"], ["Sales overview", "Sales drill-down", "Gallery"], ["Plain", "No key"]]);
+  assert.equal(groups.flatMap((g) => g.items).length, sample.length, "nothing lost, nothing repeated");
+  assert.deepEqual(groupByFirstTag([]), []);
+  assert.deepEqual(groupByFirstTag([dash("a", ["z"]), dash("b", ["a", "z"])]).map((g) => [g.tag, g.items.length]), [["a", 1], ["z", 1]], "the first tag decides, not the others");
+});
+
+test("the list's state round-trips through the URL, and odd URLs are cleaned, not rejected", () => {
+  assert.deepEqual(parseListUrl("?q=drill&tag=sales&tag=reference"), { q: "drill", tags: ["sales", "reference"] });
+  assert.equal(listSearch("drill", ["sales", "reference"]), "?q=drill&tag=sales&tag=reference");
+  assert.equal(listSearch("", []), "");
+  assert.equal(listSearch("  ", []), "");
+  assert.deepEqual(parseListUrl(listSearch("satış & ürün", ["çok güzel"])), { q: "satış & ürün", tags: ["çok güzel"] }, "special characters survive");
+  assert.deepEqual(parseListUrl(""), { q: "", tags: [] });
+  assert.deepEqual(parseListUrl(undefined), { q: "", tags: [] });
+  assert.deepEqual(parseListUrl("?tag=Sales&tag=sales&tag=%20SALES%20"), { q: "", tags: ["sales"] }, "trimmed, lower case, no repeats");
+  assert.deepEqual(parseListUrl("?tag=&tag=" + "x".repeat(25)), { q: "", tags: [] }, "empty and too long are dropped");
+  assert.equal(parseListUrl("?" + Array.from({ length: 9 }, (_, i) => `tag=t${i}`).join("&")).tags.length, MAX_SELECTED, "no more than a dashboard can carry");
+  assert.equal(parseListUrl("?q=" + "a".repeat(500)).q.length, 200);
+  assert.deepEqual(parseListUrl("?tag=I").tags, ["ı"], "lower case follows Turkish rules, as the validator's tags would be written");
+});
+
+test("chipsHtml makes escaped buttons that say whether they are pressed and carry their tag", () => {
+  const html = chipsHtml(["sales", "<b>"], ["sales"], (t) => `Filter by ${t}`);
+  assert.match(html, /<button type="button" class="tag-chip" data-tag="sales" aria-pressed="true" aria-label="Filter by sales">sales<\/button>/);
+  assert.match(html, /data-tag="&#60;b&#62;" aria-pressed="false" aria-label="Filter by &#60;b&#62;">&#60;b&#62;<\/button>/);
+  assert.equal(chipsHtml([], [], (t) => t), "");
 });

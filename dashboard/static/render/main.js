@@ -4,13 +4,13 @@
 import { createCubeClient } from "/cube/cube-client.mjs";
 import { $, el, esc } from "../lib/dom.js";
 import { createFormat } from "../lib/format.js";
-import { filterItems } from "../lib/search.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
 import { formatPeriod, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, queriesPerCube, runAll } from "./plan.js";
 import { stringsFor } from "./strings.js";
-import { createBuilderApi, drafts, mountDraftBar, mountPromptBox, mountSavedBar, mountSavedList, mountSemantic } from "./builder.js";
+import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
+import { mountList } from "./list.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -95,46 +95,7 @@ async function showList() {
   $("#export-label").textContent = t.exportAll;
   setStatus(`<strong>${esc(t.signedIn)}</strong>`);
   const api = createBuilderApi({ stack: C, client, t });
-  const search = `<div class="list-search" role="search"><label for="list-q" class="sr-only">${esc(t.searchLabel)}</label>
-    <input id="list-q" type="search" autocomplete="off" spellcheck="false" placeholder="${esc(t.searchPlaceholder)}">
-    <button type="button" id="list-q-clear" class="icon-btn" aria-label="${esc(t.searchClear)}" title="${esc(t.searchClear)}" hidden>✕</button>
-    <span id="list-q-status" class="hint" role="status" aria-live="polite"></span></div><div id="list-q-none" class="empty" hidden></div>`;
-  $("#main").innerHTML = (api.available ? `<div id="builder-host"></div>` : "") + search + (api.available ? `<div id="drafts-host" class="drafts-host" hidden></div>` : "") + (mine.length
-    ? `<div class="dlist">${mine.map((d) => `<a href="/d/${encodeURIComponent(d.id)}" data-id="${esc(d.id)}"><div class="card"><h2>${esc(d.title)}</h2><p>${esc(d.description)}</p></div></a>`).join("")}</div>`
-    : `<div class="empty">${esc(t.noDashboards)}</div>`) + (api.available ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
-
-  // ---- search: filters the built dashboards and the saved lists as you type, in the browser (nothing is asked of the server)
-  const box = $("#list-q"), clear = $("#list-q-clear"), status = $("#list-q-status"), none = $("#list-q-none");
-  let query = "", saved = null;
-  const counts = { built: { shown: mine.length, total: mine.length }, saved: { shown: 0, total: 0 } };
-  function showStatus() {
-    const q = query.trim(), shown = counts.built.shown + counts.saved.shown, total = counts.built.total + counts.saved.total;
-    status.textContent = q ? t.searchCount(shown, total) : "";
-    none.hidden = !(q && shown === 0 && total > 0);
-    if (!none.hidden) none.textContent = t.searchNone(q);
-    clear.hidden = !q;
-  }
-  function apply() {
-    const keep = new Set(filterItems(mine, query, ["title", "description"]).map((d) => d.id));
-    document.querySelectorAll(".dlist > a").forEach((a) => { a.hidden = !keep.has(a.dataset.id); });
-    counts.built = { shown: keep.size, total: mine.length };
-    saved?.render();                                     // the saved lists draw themselves again for this query (and report their count)
-    showStatus();
-  }
-  const setQuery = (q) => { query = q; box.value = q; apply(); };
-  box.addEventListener("input", () => { query = box.value; apply(); });
-  box.addEventListener("keydown", (e) => { if (e.key === "Escape" && box.value) { e.preventDefault(); setQuery(""); } });
-  clear.addEventListener("click", () => { setQuery(""); box.focus(); });
-  document.addEventListener("keydown", (e) => {          // "/" jumps to the search, unless you are typing somewhere
-    const on = document.activeElement;
-    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(on?.tagName) || on?.isContentEditable) return;
-    e.preventDefault();
-    box.focus();
-  });
-  if (!api.available) return;
-  mountPromptBox($("#builder-host"), api, t);
-  mountSavedList($("#drafts-host"), api, t, { query: () => query, onCount: (c) => { counts.saved = c; showStatus(); } }).then((h) => { saved = h; });
-  $("#sem-wrap").addEventListener("toggle", () => { if ($("#sem-wrap").open && !$("#sem-host").dataset.ready) { $("#sem-host").dataset.ready = "1"; mountSemantic($("#sem-host"), api, t); } });
+  mountList({ main: $("#main"), mine, api, t });
 }
 
 // ------------------------------------------------------------------ one dashboard

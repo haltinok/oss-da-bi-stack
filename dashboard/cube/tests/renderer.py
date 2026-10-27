@@ -131,7 +131,7 @@ with sync_playwright() as p:
     page.wait_for_selector(".dlist a", timeout=20000)
     page.wait_for_selector(".saved", timeout=20000)
     box, status = "#list-q", "#list-q-status"
-    built = lambda: page.locator(".dlist > a:not([hidden])").count()  # noqa: E731
+    built = lambda: page.locator(".dlist .dcard").count()  # noqa: E731
     savedn = lambda: page.locator(".saved").count()  # noqa: E731
     check(built() == 4 and savedn() == 5 and page.inner_text(status) == "" and not page.locator("#list-q-clear").is_visible(), "the list starts whole: 4 built and 5 saved, no count, no Clear")
     check(page.get_by_label("Search dashboards").count() == 1 and page.get_attribute(box, "type") == "search", "the search field has an accessible name")
@@ -139,14 +139,14 @@ with sync_playwright() as p:
     page.on("request", lambda r: requests.append(r.url))
     page.fill(box, "satis")
     check(savedn() == 1 and "Satış panosu" in page.inner_text(".saved"), "\"satis\" finds the saved \"Satış panosu\" (Turkish letters fold)")
-    check(built() == 1 and "Envanter" in page.inner_text(".dlist > a:not([hidden])"), "and the built \"Envanter sağlığı\", whose description says \"satış panosundaki\"")
+    check(built() == 1 and "Envanter" in page.inner_text(".dlist .dcard"), "and the built \"Envanter sağlığı\", whose description says \"satış panosundaki\"")
     check(page.inner_text(status) == "2 of 9" and page.locator("#list-q-clear").is_visible(), "the count says 2 of 9 and Clear appears")
     page.fill(box, "sales")
     check(built() == 3 and savedn() == 0 and "(0 of 4)" in page.inner_text("#drafts-host") and "No saved dashboard matches" in page.inner_text("#drafts-host") and page.inner_text(status) == "3 of 9", "\"sales\" finds 3 built dashboards (two by title, the gallery by description); the saved list says none match, with its own count")
     page.fill(box, "olga")
     check(built() == 0 and savedn() == 1 and "Shared with you" in page.inner_text("#drafts-host") and "(1 of 1)" in page.inner_text("#drafts-host"), "the owner's name is searched: a dashboard shared by Olga")
     page.fill(box, "SAGLIG")
-    check(built() == 1 and "Envanter" in page.inner_text(".dlist > a:not([hidden])"), "\"SAGLIG\" finds \"Envanter sağlığı\" (capitals, ğ and ı)")
+    check(built() == 1 and "Envanter" in page.inner_text(".dlist .dcard"), "\"SAGLIG\" finds \"Envanter sağlığı\" (capitals, ğ and ı)")
     page.fill(box, "board QUARTERLY")
     check(savedn() == 1 and "Quarterly review" in page.inner_text(".saved"), "several words, in any order, across title and description")
     check(built() == 0, "and no built dashboard matches those words")
@@ -181,6 +181,130 @@ with sync_playwright() as p:
     page.wait_for_selector(".dlist a", timeout=20000)
     check(page.locator(box).bounding_box()["height"] >= 44 and page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "on a phone the field is 44px high and the page does not scroll sideways")
     ctx.close()
+    ms.reset_saved()
+
+    # ---- tags on the list: chips, the tag bar with counts, filters (AND), grouping by the first tag, the URL, the switch's memory
+    ms.reset_saved()
+    ms.seed_saved("Quarterly review", "Numbers for the board", tags=["management", "sales"])
+    ms.seed_saved("Satış panosu", "Bölge ve kategori", tags=["satış", "management"])
+    ms.seed_saved("Stok raporu", "Ürün stok durumu", tags=["stok"])
+    ms.seed_saved("Loose notes", "No labels at all", tags=[])
+    ms.seed_saved("Regional deep dive", "Shared by Olga", owner="olga", visibility="everyone", tags=["sales", "regional"])
+    chip = lambda tag: f'#tag-chips button[data-tag="{tag}"]'  # noqa: E731
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".saved", timeout=20000)
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    builtn = lambda: page.locator("#built-host .dcard").count()  # noqa: E731
+    savedn = lambda: page.locator(".saved").count()  # noqa: E731
+    bar_tags = lambda: page.eval_on_selector_all("#tag-chips button", "ns => ns.map(n => n.dataset.tag)")  # noqa: E731
+    status = "#list-q-status"
+    check(bar_tags() == ["sales", "management", "stok", "envanter", "reference", "regional", "satış"], f"the tag bar lists every tag, most used first, then in Turkish order ({bar_tags()})")
+    check(page.inner_text(chip("sales")).replace("\n", " ") == "sales 5" and page.get_attribute(chip("sales"), "aria-label") == "Filter by the tag sales (5)", "each chip has its count, and a name that says what it does")
+    check(page.locator('.dcard[data-id="sales-overview"] .tag-chip').inner_text() == "sales" and page.locator('.saved .tag-chip').count() >= 5, "cards carry their tags as chips, built and saved")
+    check(builtn() == 4 and savedn() == 5 and page.inner_text(status) == "", "nothing is filtered at first")
+    requests = []
+    page.on("request", lambda r: requests.append(r.url))
+    page.click(chip("sales"))
+    check(page.get_attribute(chip("sales"), "aria-pressed") == "true" and "tag=sales" in page.url and builtn() == 3 and savedn() == 2 and page.inner_text(status) == "5 of 9", "picking a tag filters both lists, shows the count and writes the URL")
+    check(page.evaluate("document.activeElement.dataset.tag") == "sales" and page.evaluate("!!document.activeElement.closest('#tag-chips')"), "and the focus stays on the chip you used (it was redrawn)")
+    page.click(chip("management"))
+    check(builtn() == 0 and savedn() == 1 and "Quarterly review" in page.inner_text(".saved") and page.inner_text(status) == "1 of 9", "a second tag narrows it: a dashboard needs both (AND)")
+    check(page.url.count("tag=") == 2, "both tags are in the URL")
+    page.click(chip("management"))
+    page.click(chip("sales"))
+    check(builtn() == 4 and savedn() == 5 and "tag=" not in page.url and page.url.endswith("/d/"), "picking them again undoes it, and the URL is clean again")
+    page.fill("#list-q", "satis")
+    check("sales" not in bar_tags() and "satış" in bar_tags() and page.inner_text(chip("satış")).replace("\n", " ") == "satış 1", "the bar's counts follow the search words")
+    page.fill("#list-q", "")
+    page.click('.dcard[data-id="sales-overview"] .tag-chip')
+    check(page.url.endswith("?tag=sales") and builtn() == 3, "a chip on a card filters without opening the dashboard")
+    page.click('.saved .tag-chip[data-tag="regional"]')
+    check(page.get_attribute(chip("regional"), "aria-pressed") == "true" and builtn() == 0 and savedn() == 1 and "Regional deep dive" in page.inner_text(".saved"), "a chip on a saved dashboard does the same (sales AND regional)")
+    page.click("#list-q-clear")
+    check(page.url.endswith("/d/") and builtn() == 4 and savedn() == 5 and page.locator("#tag-chips [aria-pressed=true]").count() == 0, "Clear drops the search and the tags")
+    page.click(chip("sales"))
+    page.keyboard.press("Escape") if page.evaluate("document.activeElement.id") == "list-q" else (page.focus("#list-q"), page.keyboard.press("Escape"))
+    check(builtn() == 4 and "tag=" not in page.url, "Escape in the field clears the tags as well")
+    check(not [u for u in requests if "/builder/" in u or "/dashboards/" in u], f"tags are filtered in the browser: no request went out ({len(requests)} in all)")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    # the list's state in the URL
+    ctx, page = open_page(browser, "/d/?tag=sales&q=drill")
+    page.wait_for_selector("#drafts-host h2", timeout=20000)            # the saved lists drew (nothing in them may match)
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    check(page.input_value("#list-q") == "drill" and page.get_attribute(chip("sales"), "aria-pressed") == "true" and page.inner_text("#list-q-status") == "1 of 9" and "Sales drill-down" in page.inner_text("#built-host"), "?tag=sales&q=drill restores the search and the tag")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/?tag=nope")
+    page.wait_for_selector("#drafts-host h2", timeout=20000)            # the saved lists drew (nothing in them may match)
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    check(page.inner_text("#list-q-none") == "No dashboard has the tag nope." and page.get_attribute(chip("nope"), "aria-pressed") == "true" and page.inner_text(chip("nope")).replace("\n", " ") == "nope 0", "an unknown tag in the URL is an empty result you can undo, not an error")
+    check(not page.problems, f"and no console errors {page.problems[:2]}")
+    page.click(chip("nope"))
+    check(builtn() == 4 and page.url.endswith("/d/"), "unselecting it brings everything back")
+    ctx.close()
+
+    # group by the first tag
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".saved", timeout=20000)
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    switch = "#group-switch"
+    check(page.get_attribute(switch, "aria-pressed") == "false" and page.locator(".tg-h").count() == 0, "built dashboards are not grouped while the switch is off")
+    page.click(switch)
+    heads = lambda scope: [h.replace("\n", " ") for h in page.locator(f"{scope} .tg-h").all_inner_texts()]  # noqa: E731
+    check(heads("#built-host") == ["envanter (1)", "sales (3)"], f"on: built dashboards sit under their first tag ({heads('#built-host')})")
+    check(heads("#drafts-host") == ["management (1)", "satış (1)", "stok (1)", "Untagged (1)", "sales (1)"], f"and the saved lists the same way, the untagged last in its list ({heads('#drafts-host')})")
+    check(builtn() == 4 and savedn() == 5, "every dashboard still appears exactly once")
+    page.click(chip("sales"))
+    check(heads("#built-host") == ["sales (3)"] and page.get_attribute(switch, "aria-pressed") == "true", "grouping and tag filters work together")
+    page.click(chip("sales"))
+    page.reload()
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    check(page.get_attribute(switch, "aria-pressed") == "true" and heads("#built-host") == ["envanter (1)", "sales (3)"], "the switch is remembered after a reload")
+    page.keyboard.press("Tab") if False else None
+    page.focus(switch)
+    page.keyboard.press("Space")
+    check(page.get_attribute(switch, "aria-pressed") == "false" and page.locator(".tg-h").count() == 0, "the keyboard flips it back (Space)")
+    page.focus(chip("stok"))
+    page.keyboard.press("Enter")
+    check(page.get_attribute(chip("stok"), "aria-pressed") == "true" and page.evaluate("document.activeElement.dataset.tag") == "stok", "a chip works from the keyboard (Enter) and keeps the focus")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    # the switch works when this browser will not keep it
+    ctx, page = open_page(browser, "/d/")
+    ctx.add_init_script("""(() => { const g = Storage.prototype.getItem, s = Storage.prototype.setItem;
+      Storage.prototype.getItem = function (k) { if (k === 'dashGroupByTag') throw new Error('blocked'); return g.call(this, k); };
+      Storage.prototype.setItem = function (k, v) { if (k === 'dashGroupByTag') throw new Error('blocked'); return s.call(this, k, v); }; })()""")
+    page.reload()
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    page.click(switch)
+    check(page.get_attribute(switch, "aria-pressed") == "true" and page.locator(".tg-h").count() > 0 and not page.problems, f"with storage blocked the switch still works for the visit and nothing errors {page.problems[:2]}")
+    ctx.close()
+
+    # phone, and the chips' contrast in both themes
+    ctx, page = open_page(browser, "/d/", width=390)
+    page.wait_for_selector("#tag-chips button", timeout=20000)
+    check(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth") and page.locator(chip("sales")).bounding_box()["height"] >= 36, "on a phone the tag bar wraps, nothing scrolls sideways and the chips are 36px high")
+    ctx.close()
+    contrast = """() => {
+      const num = (c) => { const v = c.match(/[\\d.]+/g).map(Number); return c.startsWith('color(') ? [v[0] * 255, v[1] * 255, v[2] * 255, v[3] ?? 1] : v; };
+      const over = (fg, bg) => { const a = fg[3] ?? 1; return [0, 1, 2].map((i) => fg[i] * a + bg[i] * (1 - a)); };
+      const lum = ([r, g, b]) => { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const page = num(getComputedStyle(document.body).backgroundColor);
+      const ratio = (el) => { const cs = getComputedStyle(el); const card = el.closest('.card, .tag-bar'); const base = card ? over(num(getComputedStyle(card).backgroundColor), page) : page;
+        const bg = over(num(cs.backgroundColor), base), fg = num(cs.color); const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+      const chips = [...document.querySelectorAll('#tag-chips .tag-chip')];
+      const on = chips.find((c) => c.getAttribute('aria-pressed') === 'true'), off = chips.find((c) => c.getAttribute('aria-pressed') === 'false');
+      return { off: ratio(off), on: ratio(on), sw: ratio(document.querySelector('#group-switch')) };
+    }"""
+    for theme in ("light", "dark"):
+        ctx, page = open_page(browser, "/d/", theme=theme)
+        page.wait_for_selector("#tag-chips button", timeout=20000)
+        page.click(chip("sales"))
+        got = page.evaluate(contrast)
+        check(min(got.values()) >= 4.5, f"the chips and the switch keep 4.5:1 text contrast in the {theme} theme ({got['off']:.1f} / pressed {got['on']:.1f} / switch {got['sw']:.1f})")
+        ctx.close()
     ms.reset_saved()
 
     # ---- a whole dashboard
