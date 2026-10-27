@@ -7,6 +7,8 @@ def compile_spec(spec, used, catalog=None):
     for panel in out["panels"]:
         if panel["type"] == "table":     # every column as { member, label?, format? }, so the renderer reads one shape
             panel["columns"] = [{"member": col} if isinstance(col, str) else col for col in panel["columns"]]
+        if panel["type"] == "pivot":     # every measure as { member, label?, format? }
+            panel["measures"] = [{"member": m} if isinstance(m, str) else m for m in panel["measures"]]
     out["layout"] = [[{"panel": pid, "span": span} for cell in row for pid, span in cell.items()] for row in spec["layout"]]
     out["members"] = {m: used[m] for m in sorted(used)}
     if catalog is not None:

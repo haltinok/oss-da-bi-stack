@@ -2,10 +2,10 @@
 // page's filter values and `pick`); `load(signal)` runs its queries and draws, and `sheet()` returns the loaded data as an Excel sheet.
 import { el, esc, svgEl } from "../lib/dom.js";
 import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade, arcPath, pieSlices } from "../lib/charts.js";
-import { pinTotals, tableHtml } from "../lib/table.js";
+import { pinTotals, pivotHtml, tableHtml } from "../lib/table.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
-  PERIOD, nextSort, pieQueries, rangeOf, runAll, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
+  PERIOD, nextSort, pieQueries, pivotModel, pivotQueries, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
 const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
@@ -18,7 +18,7 @@ export function readable(e) {
 }
 
 export function createPanel(def, ctx) {
-  const make = { kpi: kpiPanel, timeseries: timeseriesPanel, bar: barPanel, pie: piePanel, treemap: treemapPanel, table: tablePanel, text: textPanel }[def.type] || unsupportedPanel;
+  const make = { kpi: kpiPanel, timeseries: timeseriesPanel, bar: barPanel, pie: piePanel, treemap: treemapPanel, table: tablePanel, pivot: pivotPanel, text: textPanel }[def.type] || unsupportedPanel;
   return make(def, ctx);
 }
 
@@ -53,8 +53,10 @@ function modelPanel(def, ctx, fetchModel, opts = {}) {
   root.querySelector(".xls-btn").addEventListener("click", () => model && ctx.exportSheets([sheet()], def.title || def.id));
   const sheet = () => model && ({
     name: (def.title || def.id).slice(0, 31), title: def.title || def.id, subtitle: ctx.subtitle(),
-    columns: model.columns.map((c) => ({ label: c.label, type: c.type })),
-    rows: withTotal(model.rows.map((r) => model.columns.map((c) => c.get(r))), model.totals),
+    ...(model.toSheet ? model.toSheet() : {
+      columns: model.columns.map((c) => ({ label: c.label, type: c.type })),
+      rows: withTotal(model.rows.map((r) => model.columns.map((c) => c.get(r))), model.totals),
+    }),
   });
   new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => !tableView && model?.redrawOnResize && redraw(), 120); }).observe(body);
   return {
@@ -627,6 +629,66 @@ function tablePanel(def, ctx) {
   const totBtn = panel.root.querySelector(".tot-btn");
   totBtn?.addEventListener("click", () => { showTotals = !showTotals; totBtn.setAttribute("aria-pressed", String(showTotals)); panel.redraw(); });
   return panel;
+}
+
+// ------------------------------------------------------------------------------------------------------------------ pivot
+function pivotPanel(def, ctx) {
+  const ids = ownFilterIds(def);
+  const dimOf = (id) => ctx.spec.filters.find((x) => x.id === id).dimension;
+  const measures = def.measures.map((m) => ({ member: m.member, label: m.label || humanize(m.member), fmt: ctx.formatter(m.format, true), type: XLSX_TYPE[m.format || "number"] || "number" }));
+  const rowLabels = def.rows.map(humanize);
+  const lim = { ...PIVOT_LIMIT, ...def.limit };
+  const waves = async (queries, signal, hard = []) => Object.fromEntries(await Promise.all(Object.entries(queries).map(async ([k, qs]) => {
+    try { return [k, await runAll(ctx.run, qs, signal)]; }
+    catch (e) { if (signal?.aborted || hard.includes(k)) throw e; return [k, []]; }       // a failed total leaves a dash, not a blank panel
+  })));
+  return modelPanel(def, ctx, async (signal) => {
+    const values = ctx.filterValues();
+    const axes = await waves(pivotQueries(ctx.spec, def, values).axes, signal, ["rows", "groups", "cols"]);
+    const chosen = pivotModel(def, axes, {});
+    if (!chosen.rows.length || !chosen.cols.length) return { rows: [], columns: [], draw() {} };
+    const answers = await waves(pivotQueries(ctx.spec, def, values, { rows: chosen.rows.map((r) => r.keys), cols: chosen.cols }).values, signal, ["cells", "groupCells"]);
+    const model = pivotModel(def, axes, answers);
+    const rowTot = model.totals === "both" || model.totals === "rows";
+    // What a click on a piece of the pivot carries: the dimensions of its row (or group) and column, for the filters whose dimension is among them.
+    const carry = ({ r, g, c }) => {
+      const dims = {};
+      if (r !== undefined) def.rows.forEach((d, i) => { dims[d] = model.rows[r].keys[i]; });
+      else if (g !== undefined) dims[def.rows[0]] = model.groups[g].key;
+      if (c !== undefined) dims[def.columns] = model.cols[c];
+      const use = ids.filter((id) => dimOf(id) in dims);
+      return { ids: use, values: use.map((id) => dims[dimOf(id)]) };
+    };
+    const draw = (host) => {
+      const notes = [model.hidden.rows && ctx.t.moreRows(lim.rows), model.hidden.cols && ctx.t.moreCols(lim.columns), model.truncated && ctx.t.truncatedPivot].filter(Boolean);
+      host.innerHTML = pivotHtml({ model, measures, texts: { corner: `${rowLabels.join(" / ")} ↓ · ${humanize(def.columns)} →`, total: ctx.t.total, notes } });
+      pinTotals(host);
+      if (!ids.length) return;
+      host.querySelectorAll("[data-r], [data-g], [data-c]").forEach((node) => {
+        const at = Object.fromEntries(["r", "g", "c"].map((k) => [k, node.dataset[k] === undefined ? undefined : +node.dataset[k]]));
+        const { ids: use, values: vals } = carry(at);
+        if (!use.length) return;
+        clickable(node, () => ctx.pick(use, vals));
+        // Marked when its own selection is the whole selection: a cell when both its row and column are chosen, a title when only it is.
+        const cur = ctx.filterValues();
+        node.classList.toggle("sel", isSelected(cur, use, vals) && ids.every((id) => use.includes(id) || !cur[id]));
+      });
+    };
+    // Excel: one row per pivot row (a group is a row of its own with its figures), a column per column and measure, then the totals.
+    const toSheet = () => {
+      const several = measures.length > 1, labelCols = model.groups ? 2 : 1;
+      const colName = (name, m) => (several ? `${name} · ${m.label}` : name);
+      const cellsOf = (maps) => maps.flatMap((map) => measures.map((m) => map?.get(m.member) ?? null));
+      const totalOf = (map) => (rowTot ? measures.map((m) => map?.get(m.member) ?? null) : []);
+      const columns = [...rowLabels.map((label) => ({ label, type: "text" })).slice(0, labelCols), ...model.cols.flatMap((c) => measures.map((m) => ({ label: colName(c, m), type: m.type }))),
+        ...(rowTot ? measures.map((m) => ({ label: colName(ctx.t.total, m), type: m.type })) : [])];
+      const leafRow = (r) => [...(model.groups ? ["", r.keys[1]] : [r.keys[0]]), ...cellsOf(r.cells), ...totalOf(r.total)];
+      const rows = model.groups ? model.groups.flatMap((g) => [[g.key, "", ...cellsOf(g.cells), ...totalOf(g.total)], ...g.rows.map(leafRow)]) : model.rows.map(leafRow);
+      if (model.totals === "both" || model.totals === "columns") rows.push([ctx.t.total, ...(labelCols > 1 ? [""] : []), ...cellsOf(model.colTotals), ...totalOf(model.grand)]);
+      return { columns, rows };
+    };
+    return { rows: model.rows, columns: [], draw, toSheet };
+  }, { table: false });
 }
 
 // ------------------------------------------------------------------------------------------------------------------ text / unsupported

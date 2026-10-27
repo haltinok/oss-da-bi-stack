@@ -567,3 +567,80 @@ def test_a_table_without_an_order_is_read_by_every_dimension_ascending():
     out = compile_spec(spec, used)
     query = panel_queries(out, panel(out, "lines"), {})[0]["query"]
     assert query["order"] == {"internet_sales.order_number": "asc", "internet_sales.order_date": "asc", "territories.country": "asc"}
+
+
+# ---------------------------------------------------------------------------------------------------------------- pivot panels
+PIVOT = {"id": "xtab", "type": "pivot", "title": "Revenue by category and year", "rows": ["products.category"], "columns": "dates.fiscal_year",
+         "measures": ["internet_sales.revenue"], "on_click": {"set_filter": ["category", "fy"]}}
+
+
+def with_pivot(**changes):
+    def f(spec):
+        spec["panels"].append({**copy.deepcopy(PIVOT), **changes})
+        spec["layout"].append([{"xtab": 12}])
+    return f
+
+
+def test_a_pivot_validates_and_compiles_its_measures_as_objects():
+    spec = copy.deepcopy(GOOD)
+    with_pivot(rows=["products.category", "products.subcategory"], measures=["internet_sales.revenue", {"member": "internet_sales.margin_pct", "label": "Margin", "format": "pct"}],
+               totals="rows", order={"by": "label"}, limit={"rows": 10, "columns": 6})(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used)
+    assert panel(out, "xtab")["measures"] == [{"member": "internet_sales.revenue"}, {"member": "internet_sales.margin_pct", "label": "Margin", "format": "pct"}]
+    assert out["members"]["dates.fiscal_year"]["kind"] == "dimension" and out["members"]["internet_sales.revenue"]["kind"] == "measure"
+
+
+PIVOT_BROKEN = [
+    ("the same dimension down the side and across the top", with_pivot(columns="products.category"),
+     ["panel 'xtab' (pivot)", "columns:", "also in `rows`"]),
+    ("three row dimensions", with_pivot(rows=["products.category", "products.subcategory", "territories.region"]),
+     ["panel 'xtab'", "rows:", "is too long"]),
+    ("a row that repeats", with_pivot(rows=["products.category", "products.category"]), ["panel 'xtab'", "rows:", "non-unique"]),
+    ("an unknown member", with_pivot(columns="dates.nope"), ["panel 'xtab' (pivot)", "columns:", "'dates.nope' is not in the Cube model"]),
+    ("a measure where a dimension goes", with_pivot(columns="internet_sales.revenue"), ["panel 'xtab' (pivot)", "columns:", "is a measure, a dimension is needed"]),
+    ("a dimension where a measure goes", with_pivot(measures=["products.category"]), ["panel 'xtab' (pivot)", "measures[0]:", "is a dimension, a measure is needed"]),
+    ("no measures", with_pivot(measures=[]), ["panel 'xtab'", "measures:", "should be non-empty"]),
+    ("four measures", with_pivot(measures=["internet_sales.revenue", "internet_sales.units", "internet_sales.orders", "internet_sales.margin_pct"]), ["panel 'xtab'", "measures:", "is too long"]),
+    ("a bad totals value", with_pivot(totals="all"), ["panel 'xtab' (pivot)", "totals:", "'all' is not one of"]),
+    ("a bad order", with_pivot(order={"by": "revenue"}), ["panel 'xtab' (pivot)", "order", "'revenue' is not one of"]),
+    ("too many rows", with_pivot(limit={"rows": 500}), ["panel 'xtab' (pivot)", "limit", "greater than the maximum of 200"]),
+    ("too many columns", with_pivot(limit={"columns": 40}), ["panel 'xtab' (pivot)", "limit", "greater than the maximum of 24"]),
+    ("a click on a filter of a dimension the pivot does not show", with_pivot(on_click={"set_filter": ["region"]}),
+     ["panel 'xtab' (pivot)", "on_click.set_filter:", "filter 'region' is on 'territories.region', which this pivot does not show"]),
+    ("a click on a filter that does not exist", with_pivot(on_click={"set_filter": ["ghost"]}), ["panel 'xtab'", "on_click.set_filter:", "no filter with id 'ghost'"]),
+    ("a measure cube with no join to the dimension", with_pivot(measures=["inventory_health.stockout_items"], on_click={"set_filter": ["category"]}),
+     ["panel 'xtab' (pivot)", "'inventory_health.stockout_items' cannot be combined with"]),
+    ("a profit measure for a rep", lambda s: (with_pivot(measures=["internet_sales.margin_pct"])(s), s.update(roles=["rep"])),
+     ["panel 'xtab' (pivot)", "role 'rep' cannot read 'internet_sales.margin_pct'"]),
+    ("an unknown field", with_pivot(heat="yes"), ["panel 'xtab'", "'heat' is not a field of a pivot panel"]),
+]
+
+
+@pytest.mark.parametrize("name,mutate,needles", PIVOT_BROKEN, ids=[b[0] for b in PIVOT_BROKEN])
+def test_a_broken_pivot_fails_with_a_message_that_names_the_place(name, mutate, needles):
+    errors = run(mutate)
+    assert errors, f"{name}: expected a problem"
+    text = "\n".join(errors)
+    for needle in needles:
+        assert needle in text, f"{name}: {needle!r} missing from:\n{text}"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is needed to run the renderer's query builders")
+@pytest.mark.parametrize("changes", [
+    {}, {"rows": ["products.category", "products.subcategory"]}, {"totals": "none"}, {"totals": "rows"}, {"totals": "columns"},
+    {"order": {"by": "label"}}, {"order": {"dir": "asc"}, "limit": {"rows": 5, "columns": 3}},
+    {"rows": ["products.category", "products.subcategory"], "measures": ["internet_sales.revenue", "reseller_sales.revenue"], "totals": "both"},
+], ids=["plain", "two-levels", "no-totals", "row-totals", "column-totals", "by-label", "limits", "two-cubes"])
+def test_python_pivot_queries_match_the_renderers(tmp_path, changes):
+    spec = copy.deepcopy(GOOD)
+    with_pivot(**changes)(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        assert panel_queries(out, panel(out, "xtab"), state["values"]) == state["panels"]["xtab"], f"under {state['values']}"

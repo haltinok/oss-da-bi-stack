@@ -149,7 +149,7 @@
       "required": ["id", "type"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
-        "type": { "enum": ["kpi", "timeseries", "bar", "pie", "treemap", "table", "text"] },
+        "type": { "enum": ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"] },
         "title": { "type": "string" },
         "ignore_filters": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
       },
@@ -254,6 +254,32 @@
               "order": { "type": "object", "additionalProperties": { "$ref": "#/$defs/direction" } },
               "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
               "totals": { "enum": ["header", "footer"] },
+              "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "pivot" } } },
+          "then": {
+            "required": ["rows", "columns", "measures"],
+            "properties": {
+              "rows": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 2, "uniqueItems": true },
+              "columns": { "$ref": "#/$defs/member" },
+              "measures": { "type": "array", "items": { "$ref": "#/$defs/column" }, "minItems": 1, "maxItems": 3 },
+              "totals": { "enum": ["both", "rows", "columns", "none"] },
+              "order": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": { "by": { "enum": ["total", "label"] }, "dir": { "$ref": "#/$defs/direction" } }
+              },
+              "limit": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "rows": { "type": "integer", "minimum": 1, "maximum": 200 },
+                  "columns": { "type": "integer", "minimum": 1, "maximum": 24 }
+                }
+              },
               "on_click": { "$ref": "#/$defs/on_click" }
             }
           }

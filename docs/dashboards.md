@@ -90,7 +90,8 @@ showing every choice and marks the selected one. What a click carries: a bar its
 | **`bar`**: ranked; one `measure`, a `stack` of measures from several cubes, or a `split` by a dimension; `orientation: vertical` draws columns. | ![bar](images/dashboards/bar.png) |
 | **`pie`** (`style: pie` or `donut`): slices by a dimension, the tail grouped as "Other"; a click filters. | ![pie](images/dashboards/pie.png) |
 | **`treemap`**: one or two dimensions; with two, tiles sit under headings. | ![treemap](images/dashboards/treemap.png) |
-| **`table`**: members or `{ member, label, format }`, `order`, `limit`; a row can set filters. | ![table](images/dashboards/table.png) |
+| **`table`**: members or `{ member, label, format }`, `order`, `limit`; `totals: header\|footer` adds a bold, frozen total row; readers sort by clicking a column title; a row can set filters. | ![table](images/dashboards/table.png) |
+| **`pivot`**: one or two `rows` dimensions, one `columns` dimension, one to three `measures`, row/column/grand totals; a cell, a row name or a column title can set filters; a Total column and a frozen total row; groups when there are two row dimensions. Heat shading, time columns and shares come later (`PLAN-pivot-panel.md`). | (no picture yet) |
 | **`text`**: a short Markdown note. | ![text](images/dashboards/text.png) |
 | **Filters** above the panels, with Reset when one is set. | ![filters](images/dashboards/filters.png) |
 

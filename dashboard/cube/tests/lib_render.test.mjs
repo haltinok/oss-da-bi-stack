@@ -5,9 +5,9 @@ import { test } from "node:test";
 import {
   appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
-  pick, nextSort, tableOrder, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
+  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
-import { tableHtml, pinTotals } from "../../static/lib/table.js";
+import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
 import { stringsFor, translations } from "../../static/render/strings.js";
 
 const spec = {
@@ -341,4 +341,191 @@ test("tableHtml makes titles with a sortKey clickable and marks the sorted one",
   assert.match(html, /<th class="n sortable" data-sort="m.c1" tabindex="0" aria-sort="descending">Revenue<i class="arr" aria-hidden="true">↓<\/i><\/th>/);
   assert.match(html, /data-sort="m.c0" tabindex="0" aria-sort="none">Name<i class="arr" aria-hidden="true"><\/i>/);
   assert.ok(!tableHtml({ columns: cols, rows }).includes("sortable"), "columns without a sortKey stay plain");
+});
+
+// ---- pivot
+const pv = (over = {}) => ({ id: "x", type: "pivot", rows: ["p.name"], columns: "d.year", measures: [{ member: "a.rev" }], ...over });
+
+test("pivotQueries wave 1 asks only the first measure's cube for the axes; wave 2 asks every measure's cube", () => {
+  const def = pv({ measures: [{ member: "a.rev" }, { member: "b.rev" }] });
+  const { axes, values } = pivotQueries(spec, def, { category: "Bikes" });
+  assert.deepEqual(axes.rows.map((q) => q.cube), ["a"]);
+  assert.deepEqual(axes.rows[0].query, { measures: ["a.rev"], filters: [{ member: "products.category", operator: "equals", values: ["Bikes"] }], dimensions: ["p.name"], order: { "a.rev": "desc", "p.name": "asc" }, limit: PIVOT_LIMIT.rows + 1 });
+  assert.deepEqual(axes.cols[0].query.order, { "d.year": "asc" });
+  assert.equal(axes.cols[0].query.limit, PIVOT_LIMIT.columns + 1);
+  assert.deepEqual(axes.groups, [], "one row dimension has no groups");
+  assert.deepEqual(values.cells.map((q) => [q.cube, q.query.measures]), [["a", ["a.rev"]], ["b", ["b.rev"]]]);
+  assert.deepEqual(values.cells[0].query.dimensions, ["p.name", "d.year"]);
+  assert.deepEqual(values.grand.map((q) => q.query.dimensions), [undefined, undefined], "the grand total has no grouping");
+  assert.deepEqual(values.rowTotals[0].query.dimensions, ["p.name"]);
+  assert.deepEqual(values.colTotals[0].query.dimensions, ["d.year"]);
+  assert.deepEqual(values.groupCells.concat(values.groupTotals), []);
+});
+
+test("pivotQueries: the order, the limits and the totals mode", () => {
+  assert.deepEqual(pivotQueries(spec, pv({ order: { by: "label" } }), {}).axes.rows[0].query.order, { "p.name": "asc" });
+  assert.deepEqual(pivotQueries(spec, pv({ order: { by: "label", dir: "desc" } }), {}).axes.rows[0].query.order, { "p.name": "desc" });
+  assert.deepEqual(pivotQueries(spec, pv({ order: { dir: "asc" } }), {}).axes.rows[0].query.order, { "a.rev": "asc", "p.name": "asc" });
+  const lim = pivotQueries(spec, pv({ limit: { rows: 5, columns: 3 } }), {}).axes;
+  assert.deepEqual([lim.rows[0].query.limit, lim.cols[0].query.limit], [6, 4]);
+  const none = pivotQueries(spec, pv({ totals: "none" }), {}).values;
+  assert.deepEqual([none.rowTotals, none.colTotals, none.grand, none.groupCells].map((q) => q.length), [0, 0, 0, 0]);
+  const rowsOnly = pivotQueries(spec, pv({ totals: "rows" }), {}).values;
+  assert.deepEqual([rowsOnly.rowTotals.length, rowsOnly.colTotals.length, rowsOnly.grand.length], [1, 0, 1]);
+  const colsOnly = pivotQueries(spec, pv({ totals: "columns" }), {}).values;
+  assert.deepEqual([colsOnly.rowTotals.length, colsOnly.colTotals.length, colsOnly.grand.length], [0, 1, 1]);
+});
+
+test("pivotQueries with two row dimensions adds the group queries; with keys it narrows wave 2 but never the grand or the column totals' rows", () => {
+  const def = pv({ rows: ["p.cat", "p.name"] });
+  const { axes, values } = pivotQueries(spec, def, {});
+  assert.deepEqual(axes.groups[0].query.dimensions, ["p.cat"]);
+  assert.deepEqual(axes.groups[0].query.order, { "a.rev": "desc", "p.cat": "asc" });
+  assert.deepEqual(values.groupCells[0].query.dimensions, ["p.cat", "d.year"]);
+  assert.deepEqual(values.groupTotals[0].query.dimensions, ["p.cat"]);
+  const keys = { rows: [["Bikes", "Road"], ["Bikes", "Mountain"], ["Clothing", "Socks"]], cols: ["2020", "2021"] };
+  const narrowed = pivotQueries(spec, def, {}, keys).values;
+  const f = (q) => q.query.filters.map((x) => [x.member, x.values]);
+  assert.deepEqual(f(narrowed.cells[0]), [["p.cat", ["Bikes", "Clothing"]], ["p.name", ["Road", "Mountain", "Socks"]], ["d.year", ["2020", "2021"]]]);
+  assert.deepEqual(f(narrowed.rowTotals[0]), [["p.cat", ["Bikes", "Clothing"]], ["p.name", ["Road", "Mountain", "Socks"]]], "a row's total covers all columns");
+  assert.deepEqual(f(narrowed.colTotals[0]), [["d.year", ["2020", "2021"]]], "a column's total covers all rows, shown or not");
+  assert.deepEqual(f(narrowed.grand[0]), [], "the grand total is the whole set");
+  assert.deepEqual(f(narrowed.groupCells[0]), [["p.cat", ["Bikes", "Clothing"]], ["d.year", ["2020", "2021"]]]);
+});
+
+test("pivotQueries follows the page's period like any panel, and panelQueries lists every query once, axes first", () => {
+  const def = pv();
+  const all = pivotQueries(spec, def, { _period: "2021-03-01..2021-03-31" });
+  for (const q of [...all.axes.rows, ...all.values.cells, ...all.values.grand]) assert.deepEqual(q.query.timeDimensions[0].dateRange, ["2021-03-01", "2021-03-31"]);
+  const flat = pivotQueryList(spec, def, {});
+  assert.equal(flat.length, 1 + 1 + 1 + 1 + 1 + 1, "rows, cols, cells, rowTotals, colTotals, grand");
+  assert.deepEqual(panelQueries(spec, def, {}), flat);
+  assert.deepEqual(panelMeasures(def), ["a.rev"]);
+});
+
+// results as runAll returns them
+const R = (cube, rows) => ({ cube, rows });
+
+test("pivotModel: cells, totals from the totals queries, empty cells stay empty, rows in the order Cube gave", () => {
+  const def = pv({ measures: [{ member: "a.rev" }, { member: "a.pct" }] });
+  const axes = { rows: [R("a", [{ "p.name": "Bikes" }, { "p.name": "Socks" }])], groups: [], cols: [R("a", [{ "d.year": 2020 }, { "d.year": 2021 }])] };
+  const vals = {
+    cells: [R("a", [
+      { "p.name": "Bikes", "d.year": 2020, "a.rev": "10", "a.pct": "0.5" }, { "p.name": "Bikes", "d.year": 2021, "a.rev": "30", "a.pct": "0.25" },
+      { "p.name": "Socks", "d.year": 2021, "a.rev": "5", "a.pct": "0.2" },
+    ])],
+    rowTotals: [R("a", [{ "p.name": "Bikes", "a.rev": "40", "a.pct": "0.3" }, { "p.name": "Socks", "a.rev": "5", "a.pct": "0.2" }])],
+    colTotals: [R("a", [{ "d.year": 2020, "a.rev": "10", "a.pct": "0.5" }, { "d.year": 2021, "a.rev": "35", "a.pct": "0.24" }])],
+    grand: [R("a", [{ "a.rev": "45", "a.pct": "0.28" }])], groupCells: [], groupTotals: [],
+  };
+  const m = pivotModel(def, axes, vals);
+  assert.deepEqual(m.cols, ["2020", "2021"]);
+  assert.deepEqual(m.rows.map((r) => r.keys), [["Bikes"], ["Socks"]]);
+  assert.equal(m.rows[0].cells[1].get("a.rev"), 30);
+  assert.equal(m.rows[1].cells[0], undefined, "no row from Cube: an empty cell, not a zero");
+  assert.equal(m.rows[0].total.get("a.pct"), 0.3, "the row's ratio is Cube's ratio of the row, not the mean of its cells");
+  assert.equal(m.colTotals[1].get("a.pct"), 0.24);
+  assert.equal(m.grand.get("a.rev"), 45);
+  assert.equal(m.groups, null);
+  assert.deepEqual(m.hidden, { rows: false, cols: false });
+  assert.equal(m.truncated, false);
+});
+
+test("pivotModel: limits show the first rows and columns and say that more exist; totals stay the whole set's", () => {
+  const def = pv({ limit: { rows: 2, columns: 2 } });
+  const axes = {
+    rows: [R("a", [{ "p.name": "A" }, { "p.name": "B" }, { "p.name": "C" }])],                      // limit + 1 rows came back
+    cols: [R("a", [{ "d.year": 1 }, { "d.year": 2 }, { "d.year": 3 }])],
+  };
+  const vals = { cells: [R("a", [{ "p.name": "A", "d.year": 1, "a.rev": "1" }, { "p.name": "C", "d.year": 3, "a.rev": "9" }])], colTotals: [R("a", [{ "d.year": 1, "a.rev": "100" }])], grand: [R("a", [{ "a.rev": "1000" }])] };
+  const m = pivotModel(def, axes, vals);
+  assert.deepEqual([m.rows.length, m.cols.length], [2, 2]);
+  assert.deepEqual(m.hidden, { rows: true, cols: true });
+  assert.equal(m.colTotals[0].get("a.rev"), 100);
+  assert.equal(m.grand.get("a.rev"), 1000, "not the sum of what is shown");
+  assert.equal(m.rows.some((r) => r.keys.includes("C")), false);
+});
+
+test("pivotModel: two row dimensions give groups with their own cells and total, in the order of the groups and then of the rows", () => {
+  const def = pv({ rows: ["p.cat", "p.name"] });
+  const axes = {
+    rows: [R("a", [{ "p.cat": "Clothing", "p.name": "Socks" }, { "p.cat": "Bikes", "p.name": "Road" }, { "p.cat": "Clothing", "p.name": "Hats" }, { "p.cat": "Bikes", "p.name": "Mtb" }])],
+    groups: [R("a", [{ "p.cat": "Bikes" }, { "p.cat": "Clothing" }, { "p.cat": "Parts" }])], cols: [R("a", [{ "d.year": 2021 }])],
+  };
+  const vals = {
+    cells: [R("a", [{ "p.cat": "Bikes", "p.name": "Road", "d.year": 2021, "a.rev": "7" }])],
+    groupCells: [R("a", [{ "p.cat": "Bikes", "d.year": 2021, "a.rev": "20" }, { "p.cat": "Clothing", "d.year": 2021, "a.rev": "4" }])],
+    groupTotals: [R("a", [{ "p.cat": "Bikes", "a.rev": "22" }])],
+  };
+  const m = pivotModel(def, axes, vals);
+  assert.deepEqual(m.groups.map((g) => g.key), ["Bikes", "Clothing"], "groups in Cube's order, only those with a row shown");
+  assert.deepEqual(m.groups[0].rows.map((r) => r.keys[1]), ["Road", "Mtb"], "rows keep their own order inside the group");
+  assert.deepEqual(m.rows.map((r) => r.keys[1]), ["Road", "Mtb", "Socks", "Hats"]);
+  assert.equal(m.groups[0].cells[0].get("a.rev"), 20);
+  assert.equal(m.groups[0].total.get("a.rev"), 22);
+  assert.equal(m.groups[1].total, undefined);
+});
+
+test("pivotModel merges several measure cubes on the row and column, and flags a result that reached Cube's ceiling", () => {
+  const def = pv({ measures: [{ member: "a.rev" }, { member: "b.rev" }] });
+  const axes = { rows: [R("a", [{ "p.name": "A" }])], cols: [R("a", [{ "d.year": 1 }])] };
+  const vals = { cells: [R("a", [{ "p.name": "A", "d.year": 1, "a.rev": "2" }]), R("b", [{ "p.name": "A", "d.year": 1, "b.rev": "3" }])] };
+  const m = pivotModel(def, axes, vals);
+  assert.deepEqual([...m.rows[0].cells[0]], [["a.rev", 2], ["b.rev", 3]]);
+  assert.equal(pivotModel(def, axes, { cells: [R("a", Array.from({ length: 50000 }, () => ({})))] }).truncated, true);
+  assert.deepEqual(pivotModel(def, { rows: [], cols: [] }, {}).rows, [], "no rows at all is an empty pivot, not an error");
+});
+
+// ---- pivotHtml
+const M = (o) => new Map(Object.entries(o));
+const meas = [{ member: "a.rev", label: "Revenue", fmt: (v) => `$${v}` }, { member: "a.pct", label: "Margin", fmt: (v) => `${v * 100}%` }];
+const texts = { corner: "Category ↓ · Year →", total: "Total", notes: ["More <exist>"] };
+const flat = {
+  measures: ["a.rev"], cols: ["2020", "2021"], groups: null, totals: "both", hidden: { rows: false, cols: false }, truncated: false,
+  rows: [{ keys: ["Bikes"], cells: [M({ "a.rev": 10 }), M({ "a.rev": 30 })], total: M({ "a.rev": 40 }) }, { keys: ["<b>Socks"], cells: [undefined, M({ "a.rev": 5 })], total: undefined }],
+  colTotals: [M({ "a.rev": 10 }), M({ "a.rev": 35 })], grand: M({ "a.rev": 45 }),
+};
+
+test("pivotHtml: titles, cells, a row total and a column total row, empty cells empty, missing totals a dash, everything escaped", () => {
+  const html = pivotHtml({ model: flat, measures: [meas[0]], texts });
+  assert.match(html, /<th class="corner" rowspan="1" colspan="1">Category ↓ · Year →<\/th>/);
+  assert.match(html, /<th class="n ck" colspan="1" data-c="1">2021<\/th>/);
+  assert.match(html, /<th class="n tc" colspan="1">Total<\/th>/);
+  assert.match(html, /<th class="rl" scope="row" data-r="0">Bikes<\/th><td class="n" data-r="0" data-c="0">\$10<\/td><td class="n" data-r="0" data-c="1">\$30<\/td><td class="n tc" data-r="0">\$40<\/td>/);
+  assert.match(html, /<td class="n" data-r="1" data-c="0"><\/td>/, "a cell Cube had no row for is empty, not 0");
+  assert.match(html, /<td class="n tc" data-r="1">–<\/td>/, "a missing row total is a dash");
+  assert.match(html, /<tfoot><tr class="tot"><th class="rl" colspan="1">Total<\/th><td class="n" data-c="0">\$10<\/td><td class="n" data-c="1">\$35<\/td><td class="n tc">\$45<\/td><\/tr><\/tfoot>/, "the grand total has no data- attributes: it filters nothing");
+  assert.ok(html.includes("&#60;b&#62;Socks") && html.includes("More &#60;exist&#62;"), "keys and notes are escaped");
+});
+
+test("pivotHtml: totals modes decide the total column and the total row", () => {
+  const has = (mode) => { const h = pivotHtml({ model: { ...flat, totals: mode }, measures: [meas[0]], texts }); return [h.includes('class="n tc"'), h.includes("<tfoot>")]; };
+  assert.deepEqual(has("both"), [true, true]);
+  assert.deepEqual(has("rows"), [true, false]);
+  assert.deepEqual(has("columns"), [false, true]);
+  assert.deepEqual(has("none"), [false, false]);
+  const cols = pivotHtml({ model: { ...flat, totals: "columns" }, measures: [meas[0]], texts });
+  assert.ok(!cols.includes("\u0000") && cols.match(/<tfoot>.*<\/tfoot>/)[0].split("<td").length === 3, "a column-totals row has no grand cell");
+});
+
+test("pivotHtml: several measures make a second title row, under every column and the total", () => {
+  const model = { ...flat, measures: ["a.rev", "a.pct"], rows: [{ keys: ["Bikes"], cells: [M({ "a.rev": 1, "a.pct": 0.5 }), undefined], total: M({ "a.rev": 1, "a.pct": 0.5 }) }], colTotals: [undefined, undefined], grand: M({}) };
+  const html = pivotHtml({ model, measures: meas, texts });
+  assert.match(html, /rowspan="2"/);
+  assert.match(html, /<th class="n ck" colspan="2" data-c="0">2020<\/th>/);
+  assert.equal(html.match(/<th class="n mh">/g).length, 6, "two measures under 2020, 2021 and Total");
+  assert.match(html, /<td class="n" data-r="0" data-c="0">\$1<\/td><td class="n" data-r="0" data-c="0">50%<\/td>/);
+  assert.match(html, /<td class="n tc">–<\/td><td class="n tc">–<\/td><\/tr><\/tfoot>/, "an empty grand total is dashes");
+});
+
+test("pivotHtml: two row levels give a group row with its own figures, then the rows under it", () => {
+  const leaf = (k, v) => ({ keys: ["Bikes", k], cells: [M({ "a.rev": v }), undefined], total: M({ "a.rev": v }) });
+  const rows = [leaf("Road", 3), leaf("Mtb", 4)];
+  const model = { ...flat, rows, groups: [{ key: "Bikes", cells: [M({ "a.rev": 7 }), undefined], total: M({ "a.rev": 7 }), rows }] };
+  const html = pivotHtml({ model, measures: [meas[0]], texts });
+  assert.match(html, /<th class="corner" rowspan="1" colspan="2">/);
+  assert.match(html, /<tr class="grp"><th class="rl" scope="row" colspan="2" data-g="0">Bikes<\/th><td class="n" data-g="0" data-c="0">\$7<\/td>/);
+  assert.match(html, /<tr><th class="rl"><\/th><th class="rl" scope="row" data-r="0">Road<\/th><td class="n" data-r="0" data-c="0">\$3<\/td>/);
+  assert.match(html, /data-r="1">Mtb<\/th>/, "rows are numbered across groups");
+  assert.match(html, /<tfoot><tr class="tot"><th class="rl" colspan="2">Total<\/th>/);
 });

@@ -46,14 +46,17 @@ panels: list of { id, type, title?, ignore_filters?, ... }, types:
   bar        measure: <m> (+ label)  OR  stack: [ {member, label, color?} x2+ ]   by: <dimension>, by_label, sort, limit, orientation?: horizontal | vertical, format, on_click?: { set_filter: <filter on the by dimension> }
   pie        measure: <m> OR sum: [a.m, b.m] (needs label), label, by: <dimension>, by_label, limit (slices before "Other", 2-30), style: pie | donut, format, on_click?: { set_filter: <filter on the by dimension> }
   treemap    measure, group: [dim] or [dim, dim], format, on_click?: { set_filter: [<filter on group[0]>, <filter on group[1]>] }
-  table      columns: [ member | {member, label, format} ], order: { member: asc|desc }, limit, on_click?
+  table      columns: [ member | {member, label, format} ], order: { member: asc|desc }, limit, totals?: footer | header (a bold total row over all matching rows; needs a measure column), on_click?
+  pivot      rows: [dim] or [dim, dim] (down the side; two = the first groups the second), columns: <one other dimension> (across the top), measures: [ member | {member, label, format} ] (1-3),
+             totals?: both | rows | columns | none, order?: { by: total | label, dir }, limit?: { rows (25), columns (12) }, on_click?: { set_filter: [<filter on a rows or columns dimension>] (max 2) }
   text       markdown
 A measure is one of: member: cube.measure | sum: [a.m, b.m] (the same measure of two fact cubes, added; needs label) | ratio: { num: [..], den: [..] } (needs label; format pct).
 format: money | int | pct (a fraction) | decimal | number.   color: internet | reseller | #rrggbb.
 layout: rows of 12 columns, every panel exactly once: - [kpis: 12]  - [trend: 8, lines: 4]
 Rules: use only members from the catalog. Cube cannot join two fact cubes in one query, so combine channels with sum/ratio/stack, nothing else:
 no other arithmetic. A filter must be on a dimension the panel's measures can join to (else add it to that panel's ignore_filters).
-A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; time chart -> a year filter.
+A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; pivot -> a rows or columns dimension; time chart -> a year filter.
+Use a pivot when the request crosses two dimensions ("revenue by category and year", "by region and month"): a bar or a table cannot show a measure against two axes. Use a table for a list, a pivot for a cross-tab.
 Write titles and labels in the language of locale: every `label`, including the `label` / `by_label` / `group_labels` of pie, bar and treemap panels (without one the member's English name is shown). If the request needs a metric the catalog does not have, call cannot_build and say which."""
 
 SYSTEM = """You build dashboards for a bank's BI team from a short request. The data is a simulated AdventureWorks company. A person looks at the \
