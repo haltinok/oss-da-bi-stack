@@ -79,7 +79,7 @@ def fake_rows(query):
 _builder_cache = {}
 
 
-def builder_answer(path, body, method="GET"):
+def builder_answer(path, body, method="GET", query=None):
     """The builder service without Keycloak: the real loop, validator and rule-based stand-in (builder/), for the role the mock signs in as."""
     if not _builder_cache:
         for extra in (str(ROOT), str(ROOT / "dashboards")):
@@ -92,7 +92,7 @@ def builder_answer(path, body, method="GET"):
         _builder_cache.update(core=core, standin=StandInClient, catalog=cat.from_model(ROOT / "cube" / "model"), catalog_json=catalog_json)
     c, role = _builder_cache, ROLE["role"]
     if path == "/info":
-        return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role),
+        return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role, (query or {}).get("lang", ["en"])[0]),
                      "saving": BUILDER["saving"], "builds_left": 20, "note": "A rule-based stand-in answers."}
     if path == "/catalog":
         return 200, c["catalog_json"](c["catalog"], role)
@@ -194,7 +194,7 @@ class Handler(BaseHTTPRequestHandler):
             body = {}
             if self.command in ("POST", "PUT"):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
-            status, answer = builder_answer(path[len("/builder"):], body, self.command)
+            status, answer = builder_answer(path[len("/builder"):], body, self.command, parse_qs(urlparse(self.path).query))
             return self._send(b"" if status == 204 else json.dumps(answer).encode(), status=status)
         if path.startswith("/cube-"):
             query = {}

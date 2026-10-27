@@ -81,6 +81,14 @@ button, select { font: inherit; color: inherit; }
 .top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 24px; margin-bottom: 16px; }
 .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .brand h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* The language switch: two small buttons, EN | TR, the chosen one filled. */
+.lang-switch { display: inline-flex; height: 32px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.lang-switch button { min-width: 30px; padding: 0 7px; border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; cursor: pointer; }
+.lang-switch button + button { border-left: 1px solid var(--border); }
+.lang-switch button:hover { background: var(--surface-2); color: var(--ink); }
+.lang-switch button[aria-pressed="true"] { background: color-mix(in srgb, var(--focus) 16%, var(--surface)); color: var(--ink); }
+.lang-switch button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+@media (max-width: 480px) { .lang-switch { height: auto; } .lang-switch button { min-width: 44px; min-height: 44px; } }
 /* The way back to the list of dashboards (/d/): a slim line above the header, so it never competes with the header's one row (that row has no room for more at 1280px). */
 .home-nav { margin: 0 0 6px; }
 .home-nav[hidden] { display: none; }

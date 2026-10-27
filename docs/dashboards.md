@@ -38,6 +38,13 @@ Until an API key is configured, a rule-based stand-in answers (a fixed set of ph
 
 ![A draft built from a request](images/dashboards/builder.png)
 
+## Language
+Every `/d` page has a small **EN | TR** switch in its header. The choice is kept in this browser (or, when the browser keeps nothing, in the address as `?lang=tr`, which also
+lets a link carry it) and the page is drawn again in that language: its own words (buttons, status, empty states, the builder's boxes and examples, what a screen reader
+hears), its dates and its number formats (`1,234.56` or `1.234,56`, month names). Until you choose, a dashboard speaks its own `locale` and the list the browser's language.
+What is **not** translated is what someone wrote: a dashboard's titles, labels and notes, the data-set name from the configuration, and the builder's explanations
+(`notes`, validator messages). The currency stays the dashboard's: a lira dashboard read in English shows `TRY 4,200`, in Turkish `₺4.200`.
+
 ## Finding a dashboard
 Every dashboard page has a **Dashboards** link above its title that leads back to the list at `/d/`. On the list, the search box above the dashboards filters
 as you type: the built dashboards and, when the builder keeps them, your saved ones and those shared with you. It looks at the title and description (and, for

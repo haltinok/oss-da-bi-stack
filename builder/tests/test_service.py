@@ -355,3 +355,12 @@ def test_only_the_owner_changes_tags_over_http(memory_store):
     assert client.put(f"/saved/{id_}", headers=other, json={"tags": ["mine"]}).status_code == 403
     assert client.put(f"/saved/{id_}", headers=admin, json={"tags": ["mine"]}).status_code == 403
     assert client.put(f"/saved/{id_}", headers=owner, json={"tags": ["mine"]}).status_code == 200
+
+
+def test_info_gives_the_examples_in_the_pages_language():
+    h = token("manager", "lang1")
+    en = client.get("/info", headers=h).json()["examples"]
+    tr = client.get("/info?lang=tr", headers=h).json()["examples"]
+    assert en[0].startswith("Monthly revenue") and tr[0].startswith("Kanala göre") and len(tr) >= 3
+    assert client.get("/info?lang=de", headers=h).json()["examples"] == en, "a language it has no words for gets English"
+    assert client.get("/info?lang=tr", headers=token("purchasing", "lang2")).json()["examples"][0].startswith("Stok durumu")

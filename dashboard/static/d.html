@@ -19,7 +19,7 @@
       <span class="sub" id="brand-sub"></span>
     </div>
     <div class="tools" id="tools">
-      <label class="field" id="dataset-field" hidden>Dataset <select id="f-dataset" aria-label="Dataset"></select></label>
+      <label class="field" id="dataset-field" hidden><span id="dataset-label">Dataset</span> <select id="f-dataset" aria-label="Dataset"></select></label>
       <div class="live" id="live" role="status" aria-live="polite">
         <span class="dot" aria-hidden="true"></span><span id="live-text">Connecting…</span>
       </div>
@@ -29,6 +29,7 @@
       <button class="icon-btn" id="refresh" title="Refresh" aria-label="Refresh" type="button" hidden>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>
       </button>
+      <div class="lang-switch" id="lang-switch" role="group" aria-label="Language" title="Language"><button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button><button type="button" data-lang="tr" lang="tr" aria-label="Türkçe" aria-pressed="false">TR</button></div>
       <button class="icon-btn" id="theme" title="Toggle theme" aria-label="Toggle light or dark theme" type="button">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg>
       </button>

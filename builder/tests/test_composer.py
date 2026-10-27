@@ -268,3 +268,21 @@ def test_the_stand_in_will_not_flatten_a_dashboard_that_has_tabs():
     out = build("admin", "make the chart a line", current=yaml.safe_dump(base, sort_keys=False))
     assert out["status"] != "ok" or "tabs" in out["spec"], "either refused, or the tabs are still there"
     assert out["status"] == "cannot" and "tabs" in out["message"], out
+
+
+@pytest.mark.parametrize("lang", ["en", "tr"])
+@pytest.mark.parametrize("role", core.ROLES)
+def test_every_example_offered_in_either_language_builds_for_the_role_it_is_offered_to(role, lang):
+    examples = core.examples_for(role, lang)
+    assert len(examples) >= 3
+    for text in examples:
+        out = build(role, text)
+        assert out["status"] == "ok" and out["attempts"] == 1, (role, lang, text, out.get("message"), out.get("problems"))
+
+
+def test_the_examples_follow_the_language_and_fall_back_to_english():
+    assert core.examples_for("admin", "tr")[0].startswith("Kanala göre")
+    assert core.examples_for("admin", "en")[0].startswith("Monthly revenue")
+    assert core.examples_for("admin", "de") == core.examples_for("admin", "en") == core.examples_for("admin")
+    assert core.examples_for("purchasing", "tr") != core.examples_for("purchasing", "en")
+    assert set(core.examples_for("rep", "tr")) == set(core.examples_for("manager", "tr")), "sales roles share the sales examples"
