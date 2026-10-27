@@ -23,7 +23,7 @@ the renderer builds the queries. Full reference: `dashboards/README.md`. Plan: `
 1. **Read the request.** Ask at most three questions, only when the audience (roles), the metrics or the language/currency are unclear.
 2. `scripts/dashspec meta` : the cubes, measures and dimensions (with types, what each means) and which cubes join; the same as a page with who may read what is `docs/semantic-layer.md`. Pick members from it.
 3. **Write `dashboards/<id>.yml`.** The file name is the id (lowercase, digits, `-` and `_`). Start from the closest example:
-   `sales-overview.yml` (KPIs, charts, click-to-filter, treemap), `regional-sales.yml` (no profit: safe for reps),
+   `sales-overview.yml` (KPIs, charts, click-to-filter, treemap), `pivot-gallery.yml` (every pivot variant), `regional-sales.yml` (no profit: safe for reps),
    `envanter-sagligi.yml` (Turkish, lira, inventory tables).
 4. `scripts/dashspec validate dashboards/<id>.yml` : fix every message (each names the panel and the field) until it says `ok`.
 5. `scripts/dashspec build` : compiles every dashboard into the committed `dashboards/build/` (a test fails if it is stale).
@@ -84,6 +84,8 @@ layout:                       # rows of 12 columns; every panel exactly once
   pick a `columns` dimension with few values (a year, a channel), not a product. For months (or quarters, years) across the top write
   `columns: { member: dates.full_date, granularity: month }`; a time column carries no click filter. `heat: { measure }` shades one measure's cells
   from light to strong (the number stays in every cell; totals are not shaded): use it to spot hot cells, such as month by region.
+  `show: share_of_row | share_of_column | share_of_total` draws percentages of a total: ask for the total it divides by in `totals`, and use `sum` or
+  `count` measures only (a ratio such as margin does not add up, and the validator refuses it). `dashboards/pivot-gallery.yml` has one of each variant.
 - **Click rules** (validated): a bar or pie sets a filter on its `by`; a treemap's filters follow its `group` in order; a table row sets filters
   on the dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension.
 - **Labels:** one language per file. For `tr-TR` write every `title`, `label` and `description` in Turkish; the page's own words (buttons,

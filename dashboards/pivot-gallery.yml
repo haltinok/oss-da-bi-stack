@@ -1,0 +1,83 @@
+spec: 1
+id: pivot-gallery
+title: Pivot gallery
+description: "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares."
+locale: en-US
+currency: USD
+roles: [admin, manager]
+time:
+  dimension: dates.full_date
+  fiscal_year_start: 7
+filters:
+  - id: fy
+    dimension: dates.fiscal_year
+    label: Fiscal year
+  - id: region
+    dimension: territories.region
+    label: Region
+    parent: territories.group_name
+  - id: category
+    dimension: products.category
+    label: Category
+  - id: subcategory
+    dimension: products.subcategory
+    label: Subcategory
+    parent: products.category
+panels:
+  - id: intro
+    type: text
+    title: How to read these
+    markdown: |
+      Each table is a **pivot**: one dimension down the side, one across the top, a measure in the cells. Totals come from Cube for the whole filtered set, so a ratio is the ratio of the totals. Click a cell, a name or a title to filter the rest of the page.
+  - id: crosstab
+    type: pivot
+    title: Revenue by category and fiscal year
+    rows: [products.category]
+    columns: dates.fiscal_year
+    measures:
+      - { member: internet_sales.revenue, label: Revenue, format: money }
+    on_click: { set_filter: [category, fy] }
+  - id: groups
+    type: pivot
+    title: Revenue by category, then subcategory
+    rows: [products.category, products.subcategory]
+    columns: dates.fiscal_year
+    measures:
+      - { member: internet_sales.revenue, label: Revenue, format: money }
+    limit: { rows: 12 }
+    on_click: { set_filter: [subcategory, fy] }
+  - id: heatmap
+    type: pivot
+    title: Revenue by region and month, shaded
+    rows: [territories.region]
+    columns: { member: dates.full_date, granularity: month }
+    measures:
+      - { member: internet_sales.revenue, label: Revenue, format: money }
+    heat: { measure: internet_sales.revenue }
+    limit: { rows: 8, columns: 12 }
+    on_click: { set_filter: [region] }
+  - id: sidebyside
+    type: pivot
+    title: Revenue and margin by category and fiscal year
+    rows: [products.category]
+    columns: dates.fiscal_year
+    measures:
+      - { member: internet_sales.revenue, label: Revenue, format: money }
+      - { member: internet_sales.margin_pct, label: Margin, format: pct }
+    on_click: { set_filter: [category, fy] }
+  - id: share
+    type: pivot
+    title: Each category's share of a year's revenue
+    rows: [products.category]
+    columns: dates.fiscal_year
+    measures:
+      - { member: internet_sales.revenue, label: Revenue, format: money }
+    show: share_of_column
+    heat: { measure: internet_sales.revenue }
+    on_click: { set_filter: [category, fy] }
+layout:
+  - [intro: 12]
+  - [crosstab: 6, sidebyside: 6]
+  - [groups: 12]
+  - [heatmap: 12]
+  - [share: 12]
