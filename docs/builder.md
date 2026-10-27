@@ -78,6 +78,11 @@ A person can **Save…** a draft: it is stored in Postgres (schema `builder`, ta
   greys it out with the reason. The owner's share form shows which roles can open it. Cube's row-level security is untouched: a viewer sees their own territories.
 - **Who can do what.** Only the owner changes the YAML, restores a version or sees versions; the owner or an admin changes the sharing, the title, or deletes. A
   viewer can *Save a copy* or *Edit a copy* (their own private copy).
+- **Tags.** The Save dialog has a **Tags** field (chips; Enter or a comma adds one; at most 5), and the owner of a saved dashboard has a **Tags** button for changing them
+  later. The page never edits YAML: the request carries `tags` (`POST /saved`, `PUT /saved/{id}`), the service writes them into the spec after its description and runs the
+  same validator as for every other field, so a bad tag is refused with the usual message (`'Board' is not lower case; write 'board'`) before anything is stored. An untouched
+  field sends nothing, so the YAML's own tags stand; the same tags again are not a change. Changing tags changes the YAML, so it is the owner's alone and a new version (an admin
+  can rename and share, not retag). Tags are visible to everyone who can see the dashboard.
 - **Versions.** Saving changed YAML makes version N+1 at the same address; the last 10 are kept; the owner can view or restore one (a restore is a new version).
 - **Limits.** `BUILDER_MAX_SAVED` (50) dashboards per person; YAML up to 30,000 characters; title up to 120.
 - **The login.** The service connects as `builder_app`, which can read and write only the two tables (it cannot create objects or touch other schemas). Saving is off, and

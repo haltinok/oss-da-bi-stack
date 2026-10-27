@@ -277,6 +277,50 @@ export function mountDraftBar(host, api, t, draft) {
   });
 }
 
+// ------------------------------------------------------------------------------------------------------------------ the Tags field
+const MAX_TAGS = 5;                                             // what a dashboard may carry (the validator says the rest: case, characters, length)
+
+/**
+ * A Tags field: the tags as chips with a remove button, and a box where Enter or a comma adds one (a pasted "a, b" adds both, a half-typed tag is kept
+ * when you leave the box or press Save, Backspace in an empty box removes the last). It does not judge a tag: the server's validator does, with its usual
+ * messages, so there is one set of rules. `read()` gives the tags, or null while the person has not changed anything, so an untouched field never
+ * overrides the tags in the YAML.
+ */
+function tagEditor(t, initial = []) {
+  let tags = [...initial], dirty = false;
+  const box = el("div", { class: "tag-editor" });
+  box.innerHTML = `<div class="te-chips"></div><input type="text" class="te-input" maxlength="24" autocomplete="off" spellcheck="false" aria-label="${esc(t.tagInputLabel)}" placeholder="${esc(t.tagInputPlaceholder)}"><p class="hint">${esc(t.tagsHint)}</p>`;
+  const chips = box.querySelector(".te-chips"), input = box.querySelector(".te-input");
+  const draw = () => {
+    chips.innerHTML = tags.map((tag) => `<span class="te-chip">${esc(tag)}<button type="button" data-rm="${esc(tag)}" aria-label="${esc(t.tagRemove(tag))}">✕</button></span>`).join("");
+    input.disabled = tags.length >= MAX_TAGS;
+  };
+  function add(text) {
+    for (const part of text.split(",")) {
+      const tag = part.trim();
+      if (tag && !tags.includes(tag) && tags.length < MAX_TAGS) { tags.push(tag); dirty = true; }
+    }
+    draw();
+  }
+  const commit = () => { if (input.value.trim()) add(input.value); input.value = ""; };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(); }
+    else if (e.key === "Backspace" && !input.value && tags.length) { tags.pop(); dirty = true; draw(); }
+  });
+  input.addEventListener("input", () => { if (input.value.includes(",")) { const last = input.value.split(",").pop(); add(input.value.slice(0, input.value.length - last.length)); input.value = last.trimStart(); } });
+  input.addEventListener("blur", commit);
+  chips.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-rm]");
+    if (!b) return;
+    tags = tags.filter((x) => x !== b.dataset.rm);
+    dirty = true;
+    draw();
+    input.focus();
+  });
+  draw();
+  return { el: box, read: () => { commit(); return dirty ? [...tags] : null; } };
+}
+
 // ------------------------------------------------------------------------------------------------------------------ saving a draft
 /** The visibility choice shared by the save and share forms: who may open it. Returns { read() -> { visibility, shared_roles }, el }. */
 function visibilityForm(t, initial = { visibility: "private", shared_roles: [] }, readableBy = null) {
@@ -299,13 +343,17 @@ function mountSavePane(pane, api, t, draft, currentYaml) {
   const form = visibilityForm(t, draft.savedMeta ? { visibility: draft.savedMeta.visibility, shared_roles: draft.savedMeta.shared_roles } : undefined);
   pane.innerHTML = `${editing ? `<p class="hint">${esc(t.editing)}: <strong>${esc(draft.savedMeta?.title || "")}</strong></p>` : ""}
     <label class="field-l">${esc(t.saveName)} <input type="text" id="sv-name" maxlength="120" value="${esc(draft.savedMeta?.title || draft.spec?.title || "")}"></label>
+    <div class="field-l" role="group" aria-labelledby="sv-tags-l"><span id="sv-tags-l">${esc(t.tagsLabel)}</span><div id="sv-tags"></div></div>
     <div id="sv-vis"></div>
     <div class="bb-row"><button type="button" id="sv-go" class="primary">${esc(editing ? t.saveNewVersion : t.saveGo)}</button>${editing ? `<button type="button" id="sv-new">${esc(t.saveAsNew)}</button>` : ""}</div>
     <div id="sv-msg" class="bmsg" hidden></div>`;
   pane.querySelector("#sv-vis").append(form.el);
+  const tagsField = tagEditor(t, draft.spec?.tags || []);
+  pane.querySelector("#sv-tags").append(tagsField.el);
   const msg = pane.querySelector("#sv-msg");
   async function go(asNew) {
-    const body = { yaml: currentYaml(), title: pane.querySelector("#sv-name").value.trim() || undefined, ...form.read() };
+    const tags = tagsField.read();                      // null: left alone, so the YAML's own tags stand
+    const body = { yaml: currentYaml(), title: pane.querySelector("#sv-name").value.trim() || undefined, ...form.read(), ...(tags ? { tags } : {}) };
     for (const b of pane.querySelectorAll("button")) b.disabled = true;
     try {
       const out = asNew || !editing ? await api.save(body) : await api.updateSaved(draft.savedId, body);
@@ -328,11 +376,11 @@ export function mountSavedBar(host, api, t, opened) {
       <span class="hint">${esc(owner ? t.yours : `${t.sharedBy} ${m.owner}`)} · ${esc(t.versionNo)} ${m.version} · ${esc(t.updated)} ${esc(new Date(m.updated_at).toLocaleString())}</span><span class="spacer"></span>
       <button type="button" data-tab="yaml">${esc(t.yaml)}</button><button type="button" id="sb-download">${esc(t.download)}</button>
       ${owner ? `<button type="button" id="sb-edit" class="primary">${esc(t.edit)}</button>` : `<button type="button" id="sb-copy">${esc(t.copy)}</button><button type="button" id="sb-editcopy">${esc(t.editCopy)}</button>`}
-      ${manage ? `<button type="button" data-tab="share">${esc(t.sharing)}</button>` : ""}${owner ? `<button type="button" data-tab="versions">${esc(t.versions)}</button>` : ""}
+      ${manage ? `<button type="button" data-tab="share">${esc(t.sharing)}</button>` : ""}${owner ? `<button type="button" data-tab="tags">${esc(t.tagsLabel)}</button><button type="button" data-tab="versions">${esc(t.versions)}</button>` : ""}
       ${manage ? `<button type="button" id="sb-delete">${esc(t.deleteBtn)}</button>` : ""}<a class="btn" href="/d/">${esc(t.dashboards)}</a></div>
     <div id="sb-msg" class="bmsg" hidden></div>
     <div class="bb-tab" id="tab-yaml" hidden><textarea id="sb-yaml" rows="20" spellcheck="false" readonly aria-label="${esc(t.yaml)}"></textarea></div>
-    <div class="bb-tab" id="tab-share" hidden></div><div class="bb-tab" id="tab-versions" hidden></div></section>`;
+    <div class="bb-tab" id="tab-share" hidden></div><div class="bb-tab" id="tab-tags" hidden></div><div class="bb-tab" id="tab-versions" hidden></div></section>`;
   const $ = (q) => host.querySelector(q), msg = $("#sb-msg");
   $("#sb-yaml").value = opened.yaml;
   for (const b of host.querySelectorAll("[data-tab]")) b.addEventListener("click", () => { const pane = $(`#tab-${b.dataset.tab}`); pane.hidden = !pane.hidden; });
@@ -357,6 +405,16 @@ export function mountSavedBar(host, api, t, opened) {
     pane.append(form.el, el("div", { class: "bb-row" }, `<button type="button" id="sb-share-go" class="primary">${esc(t.saveGo)}</button>`));
     pane.querySelector("#sb-share-go").addEventListener("click", async () => {
       try { await api.updateSaved(m.id, form.read()); location.reload(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
+    });
+  }
+  if (owner) {
+    const pane = $("#tab-tags");                         // changing the tags changes the YAML: the owner's alone, and a new version
+    const field = tagEditor(t, m.tags || opened.spec?.tags || []);
+    pane.append(field.el, el("div", { class: "bb-row" }, `<button type="button" id="sb-tags-go" class="primary">${esc(t.saveGo)}</button>`));
+    pane.querySelector("#sb-tags-go").addEventListener("click", async () => {
+      const tags = field.read();
+      if (!tags) return;                                 // nothing changed
+      try { await api.updateSaved(m.id, { tags }); location.reload(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
     });
   }
   if (owner) {

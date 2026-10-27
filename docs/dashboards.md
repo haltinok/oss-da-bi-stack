@@ -48,7 +48,9 @@ the ✕ clears it, and nothing is asked of the server while you type. There is n
 **Tags.** A dashboard can carry up to five `tags` (`tags: [sales, management]`): short, lower-case, letters of any language, digits, spaces and hyphens, at most 24
 characters, no repeats, the most important first. The validator refuses anything else and says what to write (`'Sales' is not lower case; write 'sales'`), so two
 spellings of one word do not appear. Built dashboards carry them in `index.json`, saved dashboards in their YAML (the list reads them from it, so a dashboard your
-role cannot open still shows its tags). Tags are visible to everyone who can see the dashboard: nothing sensitive. The builder writes tags only when the request names a topic or group.
+role cannot open still shows its tags). Tags are visible to everyone who can see the dashboard: nothing sensitive. The builder writes tags only when the request names a topic or group. In the page, the Save dialog
+has a **Tags** field (Enter or a comma adds one, at most 5) and the owner of a saved dashboard has a **Tags** button; a bad tag is refused with the validator's message, and a
+change of tags is a new version ([details](builder.md#saved-dashboards)).
 
 **Using tags on the list.** Each card shows its tags as chips, and a bar under the search field lists every tag with its count (most used first, then in Turkish
 order; the counts follow the words you have typed). Click a chip, on a card or in the bar, to filter by that tag; pick several and a dashboard must carry all of them

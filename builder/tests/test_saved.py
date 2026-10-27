@@ -227,3 +227,82 @@ def test_tags_survive_the_builder_checks_and_the_guide_explains_them():
     built, problems = core.check_submission(GOOD, CATALOG, "rep")
     assert built is not None and built["spec"]["tags"] == ["sales", "regional"] and "tags:" in built["yaml"], problems
     assert "tags?" in core.SPEC_GUIDE and "ONLY when the request names a topic" in core.SPEC_GUIDE
+
+
+# ------------------------------------------------------------------------------------------------------------------ the Tags field of the Save dialog
+def keys_of(text):
+    return list(yaml.safe_load(text))
+
+
+def test_saving_with_tags_writes_them_into_the_dashboard_after_its_description(store):
+    row = new(store, tags=["management", "satış"])
+    assert row["tags"] == ["management", "satış"]
+    text = store.get(row["id"])["yaml"]
+    assert yaml.safe_load(text)["tags"] == ["management", "satış"]
+    assert keys_of(text).index("tags") == keys_of(text).index("description") + 1
+
+
+def test_no_tags_argument_keeps_what_the_yaml_has_and_an_empty_list_removes_them(store):
+    assert new(store, title="A")["tags"] == ["sales", "regional"]
+    gone = new(store, title="B", tags=[])
+    assert gone["tags"] == [] and "tags" not in yaml.safe_load(store.get(gone["id"])["yaml"])
+
+
+def test_bad_tags_are_refused_with_the_validators_message_before_anything_is_stored(store):
+    with pytest.raises(saved.SavedError) as e:
+        new(store, tags=["Sales", "ok"])
+    assert e.value.status == 422 and e.value.message == "Those tags are not valid."
+    assert any("tags[0]: 'Sales' is not lower case; write 'sales'" in p for p in e.value.problems)
+    with pytest.raises(saved.SavedError) as e:
+        new(store, tags=["a", "b", "c", "d", "e", "f"])
+    assert e.value.message == "Those tags are not valid." and any("tags" in p and "too long" in p for p in e.value.problems)
+    assert store.list() == [], "nothing was saved"
+
+
+def test_another_problem_keeps_the_general_message_even_when_tags_are_given(store):
+    broken = GOOD.replace("internet_sales.revenue", "internet_sales.nope", 1)
+    with pytest.raises(saved.SavedError) as e:
+        new(store, yaml_text=broken, tags=["fine"])
+    assert e.value.message == "The dashboard is not valid for your role." and any("nope" in p for p in e.value.problems)
+
+
+def test_changing_only_the_tags_makes_a_new_version_and_the_same_tags_do_not(store):
+    row = new(store, who("alice"))
+    same = saved.update_saved(store, CATALOG, who("alice"), row["id"], tags=["sales", "regional"])
+    assert same["version"] == 1, "asking for the tags it already has is not a change"
+    changed = saved.update_saved(store, CATALOG, who("alice"), row["id"], tags=["management"])
+    assert changed["version"] == 2 and changed["tags"] == ["management"]
+    assert yaml.safe_load(store.get(row["id"])["yaml"])["tags"] == ["management"]
+    assert yaml.safe_load(store.get_version(row["id"], 1)["yaml"])["tags"] == ["sales", "regional"], "the old version keeps its tags"
+    removed = saved.update_saved(store, CATALOG, who("alice"), row["id"], tags=[])
+    assert removed["version"] == 3 and removed["tags"] == []
+    assert saved.update_saved(store, CATALOG, who("alice"), row["id"], tags=[])["version"] == 3
+
+
+def test_only_the_owner_changes_tags_not_even_an_admin_nor_someone_it_is_shared_with(store):
+    row = new(store, who("alice"), visibility="everyone")
+    for other in (who("bob"), who("root", "admin")):
+        with pytest.raises(saved.SavedError) as e:
+            saved.update_saved(store, CATALOG, other, row["id"], tags=["mine-now"])
+        assert e.value.status == 403, other
+    assert saved.update_saved(store, CATALOG, who("alice"), row["id"], title="Renamed")["tags"] == ["sales", "regional"], "renaming leaves the tags alone"
+
+
+def test_tags_given_with_a_yaml_edit_win_over_the_tags_in_that_yaml(store):
+    row = new(store, who("alice"))
+    edited = GOOD.replace("tags: [sales, regional]", "tags: [fromyaml]")
+    up = saved.update_saved(store, CATALOG, who("alice"), row["id"], yaml_text=edited, tags=["fromfield"])
+    assert up["tags"] == ["fromfield"]
+    up = saved.update_saved(store, CATALOG, who("alice"), row["id"], yaml_text=edited)
+    assert up["tags"] == ["fromyaml"], "without the field the YAML's own tags are used"
+
+
+def test_retag_leaves_text_it_cannot_read_to_the_validator_and_places_tags_sensibly():
+    assert saved.retag("- a list\n- not a mapping\n", ["x"]) == "- a list\n- not a mapping\n"
+    assert saved.retag(": : :\n  - [", ["x"]) == ": : :\n  - ["
+    no_description = "spec: 1\ntitle: T\nlocale: en-US\n"
+    assert keys_of(saved.retag(no_description, ["x"])) == ["spec", "title", "tags", "locale"], "after the title when there is no description"
+    assert keys_of(saved.retag("spec: 1\n", ["x"])) == ["spec", "tags"], "at the end when there is neither"
+    same = "spec: 1\ntitle: T\nlocale: en-US\ntags: [x]\n"
+    assert saved.retag(same, ["x"]) == same, "the same tags: the text is untouched, even in another position"
+    assert "tags" not in yaml.safe_load(saved.retag(same, []))
