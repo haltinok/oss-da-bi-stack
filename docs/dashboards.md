@@ -49,7 +49,9 @@ sends nothing. A tab always shows numbers for the current filters (it reloads wh
 interval (5 minutes); Refresh and the automatic refresh reload the open tab. **Export all** takes every tab (it loads the ones you never opened first). The open tab is in the address
 (`?tab=details`; the first tab leaves it out), so it can be linked and survives a reload and a change of language; a name the dashboard does not have opens the first tab.
 Keyboard: Tab reaches the open tab, the arrow keys move to the next or previous tab and open it (they wrap), Home and End go to the first and the last. On a phone the bar scrolls sideways
-inside itself. The rule-based builder does not write tabs and will not change a dashboard that has them (it would flatten them): edit the YAML, or use a language model.
+inside itself. The **builder** knows tabs: a language model is told to use them only when the request asks for pages or separate topics (or the dashboard would pass about 8 panels) and is
+shown how; its mistakes come back naming the tab. A tabbed draft or saved dashboard works like any other (save, share, versions, tags); a saved dashboard from before tabs opens unchanged. The rule-based
+builder (no API key) does not write tabs and will not change a dashboard that has them (it would flatten them): edit the YAML, or use a language model.
 
 ## Language
 Every `/d` page has a small **EN | TR** switch in its header. The choice is kept in this browser (or, when the browser keeps nothing, in the address as `?lang=tr`, which also

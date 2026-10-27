@@ -27,7 +27,7 @@ DeepSeek's endpoint is documented at <https://api-docs.deepseek.com/guides/anthr
 
 **The model reads the dashboard spec.** The prompt carries the field reference generated from the schema (the same table as [dashboard-spec-reference.md](dashboard-spec-reference.md): every
 field, type, whether required, and what it means), the validator's rules, a cheat sheet, two complete examples that are valid for the user's role (one with a drill-down and a pie
-with Turkish labels) and the role's catalog: roughly 6,000-8,000 tokens in and 1,000-3,000 out per build. That is the price of a cheaper model being able to write a valid file;
+with Turkish labels) and the role's catalog: roughly 7,500-10,000 tokens in (the role's catalog is most of the difference: about 7,700 for purchasing, 8,300 for a rep, 9,700 for admin, measured with the tabs paragraph and example) and 1,000-3,000 out per build. That is the price of a cheaper model being able to write a valid file;
 `BUILDER_SPEC_REFERENCE=0` leaves the reference out (about a third smaller) if a model copes without it. A model that wraps the YAML in a code fence is tolerated.
 **None of the three has been run against its real API here** (no keys); the wire format is tested against a fake compatible server through the real SDK.
 
@@ -114,6 +114,9 @@ To switch a running stack to Claude: add the key to `.env`, then `docker compose
 ## The two models
 - **A language model** (Claude, DeepSeek, …). Free text, edits in conversation. **Not yet run against a real API here** (no key was available): the loop, prompts, limits and error handling are tested with
   a scripted model. Before relying on it, run [`builder/evals.md`](../builder/evals.md) with a real key.
+- **Tabs.** A language model is told (in the guide) to write `tabs` instead of `layout` only when the request asks for pages or separate topics, or the dashboard would pass about 8
+  panels, and is shown the first example again on two tabs; a mistake comes back naming the tab (`tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`). The rule-based
+  stand-in never writes tabs and **refuses to change a dashboard that has them** (its editing rebuilds the layout from the panels and would flatten the pages): it says so and points at the YAML tab.
 - **The rule-based stand-in.** Keywords in English and Turkish (measures, drill levels, chart styles, per-channel charts, breakdowns, top N, table, treemap, pie, a pivot ("by category and month", "heatmap", "crosstab": one measure, rows by a dimension or two, the fiscal year or months/quarters across, optional shading), filters, clicks, language),
   and edits (chart style, columns, top N, add or remove a panel, split a chart per channel). It says what it understood ("Understood: …") and, when it understood nothing
   of a change, says so and changes nothing. It is not an LLM and will miss phrasing it does not know; that is what Claude is for.

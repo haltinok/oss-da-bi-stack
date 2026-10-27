@@ -67,7 +67,17 @@ panels:
 layout:                       # rows of 12 columns; every panel exactly once
   - [kpis: 12]
   - [trend: 8, lines: 4]
+# ...or, instead of `layout`, pages (see "Tabs" below):
+# tabs:
+#   - { id: overview, title: Overview, layout: [ [kpis: 12], [trend: 8, lines: 4] ] }
+#   - { id: details,  title: Details,  layout: [ [mix: 7, top: 5] ] }
 ```
+- **Tabs:** write `tabs` **instead of** `layout` (2 to 8 entries, each `id`, `title` of 1-3 words and its own `layout` rows) when the request asks for pages ("an overview and a
+  details page", one page per audience or topic) or the dashboard would pass about 8 panels; otherwise keep one `layout`. `panels` stays one flat list and **each panel goes on exactly
+  one tab**; the filters and a drill-down's period are shared by all tabs, so a filter chosen on one tab applies on the others (a panel a click comes from is still the one
+  that sets it). Only the open tab's panels are loaded, which is the point at 250M rows: put the KPIs and the main chart on the first tab, the detail tables on later ones. Titles are in
+  the dashboard's language. Messages name the tab: `tab 'details': row 2: the widths add up to 11`, `tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`,
+  `dashboard: (file): needs exactly one of: layout, tabs`. The rule-based builder does not write tabs and will not edit a dashboard that has them.
 - **Tags:** `tags: [sales, management]` (at most 5; lower case; letters, digits, spaces, hyphens; 24 characters) help people find and group dashboards on `/d/`. Add them when
   the request names a topic or audience, in the dashboard's language, most important first. They are visible to everyone who can see the dashboard: nothing sensitive.
 - **Formats:** `money` (compact on tiles and bars, whole units in tables), `int`, `pct` (a *fraction*: 0.153 shows 15.3%; use a `ratio`, not a
