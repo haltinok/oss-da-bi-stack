@@ -11,6 +11,7 @@ import json
 import pathlib
 import re
 import sys
+import time
 import zipfile
 from urllib.parse import parse_qs, urlparse
 
@@ -1117,6 +1118,21 @@ with sync_playwright() as p:
     page.locator(f"{trend} .hit").nth(1).click()
     settled(page)
     check(page.evaluate("document.documentElement.scrollWidth - window.innerWidth") <= 0, "390px: the drill-down page has no sideways scroll")
+    ctx.close()
+
+    # ---- load timers: a spinner and the running seconds while a panel waits, "✓ 1.4s" once it has landed
+    def slow(route):
+        time.sleep(0.6)
+        route.continue_()
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[(re.compile(r"/cube-.*/load"), slow)])
+    page.wait_for_selector(".card:not(.kpi) .timer.run", timeout=20000)
+    check(page.locator(".card.pending .timer.run b").first.inner_text().endswith("s"), "a waiting panel shows its running seconds")
+    check(page.locator(".kpi .timer").count() > 0, "the key-figure tiles have a timer too")
+    settled(page)
+    page.wait_for_function("!document.querySelector('.timer.run')", timeout=20000)
+    done = page.locator(".timer.done b").all_inner_texts()
+    check(done and all(re.fullmatch(r"\d+\.\ds", d) for d in done), f"a loaded panel keeps its time ({done[:3]})")
+    check(page.evaluate("getComputedStyle(document.querySelector('.timer.done')).display") != "none", "the finished time is visible")
     ctx.close()
 
     # ---- unknown dashboard, wrong role

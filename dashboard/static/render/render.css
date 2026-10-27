@@ -188,3 +188,7 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .rtabs [role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .rgrid[hidden] { display: none; }
 @media (max-width: 480px) { .rtabs [role="tab"] { min-height: 44px; } }
+
+/* A key-figure tile has no header: its load timer sits in the top-right corner, out of the label's text. */
+.kpi { position: relative; }
+.kpi > .timer { position: absolute; top: 8px; right: 10px; margin: 0; }
