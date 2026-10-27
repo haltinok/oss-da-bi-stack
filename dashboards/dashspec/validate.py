@@ -179,6 +179,11 @@ def semantic_errors(spec, catalog):
             if f["parent"] == f["dimension"]:
                 errs.append(f"{w}: parent: a filter cannot be its own parent")
 
+    for i, tag in enumerate(spec.get("tags", [])):
+        why = tag_problem(tag)
+        if why:
+            errs.append(f"dashboard: tags[{i}]: '{tag}' {why}")
+
     panel_ids = [p["id"] for p in spec["panels"]]
     for dup in sorted({i for i in panel_ids if panel_ids.count(i) > 1}):
         errs.append(f"dashboard: panels: id '{dup}' is used by more than one panel")
@@ -234,6 +239,21 @@ def semantic_errors(spec, catalog):
     _layout_errors(spec, panel_ids, errs)
     _role_errors(spec, errs)
     return errs, used
+
+
+def tag_problem(tag):
+    """Why `tag` is not a good tag, or None. A tag is a short plain word or two: lower case, letters (of any language), digits, single spaces and
+    hyphens, trimmed. Nothing is fixed silently, so two spellings of one word cannot sneak in ('Sales' is an error that says 'sales')."""
+    if tag != tag.strip() or "  " in tag:
+        return "has spaces at its ends or two in a row; write it trimmed, with single spaces"
+    if tag != tag.lower():
+        return f"is not lower case; write '{tag.lower()}'" if tag.isascii() else "is not lower case; write it in lower case"
+    bad = sorted({c for c in tag if not (c.isalnum() or c in " -")})
+    if bad:
+        return f"contains {' '.join(repr(c) for c in bad)}; a tag is letters, digits, spaces and hyphens"
+    if not tag[0].isalnum():
+        return "must start with a letter or a digit"
+    return None
 
 
 TIME_FILTERS = ("fiscal_year", "calendar_year")

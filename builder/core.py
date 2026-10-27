@@ -33,7 +33,8 @@ LINK = re.compile(r"\[([^\]]*)\]\(\s*[a-zA-Z][a-zA-Z0-9+.-]*:[^)]*\)")      # [t
 ROLES = ("admin", "manager", "rep", "purchasing", "marketing")
 
 SPEC_GUIDE = """\
-A dashboard is one YAML file. Top level: spec: 1, id, title, description, locale (en-US | tr-TR), currency (USD | TRY), time, filters, panels, layout.
+A dashboard is one YAML file. Top level: spec: 1, id, title, description, tags?, locale (en-US | tr-TR), currency (USD | TRY), time, filters, panels, layout.
+tags: 0-5 short lower-case words (letters, digits, spaces, hyphens; 24 characters at most) for finding and grouping on the list page: write them ONLY when the request names a topic or group ("a sales dashboard for management"), 1-3 words, in the dashboard's language, most important first; never anything sensitive.
 Do not write roles, theme.logo or id: the service sets them.
 
 time: { dimension: <a time dimension>, fiscal_year_start: 7 }

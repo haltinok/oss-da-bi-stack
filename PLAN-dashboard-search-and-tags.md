@@ -40,16 +40,14 @@ Built as described, with these notes from the code and the tests:
 - No stemming (`sağlık` and `sağlığı` differ by a letter, as in Turkish itself); documented in `docs/dashboards.md`.
 - Tests: `lib.test.mjs` (fold with Turkish rules, words, matches, literal pattern characters, `filterItems`), and `renderer.py` against seeded saved dashboards (`mock_stack.seed_saved`): Turkish folding, owner search, several words in any order, a bracket, no match and Clear, HTML in a title shown as text, Escape, `/` (and a slash typed in the field), delete from a filtered list, no request while typing, 390 px with a 44 px field and no sideways scroll, no console errors.
 
-### Phase 2: tags in the spec
-- Schema: `tags` (array, max 5, strings 1-24 characters, unique); `dashspec/validate.py`: the character and lower-case rules with messages that name the field and say what to write (`tags[1]: 'Sales' has capitals; use 'sales'`); `docs.py` description; `docs/dashboard-spec-reference.md` regenerated.
-- `dashspec build`: `index.json` entries get `tags` (omitted when empty).
-- `builder/saved.py`: `meta()` gets `tags`, taken from the parsed spec of the row, cached by `(id, version)`, sanitised (a bad or missing `tags` gives `[]`, never an error in a list). `list_saved` stays one pass.
-- Builder guide (`builder/core.py`) and the `dashboard-author` skill: "write `tags` only when the request names a topic or group; 1-3 words, lower case, in the dashboard's language"; the stand-in writes none.
-- Existing dashboards: give the five checked-in ones tags (`sales`, `inventory`, `reference` for the gallery) so the feature has something to show.
-- Tests:
-  - dashspec: a good list; more than 5; empty string; 25 characters; duplicate; capitals; punctuation, `<`, `"`, a newline; a non-string; Turkish letters accepted; compile and index carry tags; the committed build is current.
-  - builder: `list_saved` returns tags for own and shared rows, for a row the role cannot open, and `[]` for a row whose YAML has no or a broken `tags`; the cache is keyed by version (an updated dashboard shows its new tags); the prompt guide mentions `tags`; the stand-in output is unchanged.
-  - Nothing is rendered yet in this phase except what the API returns.
+### Phase 2: tags in the spec — done
+Built as described, with these notes:
+- Schema `tags` (array of 1-24 character strings, at most 5, unique); the character, case and spacing rules are in the validator (`dashspec/validate.py` `tag_problem`) because JSON Schema's regular expressions cannot say "a letter of any language". Messages name the field and say what to write; nothing is fixed silently. For a capital the message suggests the lower-case form (only for ASCII text, since Turkish `I`/`ı` and `İ`/`i` cannot be guessed).
+- `dashspec build` writes `tags` into `index.json` (the key is left out when a dashboard has none). The five checked-in dashboards have tags (`sales`; `sales, regional`; `envanter, stok` in Turkish; `sales, reference` for the gallery); a test requires every checked-in dashboard to have them.
+- `builder/saved.py` `tags_of(row)`: read from the row's YAML, cached by `(id, version)`, sanitised (anything odd gives fewer tags or none), returned as a copy so a caller cannot change the cache; `meta()` carries `tags`, so the list, a save and an update all return them, including for a dashboard the viewer's role cannot open.
+- The model guide and the `dashboard-author` skill say: write tags only when the request names a topic or group, 1-3 words, in the dashboard's language, most important first, nothing sensitive. The stand-in writes none.
+- Nothing is drawn yet; the list page ignores `tags` until Phase 3.
+- Tests: dashspec (7 good shapes including Turkish letters and a 24-character tag; 16 bad ones with the message checked; compile and index carry tags; no key when there are none; every checked-in dashboard has tags), builder (own and shared rows carry tags, a private dashboard stays private, an unreadable one still shows tags, a new version shows its new tags, odd YAML gives fewer tags and never an error, the cache cannot be changed by a caller, tags survive the builder checks, the guide explains them, the stand-in writes none).
 
 ### Phase 3: tags in the list
 - Cards (built, drafts, saved) show tag chips. Clicking a chip adds that tag to the filter; the active tags appear as removable chips next to the search field (AND with the search words and with each other). A **tag bar** under the field lists the tags that exist on the visible lists with counts, so people reuse them instead of inventing synonyms.

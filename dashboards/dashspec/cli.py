@@ -91,7 +91,7 @@ def cmd_build(args):
             continue
         out.mkdir(parents=True, exist_ok=True)
         (out / f"{spec['id']}.json").write_text(json.dumps(compile_spec(spec, used, catalog), indent=2, ensure_ascii=False) + "\n")
-        index.append({"id": spec["id"], "title": spec["title"], "description": spec.get("description", ""), "roles": spec.get("roles", [])})
+        index.append({"id": spec["id"], "title": spec["title"], "description": spec.get("description", ""), "roles": spec.get("roles", []), **({"tags": spec["tags"]} if spec.get("tags") else {})})
     if bad:
         return 1
     stale = {p.name for p in out.glob("*.json")} - {f"{i['id']}.json" for i in index} - {"index.json"} if out.is_dir() else set()

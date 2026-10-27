@@ -68,6 +68,8 @@ layout:                       # rows of 12 columns; every panel exactly once
   - [kpis: 12]
   - [trend: 8, lines: 4]
 ```
+- **Tags:** `tags: [sales, management]` (at most 5; lower case; letters, digits, spaces, hyphens; 24 characters) help people find and group dashboards on `/d/`. Add them when
+  the request names a topic or audience, in the dashboard's language, most important first. They are visible to everyone who can see the dashboard: nothing sensitive.
 - **Formats:** `money` (compact on tiles and bars, whole units in tables), `int`, `pct` (a *fraction*: 0.153 shows 15.3%; use a `ratio`, not a
   `*_pct` measure), `decimal`, `number`. Default `number`.
 - **Across cubes:** Cube cannot join two fact cubes, so combine them with `sum` or `ratio` (of two sums), or `stack` for bars. Nothing

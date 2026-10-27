@@ -3,6 +3,10 @@
   "id": "regional-sales",
   "title": "Regional sales",
   "description": "Revenue and orders by territory and product. No cost or profit figures, so it is the same for a manager and a rep; each sees only their own territories.",
+  "tags": [
+    "sales",
+    "regional"
+  ],
   "locale": "en-US",
   "currency": "USD",
   "roles": [
