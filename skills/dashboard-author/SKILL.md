@@ -62,6 +62,7 @@ panels:
   - { id: lines, type: table, columns: [ { member: a.order_number, label: Order }, { member: a.m, label: Revenue, format: money } ], order: { a.order_date: desc }, limit: 50 }
   - { id: bycat, type: table, columns: [ products.category, { member: a.m, label: Revenue, format: money }, { member: a.margin, label: Margin, format: pct } ], totals: footer }     # a frozen bold total row
   - { id: xtab, type: pivot, rows: [products.category, products.subcategory], columns: dates.fiscal_year, measures: [ { member: a.m, label: Revenue, format: money } ], totals: both, limit: { rows: 20 }, on_click: { set_filter: [category, fy] } }
+  - { id: heatmap, type: pivot, rows: [territories.region], columns: { member: dates.full_date, granularity: month }, measures: [ { member: a.m, label: Revenue, format: money } ], heat: { measure: a.m } }
   - { id: note, type: text, markdown: "Plain **Markdown**." }
 layout:                       # rows of 12 columns; every panel exactly once
   - [kpis: 12]
@@ -80,7 +81,9 @@ layout:                       # rows of 12 columns; every panel exactly once
   (a ratio is the ratio of the totals, so use it on grouped lists, not on a list of single orders). Readers sort a table by clicking a column title. A `pivot`
   crosses two dimensions: `rows` (one or two; two group) down the side, one `columns` dimension across the top, one to three `measures` in the cells, with row,
   column and grand totals (`totals`) taken from Cube over the whole set, not only the rows shown. `limit` caps rows (default 25) and columns (default 12);
-  pick a `columns` dimension with few values (a year, a channel), not a product.
+  pick a `columns` dimension with few values (a year, a channel), not a product. For months (or quarters, years) across the top write
+  `columns: { member: dates.full_date, granularity: month }`; a time column carries no click filter. `heat: { measure }` shades one measure's cells
+  from light to strong (the number stays in every cell; totals are not shaded): use it to spot hot cells, such as month by region.
 - **Click rules** (validated): a bar or pie sets a filter on its `by`; a treemap's filters follow its `group` in order; a table row sets filters
   on the dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension.
 - **Labels:** one language per file. For `tr-TR` write every `title`, `label` and `description` in Turkish; the page's own words (buttons,

@@ -609,12 +609,24 @@ PIVOT_BROKEN = [
     ("too many columns", with_pivot(limit={"columns": 40}), ["panel 'xtab' (pivot)", "limit", "greater than the maximum of 24"]),
     ("a click on a filter of a dimension the pivot does not show", with_pivot(on_click={"set_filter": ["region"]}),
      ["panel 'xtab' (pivot)", "on_click.set_filter:", "filter 'region' is on 'territories.region', which this pivot does not show"]),
+    ("a click that names a bad filter id still gets the filter message", with_pivot(on_click={"set_filter": "Bad id"}), ["panel 'xtab' (pivot)", "on_click", "must be a filter id or a list of one or two filter ids"]),
+    ("a column that is neither a member nor an object", with_pivot(columns="nope"), ["panel 'xtab' (pivot)", "columns", "must be a member ('cube.name') or an object { member, granularity }"]),
     ("a click on a filter that does not exist", with_pivot(on_click={"set_filter": ["ghost"]}), ["panel 'xtab'", "on_click.set_filter:", "no filter with id 'ghost'"]),
     ("a measure cube with no join to the dimension", with_pivot(measures=["inventory_health.stockout_items"], on_click={"set_filter": ["category"]}),
      ["panel 'xtab' (pivot)", "'inventory_health.stockout_items' cannot be combined with"]),
     ("a profit measure for a rep", lambda s: (with_pivot(measures=["internet_sales.margin_pct"])(s), s.update(roles=["rep"])),
      ["panel 'xtab' (pivot)", "role 'rep' cannot read 'internet_sales.margin_pct'"]),
-    ("an unknown field", with_pivot(heat="yes"), ["panel 'xtab'", "'heat' is not a field of a pivot panel"]),
+    ("an unknown field", with_pivot(shade="yes"), ["panel 'xtab'", "'shade' is not a field of a pivot panel"]),
+    ("a granularity on a dimension that is not a time dimension", with_pivot(columns={"member": "dates.fiscal_year", "granularity": "month"}),
+     ["panel 'xtab' (pivot)", "columns.member:", "is a number dimension, a time dimension is needed"]),
+    ("a time column without a granularity", with_pivot(columns={"member": "dates.full_date"}), ["panel 'xtab'", "columns", "'granularity' is a required property"]),
+    ("a bad granularity", with_pivot(columns={"member": "dates.full_date", "granularity": "decade"}), ["panel 'xtab'", "columns", "'decade' is not one of"]),
+    ("the time column also down the side", with_pivot(rows=["dates.full_date"], columns={"member": "dates.full_date", "granularity": "month"}, on_click={"set_filter": ["fy"]}),
+     ["panel 'xtab' (pivot)", "columns:", "also in `rows`"]),
+    ("heat on a measure the pivot does not show", with_pivot(heat={"measure": "internet_sales.units"}), ["panel 'xtab' (pivot)", "heat.measure:", "not one of the pivot's measures"]),
+    ("heat without a measure", with_pivot(heat={}), ["panel 'xtab'", "heat", "'measure' is a required property"]),
+    ("a click on a filter of the time column's year", with_pivot(columns={"member": "dates.full_date", "granularity": "month"}, on_click={"set_filter": ["fy"]}),
+     ["panel 'xtab' (pivot)", "on_click.set_filter:", "filter 'fy' is on 'dates.fiscal_year', which this pivot does not show"]),
 ]
 
 
@@ -631,8 +643,11 @@ def test_a_broken_pivot_fails_with_a_message_that_names_the_place(name, mutate, 
 @pytest.mark.parametrize("changes", [
     {}, {"rows": ["products.category", "products.subcategory"]}, {"totals": "none"}, {"totals": "rows"}, {"totals": "columns"},
     {"order": {"by": "label"}}, {"order": {"dir": "asc"}, "limit": {"rows": 5, "columns": 3}},
+    {"columns": {"member": "dates.full_date", "granularity": "month"}, "on_click": {"set_filter": ["category"]}},
+    {"rows": ["products.category", "products.subcategory"], "columns": {"member": "dates.full_date", "granularity": "quarter"}, "totals": "columns", "on_click": {"set_filter": ["category"]}},
+    {"heat": {"measure": "internet_sales.revenue"}},
     {"rows": ["products.category", "products.subcategory"], "measures": ["internet_sales.revenue", "reseller_sales.revenue"], "totals": "both"},
-], ids=["plain", "two-levels", "no-totals", "row-totals", "column-totals", "by-label", "limits", "two-cubes"])
+], ids=["plain", "two-levels", "no-totals", "row-totals", "column-totals", "by-label", "limits", "time-months", "time-quarters-two-levels", "heat", "two-cubes"])
 def test_python_pivot_queries_match_the_renderers(tmp_path, changes):
     spec = copy.deepcopy(GOOD)
     with_pivot(**changes)(spec)

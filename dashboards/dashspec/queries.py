@@ -110,11 +110,19 @@ def follow_period(spec, panel, values, queries):
     return [{**q, "query": with_range(spec, q["query"], rng)} for q in queries] if rng and applies_period(spec, panel) else queries
 
 
+def pivot_column(panel):
+    """A pivot's columns are a dimension or { member, granularity } -> { member, granularity? }."""
+    cols = panel["columns"]
+    return {"member": cols} if isinstance(cols, str) else cols
+
+
 def pivot_queries(spec, panel, values):
     """Every query a pivot sends, shapes only (mirror of pivotQueryList in render/plan.js: the axes of wave 1, then the values of wave 2)."""
     measures = [m["member"] for m in panel["measures"]]
     lead = measures[0]
-    rows, col, totals = panel["rows"], panel["columns"], panel.get("totals", "both")
+    rows, totals = panel["rows"], panel.get("totals", "both")
+    col = pivot_column(panel)["member"]
+    gran = pivot_column(panel).get("granularity")
     lim = {**PIVOT_LIMIT, **panel.get("limit", {})}
     by = panel.get("order", {}).get("by", "total")
     direction = panel.get("order", {}).get("dir", "asc" if by == "label" else "desc")
@@ -123,23 +131,31 @@ def pivot_queries(spec, panel, values):
     def lead_query(query):
         return follow_period(spec, panel, values, [{"cube": cube_of(lead), "query": {"measures": [lead], "filters": base, **query}}])
 
-    dims_asc = {d: "asc" for d in rows}
-    out = lead_query({"dimensions": rows, "order": {lead: direction, **dims_asc} if by == "total" else {d: direction for d in rows}, "limit": lim["rows"] + 1})
-    if len(rows) > 1:
-        out += lead_query({"dimensions": [rows[0]], "order": {lead: direction, rows[0]: "asc"} if by == "total" else {rows[0]: direction}, "limit": PIVOT_MAX_ROWS})
-    out += lead_query({"dimensions": [col], "order": {col: "asc"}, "limit": lim["columns"] + 1})
+    def shape(row_dims, with_col):
+        """The grouping by these rows and, with with_col, the column: a time column is a timeDimension at its granularity (mirror of `shape` in plan.js)."""
+        dims = [*row_dims, col] if with_col and not gran else list(row_dims)
+        out = {"dimensions": dims} if dims else {}
+        if with_col and gran:
+            out["timeDimensions"] = [{"dimension": col, "granularity": gran}]
+        return out
 
-    def per(dims):
-        extra = {"dimensions": dims, "limit": PIVOT_CELLS} if dims else {}
-        return follow_period(spec, panel, values, per_cube(measures, {"filters": base, **extra}))
+    dims_asc = {d: "asc" for d in rows}
+    out = lead_query({**shape(rows, False), "order": {lead: direction, **dims_asc} if by == "total" else {d: direction for d in rows}, "limit": lim["rows"] + 1})
+    if len(rows) > 1:
+        out += lead_query({**shape([rows[0]], False), "order": {lead: direction, rows[0]: "asc"} if by == "total" else {rows[0]: direction}, "limit": PIVOT_MAX_ROWS})
+    out += lead_query({**shape([], True), "order": {col: "asc"}, "limit": lim["columns"] + 1})
+
+    def per(row_dims, with_col):
+        grouping = shape(row_dims, with_col)
+        return follow_period(spec, panel, values, per_cube(measures, {"filters": base, **grouping, **({"limit": PIVOT_CELLS} if grouping else {})}))
 
     row_total, col_total, anything = totals in ("both", "rows"), totals in ("both", "columns"), totals != "none"
-    out += per([*rows, col])
-    out += per([rows[0], col]) if len(rows) > 1 and anything else []
-    out += per(rows) if row_total else []
-    out += per([rows[0]]) if len(rows) > 1 and row_total else []
-    out += per([col]) if col_total else []
-    out += per([]) if anything else []
+    out += per(rows, True)
+    out += per([rows[0]], True) if len(rows) > 1 and anything else []
+    out += per(rows, False) if row_total else []
+    out += per([rows[0]], False) if len(rows) > 1 and row_total else []
+    out += per([], True) if col_total else []
+    out += per([], False) if anything else []
     return out
 
 

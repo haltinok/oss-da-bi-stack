@@ -35,6 +35,13 @@ def _schema_message(err):
         if "member" in names:
             return "needs a 'member' (or a 'sum' / 'ratio' of measures, with a 'label')"
         return "needs exactly one of: " + ", ".join(dict.fromkeys(names))
+    has_object = err.validator == "oneOf" and any(isinstance(b, dict) and b.get("type") == "object" for b in err.validator_value)
+    if has_object and isinstance(err.instance, dict):
+        branch = next(i for i, b in enumerate(err.validator_value) if isinstance(b, dict) and b.get("type") == "object")      # a { ... } where a string or an object may go
+        why = [c.message for c in err.context if c.schema_path and c.schema_path[0] == branch]
+        return "; ".join(why) or err.message
+    if has_object and isinstance(err.instance, str):
+        return "must be a member ('cube.name') or an object { member, granularity }"
     if err.validator == "oneOf":
         return "must be a filter id or a list of one or two filter ids"
     if err.validator == "required" and "sum" in err.message:
@@ -85,6 +92,11 @@ def column_member(c):
     return c if isinstance(c, str) else c["member"]
 
 
+def pivot_column_member(p):
+    """A pivot's `columns` is a dimension member or { member, granularity }."""
+    return p["columns"] if isinstance(p["columns"], str) else p["columns"]["member"]
+
+
 def _measure_members(prefix, m):
     """The members of a measure definition: { member } | { sum: [...] } | { ratio: { num, den } }."""
     if "member" in m:
@@ -129,7 +141,7 @@ def _panel_members(p):
     elif t == "pivot":
         for i, r in enumerate(p["rows"]):
             yield f"rows[{i}]", r, "dimension"
-        yield "columns", p["columns"], "dimension"
+        yield "columns" if isinstance(p["columns"], str) else "columns.member", pivot_column_member(p), "dimension"
         for i, m in enumerate(p["measures"]):
             yield f"measures[{i}]", column_member(m), "measure"
 
@@ -199,8 +211,14 @@ def semantic_errors(spec, catalog):
                     errs.append(f"{w}: order.{col}: not one of the table's columns")
             if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown):
                 errs.append(f"{w}: totals: a total row needs at least one measure column")
-        if p["type"] == "pivot" and p["columns"] in p["rows"]:
-            errs.append(f"{w}: columns: '{p['columns']}' is also in `rows`; a dimension is either down the side or across the top")
+        if p["type"] == "pivot":
+            col = pivot_column_member(p)
+            if col in p["rows"]:
+                errs.append(f"{w}: columns: '{col}' is also in `rows`; a dimension is either down the side or across the top")
+            if isinstance(p["columns"], dict) and kinds.get(col) == "dimension" and used.get(col, {}).get("type") != "time":
+                errs.append(f"{w}: columns.member: '{col}' is a {used[col]['type']} dimension, a time dimension is needed to group the columns by a granularity (or write `columns: {col}`)")
+            if "heat" in p and p["heat"]["measure"] not in [column_member(m) for m in p["measures"]]:
+                errs.append(f"{w}: heat.measure: '{p['heat']['measure']}' is not one of the pivot's measures")
         _join_errors(spec, p, w, catalog, errs)
 
     _layout_errors(spec, panel_ids, errs)
@@ -243,7 +261,7 @@ def _click_errors(p, w, ids, filters, catalog, errs):
             if dim.partition(".")[2] not in TIME_FILTERS:
                 errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}'; a click on a time chart can set a filter on a fiscal_year or calendar_year dimension")
     elif kind in ("bar", "pie", "treemap", "table", "pivot"):
-        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "pivot": [*p.get("rows", []), p.get("columns")], "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
+        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "pivot": [*p.get("rows", []), *([] if not isinstance(p.get("columns"), str) else [p["columns"]])], "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
         if kind in ("bar", "pie") and len(ids) > 1:
             errs.append(f"{w}: on_click.set_filter: a click on a {kind} carries one value, {len(ids)} filters are named")
         for pos, i in enumerate(ids):

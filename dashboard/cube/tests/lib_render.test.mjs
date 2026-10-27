@@ -5,7 +5,7 @@ import { test } from "node:test";
 import {
   appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
-  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
+  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
 import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
 import { stringsFor, translations } from "../../static/render/strings.js";
@@ -528,4 +528,71 @@ test("pivotHtml: two row levels give a group row with its own figures, then the 
   assert.match(html, /<tr><th class="rl"><\/th><th class="rl" scope="row" data-r="0">Road<\/th><td class="n" data-r="0" data-c="0">\$3<\/td>/);
   assert.match(html, /data-r="1">Mtb<\/th>/, "rows are numbered across groups");
   assert.match(html, /<tfoot><tr class="tot"><th class="rl" colspan="2">Total<\/th>/);
+});
+
+// ---- pivot: time columns and heat
+const timePv = (over = {}) => pv({ columns: { member: "d.day", granularity: "month" }, ...over });
+
+test("pivotColumn reads a plain dimension or a time dimension at a granularity", () => {
+  assert.deepEqual(pivotColumn(pv()), { member: "d.year" });
+  assert.deepEqual(pivotColumn(timePv()), { member: "d.day", granularity: "month" });
+});
+
+test("a time column is a timeDimension at its granularity, narrowed to the chosen buckets once the axes are known", () => {
+  const { axes, values } = pivotQueries(spec, timePv(), {});
+  assert.deepEqual(axes.cols[0].query, { measures: ["a.rev"], filters: [], timeDimensions: [{ dimension: "d.day", granularity: "month" }], order: { "d.day": "asc" }, limit: PIVOT_LIMIT.columns + 1 });
+  assert.deepEqual(axes.rows[0].query.timeDimensions, undefined, "the rows are not grouped by time");
+  assert.deepEqual([values.cells[0].query.dimensions, values.cells[0].query.timeDimensions], [["p.name"], [{ dimension: "d.day", granularity: "month" }]]);
+  assert.equal(values.rowTotals[0].query.timeDimensions, undefined, "a row's total covers every column");
+  assert.deepEqual([values.colTotals[0].query.dimensions, values.colTotals[0].query.timeDimensions.length, values.colTotals[0].query.limit], [undefined, 1, 50000]);
+  assert.deepEqual(Object.keys(values.grand[0].query).sort(), ["filters", "measures"], "the grand total has no grouping");
+  const keys = { rows: [["A"]], cols: ["2021-03-01T00:00:00.000", "2021-04-01T00:00:00.000", "2021-05-01T00:00:00.000"] };
+  const narrowed = pivotQueries(spec, timePv(), {}, keys).values;
+  assert.deepEqual(narrowed.cells[0].query.timeDimensions[0].dateRange, ["2021-03-01", "2021-05-31"]);
+  assert.deepEqual(narrowed.colTotals[0].query.timeDimensions[0].dateRange, ["2021-03-01", "2021-05-31"]);
+  assert.equal(narrowed.cells[0].query.filters.some((f) => f.member === "d.day"), false, "no equals-filter on a time column");
+  assert.equal(narrowed.rowTotals[0].query.timeDimensions, undefined);
+  assert.deepEqual(pivotQueries(spec, timePv({ columns: { member: "d.day", granularity: "year" } }), {}, { rows: [["A"]], cols: ["2020-01-01T00:00:00.000", "2021-01-01T00:00:00.000"] }).values.cells[0].query.timeDimensions[0].dateRange, ["2020-01-01", "2021-12-31"]);
+});
+
+test("pivotModel reads a time column's buckets under the key Cube gives them", () => {
+  const def = timePv();
+  const axes = { rows: [R("a", [{ "p.name": "A" }])], cols: [R("a", [{ "d.day.month": "2021-03-01T00:00:00.000" }, { "d.day.month": "2021-04-01T00:00:00.000" }])] };
+  const vals = {
+    cells: [R("a", [{ "p.name": "A", "d.day.month": "2021-04-01T00:00:00.000", "a.rev": "7" }])],
+    colTotals: [R("a", [{ "d.day.month": "2021-03-01T00:00:00.000", "a.rev": "1" }, { "d.day.month": "2021-04-01T00:00:00.000", "a.rev": "8" }])],
+  };
+  const m = pivotModel(def, axes, vals);
+  assert.deepEqual(m.cols, ["2021-03-01T00:00:00.000", "2021-04-01T00:00:00.000"]);
+  assert.equal(m.rows[0].cells[0], undefined);
+  assert.equal(m.rows[0].cells[1].get("a.rev"), 7);
+  assert.equal(m.colTotals[1].get("a.rev"), 8);
+});
+
+test("heatScale: levels from the smallest to the largest cell, totals and empty cells left out", () => {
+  const model = { rows: [{ cells: [M({ "a.rev": 10 }), M({ "a.rev": 30 }), undefined] }, { cells: [M({ "a.rev": 20 }), M({ "a.rev": null }), M({ "a.pct": 9 })] }] };
+  const s = heatScale(model, "a.rev");
+  assert.deepEqual([s.min, s.max], [10, 30]);
+  assert.deepEqual([10, 20, 30].map(s.level), [0, 0.5, 1]);
+  assert.equal(s.level(null), null);
+  assert.equal(s.level(undefined), null);
+  assert.equal(heatScale({ rows: [{ cells: [undefined] }] }, "a.rev"), null, "nothing to shade");
+  const flatScale = heatScale({ rows: [{ cells: [M({ "a.rev": 5 }), M({ "a.rev": 5 })] }] }, "a.rev");
+  assert.equal(flatScale.level(5), 0.5, "all cells equal: the middle");
+  assert.deepEqual(heatScale({ rows: [{ cells: [M({ "a.rev": -4 }), M({ "a.rev": 4 })] }] }, "a.rev").level(0), 0.5, "negative values scale too");
+});
+
+test("pivotHtml: heat shades only the chosen measure's cells, never a total, always with the number; colLabel names the columns; a legend explains", () => {
+  const scale = heatScale(flat, "a.rev");
+  const html = pivotHtml({ model: flat, measures: [meas[0]], heat: { member: "a.rev", level: scale.level }, texts: { ...texts, colLabel: (c) => `<${c}>`, legend: { label: "Shading: Revenue", min: "$5", max: "$30" } } });
+  assert.match(html, /<td class="n heat" data-r="0" data-c="1" style="--heat:1.000">\$30<\/td>/);
+  assert.match(html, /<td class="n heat" data-r="1" data-c="1" style="--heat:0.000">\$5<\/td>/);
+  assert.match(html, /<td class="n" data-r="1" data-c="0"><\/td>/, "an empty cell is not shaded");
+  assert.equal((html.match(/--heat/g) || []).length, 3, "three cells with numbers, no totals");
+  assert.ok(!/class="n tc heat"|class="n heat tc"/.test(html), "totals are not shaded");
+  assert.match(html, /data-c="0">&#60;2020&#62;<\/th>/, "column titles go through colLabel, escaped");
+  assert.match(html, /pivot-legend">Shading: Revenue <span>\$5<\/span><i class="heat-bar" aria-hidden="true"><\/i><span>\$30<\/span>/);
+  const two = pivotHtml({ model: { ...flat, measures: ["a.rev", "a.pct"], rows: [{ keys: ["A"], cells: [M({ "a.rev": 1, "a.pct": 0.5 })], total: undefined }], cols: ["2020"], colTotals: [undefined] }, measures: meas, heat: { member: "a.pct", level: () => 0.25 }, texts });
+  assert.equal((two.match(/--heat/g) || []).length, 1, "with two measures only the chosen one is shaded");
+  assert.ok(!pivotHtml({ model: flat, measures: [meas[0]], texts }).includes("heat"), "no heat asked, no shading");
 });
