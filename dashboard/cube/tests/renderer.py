@@ -48,6 +48,11 @@ def open_page(browser, path, dataset="live", width=1440, theme="light", init="",
     return ctx, page
 
 
+def here(page):
+    """The page's own address. `page.url` is what Playwright last heard about, and it hears about history.replaceState (a tag or a search written to the address) a moment late."""
+    return page.evaluate("location.href")
+
+
 def settled(page, timeout=20000):
     page.wait_for_function("document.querySelector('#live-text')?.textContent.match(/Updated|Stale|Güncellendi|Eski/)", timeout=timeout)
     page.wait_for_function("!document.querySelector('.card.pending, .kpi.pending')", timeout=timeout)
@@ -217,26 +222,26 @@ with sync_playwright() as p:
     requests = []
     page.on("request", lambda r: requests.append(r.url))
     page.click(chip("sales"))
-    check(page.get_attribute(chip("sales"), "aria-pressed") == "true" and "tag=sales" in page.url and builtn() == 3 and savedn() == 2 and page.inner_text(status) == "5 of 9", "picking a tag filters both lists, shows the count and writes the URL")
+    check(page.get_attribute(chip("sales"), "aria-pressed") == "true" and "tag=sales" in here(page) and builtn() == 3 and savedn() == 2 and page.inner_text(status) == "5 of 9", "picking a tag filters both lists, shows the count and writes the URL")
     check(page.evaluate("document.activeElement.dataset.tag") == "sales" and page.evaluate("!!document.activeElement.closest('#tag-chips')"), "and the focus stays on the chip you used (it was redrawn)")
     page.click(chip("management"))
     check(builtn() == 0 and savedn() == 1 and "Quarterly review" in page.inner_text(".saved") and page.inner_text(status) == "1 of 9", "a second tag narrows it: a dashboard needs both (AND)")
-    check(page.url.count("tag=") == 2, "both tags are in the URL")
+    check(here(page).count("tag=") == 2, "both tags are in the URL")
     page.click(chip("management"))
     page.click(chip("sales"))
-    check(builtn() == 4 and savedn() == 5 and "tag=" not in page.url and page.url.endswith("/d/"), "picking them again undoes it, and the URL is clean again")
+    check(builtn() == 4 and savedn() == 5 and "tag=" not in here(page) and here(page).endswith("/d/"), "picking them again undoes it, and the URL is clean again")
     page.fill("#list-q", "panosu")
     check("sales" not in bar_tags() and "satış" in bar_tags() and page.inner_text(chip("satış")).replace("\n", " ") == "satış 1", "the bar's counts follow the search words")
     page.fill("#list-q", "")
     page.click('.dcard[data-id="sales-overview"] .tag-chip')
-    check(page.url.endswith("?tag=sales") and builtn() == 3, "a chip on a card filters without opening the dashboard")
+    check(here(page).endswith("?tag=sales") and builtn() == 3, "a chip on a card filters without opening the dashboard")
     page.click('.saved .tag-chip[data-tag="regional"]')
     check(page.get_attribute(chip("regional"), "aria-pressed") == "true" and builtn() == 0 and savedn() == 1 and "Regional deep dive" in page.inner_text(".saved"), "a chip on a saved dashboard does the same (sales AND regional)")
     page.click("#list-q-clear")
     check(page.url.endswith("/d/") and builtn() == 4 and savedn() == 5 and page.locator("#tag-chips [aria-pressed=true]").count() == 0, "Clear drops the search and the tags")
     page.click(chip("sales"))
     page.keyboard.press("Escape") if page.evaluate("document.activeElement.id") == "list-q" else (page.focus("#list-q"), page.keyboard.press("Escape"))
-    check(builtn() == 4 and "tag=" not in page.url, "Escape in the field clears the tags as well")
+    check(builtn() == 4 and "tag=" not in here(page), "Escape in the field clears the tags as well")
     check(not [u for u in requests if "/builder/" in u or "/dashboards/" in u], f"tags are filtered in the browser: no request went out ({len(requests)} in all)")
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
@@ -377,7 +382,7 @@ with sync_playwright() as p:
     check("lang=tr" in page.url and pressed(page) == ["tr"] and page.title() == "Panolar", "when the browser will not keep the choice it goes into the address (?lang=tr) and still works")
     page.wait_for_selector("#list-q", timeout=20000)
     page.fill("#list-q", "sales")
-    check("lang=tr" in page.url and "q=sales" in page.url, "and searching on the list keeps it in the address")
+    check("lang=tr" in here(page) and "q=sales" in here(page), "and searching on the list keeps it in the address")
     ctx.close()
     ctx, page = open_page(browser, "/d/?lang=tr", init="localStorage.setItem('dashLang', 'en');")
     page.wait_for_selector(".saved", timeout=20000)
