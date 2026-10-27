@@ -44,7 +44,6 @@ tr.clickable:hover { background: var(--surface-2); }
 
 /* The dashboard list (/d/) */
 .dlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.dlist a { text-decoration: none; color: inherit; }
 .dlist .card { height: 100%; }
 .dlist .card:hover { background: var(--surface-2); }
 .dlist h2 { font-size: 15px; margin: 0 0 4px; }
@@ -142,5 +141,29 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .list-search input { flex: 1 1 280px; max-width: 520px; height: 36px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
 .list-search input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .list-search input::-webkit-search-cancel-button { display: none; }      /* our own Clear button, the same in every browser */
-.dlist a[hidden] { display: none; }
 @media (max-width: 480px) { .list-search input { height: 44px; } .list-search .icon-btn { min-width: 44px; min-height: 44px; } }
+
+/* Dashboard cards on /d/: the title is the link and stretches over the whole card, so the tag chips (real buttons) can sit on top of it without nesting in a link */
+.dcard { position: relative; }
+.dcard:hover { background: var(--surface-2); }
+.dcard .stretch { color: inherit; text-decoration: none; }
+.dcard .stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.dcard .stretch:focus-visible { outline: none; }
+.dcard .stretch:focus-visible::after { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dcard .tagrow { position: relative; z-index: 1; margin-top: 10px; }
+
+/* Tags: chips on cards, a bar of every tag with its count, a switch that groups by first tag */
+.tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer; }
+.tag-chip:hover { background: var(--surface-2); color: var(--ink); }
+.tag-chip:focus-visible, .tag-switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tag-chip[aria-pressed="true"], .tag-switch[aria-pressed="true"] { background: color-mix(in srgb, var(--focus) 16%, var(--surface)); border-color: var(--focus); color: var(--ink); font-weight: 600; }
+.tag-chip .tag-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tag-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 14px; }
+.tag-bar[hidden] { display: none; }
+.tag-bar-label { color: var(--muted); font-size: 12.5px; }
+.tag-chips { display: contents; }
+.tag-switch { margin-left: auto; min-height: 24px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tg-h { font-size: 13px; font-weight: 620; margin: 18px 0 8px; color: var(--ink-2); }
+.tgroup:first-child .tg-h { margin-top: 4px; }
+@media (max-width: 480px) { .tag-chip { min-height: 36px; padding: 0 12px; } .tag-switch { min-height: 36px; margin-left: 0; } }

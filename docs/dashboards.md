@@ -48,8 +48,15 @@ the ✕ clears it, and nothing is asked of the server while you type. There is n
 **Tags.** A dashboard can carry up to five `tags` (`tags: [sales, management]`): short, lower-case, letters of any language, digits, spaces and hyphens, at most 24
 characters, no repeats, the most important first. The validator refuses anything else and says what to write (`'Sales' is not lower case; write 'sales'`), so two
 spellings of one word do not appear. Built dashboards carry them in `index.json`, saved dashboards in their YAML (the list reads them from it, so a dashboard your
-role cannot open still shows its tags). Tags are visible to everyone who can see the dashboard: nothing sensitive. The list page does not use them yet (chips,
-tag filters and grouping come in the next step of `PLAN-dashboard-search-and-tags.md`); the builder writes tags only when the request names a topic or group.
+role cannot open still shows its tags). Tags are visible to everyone who can see the dashboard: nothing sensitive. The builder writes tags only when the request names a topic or group.
+
+**Using tags on the list.** Each card shows its tags as chips, and a bar under the search field lists every tag with its count (most used first, then in Turkish
+order; the counts follow the words you have typed). Click a chip, on a card or in the bar, to filter by that tag; pick several and a dashboard must carry all of them
+(AND). **Group by tag** (off by default, remembered in this browser) lists the dashboards under their *first* tag, each once, the untagged last; it applies to the built
+dashboards and to both saved lists, and only while the switch is on. The search and the chosen tags are in the address (`/d/?q=drill&tag=sales`), so a filtered
+list can be sent as a link; an unknown tag shows an empty list you can undo, not an error. Clear (✕) or Escape drops the search and the tags.
+
+![The list grouped by tag](images/dashboards/list.png)
 
 ## Anatomy of a file
 

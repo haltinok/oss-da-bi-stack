@@ -3,6 +3,7 @@
 // returns is shown as text (escaped); a draft lives in this browser (localStorage) until it is saved to the repository as a reviewed YAML file.
 import { el, esc } from "../lib/dom.js";
 import { filterItems } from "../lib/search.js";
+import { chipsHtml, groupByFirstTag, tagsOf, withTags } from "../lib/tags.js";
 
 // ------------------------------------------------------------------------------------------------------------------ drafts (this browser only)
 const KEY = { current: "builder.draft" };
@@ -119,39 +120,49 @@ const visBadge = (d, t) => (d.visibility === "private" ? t.badgePrivate : d.visi
 
 /**
  * The saved dashboards on /d/: yours, and those shared with you (greyed, with the reason, when your role cannot open one).
- * `query()` is the search text (matched on title, description and owner); `render()` on the returned handle draws the list again for the current
- * query without asking the server, and `onCount({ shown, total })` says how many are left. Resolves to null when the server keeps no dashboards.
+ * The list view's state comes in as functions: `query()` (matched on title, description and owner), `tags()` (the selected tags: an item must carry
+ * all of them) and `group()` (draw each section by first tag). `onTag(tag)` is called when a tag chip is clicked; `onCount({ shown, total })` says how
+ * many are left. The handle's `render()` draws the lists again from what it already has (no request), `items()` gives them all (for the tag bar).
+ * Resolves to null when the server keeps no dashboards.
  */
-export async function mountSavedList(host, api, t, { query = () => "", onCount = () => {} } = {}) {
+export async function mountSavedList(host, api, t, { query = () => "", tags = () => [], group = () => false, onCount = () => {}, onTag = () => {} } = {}) {
   let list = [];
   const load = async () => { list = await api.listSaved(); };
   try { await load(); } catch { host.hidden = true; onCount({ shown: 0, total: 0 }); return null; }
   host.hidden = false;
+  const label = (tag) => t.tagFilterAria(tag);
   const card = (d) => `<li class="saved ${d.readable ? "" : "unreadable"}" data-id="${esc(d.id)}">
       <div class="saved-main">${d.readable ? `<a href="/d/s/${encodeURIComponent(d.id)}">${esc(d.title)}</a>` : `<span>${esc(d.title)}</span>`} <span class="badge">${esc(visBadge(d, t))}</span>
         <div class="hint">${esc(d.description || "")}${d.description ? " · " : ""}${d.mine ? "" : `${esc(t.by)} ${esc(d.owner)} · `}${esc(t.updated)} ${esc(new Date(d.updated_at).toLocaleString())}</div>
+        ${tagsOf(d).length ? `<div class="tagrow">${chipsHtml(tagsOf(d), tags(), label)}</div>` : ""}
         ${d.readable ? "" : `<div class="hint warn">${esc(t.cannotOpen)}: ${esc(d.problems[0] || "")}</div>`}</div>
       ${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
   const render = () => {
-    const q = query().trim();
-    const keep = (d) => !q || filterItems([d], q, ["title", "description", "owner"]).length > 0;
+    const q = query().trim(), selected = tags();
+    const filtering = !!q || selected.length > 0;
+    const keep = (d) => (!q || filterItems([d], q, ["title", "description", "owner"]).length > 0) && withTags([d], selected).length > 0;
     const mine = list.filter((d) => d.mine), others = list.filter((d) => !d.mine);
     const mineShown = mine.filter(keep), othersShown = others.filter(keep);
-    const heading = (text, shown, all) => `<h2>${esc(text)}${q ? ` <span class="hint">(${esc(t.searchCount(shown.length, all.length))})</span>` : ""}</h2>`;
-    const section = (text, shown, all, none) => heading(text, shown, all) + (shown.length ? `<ul class="drafts">${shown.map(card).join("")}</ul>` : `<p class="hint">${esc(none)}</p>`);
+    const heading = (text, shown, all) => `<h2>${esc(text)}${filtering ? ` <span class="hint">(${esc(t.searchCount(shown.length, all.length))})</span>` : ""}</h2>`;
+    const body = (shown) => (group()
+      ? groupByFirstTag(shown).map((g) => `<h3 class="tg-h">${esc(g.tag ?? t.untagged)} <span class="hint">(${g.items.length})</span></h3><ul class="drafts">${g.items.map(card).join("")}</ul>`).join("")
+      : `<ul class="drafts">${shown.map(card).join("")}</ul>`);
+    const section = (text, shown, all, none) => heading(text, shown, all) + (shown.length ? body(shown) : `<p class="hint">${esc(none)}</p>`);
     host.innerHTML = section(t.yourSaved, mineShown, mine, mine.length ? t.searchNoSaved : t.noSaved)
-      + (others.length && (othersShown.length || !q) ? section(t.sharedWithYou, othersShown, others, t.searchNoSaved) : "");
+      + (others.length && (othersShown.length || !filtering) ? section(t.sharedWithYou, othersShown, others, t.searchNoSaved) : "");
     onCount({ shown: mineShown.length + othersShown.length, total: list.length });
   };
   render();
   host.onclick = async (ev) => {
+    const chip = ev.target.closest("button[data-tag]");
+    if (chip) { onTag(chip.dataset.tag); return; }
     const b = ev.target.closest('button[data-act="delete"]');
     if (!b || !confirm(t.confirmDelete)) return;
     try { await api.deleteSaved(b.closest("li").dataset.id); } catch (e) { alert(e.message); }
     try { await load(); } catch { /* keep what is shown */ }
-    render();                                           // the search text is kept: the list is drawn again from the new answer
+    render();                                           // the search and tags are kept: the list is drawn again from the new answer
   };
-  return { render };
+  return { render, items: () => list };
 }
 
 // ------------------------------------------------------------------------------------------------------------------ the semantic layer
