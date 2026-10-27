@@ -81,6 +81,14 @@ button, select { font: inherit; color: inherit; }
 .top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 24px; margin-bottom: 16px; }
 .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .brand h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* The way back to the list of dashboards (/d/): a slim line above the header, so it never competes with the header's one row (that row has no room for more at 1280px). */
+.crumbs { margin: 0 0 6px; }
+.crumbs[hidden] { display: none; }
+.home-link { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; color: var(--muted); font-size: 12.5px; text-decoration: none; border-radius: 6px; }
+.home-link:hover { color: var(--ink); text-decoration: underline; }
+.home-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.home-link svg { width: 14px; height: 14px; flex: none; }
+@media (max-width: 480px) { .home-link { min-height: 44px; } }
 .brand .sub { color: var(--muted); font-size: 12.5px; }
 /* The tools sit on the title's line (the subtitle hangs below the title only); every control is 32px tall so they share one centre line. */
 .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; margin-left: auto; min-width: 0; min-height: 32px; }

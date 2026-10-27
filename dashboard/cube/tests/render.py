@@ -55,6 +55,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(3000)                      # the slowest panels (exact order counts) draw last
     page.wait_for_timeout(500)
     check(not problems, f"no page or console errors ({len(problems)}): {problems[:3]}")
+    check(page.get_attribute("a.home-link", "href") == "/d/" and page.locator("a.home-link").is_visible(), "the sales page has a Dashboards link to /d/")
     for panel in PANELS:
         sel = "#kpis" if panel == "kpis" else f'[data-panel="{panel}"]'
         check(len(page.inner_text(sel).strip()) > 30 and not page.eval_on_selector(sel, "n => n.classList.contains('pending')"), f"panel {panel} is drawn")
