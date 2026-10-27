@@ -1,0 +1,58 @@
+/* The viewer's themes, chosen from the menu in the header and kept in this browser (lib/theme.js lists them). "light" and "dark" (shown as Black) live in
+   style.css and are untouched; these five only replace the tokens, so every page, chart and table follows without a rule of its own.
+   Each one was checked for contrast against its own surface (themes.test.mjs): body and secondary text 4.5:1 or better, the series colours and the focus
+   colour 3:1 or better, and --on-focus (the text on a primary button) 4.5:1 on --focus. A dashboard's own `theme.colors` still win over these. */
+
+:root[data-theme="slate"] {
+  color-scheme: dark;
+  --page: #1b1f27; --surface: #242a34; --surface-2: #2e3542;
+  --ink: #e8ecf2; --ink-2: #b9c1cf; --muted: #9aa4b5;
+  --grid: #343c4a; --axis: #465063; --border: rgba(255, 255, 255, 0.12);
+  --internet: #5aa2f0; --reseller: #f08a5a;
+  --good: #3dbb6c; --bad: #f07272; --warn: #f2b84b; --live: #3dbb6c;
+  --neutral-mid: #3a4252; --focus: #6aaefc; --on-focus: #0b1220; --shadow: none;
+}
+
+:root[data-theme="navy"] {
+  color-scheme: dark;
+  --page: #0a1a33; --surface: #112544; --surface-2: #17315a;
+  --ink: #eef3fb; --ink-2: #c3d0e6; --muted: #9fb2d0;
+  --grid: #1d3560; --axis: #2c4879; --border: rgba(160, 190, 240, 0.18);
+  --internet: #5ba8ff; --reseller: #ffa05b;
+  --good: #4cc27a; --bad: #ff7b7b; --warn: #f5c04a; --live: #4cc27a;
+  --neutral-mid: #284878; --focus: #7bb8ff; --on-focus: #06101f; --shadow: none;
+}
+
+:root[data-theme="sand"] {
+  color-scheme: light;
+  --page: #f5efe3; --surface: #fbf7ee; --surface-2: #efe7d5;
+  --ink: #2b2418; --ink-2: #5a4f3c; --muted: #6f6450;
+  --grid: #e2d8c3; --axis: #c8bb9f; --border: rgba(60, 45, 20, 0.14);
+  --internet: #1f6fb5; --reseller: #c4521e;
+  --good: #2f7a2f; --bad: #b83232; --warn: #9a6700; --live: #2f7a2f;
+  --neutral-mid: #e8dfca; --focus: #1f6fb5; --on-focus: #ffffff;
+  --shadow: 0 1px 2px rgba(60, 45, 20, 0.05), 0 4px 16px rgba(60, 45, 20, 0.05);
+}
+
+:root[data-theme="mint"] {
+  color-scheme: light;
+  --page: #eef5f2; --surface: #f9fcfb; --surface-2: #e3efea;
+  --ink: #0f2a22; --ink-2: #3d5a50; --muted: #55706a;
+  --grid: #d3e3dc; --axis: #b3cbc1; --border: rgba(15, 42, 34, 0.12);
+  --internet: #0f766e; --reseller: #c2410c;
+  --good: #15803d; --bad: #b91c1c; --warn: #92400e; --live: #15803d;
+  --neutral-mid: #dbeae3; --focus: #0f766e; --on-focus: #ffffff;
+  --shadow: 0 1px 2px rgba(15, 42, 34, 0.05), 0 4px 16px rgba(15, 42, 34, 0.05);
+}
+
+/* High contrast: pure black and white, a yellow focus ring and stronger lines, for low vision and bright rooms. */
+:root[data-theme="contrast"] {
+  color-scheme: dark;
+  --page: #000000; --surface: #0a0a0a; --surface-2: #1a1a1a;
+  --ink: #ffffff; --ink-2: #f2f2f2; --muted: #d0d0d0;
+  --grid: #5c5c5c; --axis: #8a8a8a; --border: rgba(255, 255, 255, 0.6);
+  --internet: #4db3ff; --reseller: #ffb347;
+  --good: #4cff7a; --bad: #ff6b6b; --warn: #ffd54a; --live: #4cff7a;
+  --neutral-mid: #3a3a3a; --focus: #ffe600; --on-focus: #000000; --shadow: none;
+}
+:root[data-theme="contrast"] :focus-visible { outline-width: 3px; }

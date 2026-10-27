@@ -2,6 +2,7 @@
 // Every panel renders from GET /api/dashboard; the page polls it so new orders
 // appear as soon as Airflow's dbt build lands them in analytics.mart.
 "use strict";
+import { initTheme, mountThemeMenu } from "./lib/theme.js";
 import { $, el, esc, svgEl } from "./lib/dom.js";
 import { createFormat, ratio } from "./lib/format.js";
 import { createTooltip } from "./lib/tooltip.js";
@@ -323,14 +324,8 @@ $("#reset").addEventListener("click", () => {
   fillFilters(); writeUrl(); load();
 });
 $("#refresh").addEventListener("click", () => { fullReload = true; load(); loadInventory(); });
-$("#theme").addEventListener("click", () => {
-  const root = document.documentElement;
-  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  root.dataset.theme = dark ? "light" : "dark";
-  try { localStorage.setItem("theme", root.dataset.theme); } catch { /* storage unavailable */ }
-  renderAll();
-});
-try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch { /* ignore */ }
+mountThemeMenu($("#theme"), { onChange: renderAll });
+initTheme();
 
 for (const btn of document.querySelectorAll(".tbl-toggle")) {
   btn.addEventListener("click", () => {
