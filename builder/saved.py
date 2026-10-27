@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import yaml
 
-from builder import core
+from builder import changes, core
 from builder.store import KEEP_VERSIONS, Limit, NotFound  # noqa: F401 (re-exported)
 
 VISIBILITIES = ("private", "roles", "everyone")
@@ -201,10 +201,17 @@ def delete_saved(store, who: Who, id_: str) -> None:
 
 
 def versions(store, who: Who, id_: str) -> list[dict]:
+    """The kept versions, newest first, each with `changes` (see changes.py): what it did to the version before it."""
     row = _get_visible(store, who, id_)
     if row["owner"] != who.name:
         raise SavedError(403, "Only the owner can see earlier versions.")
-    return store.list_versions(id_)
+    out = store.list_versions(id_)
+    yamls = {v["version"]: (store.get_version(id_, v["version"]) or {}).get("yaml") for v in out}
+    for v in out:
+        new = yamls.get(v["version"])
+        before = yamls.get(v["version"] - 1)
+        v["changes"] = changes.describe(before, new) if new and (before or v["version"] == 1) else [{"kind": "unknown"}]       # an older version that is no longer kept has no "before"
+    return out
 
 
 def restore(store, catalog, who: Who, id_: str, version: int) -> dict:

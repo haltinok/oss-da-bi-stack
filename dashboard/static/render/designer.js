@@ -41,7 +41,11 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
 
   const panelDef = () => source?.panels.find((p) => p.id === selected);
   const typeName = (type) => dz.types[type] || type;
-  const closeBtn = `<button type="button" class="dz-close" aria-label="${esc(dz.close)}">✕</button>`;
+  const closeBtn = () => {
+    const h = drafts.history();
+    const hist = (kind, glyph, n, label) => `<button type="button" class="dz-histbtn" data-hist="${kind}" aria-label="${esc(dz[kind])}" title="${esc(n ? `${dz[kind]}: ${label || ""}`.replace(/: $/, "") : dz[kind])}" ${n ? "" : "disabled"}>${glyph}</button>`;
+    return `<div class="dz-tools">${hist("undo", "↶", h.undo, h.undoLabel)}${hist("redo", "↷", h.redo, h.redoLabel)}<button type="button" class="dz-close" aria-label="${esc(dz.close)}">✕</button></div>`;
+  };
 
   // ---------------------------------------------------------------------------------------------------------------- the drawer
   function draw() {
@@ -50,7 +54,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   function drawPage() {
-    drawer.innerHTML = `<div class="dz-head"><h2>${esc(dz.page)}</h2>${closeBtn}</div><div id="dz-msg" class="bmsg" role="alert" hidden></div>
+    drawer.innerHTML = `<div class="dz-head"><h2>${esc(dz.page)}</h2>${closeBtn()}</div><div id="dz-msg" class="bmsg" role="alert" hidden></div>
       <p class="hint">${esc(dz.pick)}</p>
       <form class="dz-form" id="dz-page" onsubmit="return false"></form>
       ${tabsOf(source).length ? `<h3 class="dz-section">${esc(dz.tabs)}</h3><div id="dz-tabs" class="dz-tabs"></div>` : ""}
@@ -93,7 +97,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       lastGroup = fd.group ? fd.group.n : null;
       return `${heading}<label class="dz-field"><span>${esc(dz.f[fd.key] || fd.key)}</span><span class="dz-input" data-slot="${esc(fd.path)}"></span></label>`;
     }).join("");
-    drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn}</div>
+    drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn()}</div>
       <div id="dz-msg" class="bmsg" role="alert" hidden></div><form class="dz-form" onsubmit="return false">${rows}</form>
       <h3 class="dz-section">${esc(dz.layout)}</h3>
       <div class="dz-layout" role="group" aria-label="${esc(dz.layout)}">${LAYOUT_COMMANDS.map((cmd) => `<button type="button" data-cmd="${cmd}" ${moveCommand(source, panel.id, cmd).problem ? "disabled" : ""}>${esc(dz.cmd[cmd])}</button>`).join("")}</div>
@@ -178,7 +182,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     try {
       const r = await api.validate(JSON.stringify(edit.source));
       if (!r.ok) { draw(); problems(r.problems); return false; }                     // the controls go back to what the draft holds
-      drafts.setCurrent({ ...draft, yaml: r.yaml, spec: r.spec, message, notes: (edit.notes || []).map((n) => dz.notes[n] || n) });
+      drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message, notes: (edit.notes || []).map((n) => dz.notes[n] || n) });
       write({ on: true, panel: edit.id ?? panel, scroll: window.scrollY });
       location.reload();
       return true;
@@ -191,10 +195,19 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     }
   }
 
+  /** Undo or redo one step of the draft's history: the draft in this browser is replaced and the page drawn again (the picked panel and the scroll position stay). */
+  function step(kind) {
+    if (busy || !drafts[kind]((label) => (kind === "undo" ? dz.undone : dz.redone)(label))) return;
+    write({ on: true, panel: selected, scroll: window.scrollY });
+    location.reload();
+  }
+
   const activeTab = () => window.__render?.activeTab?.() ?? null;
   const titleOf = (ty, m, d) => dz.defaultTitle(ty, humanize(m), d && humanize(d));
 
   drawer.addEventListener("click", (e) => {
+    const hb = e.target.closest("[data-hist]");
+    if (hb) { step(hb.dataset.hist); return; }
     const cmd = e.target.closest("[data-cmd]");
     if (cmd) { commit(moveCommand(source, selected, cmd.dataset.cmd), { message: dz.moved }); return; }
     const tabMove = e.target.closest("[data-tab-move]");
@@ -238,6 +251,12 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   document.addEventListener("click", pick, true);                                 // before the panel's own click (which would filter the page)
   document.addEventListener("keydown", (e) => {
     if (!on) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && ["z", "y"].includes(e.key.toLowerCase()) && !dnd.active()) {
+      if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return;           // a text field has its own undo
+      e.preventDefault();
+      step(e.key.toLowerCase() === "y" || e.shiftKey ? "redo" : "undo");
+      return;
+    }
     if (e.key === "Escape" && selected && !dnd.active()) { select(null); return; }                // while a drag is held, Escape cancels the drag instead
     if ((e.key === "Enter" || e.key === " ") && hit(e) && !drawer.contains(e.target)) pick(e);
   }, true);

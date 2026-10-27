@@ -84,6 +84,14 @@ Between two neighbours in a row there is a **bar**: drag it sideways to change t
 (Up, Down, Left, Right, Narrower, Wider, Join the row above or below, Own row, Move to tab), so a keyboard needs no pointer; a button that would do nothing is off. Every row always adds up to 12 and every panel is placed
 once. With tabs, the page view lists them: rename a tab or move it earlier or later.
 
+**Undo and redo.** The drawer has an Undo and a Redo button (a tooltip says which change), and Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y work while design mode is on (in a text field they are that field's own undo). The history belongs to the
+draft in this browser and covers every change to it: the designer, the Change box and the YAML tab. Twenty steps are kept; a new draft (built, opened for editing, copied) starts with none, and a change after an undo
+discards what could have been redone.
+
+**Saved dashboards.** Open a dashboard you own and press **Design**: it is the same draft as **Edit**, tied to the saved dashboard, with the designer already on; **Save** then makes a new version. For a dashboard that is
+someone else's the button is **Design a copy**. In **Versions**, each version lists what it changed from the one before (a panel added, removed or changed with the fields, the layout, a filter, the title, the page's own
+fields), computed on the server from the two files; a version whose predecessor is no longer kept says only "Changed".
+
 The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
 formulas (`sum`, `ratio`), adding and deleting tabs, and turning a plain layout into tabs; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
 

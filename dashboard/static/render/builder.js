@@ -6,13 +6,49 @@ import { filterItems } from "../lib/search.js";
 import { chipsHtml, groupByFirstTag, tagsOf, withTags } from "../lib/tags.js";
 
 // ------------------------------------------------------------------------------------------------------------------ drafts (this browser only)
-const KEY = { current: "builder.draft" };
+const KEY = { current: "builder.draft", history: "builder.draft.history" };
+const MAX_HISTORY = 20;                                          // steps that can be undone (each keeps a compiled spec, so a handful of KB)
 const read = (k, fallback) => { try { return JSON.parse(localStorage.getItem(k)) ?? fallback; } catch { return fallback; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 
+const noHistory = () => ({ undo: [], redo: [] });
+const shot = (d) => ({ yaml: d.yaml, spec: d.spec, message: d.message || "" });       // what a step keeps: the file, its compiled page, and what produced it
+
+/**
+ * The draft being worked on, in this browser, with an undo history. `setCurrent` is for a draft that is new (just built, opened for editing, copied): its history starts empty.
+ * `edit` is for a change to the draft in hand (the designer, the Change box, the YAML tab): the draft as it was is kept so `undo` can bring it back and `redo` can go forward again.
+ */
 export const drafts = {
   current: () => read(KEY.current, null),
-  setCurrent: (d) => write(KEY.current, d),
+  setCurrent(d) { write(KEY.history, noHistory()); return write(KEY.current, d); },
+  edit(d) {
+    const cur = read(KEY.current, null), h = read(KEY.history, noHistory());
+    if (cur?.yaml && cur.yaml !== d.yaml) { h.undo = [...h.undo, shot(cur)].slice(-MAX_HISTORY); h.redo = []; write(KEY.history, h); }
+    return write(KEY.current, d);
+  },
+  /** { undo, redo } step counts and the words of what each would undo / redo (the change that produced the draft now, and the one a redo would bring back). */
+  history() {
+    const h = read(KEY.history, noHistory()), cur = read(KEY.current, null);
+    return { undo: h.undo.length, redo: h.redo.length, undoLabel: cur?.message || "", redoLabel: h.redo.at(-1)?.message || "" };
+  },
+  /** Steps back; `wording(label)` is the message the draft bar shows. False when there is nothing to undo. */
+  undo(wording = (label) => label) {
+    const cur = read(KEY.current, null), h = read(KEY.history, noHistory());
+    if (!cur || !h.undo.length) return false;
+    const prev = h.undo.pop();
+    h.redo = [...h.redo, shot(cur)];
+    write(KEY.history, h);
+    return write(KEY.current, { ...cur, yaml: prev.yaml, spec: prev.spec, message: wording(cur.message || ""), notes: [] });
+  },
+  /** Steps forward again. */
+  redo(wording = (label) => label) {
+    const cur = read(KEY.current, null), h = read(KEY.history, noHistory());
+    if (!cur || !h.redo.length) return false;
+    const next = h.redo.pop();
+    h.undo = [...h.undo, shot(cur)].slice(-MAX_HISTORY);
+    write(KEY.history, h);
+    return write(KEY.current, { ...cur, yaml: next.yaml, spec: next.spec, message: wording(next.message || ""), notes: [] });
+  },
 };
 
 const ROLES = ["admin", "manager", "rep", "purchasing", "marketing"];
@@ -255,7 +291,7 @@ export function mountDraftBar(host, api, t, draft) {
     try {
       const result = await api.build(text, draft.yaml);
       if (result.status === "ok") {
-        drafts.setCurrent({ ...draft, yaml: result.yaml, spec: result.spec, prompt: text, message: result.message, notes: result.notes, mode: result.mode, model: result.model });
+        drafts.edit({ ...draft, yaml: result.yaml, spec: result.spec, prompt: text, message: result.message, notes: result.notes, mode: result.mode, model: result.model });
         location.reload();
         return;
       }
@@ -272,7 +308,7 @@ export function mountDraftBar(host, api, t, draft) {
     const problems = $("#bd-problems");
     try {
       const r = await api.validate(yamlBox.value);
-      if (r.ok) { drafts.setCurrent({ ...draft, yaml: r.yaml, spec: r.spec, message: t.yamlApplied, notes: r.notes }); location.reload(); return; }
+      if (r.ok) { drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message: t.yamlApplied, notes: r.notes }); location.reload(); return; }
       show(problems, { kind: "failed", title: t.problems, lines: r.problems });
     } catch (e) {
       show(problems, { kind: "failed", title: "", lines: [e.message] });
@@ -380,6 +416,16 @@ function mountSavePane(pane, api, t, draft, currentYaml) {
   pane.querySelector("#sv-new")?.addEventListener("click", () => go(true));
 }
 
+/** What a version changed, as a short list of lines in the page's language (the server sends facts, not text: builder/changes.py). At most four lines, then "and N more". */
+export function changeList(changes = [], t, show = 4) {
+  const typeName = (type) => t.designer?.types?.[type] || type;
+  const words = changes.map((c) => { const w = t.versionChanges[c.kind] ?? t.versionChanges.unknown; return typeof w === "function" ? w(c, typeName(c.type)) : w; });
+  if (!words.length) return "";
+  const lines = words.slice(0, show).map((w) => `<li>${esc(w)}</li>`);
+  if (words.length > show) lines.push(`<li>${esc(t.versionChanges.more(words.length - show))}</li>`);
+  return `<ul class="vc">${lines.join("")}</ul>`;
+}
+
 // ------------------------------------------------------------------------------------------------------------------ a saved dashboard (/d/s/<id>)
 export function mountSavedBar(host, api, t, opened) {
   const m = opened.meta;
@@ -388,7 +434,7 @@ export function mountSavedBar(host, api, t, opened) {
     <div class="bb-head"><span class="badge">${esc(visBadge(m, t))}</span>
       <span class="hint">${esc(owner ? t.yours : `${t.sharedBy} ${m.owner}`)} · ${esc(t.versionNo)} ${m.version} · ${esc(t.updated)} ${esc(new Date(m.updated_at).toLocaleString(t.dateLocale))}</span><span class="spacer"></span>
       <button type="button" data-tab="yaml">${esc(t.yaml)}</button><button type="button" id="sb-download">${esc(t.download)}</button>
-      ${owner ? `<button type="button" id="sb-edit" class="primary">${esc(t.edit)}</button>` : `<button type="button" id="sb-copy">${esc(t.copy)}</button><button type="button" id="sb-editcopy">${esc(t.editCopy)}</button>`}
+      ${owner ? `<button type="button" id="sb-edit" class="primary">${esc(t.edit)}</button><button type="button" id="sb-design">${esc(t.designer.button)}</button>` : `<button type="button" id="sb-copy">${esc(t.copy)}</button><button type="button" id="sb-editcopy">${esc(t.editCopy)}</button><button type="button" id="sb-designcopy">${esc(t.designer.designCopy)}</button>`}
       ${manage ? `<button type="button" data-tab="share">${esc(t.sharing)}</button>` : ""}${owner ? `<button type="button" data-tab="tags">${esc(t.tagsLabel)}</button><button type="button" data-tab="versions">${esc(t.versions)}</button>` : ""}
       ${manage ? `<button type="button" id="sb-delete">${esc(t.deleteBtn)}</button>` : ""}<a class="btn" href="/d/">${esc(t.dashboards)}</a></div>
     <div id="sb-msg" class="bmsg" hidden></div>
@@ -400,6 +446,10 @@ export function mountSavedBar(host, api, t, opened) {
   const asDraft = (extra) => { drafts.setCurrent({ yaml: opened.yaml, spec: opened.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", ...extra }); location.assign("/d/draft"); };
   $("#sb-edit")?.addEventListener("click", () => asDraft({ savedId: m.id, savedMeta: { title: m.title, visibility: m.visibility, shared_roles: m.shared_roles } }));
   $("#sb-editcopy")?.addEventListener("click", () => asDraft({}));
+  // Design: the same draft as Edit (or Edit a copy), opened with the designer already on (render/designer.js keeps its mode under this key in sessionStorage).
+  const designing = (extra) => { try { sessionStorage.setItem("designer", JSON.stringify({ on: true, panel: null })); } catch { /* the designer then starts closed: one more click */ } asDraft(extra); };
+  $("#sb-design")?.addEventListener("click", () => designing({ savedId: m.id, savedMeta: { title: m.title, visibility: m.visibility, shared_roles: m.shared_roles } }));
+  $("#sb-designcopy")?.addEventListener("click", () => designing({}));
   $("#sb-copy")?.addEventListener("click", async () => {
     try { const out = await api.save({ yaml: opened.yaml, title: m.title }); location.assign(`/d/s/${encodeURIComponent(out.id)}`); }
     catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
@@ -438,7 +488,7 @@ export function mountSavedBar(host, api, t, opened) {
       loaded = true;
       try {
         const vs = await api.savedVersions(m.id);
-        pane.innerHTML = vs.length > 1 ? `<ul class="drafts">${vs.map((v) => `<li data-v="${v.version}"><span>${esc(t.versionNo)} ${v.version} <small>${esc(v.title)} · ${esc(v.saved_by)} · ${esc(new Date(v.saved_at).toLocaleString(t.dateLocale))}</small></span>
+        pane.innerHTML = vs.length > 1 ? `<ul class="drafts">${vs.map((v) => `<li data-v="${v.version}"><div class="vmain"><span>${esc(t.versionNo)} ${v.version} <small>${esc(v.title)} · ${esc(v.saved_by)} · ${esc(new Date(v.saved_at).toLocaleString(t.dateLocale))}</small></span>${changeList(v.changes, t)}</div>
           ${v.version === m.version ? "" : `<button type="button" data-act="view">${esc(t.viewVersion)}</button><button type="button" data-act="restore">${esc(t.restore)}</button>`}</li>`).join("")}</ul>` : `<p class="hint">${esc(t.noVersions)}</p>`;
       } catch (e) { pane.textContent = e.message; }
     });

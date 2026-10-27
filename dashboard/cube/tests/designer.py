@@ -161,6 +161,43 @@ with sync_playwright() as p:
     if KEEP:
         page.screenshot(path=str(SHOTS / "designer-page.png"))
 
+    # ---- undo and redo
+    check(page.locator('#designer [data-hist="undo"]').is_enabled() and page.locator('#designer [data-hist="redo"]').is_disabled(), "undo is on after changes and redo is off")
+    check("Board pack" in (page.get_attribute('#designer [data-hist="undo"]', "title") or "") or "page" in (page.get_attribute('#designer [data-hist="undo"]', "title") or "").lower(), "its tooltip says what it would undo")
+    with page.expect_navigation():
+        page.click('#designer [data-hist="undo"]')
+    settled(page)
+    check(page.inner_text("#title") != "Board pack" and yaml_of(page)["title"] != "Board pack", "Undo brings back the title before the change")
+    check("Undid" in page.inner_text("#bd-msg") and page.get_attribute("#bd-design", "aria-pressed") == "true", "the draft bar says so and design mode stays on")
+    check(page.locator('#designer [data-hist="redo"]').is_enabled(), "and now redo is on")
+    with page.expect_navigation():
+        page.click('#designer [data-hist="redo"]')
+    settled(page)
+    check(page.inner_text("#title") == "Board pack" and "Redid" in page.inner_text("#bd-msg"), "Redo puts it back")
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    with page.expect_navigation():
+        page.keyboard.press("Control+z")
+    settled(page)
+    check(page.inner_text("#title") != "Board pack", "Ctrl+Z undoes")
+    with page.expect_navigation():
+        page.keyboard.press("Control+Shift+z")
+    settled(page)
+    check(page.inner_text("#title") == "Board pack", "Ctrl+Shift+Z redoes")
+    with page.expect_navigation():
+        page.keyboard.press("Control+z")
+    settled(page)
+    with page.expect_navigation():
+        page.keyboard.press("Control+y")
+    settled(page)
+    check(page.inner_text("#title") == "Board pack", "and so does Ctrl+Y")
+    draft_before = page.evaluate("localStorage.getItem('builder.draft')")
+    page.click('#designer [data-path="description"]')
+    page.keyboard.type("xyz")
+    page.keyboard.press("Control+z")
+    page.wait_for_timeout(600)
+    check(page.evaluate("localStorage.getItem('builder.draft')") == draft_before and not page.input_value('#designer [data-path="description"]').endswith("xyz"), "in a text field Ctrl+Z is the field's own undo, not the draft's")
+    page.press('#designer [data-path="description"]', "Escape")
+
     # ---- adding every type of panel: the validator accepts each one
     page.on("dialog", lambda d: d.accept())
     for ty in ("kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"):
