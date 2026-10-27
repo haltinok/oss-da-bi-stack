@@ -158,6 +158,7 @@ export function panelMeasures(p, members = {}) {
     case "pie": return p.sum || [p.measure];
     case "treemap": return [p.measure];
     case "table": return tableParts(p, members).measures;
+    case "pivot": return p.measures.map((m) => m.member);
     default: return [];
   }
 }
@@ -344,6 +345,96 @@ export function tableTotalQueries(spec, def, values) {
   return measures.length ? followPeriod(spec, def, values, queriesPerCube(measures, { filters: activeFilters(spec, values, def) })) : [];
 }
 
+// ------------------------------------------------------------------ pivot
+// Cube has no ROLLUP, so a pivot is several ordinary queries merged here, in two waves. Wave 1 (the axes) asks the first measure's cube which
+// rows and columns to show: the top rows by that measure (or by name) and the first columns by name. Wave 2 (the values) asks every
+// measure's cube for the cells and the totals, filtered to those rows and columns. Totals are asked, never summed in the browser, so a
+// ratio is the ratio of the totals; the column and grand totals cover the whole filtered set, not only the rows shown.
+
+export const PIVOT_LIMIT = { rows: 25, columns: 12 };
+const PIVOT_MAX_ROWS = 200;                      // the schema's ceiling on `limit.rows`: every group is asked for
+const PIVOT_CELLS = 50000;                       // Cube's own ceiling on a result; a pivot that reaches it says so (`truncated`)
+
+const pivotOrder = (def) => { const by = def.order?.by || "total"; return { by, dir: def.order?.dir || (by === "label" ? "asc" : "desc") }; };
+const keyFilter = (member, values) => ({ member, operator: "equals", values });
+
+/**
+ * { axes: { rows, groups, cols }, values: { cells, groupCells, rowTotals, groupTotals, colTotals, grand } }, each a list of { cube, query }.
+ * `keys` ({ rows: [[r0, r1?], ...], cols: [...] }, the axes' answer) narrows wave 2 to those rows and columns; without it (a lint) the shapes only.
+ */
+export function pivotQueries(spec, def, values, keys = null) {
+  const measures = def.measures.map((m) => m.member), lead = measures[0];
+  const [r0, r1] = def.rows, col = def.columns, totalsMode = def.totals || "both";
+  const lim = { ...PIVOT_LIMIT, ...def.limit }, { by, dir } = pivotOrder(def);
+  const base = activeFilters(spec, values, def);
+  const follow = (qs) => followPeriod(spec, def, values, qs);
+  const leadQuery = (query) => follow([{ cube: cubeOf(lead), query: { measures: [lead], filters: base, ...query } }]);
+  const dimsAsc = Object.fromEntries(def.rows.map((d) => [d, "asc"]));
+  const axes = {
+    rows: leadQuery({ dimensions: def.rows, order: by === "total" ? { [lead]: dir, ...dimsAsc } : Object.fromEntries(def.rows.map((d) => [d, dir])), limit: lim.rows + 1 }),
+    groups: r1 ? leadQuery({ dimensions: [r0], order: by === "total" ? { [lead]: dir, [r0]: "asc" } : { [r0]: dir }, limit: PIVOT_MAX_ROWS }) : [],
+    cols: leadQuery({ dimensions: [col], order: { [col]: "asc" }, limit: lim.columns + 1 }),
+  };
+  const rowF = !keys ? [] : [keyFilter(r0, [...new Set(keys.rows.map((k) => k[0]))]), ...(r1 ? [keyFilter(r1, [...new Set(keys.rows.map((k) => k[1]))])] : [])];
+  const groupF = !keys ? [] : [rowF[0]];
+  const colF = !keys ? [] : [keyFilter(col, keys.cols)];
+  const per = (dimensions, filters, limit = PIVOT_CELLS) => follow(queriesPerCube(measures, { filters: [...base, ...filters], ...(dimensions.length ? { dimensions, limit } : {}) }));
+  const rowTot = totalsMode === "both" || totalsMode === "rows", colTot = totalsMode === "both" || totalsMode === "columns", any = totalsMode !== "none";
+  return {
+    axes,
+    values: {
+      cells: per([...def.rows, col], [...rowF, ...colF]),
+      groupCells: r1 && any ? per([r0, col], [...groupF, ...colF]) : [],
+      rowTotals: rowTot ? per(def.rows, rowF) : [],
+      groupTotals: r1 && rowTot ? per([r0], groupF) : [],
+      colTotals: colTot ? per([col], colF) : [],
+      grand: any ? per([], []) : [],
+    },
+  };
+}
+
+/** Every pivot query in a fixed order, for `panelQueries` (lint and the tests that keep the Python mirror equal). */
+export function pivotQueryList(spec, def, values) {
+  const { axes, values: v } = pivotQueries(spec, def, values);
+  return [axes.rows, axes.groups, axes.cols, v.cells, v.groupCells, v.rowTotals, v.groupTotals, v.colTotals, v.grand].flat();
+}
+
+/**
+ * The numbers of a pivot, from the answers of its two waves ({ rows, groups, cols } and { cells, groupCells, rowTotals, groupTotals,
+ * colTotals, grand }, each what `runAll` returns). Pure, no DOM.
+ *   { measures, cols: [key], rows: [{ keys, cells: [Map|undefined per col], total: Map|undefined }],
+ *     groups: null | [{ key, cells, total, rows }], colTotals: [Map|undefined per col], grand: Map, totals, hidden: { rows, cols }, truncated }
+ * A cell is a Map member -> number, `undefined` where Cube had no row (an empty cell is not a zero). With two row dimensions the rows are
+ * in groups (a group is a first-dimension value, with its own cells and total), in the order of the first dimension then the rows' own order.
+ */
+export function pivotModel(def, axes, vals) {
+  const [r0, r1] = def.rows, col = def.columns, lim = { ...PIVOT_LIMIT, ...def.limit };
+  const str = (v) => (v == null ? "" : String(v));
+  const join = (...parts) => parts.join("\u0000");
+  const index = (results, dims) => new Map(byDims(results || [], dims).map((r) => [join(...dims.map((d) => str(r.dims[d]))), r.values]));
+  const colsAll = (axes.cols?.[0]?.rows || []).map((r) => str(r[col]));
+  const leavesAll = (axes.rows?.[0]?.rows || []).map((r) => def.rows.map((d) => str(r[d])));
+  const cols = colsAll.slice(0, lim.columns), leaves = leavesAll.slice(0, lim.rows);
+  const cells = index(vals.cells, [...def.rows, col]), rowTotal = index(vals.rowTotals, def.rows), colTotal = index(vals.colTotals, [col]);
+  const rows = leaves.map((keys) => ({ keys, cells: cols.map((c) => cells.get(join(...keys, c))), total: rowTotal.get(join(...keys)) }));
+  let groups = null, flat = rows;
+  if (r1) {
+    const groupCells = index(vals.groupCells, [r0, col]), groupTotal = index(vals.groupTotals, [r0]);
+    const seen = new Set(leaves.map((k) => k[0]));
+    const order = (axes.groups?.[0]?.rows || []).map((r) => str(r[r0])).filter((g) => seen.has(g));
+    for (const g of seen) if (!order.includes(g)) order.push(g);
+    groups = order.map((key) => ({ key, cells: cols.map((c) => groupCells.get(join(key, c))), total: groupTotal.get(join(key)), rows: rows.filter((r) => r.keys[0] === key) }));
+    flat = groups.flatMap((g) => g.rows);
+  }
+  const results = [...Object.values(vals)].flat();
+  return {
+    measures: def.measures.map((m) => m.member), cols, rows: flat, groups,
+    colTotals: cols.map((c) => colTotal.get(c)), grand: totals(vals.grand || []), totals: def.totals || "both",
+    hidden: { rows: leavesAll.length > lim.rows, cols: colsAll.length > lim.columns },
+    truncated: results.some((r) => (r.rows || []).length >= PIVOT_CELLS),
+  };
+}
+
 /** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
 export function panelQueries(spec, def, values) {
   switch (def.type) {
@@ -353,6 +444,7 @@ export function panelQueries(spec, def, values) {
     case "pie": return pieQueries(spec, def, values);
     case "treemap": return treemapQueries(spec, def, values);
     case "table": return [...tableQueries(spec, def, values), ...tableTotalQueries(spec, def, values)];
+    case "pivot": return pivotQueryList(spec, def, values);
     default: return [];
   }
 }

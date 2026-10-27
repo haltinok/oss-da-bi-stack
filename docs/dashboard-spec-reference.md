@@ -107,7 +107,7 @@ Either a member string, or an object with these fields.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | id | yes | The panel's id; `layout` and `ignore_filters` refer to it. |
-| `type` | `kpi` \| `timeseries` \| `bar` \| `pie` \| `treemap` \| `table` \| `text` | yes | `kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table` or `text`. |
+| `type` | `kpi` \| `timeseries` \| `bar` \| `pie` \| `treemap` \| `table` \| `pivot` \| `text` | yes | `kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot` or `text`. |
 | `title` | string |  | The card heading. |
 | `ignore_filters` | list of id |  | Filters this panel does not apply, for a panel whose measures cannot join to the filter's dimension (an inventory panel under a territory filter). The reserved id `period` is the date range a drill-down sets. |
 
@@ -182,6 +182,18 @@ Exactly one of `measure` or `stack`.
 | `totals` | `header` \| `footer` |  | `header` or `footer`: a bold total row, frozen while the rows scroll. Dimension cells are empty; each measure is aggregated over all matching rows (not only the ones shown), so a ratio is the ratio of the totals. Needs a measure column. |
 | `on_click` | on_click |  | A click on a row sets each named filter from the row's value of that filter's dimension (the dimension must be one of the shown columns). |
 
+### `pivot`
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `rows` | list of member (`cube.name`) (1+) | yes | One or two dimensions down the side. With two, the first groups the second: a group row with its own figures, then its rows. |
+| `columns` | member (`cube.name`) | yes | One dimension across the top (a different one from `rows`). The first `limit.columns` values by name are shown. |
+| `measures` | list of column (1+) | yes | One to three measures in the cells: members or `{ member, label, format }`. With several, each column shows all of them. |
+| `totals` | `both` \| `rows` \| `columns` \| `none` |  | `both` (default): a total for every row and every column, and a grand total. `rows`: only the total for every row (a last column). `columns`: only the total for every column (a last row). `none`: no totals and no group figures. Totals are asked from Cube over the whole filtered set, so a ratio is the ratio of the totals and they stay true when `limit` hides rows or columns. |
+| `order` | object |  | How the rows are ordered: `{ by: total | label, dir: asc | desc }`. `total` (default, `desc`) orders by the first measure's row total; `label` orders by the row names (`asc` unless said). |
+| `limit` | object |  | `{ rows, columns }`: how many rows (default 25, at most 200) and columns (default 12, at most 24) are shown. The panel says when more exist. |
+| `on_click` | on_click |  | A click on a cell sets the filters named, from the row's and the column's values (each filter's dimension must be one of `rows` or `columns`; up to two filters). |
+
 ### `text`
 
 | Field | Type | Required | Meaning |
@@ -194,7 +206,7 @@ Exactly one of `measure` or `stack`.
 - Filter ids, panel ids and layout cells are unique and refer to things that exist; every layout row adds up to 12; every panel is placed once.
 - A measure is only combined with dimensions its cube can join to (including the filters it applies): otherwise add the filter to `ignore_filters`.
 - **Click rules:** a bar sets a filter on its `by` (one filter); a treemap's filters follow its `group` in order; a table row sets filters on the
-  dimension columns it shows; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).
+  dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).
 - `granularities` contains `granularity`; a `stack` is not combined with `split`.
 - **Roles:** a role in `roles` must be able to read every member the page uses: `rep` has no profit or margin members (`gross_profit`,
   `margin_pct`, `product_cost`); `purchasing` and `marketing` read inventory data only (`inventory_health`, `offer_performance` for marketing,

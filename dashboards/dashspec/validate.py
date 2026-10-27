@@ -126,6 +126,12 @@ def _panel_members(p):
     elif t == "table":
         for i, c in enumerate(p["columns"]):
             yield f"columns[{i}]", column_member(c), "any"
+    elif t == "pivot":
+        for i, r in enumerate(p["rows"]):
+            yield f"rows[{i}]", r, "dimension"
+        yield "columns", p["columns"], "dimension"
+        for i, m in enumerate(p["measures"]):
+            yield f"measures[{i}]", column_member(m), "measure"
 
 
 def semantic_errors(spec, catalog):
@@ -193,6 +199,8 @@ def semantic_errors(spec, catalog):
                     errs.append(f"{w}: order.{col}: not one of the table's columns")
             if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown):
                 errs.append(f"{w}: totals: a total row needs at least one measure column")
+        if p["type"] == "pivot" and p["columns"] in p["rows"]:
+            errs.append(f"{w}: columns: '{p['columns']}' is also in `rows`; a dimension is either down the side or across the top")
         _join_errors(spec, p, w, catalog, errs)
 
     _layout_errors(spec, panel_ids, errs)
@@ -234,8 +242,8 @@ def _click_errors(p, w, ids, filters, catalog, errs):
             dim = by_id[i]["dimension"]
             if dim.partition(".")[2] not in TIME_FILTERS:
                 errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}'; a click on a time chart can set a filter on a fiscal_year or calendar_year dimension")
-    elif kind in ("bar", "pie", "treemap", "table"):
-        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
+    elif kind in ("bar", "pie", "treemap", "table", "pivot"):
+        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "pivot": [*p.get("rows", []), p.get("columns")], "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
         if kind in ("bar", "pie") and len(ids) > 1:
             errs.append(f"{w}: on_click.set_filter: a click on a {kind} carries one value, {len(ids)} filters are named")
         for pos, i in enumerate(ids):

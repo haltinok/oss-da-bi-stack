@@ -51,7 +51,7 @@ D = {  # "<section>.<field>": meaning
     "column.format": "How the value is shown. A measure defaults to `number`; a dimension is shown as text unless it has a format (a numeric dimension, `int`) or is a time dimension (shown as a date and time).",
     "on_click.set_filter": "A filter id, or a list of up to two. A click on a mark sets those filters from what was clicked; a second click undoes it and restores what the filters held before. The panel that was clicked does not narrow itself with these filters. See the click rules below.",
     "panel.id": "The panel's id; `layout` and `ignore_filters` refer to it.",
-    "panel.type": "`kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table` or `text`.",
+    "panel.type": "`kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot` or `text`.",
     "panel.title": "The card heading.",
     "panel.ignore_filters": "Filters this panel does not apply, for a panel whose measures cannot join to the filter's dimension (an inventory panel under a territory filter). The reserved id `period` is the date range a drill-down sets.",
     "kpi.measures": "One tile per measure, up to 8. Each tile loads on its own, so a slow measure does not hold back the others.",
@@ -94,6 +94,13 @@ D = {  # "<section>.<field>": meaning
     "table.limit": "How many rows. Default 100.",
     "table.totals": "`header` or `footer`: a bold total row, frozen while the rows scroll. Dimension cells are empty; each measure is aggregated over all matching rows (not only the ones shown), so a ratio is the ratio of the totals. Needs a measure column.",
     "table.on_click": "A click on a row sets each named filter from the row's value of that filter's dimension (the dimension must be one of the shown columns).",
+    "pivot.rows": "One or two dimensions down the side. With two, the first groups the second: a group row with its own figures, then its rows.",
+    "pivot.columns": "One dimension across the top (a different one from `rows`). The first `limit.columns` values by name are shown.",
+    "pivot.measures": "One to three measures in the cells: members or `{ member, label, format }`. With several, each column shows all of them.",
+    "pivot.totals": "`both` (default): a total for every row and every column, and a grand total. `rows`: only the total for every row (a last column). `columns`: only the total for every column (a last row). `none`: no totals and no group figures. Totals are asked from Cube over the whole filtered set, so a ratio is the ratio of the totals and they stay true when `limit` hides rows or columns.",
+    "pivot.order": "How the rows are ordered: `{ by: total | label, dir: asc | desc }`. `total` (default, `desc`) orders by the first measure's row total; `label` orders by the row names (`asc` unless said).",
+    "pivot.limit": "`{ rows, columns }`: how many rows (default 25, at most 200) and columns (default 12, at most 24) are shown. The panel says when more exist.",
+    "pivot.on_click": "A click on a cell sets the filters named, from the row's and the column's values (each filter's dimension must be one of `rows` or `columns`; up to two filters).",
     "text.markdown": "A short note: paragraphs, `**bold**`, `` `code` ``, `[links](https://...)` and `- ` lists. Everything else is shown as text.",
 }
 
@@ -173,7 +180,7 @@ def generate():
 - Filter ids, panel ids and layout cells are unique and refer to things that exist; every layout row adds up to 12; every panel is placed once.
 - A measure is only combined with dimensions its cube can join to (including the filters it applies): otherwise add the filter to `ignore_filters`.
 - **Click rules:** a bar sets a filter on its `by` (one filter); a treemap's filters follow its `group` in order; a table row sets filters on the
-  dimension columns it shows; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).
+  dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).
 - `granularities` contains `granularity`; a `stack` is not combined with `split`.
 - **Roles:** a role in `roles` must be able to read every member the page uses: `rep` has no profit or margin members (`gross_profit`,
   `margin_pct`, `product_cost`); `purchasing` and `marketing` read inventory data only (`inventory_health`, `offer_performance` for marketing,
