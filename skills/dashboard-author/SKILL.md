@@ -60,6 +60,8 @@ panels:
   - { id: top, type: bar, measure: a.m, by: products.name, sort: desc, limit: 10, format: money }     # or stack: [ {member, label, color}, ... ] / split: <dimension>; orientation: vertical for columns
   - { id: mix, type: treemap, measure: a.m, group: [products.category, products.subcategory], on_click: { set_filter: [category, subcategory] } }
   - { id: lines, type: table, columns: [ { member: a.order_number, label: Order }, { member: a.m, label: Revenue, format: money } ], order: { a.order_date: desc }, limit: 50 }
+  - { id: bycat, type: table, columns: [ products.category, { member: a.m, label: Revenue, format: money }, { member: a.margin, label: Margin, format: pct } ], totals: footer }     # a frozen bold total row
+  - { id: xtab, type: pivot, rows: [products.category, products.subcategory], columns: dates.fiscal_year, measures: [ { member: a.m, label: Revenue, format: money } ], totals: both, limit: { rows: 20 }, on_click: { set_filter: [category, fy] } }
   - { id: note, type: text, markdown: "Plain **Markdown**." }
 layout:                       # rows of 12 columns; every panel exactly once
   - [kpis: 12]
@@ -74,8 +76,13 @@ layout:                       # rows of 12 columns; every panel exactly once
 - **Drill-down** (`drill: [year, month, day]`, coarse to fine): a click on a point opens the next level for that period **and** filters every other panel to
   that date range (cross-filtering at the same time); a trail above the chart goes back up; a panel lists `period` in `ignore_filters` to opt out. Years are
   calendar years. Not together with `granularities` or `on_click`.
+- **Table or pivot:** a `table` is a list (rows of dimensions and measures); `totals: footer` or `header` adds a bold, frozen total row over all matching rows
+  (a ratio is the ratio of the totals, so use it on grouped lists, not on a list of single orders). Readers sort a table by clicking a column title. A `pivot`
+  crosses two dimensions: `rows` (one or two; two group) down the side, one `columns` dimension across the top, one to three `measures` in the cells, with row,
+  column and grand totals (`totals`) taken from Cube over the whole set, not only the rows shown. `limit` caps rows (default 25) and columns (default 12);
+  pick a `columns` dimension with few values (a year, a channel), not a product.
 - **Click rules** (validated): a bar or pie sets a filter on its `by`; a treemap's filters follow its `group` in order; a table row sets filters
-  on the dimension columns it shows; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension.
+  on the dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension.
 - **Labels:** one language per file. For `tr-TR` write every `title`, `label` and `description` in Turkish; the page's own words (buttons,
   "All", status) follow `locale`. Currency formatting is a display choice only: the data is not converted. If the demo data is in another
   currency than `currency`, say so in a `text` panel (see `envanter-sagligi.yml`).
