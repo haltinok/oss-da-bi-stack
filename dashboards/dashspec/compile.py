@@ -1,15 +1,21 @@
-"""Compile a validated spec to the JSON the renderer loads: the layout as explicit rows, plus the type of every member used."""
+"""Compile a validated spec to the JSON the renderer loads: the layout (or each tab's) as explicit rows, plus the type of every member used."""
 import copy
 
 
 def compile_spec(spec, used, catalog=None):
-    out = copy.deepcopy({k: v for k, v in spec.items() if k != "layout"})
+    out = copy.deepcopy({k: v for k, v in spec.items() if k not in ("layout", "tabs")})
     for panel in out["panels"]:
         if panel["type"] == "table":     # every column as { member, label?, format? }, so the renderer reads one shape
             panel["columns"] = [{"member": col} if isinstance(col, str) else col for col in panel["columns"]]
         if panel["type"] == "pivot":     # every measure as { member, label?, format? }
             panel["measures"] = [{"member": m} if isinstance(m, str) else m for m in panel["measures"]]
-    out["layout"] = [[{"panel": pid, "span": span} for cell in row for pid, span in cell.items()] for row in spec["layout"]]
+    def rows(layout):                  # the rows as explicit cells, so the renderer reads one shape
+        return [[{"panel": pid, "span": span} for cell in row for pid, span in cell.items()] for row in layout]
+
+    if "tabs" in spec:                 # a tabbed file has `tabs` and no `layout`; the renderer treats a plain `layout` as one untitled tab
+        out["tabs"] = [{"id": t["id"], "title": t["title"], "layout": rows(t["layout"])} for t in spec["tabs"]]
+    else:
+        out["layout"] = rows(spec["layout"])
     out["members"] = {m: used[m] for m in sorted(used)}
     if catalog is not None:
         # which cubes each cube joins to: the renderer applies a drill-down's period only to panels that can reach the time dimension

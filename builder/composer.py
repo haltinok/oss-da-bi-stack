@@ -396,6 +396,8 @@ def refine(p, prompt, catalog, role, current_yaml) -> Composition:
         spec = yaml.safe_load(current_yaml)
     except yaml.YAMLError:
         return Composition(reason="The current dashboard is not valid YAML.")
+    if isinstance(spec, dict) and "tabs" in spec:        # editing rebuilds `layout` from `panels`, which would flatten the tabs: do not
+        return Composition(reason="The rule-based stand-in cannot change a dashboard that has tabs (it would lose them). Edit the YAML, or use a language model, which edits the whole file.")
     t, notes, changed = p["t"], [], False
     remove = has(t, "remove", "delete", "drop", "without", "kaldir", "sil")
     kinds = {"table": "table", "treemap": "treemap", "trend": "timeseries", "chart": None, "kpi": "kpi", "tiles": "kpi"}

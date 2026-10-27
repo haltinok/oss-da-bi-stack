@@ -261,6 +261,15 @@ def test_the_turkish_word_for_a_cross_table_is_the_pivot_not_also_a_table():
     assert "table" in kinds(build("admin", "a pivot of revenue by category and month, plus a table of the latest orders"))
 
 
+def test_the_stand_in_will_not_flatten_a_dashboard_that_has_tabs():
+    base = build("admin", "revenue by region and country")["spec"]
+    rows = base.pop("layout")
+    base["tabs"] = [{"id": "one", "title": "One", "layout": rows[:1]}, {"id": "two", "title": "Two", "layout": rows[1:]}]
+    out = build("admin", "make the chart a line", current=yaml.safe_dump(base, sort_keys=False))
+    assert out["status"] != "ok" or "tabs" in out["spec"], "either refused, or the tabs are still there"
+    assert out["status"] == "cannot" and "tabs" in out["message"], out
+
+
 @pytest.mark.parametrize("lang", ["en", "tr"])
 @pytest.mark.parametrize("role", core.ROLES)
 def test_every_example_offered_in_either_language_builds_for_the_role_it_is_offered_to(role, lang):

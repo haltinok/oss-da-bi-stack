@@ -19,7 +19,11 @@ D = {  # "<section>.<field>": meaning
     "dashboard.time": "The time axis of the dashboard.",
     "dashboard.filters": "Selects above the panels. A filter applies to every panel whose measures can join to its dimension (see `ignore_filters`).",
     "dashboard.panels": "The panels, in any order; `layout` places them.",
-    "dashboard.layout": "Rows from top to bottom. A row is a list of `panel-id: columns` pairs that adds up to 12 (`- [trend: 8, lines: 4]`). Every panel is placed exactly once. Below 900 px every panel takes a full row.",
+    "dashboard.tabs": "Pages, 2 to 8, instead of `layout`: the header and the filters stay, the tab bar switches the panels below. Filters and the drill-down period are shared by all tabs; only the open tab loads its panels. `panels` stays one flat list and each panel is placed in exactly one tab. Use `layout` or `tabs`, not both.",
+    "tab.id": "The tab's id, used in the address (`?tab=products`).",
+    "tab.title": "The tab's name, up to 40 characters.",
+    "tab.layout": "The tab's rows, as in `layout`.",
+    "dashboard.layout": "Rows from top to bottom. A row is a list of `panel-id: columns` pairs that adds up to 12 (`- [trend: 8, lines: 4]`). Every panel is placed exactly once. Below 900 px every panel takes a full row. Use `layout` or `tabs`, not both.",
     "theme.name": "A small label above the title (the organisation).",
     "theme.logo": "An image in the header: a path on this site (`/assets/logo.svg`) or an `https://` URL.",
     "theme.colors": "Replaces theme tokens, in both the light and the dark theme.",
@@ -137,7 +141,7 @@ def _rows(section, props, required, out, used):
         used.add(key)
         if key not in D:
             raise KeyError(f"no description for schema field '{key}' in dashspec/docs.py")
-        kind = "list of rows (lists of `{panel-id: columns}`)" if key == "dashboard.layout" else _type(s)
+        kind = "list of rows (lists of `{panel-id: columns}`)" if key in ("dashboard.layout", "tab.layout") else _type(s)
         out.append(f"| `{name}` | {kind} | {'yes' if name in required else ''} | {D[key]} |")
 
 
@@ -154,6 +158,8 @@ def generate():
            "do not edit by hand. The guide is [dashboards.md](dashboards.md).", ""]
     top = {k: v for k, v in s["properties"].items()}
     out.append(_table("The file", "dashboard", top, s["required"], used, "A dashboard is one YAML file, `dashboards/<id>.yml`."))
+    tab = top["tabs"]["items"]
+    out.append(_table("A tab (`tabs[]`)", "tab", tab["properties"], tab["required"], used, "A file has `layout` **or** `tabs` (2 to 8 tabs). Every panel is placed once in all, not once per tab."))
     theme = top["theme"]
     out.append(_table("`theme`", "theme", theme["properties"], [], used))
     out.append(_table("`theme.colors`", "theme.colors", theme["properties"]["colors"]["properties"], [], used, "Each value is `#rrggbb`."))
@@ -182,7 +188,7 @@ def generate():
     out.append("""## Rules the validator enforces
 
 - Every member exists in the Cube model, a measure is used as a measure and a dimension as a dimension, `time.dimension` is a time dimension.
-- Filter ids, panel ids and layout cells are unique and refer to things that exist; every layout row adds up to 12; every panel is placed once.
+- Filter ids, panel ids and layout cells are unique and refer to things that exist; every layout row adds up to 12; every panel is placed once (across all the tabs, when there are tabs; a tab id is used once).
 - A measure is only combined with dimensions its cube can join to (including the filters it applies): otherwise add the filter to `ignore_filters`.
 - **Click rules:** a bar sets a filter on its `by` (one filter); a treemap's filters follow its `group` in order; a table row sets filters on the
   dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).

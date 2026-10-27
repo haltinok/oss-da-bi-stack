@@ -30,6 +30,8 @@ def _where(spec, path):
 
 
 def _schema_message(err):
+    if err.validator in ("minItems", "maxItems") and list(err.absolute_path) == ["tabs"]:
+        return f"a dashboard has 2 to 8 tabs, this one has {len(err.instance)} (use `layout` for a single page)"
     if err.validator == "oneOf" and isinstance(err.validator_value, list) and all(isinstance(a, dict) and set(a) == {"required"} for a in err.validator_value):
         names = [n for a in err.validator_value for n in a["required"]]                  # none of them matched, or more than one did
         if "member" in names:
@@ -324,22 +326,36 @@ def _join_errors(spec, p, w, catalog, errs):
                 errs.append(f"{w}: '{meas}' cannot be combined with '{dim}' ({origin}): cube '{mc}' has no join to '{dc}'.{hint}")
 
 
+def layouts_of(spec):
+    """[(label, layout)]: the one `layout` of a dashboard, or the layout of each of its tabs."""
+    if "tabs" in spec:
+        return [(f"tab '{t['id']}'", t["layout"]) for t in spec["tabs"]]
+    return [("layout", spec["layout"])]
+
+
 def _layout_errors(spec, panel_ids, errs):
-    placed = []
-    for r, row in enumerate(spec["layout"]):
-        total = 0
-        for cell in row:
-            (pid, span), = cell.items()
-            total += span
-            placed.append(pid)
-            if pid not in panel_ids:
-                errs.append(f"layout: row {r + 1}: no panel with id '{pid}'")
-        if total != 12:
-            errs.append(f"layout: row {r + 1}: the widths add up to {total}, a row has 12 columns")
+    """Every row adds up to 12 and names a panel that exists; every panel is placed once, across all the tabs when there are tabs."""
+    tabs = "tabs" in spec
+    ids = [t["id"] for t in spec.get("tabs", [])]
+    for dup in sorted({i for i in ids if ids.count(i) > 1}):
+        errs.append(f"tabs: id '{dup}' is used by more than one tab")
+    placed = {}
+    for label, layout in layouts_of(spec):
+        for r, row in enumerate(layout):
+            total = 0
+            for cell in row:
+                (pid, span), = cell.items()
+                total += span
+                placed.setdefault(pid, []).append(label)
+                if pid not in panel_ids:
+                    errs.append(f"{label}: row {r + 1}: no panel with id '{pid}'")
+            if total != 12:
+                errs.append(f"{label}: row {r + 1}: the widths add up to {total}, a row has 12 columns")
     for pid in panel_ids:
-        n = placed.count(pid)
-        if n != 1:
-            errs.append(f"layout: panel '{pid}' is placed {n} times, it must be placed once")
+        where = placed.get(pid, [])
+        if len(where) != 1:
+            names = f" ({' and '.join(where)})" if tabs and where else ""
+            errs.append(f"{'tabs' if tabs else 'layout'}: panel '{pid}' is placed {len(where)} times{names}, it must be placed once")
 
 
 # What each role may read, mirrored from cube/cube.js (a test compares the two): a dashboard listing a role must not ask for what Cube

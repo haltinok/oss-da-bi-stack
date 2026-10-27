@@ -20,7 +20,18 @@ A dashboard is one YAML file, `dashboards/<id>.yml`.
 | `time` | object | yes | The time axis of the dashboard. |
 | `filters` | list of filter |  | Selects above the panels. A filter applies to every panel whose measures can join to its dimension (see `ignore_filters`). |
 | `panels` | list of panel (1+) | yes | The panels, in any order; `layout` places them. |
-| `layout` | list of rows (lists of `{panel-id: columns}`) | yes | Rows from top to bottom. A row is a list of `panel-id: columns` pairs that adds up to 12 (`- [trend: 8, lines: 4]`). Every panel is placed exactly once. Below 900 px every panel takes a full row. |
+| `layout` | list of rows (lists of `{panel-id: columns}`) |  | Rows from top to bottom. A row is a list of `panel-id: columns` pairs that adds up to 12 (`- [trend: 8, lines: 4]`). Every panel is placed exactly once. Below 900 px every panel takes a full row. Use `layout` or `tabs`, not both. |
+| `tabs` | list of object (2+) |  | Pages, 2 to 8, instead of `layout`: the header and the filters stay, the tab bar switches the panels below. Filters and the drill-down period are shared by all tabs; only the open tab loads its panels. `panels` stays one flat list and each panel is placed in exactly one tab. Use `layout` or `tabs`, not both. |
+
+### A tab (`tabs[]`)
+
+A file has `layout` **or** `tabs` (2 to 8 tabs). Every panel is placed once in all, not once per tab.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | id | yes | The tab's id, used in the address (`?tab=products`). |
+| `title` | string | yes | The tab's name, up to 40 characters. |
+| `layout` | list of rows (lists of `{panel-id: columns}`) | yes | The tab's rows, as in `layout`. |
 
 ### `theme`
 
@@ -206,7 +217,7 @@ Exactly one of `measure` or `stack`.
 ## Rules the validator enforces
 
 - Every member exists in the Cube model, a measure is used as a measure and a dimension as a dimension, `time.dimension` is a time dimension.
-- Filter ids, panel ids and layout cells are unique and refer to things that exist; every layout row adds up to 12; every panel is placed once.
+- Filter ids, panel ids and layout cells are unique and refer to things that exist; every layout row adds up to 12; every panel is placed once (across all the tabs, when there are tabs; a tab id is used once).
 - A measure is only combined with dimensions its cube can join to (including the filters it applies): otherwise add the filter to `ignore_filters`.
 - **Click rules:** a bar sets a filter on its `by` (one filter); a treemap's filters follow its `group` in order; a table row sets filters on the
   dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).

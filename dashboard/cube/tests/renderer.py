@@ -388,6 +388,26 @@ with sync_playwright() as p:
         ctx.close()
     ms.reset_saved()
 
+    # ---- a dashboard written with tabs (patched into the compiled file) is not broken by the page: until the page draws a tab bar, its tabs sit one below the other
+    ctx, page = open_page(browser, "/d/sales-overview")
+    settled(page)
+    plain = page.eval_on_selector_all("[data-panel]", "ns => ns.map(n => n.dataset.panel)")
+    ctx.close()
+    def as_tabs(route):
+        spec = json.loads(route.fetch().text())
+        rows = spec.pop("layout")
+        spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:1]}, {"id": "details", "title": "Details", "layout": rows[1:]}]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", as_tabs)
+    page.reload()
+    settled(page)
+    tabbed_ids = page.eval_on_selector_all("[data-panel]", "ns => ns.map(n => n.dataset.panel)")
+    check(len(plain) >= 6 and tabbed_ids == plain, f"a tabbed dashboard draws every panel, in the order of its tabs ({len(tabbed_ids)} panels)")
+    check(page.locator(".panel-error").count() == 0 and page.locator(".kpi").count() >= 5, "and every panel loads")
+    check(not page.problems, f"with no console errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- a whole dashboard
     ctx, page = open_page(browser, "/d/sales-overview")
     settled(page)

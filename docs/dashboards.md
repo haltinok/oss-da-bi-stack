@@ -38,6 +38,13 @@ Until an API key is configured, a rule-based stand-in answers (a fixed set of ph
 
 ![A draft built from a request](images/dashboards/builder.png)
 
+## Tabs
+A dashboard can have **pages** instead of one long page: write `tabs` instead of `layout`, 2 to 8 entries, each with an `id` (used in the address), a `title` (up to 40
+characters) and its own `layout` rows. `panels` stays one flat list and each panel is placed in exactly one tab; the filters and a drill-down's period are shared by all tabs.
+The validator names the tab in its messages (`tab 'details': row 2: the widths add up to 11`, `tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`).
+**Status:** the spec, the validator and the compiler know tabs; until the page draws a tab bar (the next step of `PLAN-dashboard-tabs.md`) it shows the tabs one below the other,
+and the rule-based builder will not change a dashboard that has tabs (it would flatten them): edit the YAML, or use a language model.
+
 ## Language
 Every `/d` page has a small **EN | TR** switch in its header. The choice is kept in this browser (or, when the browser keeps nothing, in the address as `?lang=tr`, which also
 lets a link carry it) and the page is drawn again in that language: its own words (buttons, status, empty states, the builder's boxes and examples, what a screen reader
