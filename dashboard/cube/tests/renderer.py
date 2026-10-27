@@ -451,6 +451,18 @@ with sync_playwright() as p:
         check(not page.problems, f"no console errors ({theme}) {page.problems[:2]}")
         ctx.close()
 
+    # shares: percentages from the totals Cube returned
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", with_pivot(show="share_of_column", measures=[{"member": "internet_sales.revenue", "format": "money"}]))
+    page.reload()
+    settled(page)
+    page.wait_for_selector(f"{xt} table.pivot", timeout=20000)
+    body = page.locator(f"{xt} tbody td:not(.tc)").all_inner_texts()
+    check(body and all(c.endswith("%") for c in body), f"the cells are percentages ({body[:3]})")
+    check(all(c == "100.0%" for c in page.locator(f"{xt} tfoot td:not(.tc)").all_inner_texts()), "each column's total is 100%")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
     # a total that fails must not take the rows with it
     ctx, page = open_page(browser, "/d/sales-overview")
     def no_total(route):

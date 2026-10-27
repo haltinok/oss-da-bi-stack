@@ -217,6 +217,16 @@ def semantic_errors(spec, catalog):
                 errs.append(f"{w}: columns: '{col}' is also in `rows`; a dimension is either down the side or across the top")
             if isinstance(p["columns"], dict) and kinds.get(col) == "dimension" and used.get(col, {}).get("type") != "time":
                 errs.append(f"{w}: columns.member: '{col}' is a {used[col]['type']} dimension, a time dimension is needed to group the columns by a granularity (or write `columns: {col}`)")
+            share = p.get("show", "value")
+            if share != "value":
+                needs = {"share_of_row": ("rows", ("both", "rows"), "a total for every row"), "share_of_column": ("columns", ("both", "columns"), "a total for every column"),
+                         "share_of_total": ("any", ("both", "rows", "columns"), "a grand total")}[share]
+                if p.get("totals", "both") not in needs[1]:
+                    errs.append(f"{w}: show: '{share}' divides by {needs[2]}, but totals: '{p.get('totals', 'both')}' does not ask for it (use {' or '.join(repr(t) for t in needs[1])})")
+                for i, m in enumerate(p["measures"]):
+                    typ = used.get(column_member(m), {}).get("type")
+                    if typ is not None and typ not in ADDITIVE:
+                        errs.append(f"{w}: measures[{i}]: '{column_member(m)}' is a {typ} measure, which does not add up across rows and columns, so a share of it means nothing: use `show: value` or a `sum` or `count` measure")
             if "heat" in p and p["heat"]["measure"] not in [column_member(m) for m in p["measures"]]:
                 errs.append(f"{w}: heat.measure: '{p['heat']['measure']}' is not one of the pivot's measures")
         _join_errors(spec, p, w, catalog, errs)
@@ -227,6 +237,7 @@ def semantic_errors(spec, catalog):
 
 
 TIME_FILTERS = ("fiscal_year", "calendar_year")
+ADDITIVE = ("sum", "count")      # measure types whose cells add up to their totals: only those can be shown as a share
 PERIOD = "period"            # the reserved filter id of the date range a drill-down sets; a panel lists it in ignore_filters to opt out
 FINENESS = ["year", "quarter", "month", "week", "day", "hour"]
 

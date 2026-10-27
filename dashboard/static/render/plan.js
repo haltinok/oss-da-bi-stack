@@ -449,6 +449,28 @@ export function pivotModel(def, axes, vals) {
 }
 
 /**
+ * A pivot model with every number as a share (`mode`: share_of_row | share_of_column | share_of_total), from the totals the model already holds:
+ * a cell over its row's, its column's or the grand total; a total over its own total (so 100%) or the grand total. A missing or zero total
+ * gives no share (null), never a guess. Additive measures only (the validator sees to that). Same shape as `pivotModel`'s answer.
+ */
+export function pivotShare(model, mode) {
+  const over = (map, denom) => (map ? new Map([...map].map(([k, v]) => { const d = denom?.get(k); return [k, v == null || d == null || d === 0 ? null : v / d]; })) : undefined);
+  const grand = model.grand;
+  const rowMap = new Map();
+  const rows = model.rows.map((r) => {
+    const row = { ...r, cells: r.cells.map((c, j) => over(c, mode === "share_of_row" ? r.total : mode === "share_of_column" ? model.colTotals[j] : grand)), total: over(r.total, mode === "share_of_row" ? r.total : grand) };
+    rowMap.set(r, row);
+    return row;
+  });
+  const groups = model.groups && model.groups.map((g) => ({
+    ...g, rows: g.rows.map((r) => rowMap.get(r)),
+    cells: g.cells.map((c, j) => over(c, mode === "share_of_row" ? g.total : mode === "share_of_column" ? model.colTotals[j] : grand)),
+    total: over(g.total, mode === "share_of_row" ? g.total : grand),
+  }));
+  return { ...model, rows, groups, colTotals: model.colTotals.map((c) => over(c, mode === "share_of_column" ? c : grand)), grand: over(grand, grand) };
+}
+
+/**
  * The shading of a pivot's cells for one measure: { min, max, level(v) } over the cells (not the totals), `level` 0..1, or null when no
  * cell has a number. An empty cell has no level; when every cell is equal they all sit in the middle.
  */

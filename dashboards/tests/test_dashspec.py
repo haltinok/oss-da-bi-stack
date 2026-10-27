@@ -611,6 +611,15 @@ PIVOT_BROKEN = [
      ["panel 'xtab' (pivot)", "on_click.set_filter:", "filter 'region' is on 'territories.region', which this pivot does not show"]),
     ("a click that names a bad filter id still gets the filter message", with_pivot(on_click={"set_filter": "Bad id"}), ["panel 'xtab' (pivot)", "on_click", "must be a filter id or a list of one or two filter ids"]),
     ("a column that is neither a member nor an object", with_pivot(columns="nope"), ["panel 'xtab' (pivot)", "columns", "must be a member ('cube.name') or an object { member, granularity }"]),
+    ("a row share when the pivot has no row totals", with_pivot(show="share_of_row", totals="columns"),
+     ["panel 'xtab' (pivot)", "show:", "'share_of_row' divides by a total for every row", "totals: 'columns'"]),
+    ("a column share when the pivot has no column totals", with_pivot(show="share_of_column", totals="rows"),
+     ["panel 'xtab' (pivot)", "show:", "'share_of_column' divides by a total for every column"]),
+    ("a share of the total with no totals at all", with_pivot(show="share_of_total", totals="none"),
+     ["panel 'xtab' (pivot)", "show:", "'share_of_total' divides by a grand total"]),
+    ("a share of a ratio", with_pivot(show="share_of_total", measures=["internet_sales.margin_pct"]),
+     ["panel 'xtab' (pivot)", "measures[0]:", "does not add up across rows and columns"]),
+    ("a show that does not exist", with_pivot(show="percent"), ["panel 'xtab' (pivot)", "show:", "'percent' is not one of"]),
     ("a click on a filter that does not exist", with_pivot(on_click={"set_filter": ["ghost"]}), ["panel 'xtab'", "on_click.set_filter:", "no filter with id 'ghost'"]),
     ("a measure cube with no join to the dimension", with_pivot(measures=["inventory_health.stockout_items"], on_click={"set_filter": ["category"]}),
      ["panel 'xtab' (pivot)", "'inventory_health.stockout_items' cannot be combined with"]),
@@ -646,8 +655,9 @@ def test_a_broken_pivot_fails_with_a_message_that_names_the_place(name, mutate, 
     {"columns": {"member": "dates.full_date", "granularity": "month"}, "on_click": {"set_filter": ["category"]}},
     {"rows": ["products.category", "products.subcategory"], "columns": {"member": "dates.full_date", "granularity": "quarter"}, "totals": "columns", "on_click": {"set_filter": ["category"]}},
     {"heat": {"measure": "internet_sales.revenue"}},
+    {"show": "share_of_row", "totals": "rows"},
     {"rows": ["products.category", "products.subcategory"], "measures": ["internet_sales.revenue", "reseller_sales.revenue"], "totals": "both"},
-], ids=["plain", "two-levels", "no-totals", "row-totals", "column-totals", "by-label", "limits", "time-months", "time-quarters-two-levels", "heat", "two-cubes"])
+], ids=["plain", "two-levels", "no-totals", "row-totals", "column-totals", "by-label", "limits", "time-months", "time-quarters-two-levels", "heat", "share", "two-cubes"])
 def test_python_pivot_queries_match_the_renderers(tmp_path, changes):
     spec = copy.deepcopy(GOOD)
     with_pivot(**changes)(spec)
@@ -659,3 +669,10 @@ def test_python_pivot_queries_match_the_renderers(tmp_path, changes):
     dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
     for state in dumped:
         assert panel_queries(out, panel(out, "xtab"), state["values"]) == state["panels"]["xtab"], f"under {state['values']}"
+
+
+@pytest.mark.parametrize("show,totals", [("share_of_row", "both"), ("share_of_row", "rows"), ("share_of_column", "columns"), ("share_of_total", "rows"), ("share_of_total", "both")])
+def test_a_share_validates_when_its_total_is_asked_for(show, totals):
+    spec = copy.deepcopy(GOOD)
+    with_pivot(show=show, totals=totals, measures=["internet_sales.revenue", "internet_sales.units"])(spec)
+    assert validate(spec, CATALOG)[0] == []
