@@ -10,6 +10,7 @@ import pathlib
 import re
 import sys
 
+import yaml
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -487,6 +488,47 @@ with sync_playwright() as p:
     check(page.evaluate("document.documentElement.scrollWidth <= window.innerWidth") and page.locator("#sv-tags .te-input").bounding_box()["height"] >= 44, "on a phone the Tags field fits and its box is 44px high")
     ctx.close()
     ms.reset_saved()
+    # ---- a tabbed dashboard in the builder: edited in the YAML tab, drawn with a tab bar, saved, reopened, and not flattened by the stand-in
+    ms.reset_saved()
+    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ctx, page = open_page(browser, "/d/")
+    build_and_open(page, "monthly revenue by channel and the top 5 products, a table of latest orders and a treemap")
+    page.click('[data-tab="yaml"]')
+    spec = yaml.safe_load(page.input_value("#bd-yaml"))
+    plain_panels = [p["id"] for p in spec["panels"]]
+    rows = spec.pop("layout")
+    spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:1]}, {"id": "details", "title": "Details", "layout": rows[1:]}]
+    page.fill("#bd-yaml", yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))
+    with page.expect_navigation():
+        page.click("#bd-apply")
+    settled(page)
+    check("Applied" in page.inner_text("#bd-msg") and page.locator('[role="tab"]').all_inner_texts() == ["Overview", "Details"], "a draft edited into tabs in the YAML tab is applied and drawn with a tab bar")
+    check(page.eval_on_selector_all("[data-panel]", "ns => ns.map(n => n.dataset.panel)") == plain_panels and page.locator("#tabpanel-details").is_hidden(), "every panel is in the page, and only the first tab is open")
+    page.click("#tab-details")
+    settled(page)
+    check(page.locator("#tabpanel-details").is_visible() and page.locator("#tabpanel-details .card").count() >= 2 and page.locator(".panel-error").count() == 0, "the second tab loads and draws its panels")
+    page.fill("#bd-change", "make the chart a line")
+    page.click("#bd-go")                                       # a refusal does not reload the page: the message appears in place
+    page.wait_for_selector("#bd-msg:not([hidden])", timeout=20000)
+    check("cannot change a dashboard that has tabs" in page.inner_text("#bd-msg") and page.locator('[role="tab"]').count() == 2, "the stand-in says it cannot change a tabbed draft, and leaves the tabs alone")
+    save_as(page, "Two pages")
+    check(page.locator('[role="tab"]').count() == 2 and page.inner_text("#title") == "Sales dashboard", "saving a tabbed draft opens it with its tab bar")
+    saved_path = page.url.replace(BASE, "")
+    ctx.close()
+    ctx, page = open_page(browser, saved_path + "?tab=details")
+    settled(page)
+    check(page.get_attribute("#tab-details", "aria-selected") == "true" and "version 1" in page.inner_text(".builder-bar .bb-head"), "a saved tabbed dashboard opens on the tab the address names")
+    page.click("#sb-edit")
+    page.wait_for_url("**/d/draft", timeout=20000)
+    settled(page)
+    check(page.locator('[role="tab"]').count() == 2, "Edit opens it as a draft with its tabs")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector(".saved", timeout=10000)
+    check("Two pages" in page.inner_text(".saved") and "cannot open" not in page.inner_text(".saved").lower(), "the list shows it like any other dashboard")
+    ctx.close()
+    ms.reset_saved()
+
     browser.close()
 
 if failures:

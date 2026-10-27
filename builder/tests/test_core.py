@@ -149,3 +149,75 @@ def test_links_in_text_panels_are_removed_from_a_draft():
     out = run(Script([submit(yaml.safe_dump(spec))]))
     note = next(p for p in out["spec"]["panels"] if p["id"] == "note")
     assert note["markdown"] == "See the portal and mail and **bold**." and any("Links" in n for n in out["notes"])
+
+
+# ------------------------------------------------------------------------------------------------------------------ tabs
+def tabbed(text=GOOD, split=1):
+    spec = yaml.safe_load(text)
+    rows = spec.pop("layout")
+    spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:split]}, {"id": "details", "title": "Details", "layout": rows[split:]}]
+    return spec
+
+
+def test_a_tabbed_submission_is_accepted_and_each_tab_is_compiled():
+    out = run(Script([submit(yaml.safe_dump(tabbed()))]))
+    assert out["status"] == "ok" and out["attempts"] == 1
+    spec = out["spec"]
+    assert "layout" not in spec and [t["id"] for t in spec["tabs"]] == ["overview", "details"]
+    assert spec["tabs"][0]["layout"][0] == [{"panel": "kpis", "span": 12}]
+    assert "tabs:" in out["yaml"] and "layout:" in out["yaml"]
+
+
+def test_a_model_that_places_a_panel_on_two_tabs_is_told_which_tabs_and_fixes_it():
+    bad = tabbed()
+    bad["tabs"][1]["layout"].append([{"kpis": 12}])
+    model = Script([submit(yaml.safe_dump(bad))], [submit(yaml.safe_dump(tabbed()))])
+    out = run(model)
+    assert out["status"] == "ok" and out["attempts"] == 2
+    feedback = model.calls[1]["messages"][-1]["content"][0]["content"]
+    assert "tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details'), it must be placed once" in feedback
+
+
+def test_a_row_that_is_not_12_wide_on_a_tab_names_the_tab():
+    bad = tabbed()
+    bad["tabs"][1]["layout"][0] = [{"trend": 8}, {"lines": 3}]
+    model = Script([submit(yaml.safe_dump(bad))], [submit(yaml.safe_dump(tabbed()))])
+    run(model)
+    assert "tab 'details': row 1: the widths add up to 11" in model.calls[1]["messages"][-1]["content"][0]["content"]
+
+
+def test_both_layout_and_tabs_is_sent_back_with_the_one_of_message():
+    bad = tabbed()
+    bad["layout"] = yaml.safe_load(GOOD)["layout"]
+    model = Script([submit(yaml.safe_dump(bad))], [submit(yaml.safe_dump(tabbed()))])
+    assert run(model)["status"] == "ok"
+    assert "needs exactly one of: layout, tabs" in model.calls[1]["messages"][-1]["content"][0]["content"]
+
+
+def test_a_role_cannot_get_members_it_may_not_read_on_any_tab():
+    spec = tabbed((REPO / "dashboards" / "sales-overview.yml").read_text(), split=2)             # its KPI row has profit: a rep may not read it, on any tab
+    out = run(Script([submit(yaml.safe_dump(spec))], [submit(yaml.safe_dump(spec))], [submit(yaml.safe_dump(spec))]), role="rep")
+    assert out["status"] == "failed" and any("role 'rep' cannot read" in p for p in out["problems"])
+
+
+def test_the_model_is_told_when_to_use_tabs_and_shown_how():
+    for role in ("admin", "rep", "purchasing"):
+        text = core.system_blocks(CATALOG, role)[0]["text"]
+        assert "tabs: INSTEAD of layout" in text and "ONLY when the request asks for pages" in text and "about 8 panels" in text
+        assert "the same dashboard on two tabs" in text and "id: overview" in text, role
+        assert "### A tab (`tabs[]`)" in text and "| `tabs` |" in text, "the generated field reference has it too"
+
+
+def test_the_tabs_example_shown_to_the_model_validates_for_every_role():
+    for role in core.ROLES:
+        visible = core.visible_catalog(CATALOG, role)
+        text = core.example_spec(visible, role)
+        if "the same dashboard on two tabs" not in text:
+            continue
+        first = text.split("\n---\n")[0]
+        head, tail = first.split("# the same dashboard on two tabs")
+        spec = yaml.safe_load(head)
+        spec.pop("layout")
+        spec.update(yaml.safe_load(tail.split("\n", 1)[1]))
+        built, problems = core.check_submission(yaml.safe_dump(spec, allow_unicode=True), CATALOG, role)
+        assert built is not None and len(built["spec"]["tabs"]) == 2, (role, problems)

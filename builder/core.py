@@ -33,7 +33,7 @@ LINK = re.compile(r"\[([^\]]*)\]\(\s*[a-zA-Z][a-zA-Z0-9+.-]*:[^)]*\)")      # [t
 ROLES = ("admin", "manager", "rep", "purchasing", "marketing")
 
 SPEC_GUIDE = """\
-A dashboard is one YAML file. Top level: spec: 1, id, title, description, tags?, locale (en-US | tr-TR), currency (USD | TRY), time, filters, panels, layout.
+A dashboard is one YAML file. Top level: spec: 1, id, title, description, tags?, locale (en-US | tr-TR), currency (USD | TRY), time, filters, panels, layout (or tabs).
 tags: 0-5 short lower-case words (letters, digits, spaces, hyphens; 24 characters at most) for finding and grouping on the list page: write them ONLY when the request names a topic or group ("a sales dashboard for management"), 1-3 words, in the dashboard's language, most important first; never anything sensitive.
 Do not write roles, theme.logo or id: the service sets them.
 
@@ -54,6 +54,7 @@ panels: list of { id, type, title?, ignore_filters?, ... }, types:
 A measure is one of: member: cube.measure | sum: [a.m, b.m] (the same measure of two fact cubes, added; needs label) | ratio: { num: [..], den: [..] } (needs label; format pct).
 format: money | int | pct (a fraction) | decimal | number.   color: internet | reseller | #rrggbb.
 layout: rows of 12 columns, every panel exactly once: - [kpis: 12]  - [trend: 8, lines: 4]
+tabs: INSTEAD of layout, 2-8 pages: [ { id, title, layout: <rows as above> } ]. Every panel is placed on exactly one tab; the filters and a drill-down's period are shared by all tabs, and only the open tab loads. Use tabs ONLY when the request asks for pages or separate topics or audiences ("an overview and a details page"), or the dashboard would pass about 8 panels; otherwise one layout. Put the KPIs and the main chart on the first tab; titles of 1-3 words in the dashboard's language.
 Rules: use only members from the catalog. Cube cannot join two fact cubes in one query, so combine channels with sum/ratio/stack, nothing else:
 no other arithmetic. A filter must be on a dimension the panel's measures can join to (else add it to that panel's ignore_filters).
 A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order of its group; table -> a dimension column; pivot -> a rows or columns dimension; time chart -> a year filter.
@@ -147,7 +148,17 @@ def example_spec(catalog: cat.Catalog, role: str) -> str:
         comp = composer.compose(ask, catalog, role)
         if comp.spec:
             out.append(f"# {title}\n" + yaml.safe_dump(comp.spec, sort_keys=False, allow_unicode=True, width=140))
+            if len(out) == 1 and len(comp.spec["layout"]) > 1:
+                out[-1] += "\n" + tabs_example(comp.spec)
     return "\n---\n".join(out[:2])
+
+
+def tabs_example(spec: dict) -> str:
+    """The first example again with its `layout` replaced by two tabs (what the model is shown; it is valid by construction: the same rows, split)."""
+    rows, tr = spec["layout"], spec.get("locale", "").startswith("tr")
+    tabs = [{"id": "overview", "title": "Genel bakış" if tr else "Overview", "layout": rows[:1]}, {"id": "details", "title": "Ayrıntılar" if tr else "Details", "layout": rows[1:]}]
+    return ("# the same dashboard on two tabs: delete `layout` and write `tabs` instead (panels and filters stay as they are, every panel is placed once across the tabs)\n"
+            + yaml.safe_dump({"tabs": tabs}, sort_keys=False, allow_unicode=True, width=140))
 
 
 def system_blocks(catalog: cat.Catalog, role: str) -> list[dict]:

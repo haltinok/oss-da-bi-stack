@@ -364,3 +364,22 @@ def test_info_gives_the_examples_in_the_pages_language():
     assert en[0].startswith("Monthly revenue") and tr[0].startswith("Kanala göre") and len(tr) >= 3
     assert client.get("/info?lang=de", headers=h).json()["examples"] == en, "a language it has no words for gets English"
     assert client.get("/info?lang=tr", headers=token("purchasing", "lang2")).json()["examples"][0].startswith("Stok durumu")
+
+
+def test_a_tabbed_dashboard_goes_through_the_service_like_any_other(memory_store):
+    import yaml as pyyaml
+    h = token("manager", "pager")
+    spec = pyyaml.safe_load(sales_yaml())
+    rows = spec.pop("layout")
+    spec["tabs"] = [{"id": "one", "title": "One", "layout": rows[:1]}, {"id": "two", "title": "Two", "layout": rows[1:]}]
+    text = pyyaml.safe_dump(spec, sort_keys=False)
+    checked = client.post("/validate", headers=h, json={"yaml": text}).json()
+    assert checked["ok"] is True and [t["id"] for t in checked["spec"]["tabs"]] == ["one", "two"]
+    made = client.post("/saved", headers=h, json={"yaml": text})
+    assert made.status_code == 201
+    opened = client.get(f"/saved/{made.json()['id']}", headers=h).json()
+    assert [t["title"] for t in opened["spec"]["tabs"]] == ["One", "Two"] and "layout" not in opened["spec"]
+    bad = pyyaml.safe_load(text)
+    bad["tabs"][1]["layout"].append(bad["tabs"][0]["layout"][0])
+    refused = client.post("/validate", headers=h, json={"yaml": pyyaml.safe_dump(bad, sort_keys=False)}).json()
+    assert refused["ok"] is False and any("is placed 2 times (tab 'one' and tab 'two')" in p for p in refused["problems"])

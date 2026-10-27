@@ -306,3 +306,56 @@ def test_retag_leaves_text_it_cannot_read_to_the_validator_and_places_tags_sensi
     same = "spec: 1\ntitle: T\nlocale: en-US\ntags: [x]\n"
     assert saved.retag(same, ["x"]) == same, "the same tags: the text is untouched, even in another position"
     assert "tags" not in yaml.safe_load(saved.retag(same, []))
+
+
+# ------------------------------------------------------------------------------------------------------------------ tabs
+def tabbed_yaml(text=GOOD, split=1):
+    spec = yaml.safe_load(text)
+    rows = spec.pop("layout")
+    spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:split]}, {"id": "details", "title": "Details", "layout": rows[split:]}]
+    return yaml.safe_dump(spec, sort_keys=False, allow_unicode=True)
+
+
+def test_a_tabbed_dashboard_is_saved_opened_listed_and_shared_like_any_other(store):
+    made = new(store, who("alice"), yaml_text=tabbed_yaml(), title="Two pages", visibility="everyone")
+    assert made["readable_by"] and "rep" in made["readable_by"], "the roles that can read its members can open it, tabs or not"
+    opened = saved.open_saved(store, CATALOG, who("bob", "rep"), made["id"])
+    assert "layout" not in opened["spec"] and [t["id"] for t in opened["spec"]["tabs"]] == ["overview", "details"]
+    assert opened["spec"]["tabs"][1]["layout"], "each tab carries its compiled rows"
+    row = next(d for d in saved.list_saved(store, CATALOG, who("bob", "rep")) if d["title"] == "Two pages")
+    assert row["readable"] is True and row["tags"] == ["sales", "regional"]
+    assert "tabs:" in store.get(made["id"])["yaml"]
+
+
+def test_a_dashboard_saved_before_tabs_still_opens_with_its_layout(store):
+    made = new(store, who("alice"), title="Plain")
+    opened = saved.open_saved(store, CATALOG, who("alice"), made["id"])
+    assert "tabs" not in opened["spec"] and opened["spec"]["layout"][0] == [{"panel": "kpis", "span": 12}]
+
+
+def test_changing_a_dashboard_to_tabs_is_a_new_version_and_the_old_version_keeps_its_layout(store):
+    made = new(store, who("alice"), title="Grows pages")
+    up = saved.update_saved(store, CATALOG, who("alice"), made["id"], yaml_text=tabbed_yaml())
+    assert up["version"] == 2
+    now = saved.open_saved(store, CATALOG, who("alice"), made["id"])["spec"]
+    old = saved.open_saved(store, CATALOG, who("alice"), made["id"], version=1)["spec"]
+    assert "tabs" in now and "layout" in old and "tabs" not in old
+    back = saved.restore(store, CATALOG, who("alice"), made["id"], 1)
+    assert back["version"] == 3 and "layout" in saved.open_saved(store, CATALOG, who("alice"), made["id"])["spec"]
+
+
+def test_a_tabbed_dashboard_with_a_member_a_role_cannot_read_is_refused_for_that_role(store):
+    profit = tabbed_yaml((REPO / "dashboards" / "sales-overview.yml").read_text(), split=2)
+    with pytest.raises(saved.SavedError) as e:
+        new(store, who("rita", "rep"), yaml_text=profit)
+    assert e.value.status == 422 and any("role 'rep' cannot read" in p for p in e.value.problems)
+    made = new(store, who("alice", "manager"), yaml_text=profit, visibility="everyone")
+    assert "rep" not in made["readable_by"]
+    assert saved.list_saved(store, CATALOG, who("rita", "rep"))[0]["readable"] is False
+
+
+def test_tags_and_tabs_together(store):
+    made = new(store, who("alice"), yaml_text=tabbed_yaml(), tags=["pages"])
+    text = store.get(made["id"])["yaml"]
+    spec = yaml.safe_load(text)
+    assert spec["tags"] == ["pages"] and "tabs" in spec and "layout" not in spec
