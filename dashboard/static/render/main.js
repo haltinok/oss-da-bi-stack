@@ -140,7 +140,8 @@ async function showDashboard() {
   values[PERIOD] = parsePeriod(qs.get("period")) ? qs.get("period") : "";             // the date range a drill-down sets (other panels follow it)
   const drills = Object.fromEntries(spec.panels.filter((p) => p.drill).map((p) => [p.id, (qs.get(`drill_${p.id}`) || "").split(",").filter((b) => /^\d{4}-\d{2}-\d{2}/.test(b))]));
   const clearedHooks = [];
-  const span = Object.fromEntries(spec.layout.flat().map((c) => [c.panel, c.span]));
+  const layoutRows = spec.layout ?? spec.tabs.flatMap((tab) => tab.layout);          // a tabbed file: its tabs one below the other, until the page draws a tab bar
+  const span = Object.fromEntries(layoutRows.flat().map((c) => [c.panel, c.span]));
 
   const ctx = {
     spec, t, run: (q, signal) => client.run(q, signal), tooltip,
@@ -191,7 +192,7 @@ async function showDashboard() {
     periodBar.append(x);
   }
   const grid = el("div", { class: "rgrid" });
-  for (const row of spec.layout) for (const cell of row) {
+  for (const row of layoutRows) for (const cell of row) {
     const root = panels.get(cell.panel).root;
     root.style.gridColumn = `span ${span[cell.panel]}`;
     grid.append(root);

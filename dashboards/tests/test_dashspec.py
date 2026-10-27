@@ -734,3 +734,93 @@ def test_a_dashboard_without_tags_has_no_tags_key_in_the_index(tmp_path):
     (src / "sales-overview.yml").write_text(yaml.safe_dump(spec, allow_unicode=True))
     assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
     assert "tags" not in json.loads((out / "index.json").read_text())[0]
+
+
+# ---------------------------------------------------------------------------------------------------------------- tabs
+def tabbed(split=1, spec=None):
+    """The sales-overview dashboard with its layout rows split over two tabs: the first `split` rows on 'overview', the rest on 'details'."""
+    s = copy.deepcopy(spec or GOOD)
+    rows = s.pop("layout")
+    s["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:split]}, {"id": "details", "title": "Details", "layout": rows[split:]}]
+    return s
+
+
+@pytest.mark.parametrize("split", [1, 2, 3])
+def test_a_tabbed_dashboard_validates_and_compiles_each_tab_to_explicit_cells(split):
+    spec = tabbed(split)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used)
+    assert "layout" not in out and [t["id"] for t in out["tabs"]] == ["overview", "details"]
+    assert out["tabs"][0]["title"] == "Overview" and out["tabs"][0]["layout"][0] == [{"panel": "kpis", "span": 12}]
+    assert sum(len(row) for t in out["tabs"] for row in t["layout"]) == sum(len(r) for r in GOOD["layout"]), "every cell is somewhere"
+    json.dumps(out)
+
+
+def test_a_plain_layout_still_compiles_to_a_layout_and_no_tabs():
+    errors, used = validate(copy.deepcopy(GOOD), CATALOG)
+    out = compile_spec(GOOD, used)
+    assert errors == [] and "tabs" not in out and out["layout"][1] == [{"panel": "trend", "span": 8}, {"panel": "lines", "span": 4}]
+
+
+def run_tabbed(mutate, split=1):
+    spec = tabbed(split)
+    mutate(spec)
+    return validate(spec, CATALOG)[0]
+
+
+TAB_BROKEN = [
+    ("both layout and tabs", lambda s: s.update(layout=copy.deepcopy(GOOD["layout"])), ["dashboard:", "needs exactly one of: layout, tabs"]),
+    ("neither layout nor tabs", lambda s: s.pop("tabs"), ["dashboard:", "needs exactly one of: layout, tabs"]),
+    ("a panel on two tabs", lambda s: s["tabs"][1]["layout"].append([{"kpis": 12}]), ["tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details'), it must be placed once"]),
+    ("a panel on no tab", lambda s: s["tabs"][1]["layout"].pop(), ["tabs: panel 'margin' is placed 0 times", "panel 'territories' is placed 0 times"]),
+    ("a row that is not 12 wide on the second tab", lambda s: s["tabs"][1]["layout"].__setitem__(0, [{"trend": 8}, {"lines": 3}]), ["tab 'details': row 1: the widths add up to 11"]),
+    ("a row that is not 12 wide on the first tab", lambda s: s["tabs"][0]["layout"].__setitem__(0, [{"kpis": 13}]), ["tabs[0]", "13 is greater than the maximum of 12"]),
+    ("a panel that does not exist", lambda s: s["tabs"][1]["layout"].append([{"ghost": 12}]), ["tab 'details': row 4: no panel with id 'ghost'"]),
+    ("two tabs with one id", lambda s: s["tabs"][1].update(id="overview"), ["tabs: id 'overview' is used by more than one tab"]),
+    ("only one tab", lambda s: s.update(tabs=s["tabs"][:1]), ["dashboard: tabs:", "a dashboard has 2 to 8 tabs, this one has 1", "use `layout` for a single page"]),
+    ("nine tabs", lambda s: s.update(tabs=[{"id": f"t{i}", "title": "T", "layout": [[{"kpis": 12}]]} for i in range(9)]), ["a dashboard has 2 to 8 tabs, this one has 9"]),
+    ("a tab with no title", lambda s: s["tabs"][0].update(title=""), ["dashboard: tabs[0].title:", "non-empty"]),
+    ("a tab with a title of 41 characters", lambda s: s["tabs"][0].update(title="x" * 41), ["tabs[0].title:", "is too long"]),
+    ("a tab without a layout", lambda s: s["tabs"][0].pop("layout"), ["tabs[0]", "'layout' is a required property"]),
+    ("a tab with an empty layout", lambda s: s["tabs"][0].update(layout=[]), ["tabs[0].layout", "non-empty"]),
+    ("a tab with a field that is not one", lambda s: s["tabs"][0].update(icon="x"), ["tabs[0]", "'icon' was unexpected"]),
+    ("a tab id that is not an id", lambda s: s["tabs"][0].update(id="Over View"), ["tabs[0].id:", "does not match"]),
+    ("a tab that is not an object", lambda s: s.update(tabs=["a", "b"]), ["tabs[0]", "is not of type 'object'"]),
+]
+
+
+@pytest.mark.parametrize("name,mutate,needles", TAB_BROKEN, ids=[b[0] for b in TAB_BROKEN])
+def test_a_broken_tab_setup_fails_with_a_message_that_names_the_place(name, mutate, needles):
+    errors = run_tabbed(mutate)
+    assert errors, f"{name}: expected a problem"
+    text = "\n".join(errors)
+    for needle in needles:
+        assert needle in text, f"{name}: {needle!r} missing from:\n{text}"
+
+
+def test_the_panels_are_still_checked_on_a_tab_roles_included():
+    spec = tabbed(2)
+    spec["roles"] = ["admin", "rep"]                    # a rep may not read profit: the KPI row has it, whichever tab it is on
+    text = "\n".join(validate(spec, CATALOG)[0])
+    assert "panel 'kpis' (kpi): role 'rep' cannot read" in text
+    spec = tabbed(2)
+    panel(spec, "top")["by"] = "products.nme"
+    assert "panel 'top' (bar): by: 'products.nme' is not in the Cube model" in "\n".join(validate(spec, CATALOG)[0])
+
+
+def test_every_filter_still_applies_across_tabs_so_a_filter_error_is_reported_once():
+    spec = tabbed(2)
+    spec["panels"].append({"id": "stock", "type": "kpi", "measures": [{"member": "inventory_health.stockout_items"}]})
+    spec["tabs"][1]["layout"].append([{"stock": 12}])
+    text = "\n".join(validate(spec, CATALOG)[0])
+    assert text.count("panel 'stock' (kpi): 'inventory_health.stockout_items' cannot be combined with 'territories.region'") == 1
+
+
+def test_lint_and_the_queries_do_not_care_about_tabs():
+    errors, used = validate(tabbed(2), CATALOG)
+    assert errors == []
+    out = compile_spec(tabbed(2), used, CATALOG)
+    flat = compile_spec(GOOD, validate(copy.deepcopy(GOOD), CATALOG)[1], CATALOG)
+    for p in out["panels"]:
+        assert panel_queries(out, p, {"fy": "2021"}) == panel_queries(flat, panel(flat, p["id"]), {"fy": "2021"}), p["id"]
