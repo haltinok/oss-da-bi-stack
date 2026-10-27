@@ -508,8 +508,8 @@ with sync_playwright() as p:
     settled(page)
     check(page.locator("#tabpanel-details").is_visible() and page.locator("#tabpanel-details .card").count() >= 2 and page.locator(".panel-error").count() == 0, "the second tab loads and draws its panels")
     page.fill("#bd-change", "make the chart a line")
-    page.click("#bd-go")                                       # a refusal does not reload the page: the message appears in place
-    page.wait_for_selector("#bd-msg:not([hidden])", timeout=20000)
+    page.click("#bd-go")                                       # a refusal does not reload the page: the message appears in place (the earlier "Applied" is still showing, so wait for the new words)
+    page.wait_for_function("document.querySelector('#bd-msg')?.textContent.includes('cannot change a dashboard that has tabs')", timeout=20000)
     check("cannot change a dashboard that has tabs" in page.inner_text("#bd-msg") and page.locator('[role="tab"]').count() == 2, "the stand-in says it cannot change a tabbed draft, and leaves the tabs alone")
     save_as(page, "Two pages")
     check(page.locator('[role="tab"]').count() == 2 and page.inner_text("#title") == "Sales dashboard", "saving a tabbed draft opens it with its tab bar")

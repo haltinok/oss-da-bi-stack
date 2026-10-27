@@ -2,6 +2,7 @@
 // page's filter values and `pick`); `load(signal)` runs its queries and draws, and `sheet()` returns the loaded data as an Excel sheet.
 import { el, esc, svgEl } from "../lib/dom.js";
 import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade, arcPath, pieSlices } from "../lib/charts.js";
+import { addTimers } from "../lib/timer.js";
 import { pinTotals, pivotHtml, tableHtml } from "../lib/table.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
@@ -19,7 +20,9 @@ export function readable(e) {
 
 export function createPanel(def, ctx) {
   const make = { kpi: kpiPanel, timeseries: timeseriesPanel, bar: barPanel, pie: piePanel, treemap: treemapPanel, table: tablePanel, pivot: pivotPanel, text: textPanel }[def.type] || unsupportedPanel;
-  return make(def, ctx);
+  const panel = make(def, ctx);
+  addTimers(panel.root);
+  return panel;
 }
 
 // ------------------------------------------------------------------------------------------------------------------ shared card
