@@ -359,3 +359,20 @@ def test_tags_and_tabs_together(store):
     text = store.get(made["id"])["yaml"]
     spec = yaml.safe_load(text)
     assert spec["tags"] == ["pages"] and "tabs" in spec and "layout" not in spec
+
+
+def test_each_version_says_what_it_changed(store):
+    d = new(store, title="v1")
+    spec = yaml.safe_load(GOOD)
+    spec["title"] = "Second"
+    saved.update_saved(store, CATALOG, who(), d["id"], yaml_text=yaml.safe_dump(spec))
+    vs = saved.versions(store, who(), d["id"])
+    assert [v["version"] for v in vs] == [2, 1]
+    assert vs[1]["changes"] == [{"kind": "created"}]
+    assert vs[0]["changes"][0] == {"kind": "title", "from": "Regional sales", "to": "Second"}
+    assert "yaml" not in vs[0], "the versions list still carries no files"
+    for i in range(KEEP_VERSIONS + 2):                                           # versions that fall out of the kept window lose their 'before', and say so
+        spec["title"] = f"T{i}"
+        saved.update_saved(store, CATALOG, who(), d["id"], yaml_text=yaml.safe_dump(spec))
+    oldest = saved.versions(store, who(), d["id"])[-1]
+    assert oldest["changes"] == [{"kind": "unknown"}] and oldest["version"] > 2

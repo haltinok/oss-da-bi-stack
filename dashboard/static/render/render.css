@@ -288,3 +288,12 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .dz-resize:hover::after, .dz-resize.active::after { background: var(--focus); }
 .dz-tip { position: fixed; z-index: 41; padding: 4px 8px; border-radius: 6px; background: var(--ink); color: var(--page); font-size: 12px; font-weight: 600; pointer-events: none; }
 @media (max-width: 900px) { .dz-resize { display: none; } }
+
+/* What a version changed (render/builder.js changeList) */
+.drafts li .vmain { flex: 1; min-width: 0; }
+.vc { list-style: disc; margin: 3px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+
+/* Undo and redo in the designer's header */
+.dz-tools { display: flex; gap: 6px; flex: none; }
+.designer .dz-histbtn { height: 28px; min-width: 28px; padding: 0; font-size: 15px; }
+.designer .dz-histbtn:disabled { opacity: .4; cursor: not-allowed; }
