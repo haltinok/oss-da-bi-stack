@@ -7,7 +7,7 @@ import {
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
   pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
-import { tableHtml, pinTotals } from "../../static/lib/table.js";
+import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
 import { stringsFor, translations } from "../../static/render/strings.js";
 
 const spec = {
@@ -474,4 +474,58 @@ test("pivotModel merges several measure cubes on the row and column, and flags a
   assert.deepEqual([...m.rows[0].cells[0]], [["a.rev", 2], ["b.rev", 3]]);
   assert.equal(pivotModel(def, axes, { cells: [R("a", Array.from({ length: 50000 }, () => ({})))] }).truncated, true);
   assert.deepEqual(pivotModel(def, { rows: [], cols: [] }, {}).rows, [], "no rows at all is an empty pivot, not an error");
+});
+
+// ---- pivotHtml
+const M = (o) => new Map(Object.entries(o));
+const meas = [{ member: "a.rev", label: "Revenue", fmt: (v) => `$${v}` }, { member: "a.pct", label: "Margin", fmt: (v) => `${v * 100}%` }];
+const texts = { corner: "Category ↓ · Year →", total: "Total", notes: ["More <exist>"] };
+const flat = {
+  measures: ["a.rev"], cols: ["2020", "2021"], groups: null, totals: "both", hidden: { rows: false, cols: false }, truncated: false,
+  rows: [{ keys: ["Bikes"], cells: [M({ "a.rev": 10 }), M({ "a.rev": 30 })], total: M({ "a.rev": 40 }) }, { keys: ["<b>Socks"], cells: [undefined, M({ "a.rev": 5 })], total: undefined }],
+  colTotals: [M({ "a.rev": 10 }), M({ "a.rev": 35 })], grand: M({ "a.rev": 45 }),
+};
+
+test("pivotHtml: titles, cells, a row total and a column total row, empty cells empty, missing totals a dash, everything escaped", () => {
+  const html = pivotHtml({ model: flat, measures: [meas[0]], texts });
+  assert.match(html, /<th class="corner" rowspan="1" colspan="1">Category ↓ · Year →<\/th>/);
+  assert.match(html, /<th class="n ck" colspan="1" data-c="1">2021<\/th>/);
+  assert.match(html, /<th class="n tc" colspan="1">Total<\/th>/);
+  assert.match(html, /<th class="rl" scope="row" data-r="0">Bikes<\/th><td class="n" data-r="0" data-c="0">\$10<\/td><td class="n" data-r="0" data-c="1">\$30<\/td><td class="n tc" data-r="0">\$40<\/td>/);
+  assert.match(html, /<td class="n" data-r="1" data-c="0"><\/td>/, "a cell Cube had no row for is empty, not 0");
+  assert.match(html, /<td class="n tc" data-r="1">–<\/td>/, "a missing row total is a dash");
+  assert.match(html, /<tfoot><tr class="tot"><th class="rl" colspan="1">Total<\/th><td class="n" data-c="0">\$10<\/td><td class="n" data-c="1">\$35<\/td><td class="n tc">\$45<\/td><\/tr><\/tfoot>/, "the grand total has no data- attributes: it filters nothing");
+  assert.ok(html.includes("&#60;b&#62;Socks") && html.includes("More &#60;exist&#62;"), "keys and notes are escaped");
+});
+
+test("pivotHtml: totals modes decide the total column and the total row", () => {
+  const has = (mode) => { const h = pivotHtml({ model: { ...flat, totals: mode }, measures: [meas[0]], texts }); return [h.includes('class="n tc"'), h.includes("<tfoot>")]; };
+  assert.deepEqual(has("both"), [true, true]);
+  assert.deepEqual(has("rows"), [true, false]);
+  assert.deepEqual(has("columns"), [false, true]);
+  assert.deepEqual(has("none"), [false, false]);
+  const cols = pivotHtml({ model: { ...flat, totals: "columns" }, measures: [meas[0]], texts });
+  assert.ok(!cols.includes("\u0000") && cols.match(/<tfoot>.*<\/tfoot>/)[0].split("<td").length === 3, "a column-totals row has no grand cell");
+});
+
+test("pivotHtml: several measures make a second title row, under every column and the total", () => {
+  const model = { ...flat, measures: ["a.rev", "a.pct"], rows: [{ keys: ["Bikes"], cells: [M({ "a.rev": 1, "a.pct": 0.5 }), undefined], total: M({ "a.rev": 1, "a.pct": 0.5 }) }], colTotals: [undefined, undefined], grand: M({}) };
+  const html = pivotHtml({ model, measures: meas, texts });
+  assert.match(html, /rowspan="2"/);
+  assert.match(html, /<th class="n ck" colspan="2" data-c="0">2020<\/th>/);
+  assert.equal(html.match(/<th class="n mh">/g).length, 6, "two measures under 2020, 2021 and Total");
+  assert.match(html, /<td class="n" data-r="0" data-c="0">\$1<\/td><td class="n" data-r="0" data-c="0">50%<\/td>/);
+  assert.match(html, /<td class="n tc">–<\/td><td class="n tc">–<\/td><\/tr><\/tfoot>/, "an empty grand total is dashes");
+});
+
+test("pivotHtml: two row levels give a group row with its own figures, then the rows under it", () => {
+  const leaf = (k, v) => ({ keys: ["Bikes", k], cells: [M({ "a.rev": v }), undefined], total: M({ "a.rev": v }) });
+  const rows = [leaf("Road", 3), leaf("Mtb", 4)];
+  const model = { ...flat, rows, groups: [{ key: "Bikes", cells: [M({ "a.rev": 7 }), undefined], total: M({ "a.rev": 7 }), rows }] };
+  const html = pivotHtml({ model, measures: [meas[0]], texts });
+  assert.match(html, /<th class="corner" rowspan="1" colspan="2">/);
+  assert.match(html, /<tr class="grp"><th class="rl" scope="row" colspan="2" data-g="0">Bikes<\/th><td class="n" data-g="0" data-c="0">\$7<\/td>/);
+  assert.match(html, /<tr><th class="rl"><\/th><th class="rl" scope="row" data-r="0">Road<\/th><td class="n" data-r="0" data-c="0">\$3<\/td>/);
+  assert.match(html, /data-r="1">Mtb<\/th>/, "rows are numbered across groups");
+  assert.match(html, /<tfoot><tr class="tot"><th class="rl" colspan="2">Total<\/th>/);
 });

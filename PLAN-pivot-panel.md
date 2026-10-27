@@ -1,6 +1,6 @@
 # Plan 2: pivot table panels
 
-Status: **Phase 1 done** (spec, validator, query plan, pure model; no rendering yet). Depends on the totals query from [`PLAN-table-totals.md`](PLAN-table-totals.md) (Phase 1 there). The user asked for a "pivot table visuals collection"; this plan delivers one new panel type, `pivot`, with a small set of variants, and a gallery section that shows them.
+Status: **Phases 1 and 2 done** (spec, validator, query plan, pure model; the renderer: crosstab, groups, several measures, totals, clicks, Excel). Depends on the totals query from [`PLAN-table-totals.md`](PLAN-table-totals.md) (Phase 1 there). The user asked for a "pivot table visuals collection"; this plan delivers one new panel type, `pivot`, with a small set of variants, and a gallery section that shows them.
 
 ## Goal
 A `pivot` panel: row dimension(s) down the side, one column dimension across the top, measures in the cells, with row totals, column totals and a grand total, plus optional heat shading. Read-only and spec-driven like every other panel; no drag-and-drop field picker.
@@ -60,7 +60,8 @@ Rules the validator enforces (messages name panel and field, like the others):
   - `lib_render.test.mjs`: `pivotModel` on a fixed result set: totals come from the totals queries (a ratio measure's row total is not the sum of its cells); missing cells are empty, not 0; ordering by total / label; a limit shows the first rows and columns, says more exist, and leaves the totals the whole set's; two-level rows give groups with their own figures; several cubes merge on `rows + columns`.
   - `dump_queries.mjs` fixture and `dashspec lint` see every query (a Python-equals-JS test per variant).
 
-### Phase 2: renderer v1 (crosstab, totals, sorting)
+### Phase 2: renderer v1 (crosstab, groups, totals, clicks, Excel) — done
+Built as below, with these differences: no header-click sorting (a click on a title sets a filter; the row order is the spec's `order`); several measures and two-level groups are in this phase, not the next; the total row is labelled "Total" (a total column needs a title, and a row without a label read as a missing one); a selected piece is marked only when its own selection is the whole selection.
 - `render/panels.js`: `pivotPanel` through `modelPanel` (same loading/error states, Excel button; Table toggle off since it already is a table).
 - `lib/table.js`: `pivotHtml(model, opts)`: sticky first column and header, right-aligned numbers, total row/column with `tot` class, group rows for subtotals, `scope="col|row"` on headers for screen readers, long headers wrapped not truncated. Everything escaped.
 - Excel export: one sheet with a merged group header if a second level exists; numbers stay numbers, formatted by column type.

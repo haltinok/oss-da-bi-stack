@@ -341,6 +341,75 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # pivot panels (patched into the spec): axes, then values for those keys; totals; clicks; the Excel sheet; limits
+    def with_pivot(**panel):
+        def patch_pivot(route):
+            spec = json.loads(route.fetch().text())
+            spec["panels"].append({"id": "xtab", "type": "pivot", "title": "Revenue by category and year", "rows": ["products.category"], "columns": "dates.fiscal_year",
+                                   "measures": [{"member": "internet_sales.revenue", "format": "money"}], **panel})
+            spec["layout"].append([{"panel": "xtab", "span": 12}])
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+        return patch_pivot
+    xt = '[data-panel="xtab"]'
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", with_pivot(on_click={"set_filter": ["category", "fy"]}))
+    page.reload()
+    settled(page)
+    page.wait_for_selector(f"{xt} table.pivot", timeout=20000)
+    check(not page.problems, f"a pivot loads without console errors {page.problems[:2]}")
+    check(page.locator(f"{xt} thead th.ck").all_inner_texts() == ["2020", "2021"] and page.locator(f"{xt} thead th.tc").all_inner_texts() == ["Total"], "the columns are the fiscal years, then Total")
+    check(page.locator(f"{xt} tbody tr").count() == 4 and page.locator(f"{xt} tbody th.rl").all_inner_texts()[0] == "Bikes", "one row per category")
+    cells = page.locator(f"{xt} tbody tr").first.locator("td").all_inner_texts()
+    check(len(cells) == 3 and all(c.startswith("$") for c in cells), f"cells are money, with the row's total last ({cells})")
+    foot = page.locator(f"{xt} tfoot tr.tot")
+    check(foot.count() == 1 and foot.locator("th").inner_text() == "Total" and len(foot.locator("td").all_inner_texts()) == 3, "a frozen total row with a grand total")
+    check(int(foot.locator("td").first.evaluate("n => getComputedStyle(n).fontWeight")) >= 600, "the total row is bold")
+    qs = sent(page)
+    axis = [q for q in qs if q.get("dimensions") == ["products.category"] and q.get("limit") == 26]
+    cellq = [q for q in qs if q.get("dimensions") == ["products.category", "dates.fiscal_year"]]
+    check(len(axis) == 1 and axis[0]["order"] == {"internet_sales.revenue": "desc", "products.category": "asc"}, "wave 1 asks for the top 25 rows (+1) by the first measure")
+    check(any(q.get("dimensions") == ["dates.fiscal_year"] and q.get("limit") == 13 and q["order"] == {"dates.fiscal_year": "asc"} for q in qs), "and the first 12 columns (+1) by name")
+    check(len(cellq) == 1 and any(f.get("member") == "products.category" and f.get("values") for f in cellq[0]["filters"]), "wave 2 asks for the cells of those rows and columns")
+    check(any(not q.get("dimensions") and q.get("measures") == ["internet_sales.revenue"] and not q.get("filters") and q.get("limit") is None for q in qs), "the grand total is its own query over the whole set")
+    first = page.locator(f"{xt} tbody tr").first
+    first.locator("td").nth(1).click()
+    settled(page)
+    check("category=Bikes" in page.url and "fy=2021" in page.url and page.locator(f"{xt} td.sel").count() >= 1, "a click on a cell sets the row's and the column's filters")
+    page.locator(f"{xt} tbody th.rl").nth(1).click()
+    settled(page)
+    check("category=Components" in page.url, "a click on a row name sets the row's filter")
+    page.locator(f"{xt} thead th.ck").first.click()
+    settled(page)
+    check("fy=2020" in page.url, "a click on a column title sets the column's filter")
+    check(page.locator(f"{xt} tfoot td.tc.clickable, {xt} tfoot td.tc[data-r], {xt} tfoot td.tc[data-c]").count() == 0, "the grand total filters nothing")
+    with page.expect_download(timeout=10000) as dl:
+        page.locator(f"{xt} .xls-btn").click()
+    sheet = zipfile.ZipFile(io.BytesIO(pathlib.Path(dl.value.path()).read_bytes())).read("xl/worksheets/sheet1.xml").decode()
+    check(sheet.count("<row") >= 4 + 1 + 1 and "Bikes" in sheet and "Total" in sheet, "the Excel sheet has the rows, the headings and the total row")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", with_pivot(rows=["products.category", "products.subcategory"], measures=[{"member": "internet_sales.revenue", "format": "money"}, {"member": "internet_sales.units", "format": "int"}]))
+    page.reload()
+    settled(page)
+    page.wait_for_selector(f"{xt} table.pivot", timeout=20000)
+    check(page.locator(f"{xt} tr.grp").count() == 4 and page.locator(f"{xt} tbody tr:not(.grp)").count() == 16, "two row levels: a group row per category and its subcategories under it")
+    check(page.locator(f"{xt} thead tr").count() == 2 and page.locator(f"{xt} th.mh").count() == 6, "two measures: a second title row")
+    check(any(q.get("dimensions") == ["products.category", "dates.fiscal_year"] for q in sent(page)) and any(q.get("dimensions") == ["products.category"] and q.get("limit") == 200 for q in sent(page)), "the groups are asked for too")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", with_pivot(limit={"rows": 2, "columns": 1}, totals="rows"))
+    page.reload()
+    settled(page)
+    page.wait_for_selector(f"{xt} table.pivot", timeout=20000)
+    check(page.locator(f"{xt} tbody tr").count() == 2 and page.locator(f"{xt} thead th.ck").count() == 1, "the limits cut the rows and the columns")
+    note = page.inner_text(xt)
+    check("Only the first 2 rows are shown" in note and "Only the first 1 columns are shown" in note, "and the panel says that more exist")
+    check(page.locator(f"{xt} tfoot").count() == 0 and page.locator(f"{xt} th.tc").count() == 1, "totals: rows has a total column and no total row")
+    ctx.close()
+
     # a total that fails must not take the rows with it
     ctx, page = open_page(browser, "/d/sales-overview")
     def no_total(route):
