@@ -240,3 +240,20 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
   .designer { top: auto; left: 0; width: auto; max-height: 55vh; border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.18); }
   .designing .wrap { padding-bottom: 58vh; }
 }
+
+/* The designer's page view and the structure tools */
+.dz-section { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--ink-2); }
+.dz-filters { display: grid; gap: 10px; }
+.dz-filter { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.dz-filter h4 { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.dz-add-filter { display: flex; gap: 8px; margin-top: 8px; }
+.dz-add-filter select { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--ink); font: inherit; font-size: 13px; }
+.designer button:not(.dz-close):not(.dz-type) { height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; font-size: 13px; }
+.designer button:not(.dz-close):not(.dz-type):hover { background: var(--surface-2); }
+.designer .dz-danger { color: var(--bad); }
+.dz-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.dz-type { display: grid; gap: 2px; text-align: left; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.dz-type:hover, .dz-type:focus-visible { background: var(--surface-2); border-color: var(--axis); }
+.dz-type strong { font-size: 13px; }
+.dz-type span { font-size: 11.5px; color: var(--muted); }
+.dz-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); }

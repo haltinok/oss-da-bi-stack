@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phase 1 done** (the rest is not started). One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1 and 2 done** (the rest is not started). One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -40,7 +40,8 @@ Built as below. Notes: the grouping lists are filtered to the cubes **every** me
 - Each change is validated by the server; on success the draft is updated and the page redraws with the panel still selected; on failure the problems are shown in the drawer and the draft is left as it was.
 - Tests: node unit tests for the field table and the edit functions; the server test that a spec round-trips (source → JSON → validator → same compiled spec); a browser test that selects a panel, changes a measure and a style, sees the redrawn panel, and sees a refusal.
 
-### Phase 2: adding, removing, duplicating panels; the page's own fields
+### Phase 2: adding, removing, duplicating panels; the page's own fields — done
+Built as below, with these notes: a new panel is a full-width row at the end of the open tab (moving it is phase 3), with a measure chosen by preference (revenue, orders, units, stock) among those the role may read, for a time chart one whose cube joins to the time dimension; a filter on a dimension some panels cannot join to is added to those panels' `ignore_filters`; removing a filter removes its `ignore_filters` mentions and drops the click rules that named it; the page view also has language and currency. All eight starting panels were accepted by the validator on the first try for admin, manager, rep and purchasing. No "start from a template" yet (an open decision).
 A panel gallery (the types, with a picture), a first sensible default per type from the first measure the role may read, delete and duplicate, and the dashboard's title, description, filters and time dimension.
 
 ### Phase 3: layout by drag and drop

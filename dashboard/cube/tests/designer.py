@@ -6,6 +6,7 @@ The mock's builder answers with the real validator (builder/), so a change is ac
 """
 import json
 import pathlib
+import re
 import sys
 
 import yaml
@@ -29,7 +30,7 @@ def check(ok, msg):
 
 def open_page(browser, path, width=1440, draft=None):
     ctx = browser.new_context(viewport={"width": width, "height": 1500})
-    ctx.add_init_script(ms.SEED + (f"localStorage.setItem('builder.draft', {json.dumps(draft)});" if draft else "") + 'try { if (localStorage.getItem("theme") === null) localStorage.setItem("theme", "light"); localStorage.setItem("dataset", "live"); } catch (e) {}')
+    ctx.add_init_script(ms.SEED + (f"if (localStorage.getItem('builder.draft') === null) localStorage.setItem('builder.draft', {json.dumps(draft)});" if draft else "") + 'try { if (localStorage.getItem("theme") === null) localStorage.setItem("theme", "light"); localStorage.setItem("dataset", "live"); } catch (e) {}')
     page = ctx.new_page()
     page.problems = []
     page.on("pageerror", lambda e: page.problems.append(f"pageerror: {e}"))
@@ -45,6 +46,10 @@ def settled(page, timeout=20000):
 
 def draft_yaml(page):
     return yaml.safe_load(json.loads(page.evaluate("localStorage.getItem('builder.draft')"))["yaml"])
+
+
+def yaml_of(page):
+    return draft_yaml(page)
 
 
 def panel_of(page, type_):
@@ -121,6 +126,69 @@ with sync_playwright() as p:
     cols = page.locator('#designer [data-path^="columns."]').count()
     check(cols >= 3, f"a table offers each column ({cols} fields)")
 
+    # ---- the page view: nothing picked
+    page.keyboard.press("Escape")
+    check(page.locator("#dz-gallery [data-add]").count() == 8 and page.locator("#dz-newfilter option").count() > 5, "with nothing picked the drawer shows the page: a gallery of eight panel types and a list of fields to filter by")
+    check(page.input_value('#designer [data-path="title"]') == page.inner_text("#title"), "and the page's own fields, starting with its title")
+    with page.expect_navigation():
+        page.fill('#designer [data-path="title"]', "Board pack")
+        page.press('#designer [data-path="title"]', "Tab")
+    settled(page)
+    check(page.inner_text("#title") == "Board pack" and yaml_of(page)["title"] == "Board pack", "changing the page's title redraws the page and the draft")
+    check(page.get_attribute("#bd-design", "aria-pressed") == "true", "design mode is still on")
+    if KEEP:
+        page.screenshot(path=str(SHOTS / "designer-page.png"))
+
+    # ---- adding every type of panel: the validator accepts each one
+    page.on("dialog", lambda d: d.accept())
+    for ty in ("kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"):
+        before = {x["id"] for x in yaml_of(page)["panels"]}
+        try:
+            with page.expect_navigation(timeout=15000):
+                page.click(f'#dz-gallery [data-add="{ty}"]')
+        except Exception:
+            pass                                               # a refusal does not reload: the check below says what the drawer showed
+        settled(page)
+        added = [x for x in yaml_of(page)["panels"] if x["id"] not in before]
+        ok = len(added) == 1 and added[0]["type"] == ty
+        check(ok, f"adding a {ty} panel: accepted, one new panel of that type" + ("" if ok else f" ({page.inner_text('#dz-msg') if page.locator('#dz-msg').count() else ''})"))
+        if ok:
+            check(page.locator(f'[data-panel="{added[0]["id"]}"]').count() == 1 and page.locator(f'[data-panel="{added[0]["id"]}"].dz-selected').count() == 1, f"the new {ty} is on the page and picked")
+        page.keyboard.press("Escape")
+    check(not page.locator(".panel-error").count(), "none of the new panels shows an error")
+    last_row = yaml_of(page)["layout"][-1]
+    check(len(last_row) == 1 and list(last_row[0].values())[0] == 12, "a new panel is a full-width row at the end")
+
+    # ---- duplicate and delete
+    page.click(f'[data-panel="{bar}"] h2')
+    n = len(yaml_of(page)["panels"])
+    page.click("#dz-dup")
+    page.wait_for_function("document.querySelector('#designer .dz-head h2')?.textContent.includes('(copy)')", timeout=20000)
+    settled(page)
+    panels_now = yaml_of(page)["panels"]
+    check(len(panels_now) == n + 1 and any(x.get("title", "").endswith("(copy)") for x in panels_now), "Duplicate adds a copy with its own id and a marked title, and picks it")
+    copy_id = next(x["id"] for x in panels_now if x.get("title", "").endswith("(copy)"))
+    page.click("#dz-del")
+    page.wait_for_function("(id) => !document.querySelector(`[data-panel='${id}']`)", arg=copy_id, timeout=20000)
+    settled(page)
+    check(len(yaml_of(page)["panels"]) == n and not page.locator(".panel-error").count(), "Delete removes the panel and the layout still adds up")
+    rows = yaml_of(page)["layout"]
+    check(all(sum(list(c.values())[0] for c in row) == 12 for row in rows), "every row still adds up to 12")
+
+    # ---- filters
+    page.keyboard.press("Escape")
+    filters_before = len(yaml_of(page).get("filters", []))
+    page.select_option("#dz-newfilter", "products.color")
+    page.click("#dz-addfilter")
+    page.wait_for_function("(n) => document.querySelectorAll('#dz-filters .dz-filter').length > n", arg=filters_before, timeout=20000)
+    settled(page)
+    added_filter = yaml_of(page)["filters"][-1]
+    check(added_filter["dimension"] == "products.color" and page.locator("#filters select").count() == filters_before + 1, "a new filter appears in the page's filter bar")
+    page.click(f'[data-rm-filter="{added_filter["id"]}"]')
+    page.wait_for_function("(n) => document.querySelectorAll('#dz-filters .dz-filter').length === n", arg=filters_before, timeout=20000)
+    settled(page)
+    check(len(yaml_of(page).get("filters", [])) == filters_before, "and Remove takes it out again")
+
     # ---- leaving
     page.keyboard.press("Escape")
     check("Click a panel" in page.inner_text("#designer"), "Escape lets go of the panel")
@@ -136,6 +204,56 @@ with sync_playwright() as p:
         page.click(f'[data-panel="{bar}"] h2')
         page.screenshot(path=str(SHOTS / "designer.png"))
     ctx.close()
+
+    # ---- a draft with tabs: a new panel goes to the tab that is open
+    spec_yaml = yaml.safe_load(json.loads(kept_draft)["yaml"])
+    rows = spec_yaml.pop("layout")
+    spec_yaml["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:1]}, {"id": "details", "title": "Details", "layout": rows[1:]}]
+    status, built = ms.builder_answer("/validate", {"yaml": yaml.safe_dump(spec_yaml, sort_keys=False)})
+    tabbed = json.dumps({"yaml": built["yaml"], "spec": built["spec"], "prompt": "", "message": "", "notes": [], "mode": "standin", "model": ""})
+    ctx, page = open_page(browser, "/d/draft?tab=details", draft=tabbed)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    page.keyboard.press("Escape")
+    with page.expect_navigation():
+        page.click('#dz-gallery [data-add="pie"]')
+    settled(page)
+    tabs = yaml_of(page)["tabs"]
+    check(list(tabs[1]["layout"][-1][0]) == ["pie_2"] and not any("pie_2" in c for row in tabs[0]["layout"] for c in row), "with tabs, a new panel goes to the tab that is open (Details), not the first")
+    ctx.close()
+
+    # ---- a role that may read less: the starting panels use only what it can read
+    for role in ("rep", "purchasing"):
+        ms.ROLE["role"] = role
+        ctx, page = open_page(browser, "/d/")
+        page.wait_for_selector(".bb-examples .chip", timeout=20000)
+        page.click(".bb-examples .chip >> nth=0")
+        page.click("#bb-go")
+        page.wait_for_url("**/d/draft", timeout=20000)
+        settled(page)
+        page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+        page.click("#bd-design")
+        page.keyboard.press("Escape")
+        made = []
+        for ty in ("kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot"):
+            before = len(yaml_of(page)["panels"])
+            try:
+                with page.expect_navigation(timeout=15000):
+                    page.click(f'#dz-gallery [data-add="{ty}"]')
+            except Exception:
+                pass
+            settled(page)
+            made.append((ty, len(yaml_of(page)["panels"]) == before + 1))
+            page.keyboard.press("Escape")
+        check(all(ok for _, ok in made), f"as {role}: every type can be added ({', '.join(t for t, ok in made if not ok) or 'all accepted'})")
+        new_panels = json.dumps(yaml_of(page)["panels"][-7:])
+        if role == "rep":
+            check(not re.search(r"gross_profit|margin_pct|product_cost", new_panels), "as rep: the new panels hold no profit or cost member")
+        else:
+            check(all(c in ("inventory_health", "products", "offer_performance") for c in re.findall(r"\b([a-z_]+)\.[a-z_]+\b", new_panels)), "as purchasing: the new panels use only inventory and product members")
+        ctx.close()
+    ms.ROLE["role"] = "manager"
 
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)

@@ -72,8 +72,14 @@ what you may read **and** what Cube can answer for that panel: a bar adding two 
 validator that checks a model's answer; if it is accepted the draft is updated and the page is drawn again with the panel still picked, and if not, the drawer says why and the draft
 stays as it was. Changing what a panel groups by removes its click rule (it pointed at a filter on the old grouping) and says so.
 
+With nothing picked (or after Escape) the drawer is the **page** view: the dashboard's title, description, language, currency and time field; its **filters** (label, the field it filters by,
+the field it is narrowed by, remove, and add a new one); and a gallery of the eight **panel types** to add. A new panel starts with a measure you may read (revenue first, and for a time chart one that can be
+put on the time axis) and a grouping its cube can join to, and goes in a full-width row at the end of the layout (of the open tab, when the dashboard has tabs). A picked panel can be **duplicated** (a copy under the original) or
+**deleted**; the neighbours in its row widen so the row still adds up to 12. A filter on a field some panels cannot join to is added to those panels' `ignore_filters` for you (the drawer says so), and removing a
+filter cleans up every mention of it.
+
 The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
-formulas (`sum`, `ratio`), adding and removing panels, filters, tabs and the layout; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
+formulas (`sum`, `ratio`), moving panels and their widths, tabs; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
