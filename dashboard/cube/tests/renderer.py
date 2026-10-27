@@ -436,6 +436,11 @@ with sync_playwright() as p:
     check(page.locator(f"{trend} svg path[fill-opacity]").count() >= 2, "a stacked area is drawn")
     check(page.locator('[data-panel="donut"] path.slice').count() == 4 and page.locator('[data-panel="donut"] .pie-legend li').count() == 4, "the donut has a slice and a legend row per subcategory")
     check("Total" in page.inner_text('[data-panel="donut"]') and "$" in page.text_content('[data-panel="donut"] .pie-total'), "with the total in the middle")
+    detail = '[data-panel="detail"]'
+    cells = page.locator(f"{detail} tfoot tr.tot td").all_inner_texts()
+    check(page.locator(f"{detail} tbody tr").count() > 3 and cells[:2] == ["", ""] and all(c.startswith("$") for c in cells[2:4]) and all(c.endswith("%") for c in cells[4:]), f"the subcategory table has a footer total: dimensions empty, revenue and margin filled ({cells})")
+    wholes = [q for q in sent(page) if not q.get("dimensions") and not q.get("timeDimensions") and q.get("measures") in (["internet_sales.revenue", "internet_sales.margin_pct"], ["reseller_sales.revenue", "reseller_sales.margin_pct"])]
+    check(len(wholes) == 2, f"one total query per measure cube, margins included, so each margin is the set's own ratio ({len(wholes)})")
     page.locator('[data-panel="donut"] path.slice').first.hover()
     check("Revenue" in page.inner_text("#tip") and "Share" in page.inner_text("#tip"), "the slice tooltip uses the author's measure label")
     page.mouse.move(5, 5)

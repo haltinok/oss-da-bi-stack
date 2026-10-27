@@ -171,6 +171,46 @@
       "on_click": {
         "set_filter": "region"
       }
+    },
+    {
+      "id": "detail",
+      "type": "table",
+      "title": "Revenue by subcategory",
+      "columns": [
+        {
+          "member": "products.category",
+          "label": "Category"
+        },
+        {
+          "member": "products.subcategory",
+          "label": "Subcategory"
+        },
+        {
+          "member": "internet_sales.revenue",
+          "label": "Internet revenue",
+          "format": "money"
+        },
+        {
+          "member": "reseller_sales.revenue",
+          "label": "Reseller revenue",
+          "format": "money"
+        },
+        {
+          "member": "internet_sales.margin_pct",
+          "label": "Internet margin",
+          "format": "pct"
+        },
+        {
+          "member": "reseller_sales.margin_pct",
+          "label": "Reseller margin",
+          "format": "pct"
+        }
+      ],
+      "order": {
+        "internet_sales.revenue": "desc"
+      },
+      "limit": 50,
+      "totals": "footer"
     }
   ],
   "layout": [
@@ -199,12 +239,22 @@
         "panel": "regions",
         "span": 6
       }
+    ],
+    [
+      {
+        "panel": "detail",
+        "span": 12
+      }
     ]
   ],
   "members": {
     "dates.full_date": {
       "kind": "dimension",
       "type": "time"
+    },
+    "internet_sales.margin_pct": {
+      "kind": "measure",
+      "type": "number"
     },
     "internet_sales.orders": {
       "kind": "measure",
@@ -225,6 +275,10 @@
     "products.subcategory": {
       "kind": "dimension",
       "type": "string"
+    },
+    "reseller_sales.margin_pct": {
+      "kind": "measure",
+      "type": "number"
     },
     "reseller_sales.orders": {
       "kind": "measure",
