@@ -69,7 +69,14 @@ Every dashboard page has a **Dashboards** link above its title that leads back t
 as you type: the built dashboards and, when the builder keeps them, your saved ones and those shared with you. It looks at the title and description (and, for
 saved dashboards, the owner), ignores case and accents with Turkish rules (`satis` finds "Satış", `SAGLIG` finds "sağlığı"), needs every word you type (in any
 order) and treats the text literally, so a bracket is just a bracket. Each saved list shows its own count while you search, `/` jumps to the box, Escape or
-the ✕ clears it, and nothing is asked of the server while you type. There is no word stemming: "sağlık" and "sağlığı" are different words.
+the ✕ clears it, and nothing is asked of the server while you type.
+
+The search also understands meaning, endings and slips, in Turkish and English: "gelir" finds "revenue", "satışlar" finds "Sales", "gelirleri" finds "gelir"
+and "revnue" finds "revenue". The meanings live in `dashboard/static/lib/synonyms.js`, one line per group of words (add a word to the line of its meaning;
+nothing else changes). A meaning matches whole words only, the lines are not chained (asking for "revenue" does not give "sales"), a word of five letters
+or more forgives one slip (a missing, extra, wrong or swapped letter), and a known ending is cut off (`ler`, `lar`, `leri`, `nin`, `de`, `den`…, and the
+English `s`, `es`, `ed`, `ing`). It is not a language model: a word the dictionary does not know is still looked for as plain text, and "sağlık" and
+"sağlığı" stay different words.
 
 **Tags.** A dashboard can carry up to five `tags` (`tags: [sales, management]`): short, lower-case, letters of any language, digits, spaces and hyphens, at most 24
 characters, no repeats, the most important first. The validator refuses anything else and says what to write (`'Sales' is not lower case; write 'sales'`), so two

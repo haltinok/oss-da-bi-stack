@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { createFormat, ratio } from "../../static/lib/format.js";
 import { arcPath, barPath, niceTicks, pieSlices, shade, squarify, stackBarHtml } from "../../static/lib/charts.js";
 import { buildXlsx } from "../../static/lib/xlsx.js";
-import { fold, words, matches, filterItems } from "../../static/lib/search.js";
+import { fold, words, matches, filterItems, stems, related, oneSlip } from "../../static/lib/search.js";
 import { tagsOf, withTags, tagCounts, groupByFirstTag, parseListUrl, listSearch, chipsHtml, MAX_SELECTED } from "../../static/lib/tags.js";
 
 test("en-US / USD formats as the dashboard always did", () => {
@@ -147,9 +147,54 @@ test("matches needs every word, in any order, anywhere in the text; an empty que
   assert.ok(matches("anything", ""));
   assert.ok(matches("anything", "   "));
   assert.ok(matches("Envanter sağlığı", "saglig"), "ğ and ı fold");
-  assert.ok(!matches("Envanter sağlığı", "saglik"), "no stemming: sağlık and sağlığı differ by a letter, as in Turkish itself");
+  assert.ok(!matches("Envanter sağlığı", "saglik"), "sağlık and sağlığı differ by two letters at the end: neither a typo nor an ending the search knows");
   assert.ok(matches("Satış panosu", "SATIS"));
   assert.ok(matches("Ürün stok", "urun"));
+});
+
+test("a word finds what it means, in either language", () => {
+  assert.ok(matches("Monthly revenue by channel", "gelir"));
+  assert.ok(matches("Aylık gelir ve sipariş", "revenue orders"), "every word of the query is matched on its own");
+  assert.ok(matches("Sales overview", "satış"));
+  assert.ok(matches("Stock health", "envanter"));
+  assert.ok(matches("Inventory actions", "stok"));
+  assert.ok(matches("Territory sales", "bölge"));
+  assert.ok(matches("Customers", "müşteri") && matches("Müşteri listesi", "customer"));
+  assert.ok(!matches("Sales overview", "gelir"), "a meaning needs its own word in the text: sales is not revenue");
+  assert.ok(!matches("Cost of goods", "en"), "a short meaning matches a whole word, never a piece of one");
+  assert.ok(!matches("hello", "satış"));
+  assert.ok(!matches("Sales overview", "gelir inventory"), "and every word still has to be found");
+});
+
+test("Turkish and English endings do not hide a word", () => {
+  assert.deepEqual(stems("gelirleri"), ["gelir"]);
+  assert.ok(stems("satislar").includes("satis"));
+  assert.deepEqual(stems("ay"), [], "nothing is cut below three letters");
+  assert.ok(matches("Monthly revenue", "gelirleri"));
+  assert.ok(matches("Monthly revenue", "gelirler"), "the plural of a word the dictionary knows");
+  assert.ok(matches("Sales overview", "satışlar"));
+  assert.ok(matches("Territory", "bölgeye"));
+  assert.ok(matches("Gelir tablosu", "gelirlerin"), "the stem is looked for as text too");
+  assert.ok(matches("Products", "product") && matches("Product list", "products"));
+});
+
+test("one slip in a word of five letters or more is forgiven; short words are not", () => {
+  assert.ok(oneSlip("revnue", "revenue") && oneSlip("revenu", "revenue") && oneSlip("revneue", "revenue") && oneSlip("revxnue", "revenue"));
+  assert.ok(!oneSlip("revenue", "revenue") && !oneSlip("rvnue", "revenue") && !oneSlip("abc", "xyz"));
+  assert.ok(matches("Monthly revenue", "revnue"));
+  assert.ok(matches("Monthly revenue", "revenu"));
+  assert.ok(matches("Inventory health", "invetory"));
+  assert.ok(!matches("Monthly revenue", "rexxnue"), "two slips are a different word");
+  assert.ok(!matches("Cost", "cast"), "four letters: too short to guess at");
+});
+
+test("the dictionary is symmetric, folded, and does not chain through groups", () => {
+  assert.ok(related("gelir").includes("revenue") && related("revenue").includes("gelir"));
+  assert.ok(related("Kâr").includes("profit") && related("KAR").includes("profit"), "accents and case fold");
+  assert.ok(related("urun").includes("product") && related("ÜRÜN").includes("product"));
+  assert.deepEqual(related("zzzz"), []);
+  assert.ok(!related("gelir").includes("gelir"));
+  assert.ok(!related("revenue").includes("sales"), "revenue and sales are on different lines: asking for one does not give the other");
 });
 
 test("a query is plain text: pattern characters mean themselves", () => {

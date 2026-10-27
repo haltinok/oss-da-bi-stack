@@ -22,7 +22,7 @@ Finding a dashboard on `/d/` should stay easy when there are dozens of them, and
 - **A tag is a short, plain word**: at most 5 per dashboard, 1-24 characters, lower-case letters, digits, spaces and hyphens (letters of any language: `satış` is fine), trimmed and unique. The validator normalises nothing silently: `Sales` is an error that says "use `sales`", so two spellings do not sneak in.
 - **Grouping is by the first tag.** The author lists the most important tag first; the others serve search and filtering. A dashboard then appears once, under one heading ("Untagged" last). (Grouping by every tag would repeat dashboards and make counts confusing.)
 - **The view is shareable**: `?q=...&tag=sales&tag=management` in the URL restores the search and the tag filters; whether the list is grouped is a per-viewer preference kept in `localStorage` (wrapped in try/catch, the page works without it).
-- **Not building**: a tag manager screen, tag colours, tag permissions, synonyms, search on the server, full-text search inside panels.
+- **Not building** (at first; synonyms came later, see `docs/dashboards.md`): a tag manager screen, tag colours, tag permissions, search on the server, full-text search inside panels.
 
 ## Phases (one PR each)
 
@@ -37,7 +37,7 @@ Built as described, with these notes from the code and the tests:
 - `dashboard/static/lib/search.js` (`fold`, `words`, `matches`, `filterItems`, pure); `main.js` `showList` (the field, the filtering, the count, `/`, Escape, Clear); `builder.js` `mountSavedList` now takes the query and returns a handle that redraws the lists from what it already has, and keeps the search after a delete. English and Turkish words in `strings.js`.
 - The count ("3 of 7") is one line for all lists; each saved list also shows its own ("Your saved dashboards (0 of 4)").
 - Matches title and description for built dashboards, plus the owner for saved ones. A description counts: "satis" finds *Envanter sağlığı* because its description says "satış panosundaki".
-- No stemming (`sağlık` and `sağlığı` differ by a letter, as in Turkish itself); documented in `docs/dashboards.md`.
+- No stemming in phase 1 (`sağlık` and `sağlığı` differ by a letter, as in Turkish itself). Later, the search got a TR/EN dictionary (`lib/synonyms.js`), a short list of Turkish and English endings and one-slip tolerance for words of five letters or more; `sağlık`/`sağlığı` are still different words. See `docs/dashboards.md`.
 - Tests: `lib.test.mjs` (fold with Turkish rules, words, matches, literal pattern characters, `filterItems`), and `renderer.py` against seeded saved dashboards (`mock_stack.seed_saved`): Turkish folding, owner search, several words in any order, a bracket, no match and Clear, HTML in a title shown as text, Escape, `/` (and a slash typed in the field), delete from a filtered list, no request while typing, 390 px with a 44 px field and no sideways scroll, no console errors.
 
 ### Phase 2: tags in the spec — done
