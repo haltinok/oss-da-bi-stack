@@ -11,6 +11,7 @@ D = {  # "<section>.<field>": meaning
     "dashboard.id": "The dashboard's id: lowercase letters, digits, `-` and `_`. It is the file name (`<id>.yml`) and the address (`/d/<id>`).",
     "dashboard.title": "The page title and the heading.",
     "dashboard.description": "One line under the title, and on the list page (`/d/`).",
+    "dashboard.tags": "Up to 5 short labels for finding and grouping dashboards on the list page: lower case, 1 to 24 characters, letters (of any language), digits, spaces and hyphens, no repeats. Put the most important first. Tags are visible to everyone who can see the dashboard, so they must not carry anything sensitive.",
     "dashboard.locale": "Number and date formats, month names, and the language of the page's own words (buttons, \"All\", status): `en` and `tr` exist, any other language shows English. Default `en-US`.",
     "dashboard.currency": "The currency sign on screen and in Excel files, an ISO code such as `USD` or `TRY`. Display only: nothing is converted. Default `USD`.",
     "dashboard.roles": "Who may open the page: `admin`, `manager`, `rep`, `purchasing`, `marketing`. It decides what `/d/` lists; what each role can read is Cube's decision, and the validator rejects a page that would fail for a listed role. Default: everyone.",

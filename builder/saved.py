@@ -9,11 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import yaml
+
 from builder import core
 from builder.store import KEEP_VERSIONS, Limit, NotFound  # noqa: F401 (re-exported)
 
 VISIBILITIES = ("private", "roles", "everyone")
 _readable: dict[tuple, tuple[bool, list[str]]] = {}
+_tags: dict[tuple, list[str]] = {}
 
 
 @dataclass
@@ -44,9 +47,24 @@ def _readable_for(row: dict, catalog, role: str) -> tuple[bool, list[str]]:
     return _readable[key]
 
 
+def tags_of(row: dict) -> list[str]:
+    """The tags of a saved dashboard, read from its YAML (cached by id and version, like the readability check). They are metadata, not data, so a
+    dashboard the viewer's role cannot open still shows them. Anything odd gives fewer tags or none, never an error in a list."""
+    key = (row["id"], row["version"])
+    if key not in _tags:
+        if len(_tags) > 5000:
+            _tags.clear()
+        try:
+            raw = (yaml.safe_load(row["yaml"]) or {}).get("tags", [])
+        except (yaml.YAMLError, AttributeError):
+            raw = []
+        _tags[key] = [t for t in raw if isinstance(t, str) and 0 < len(t) <= 24][:5] if isinstance(raw, list) else []
+    return list(_tags[key])
+
+
 def meta(row: dict, who: Who) -> dict:
     mine = row["owner"] == who.name
-    return {"id": row["id"], "title": row["title"], "description": row["description"], "owner": row["owner"], "owner_role": row["owner_role"], "visibility": row["visibility"],
+    return {"id": row["id"], "title": row["title"], "description": row["description"], "tags": tags_of(row), "owner": row["owner"], "owner_role": row["owner_role"], "visibility": row["visibility"],
             "shared_roles": row["shared_roles"], "version": row["version"], "created_at": row["created_at"], "updated_at": row["updated_at"],
             "mine": mine, "can_edit": mine, "can_manage": mine or who.role == "admin"}
 

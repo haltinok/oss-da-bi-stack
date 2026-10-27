@@ -3,6 +3,9 @@
   "id": "sales-drilldown",
   "title": "Sales drill-down",
   "description": "Revenue over time that drills from year to month to day, a donut by subcategory and columns by category. Every click filters the rest.",
+  "tags": [
+    "sales"
+  ],
   "locale": "en-US",
   "currency": "USD",
   "roles": [

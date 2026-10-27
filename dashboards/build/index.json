@@ -6,6 +6,10 @@
     "roles": [
       "admin",
       "purchasing"
+    ],
+    "tags": [
+      "envanter",
+      "stok"
     ]
   },
   {
@@ -15,6 +19,10 @@
     "roles": [
       "admin",
       "manager"
+    ],
+    "tags": [
+      "sales",
+      "reference"
     ]
   },
   {
@@ -24,6 +32,10 @@
     "roles": [
       "manager",
       "rep"
+    ],
+    "tags": [
+      "sales",
+      "regional"
     ]
   },
   {
@@ -33,6 +45,9 @@
     "roles": [
       "admin",
       "manager"
+    ],
+    "tags": [
+      "sales"
     ]
   },
   {
@@ -42,6 +57,9 @@
     "roles": [
       "admin",
       "manager"
+    ],
+    "tags": [
+      "sales"
     ]
   }
 ]

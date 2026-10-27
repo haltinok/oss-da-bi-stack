@@ -3,6 +3,10 @@
   "id": "pivot-gallery",
   "title": "Pivot gallery",
   "description": "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares.",
+  "tags": [
+    "sales",
+    "reference"
+  ],
   "locale": "en-US",
   "currency": "USD",
   "roles": [

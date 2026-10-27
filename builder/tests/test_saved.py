@@ -173,3 +173,57 @@ def test_the_title_comes_from_the_spec_and_can_be_overridden_and_trimmed(store):
     assert new(store)["title"] == "Regional sales"
     assert new(store, title="  Mine  ")["title"] == "Mine"
     assert len(new(store, title="x" * 400)["title"]) == 120
+
+
+# ------------------------------------------------------------------------------------------------------------------ tags
+def listed(store, who_, **kw):
+    return {d["title"]: d for d in saved.list_saved(store, CATALOG, who_, **kw)}
+
+
+def test_the_list_carries_the_tags_of_the_yaml_for_your_own_and_for_shared_dashboards(store):
+    new(store, who("alice"), title="Mine")
+    new(store, who("alice"), title="Everyone's", visibility="everyone")
+    assert listed(store, who("alice"))["Mine"]["tags"] == ["sales", "regional"]
+    assert listed(store, who("bob"))["Everyone's"]["tags"] == ["sales", "regional"]
+    assert "Mine" not in listed(store, who("bob")), "tags do not make a private dashboard visible"
+
+
+def test_a_dashboard_your_role_cannot_open_still_shows_its_tags(store):
+    new(store, who("alice", "manager"), yaml_text=PROFIT, title="Profit", visibility="everyone")
+    row = listed(store, who("rep1", "rep"))["Profit"]
+    assert row["readable"] is False and row["tags"] == ["sales"]
+
+
+def test_a_new_version_shows_its_new_tags_and_a_yaml_without_tags_has_none(store):
+    row = new(store, who("alice"), title="T")
+    assert listed(store, who("alice"))["T"]["tags"] == ["sales", "regional"]
+    retagged = GOOD.replace("tags: [sales, regional]", "tags: [management]")
+    saved.update_saved(store, CATALOG, who("alice"), row["id"], yaml_text=retagged)
+    assert listed(store, who("alice"))["T"]["tags"] == ["management"], "the cache is keyed by version"
+    untagged = GOOD.replace("tags: [sales, regional]\n", "")
+    saved.update_saved(store, CATALOG, who("alice"), row["id"], yaml_text=untagged)
+    assert listed(store, who("alice"))["T"]["tags"] == []
+
+
+@pytest.mark.parametrize("text,want", [
+    ("tags: nope\n", []), ("tags: [1, ok, '', null]\n", ["ok"]), ("tags: {a: b}\n", []), (": : :\n  - [", []), ("- just\n- a list\n", []), ("", []),
+    ("tags: [a, b, c, d, e, f, g]\n", ["a", "b", "c", "d", "e"]), ("tags: [" + "x" * 30 + ", fine]\n", ["fine"]),
+])
+def test_odd_yaml_never_breaks_a_list_it_just_has_fewer_tags(text, want):
+    row = {"id": "odd", "version": 1, "yaml": text}
+    assert saved.tags_of(row) == want
+    saved._tags.pop(("odd", 1), None)
+
+
+def test_what_comes_back_cannot_change_the_cache():
+    row = {"id": "c", "version": 1, "yaml": "tags: [a]\n"}
+    saved.tags_of(row).append("changed")
+    assert saved.tags_of(row) == ["a"]
+    saved._tags.pop(("c", 1), None)
+
+
+def test_tags_survive_the_builder_checks_and_the_guide_explains_them():
+    from builder import core
+    built, problems = core.check_submission(GOOD, CATALOG, "rep")
+    assert built is not None and built["spec"]["tags"] == ["sales", "regional"] and "tags:" in built["yaml"], problems
+    assert "tags?" in core.SPEC_GUIDE and "ONLY when the request names a topic" in core.SPEC_GUIDE

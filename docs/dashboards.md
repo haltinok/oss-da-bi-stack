@@ -45,12 +45,19 @@ saved dashboards, the owner), ignores case and accents with Turkish rules (`sati
 order) and treats the text literally, so a bracket is just a bracket. Each saved list shows its own count while you search, `/` jumps to the box, Escape or
 the ✕ clears it, and nothing is asked of the server while you type. There is no word stemming: "sağlık" and "sağlığı" are different words.
 
+**Tags.** A dashboard can carry up to five `tags` (`tags: [sales, management]`): short, lower-case, letters of any language, digits, spaces and hyphens, at most 24
+characters, no repeats, the most important first. The validator refuses anything else and says what to write (`'Sales' is not lower case; write 'sales'`), so two
+spellings of one word do not appear. Built dashboards carry them in `index.json`, saved dashboards in their YAML (the list reads them from it, so a dashboard your
+role cannot open still shows its tags). Tags are visible to everyone who can see the dashboard: nothing sensitive. The list page does not use them yet (chips,
+tag filters and grouping come in the next step of `PLAN-dashboard-search-and-tags.md`); the builder writes tags only when the request names a topic or group.
+
 ## Anatomy of a file
 
 ```yaml
 spec: 1
 id: sales-overview                 # = the file name = /d/sales-overview
 title: Sales overview
+tags: [sales]                      # up to 5 short lower-case labels for finding and grouping on /d/ (optional)
 locale: en-US                      # number and date formats, and the page's own words (en, tr)
 currency: USD
 roles: [admin, manager]            # who sees it listed; what they may read is Cube's decision

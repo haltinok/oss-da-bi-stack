@@ -220,6 +220,11 @@ def test_an_english_pie_sums_both_channels_too_and_a_rep_gets_the_same_without_p
     assert pie["sum"] == ["internet_sales.revenue", "reseller_sales.revenue"] and pie["label"] == "Revenue"
 
 
+def test_the_stand_in_writes_no_tags():
+    for prompt in ("revenue by region", "a pivot of revenue by category and month", "inventory dashboard"):
+        assert "tags" not in build("admin", prompt)["spec"], prompt
+
+
 def pivot_of(out):
     return next(p for p in out["spec"]["panels"] if p["type"] == "pivot")
 

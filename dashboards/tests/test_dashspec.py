@@ -270,7 +270,7 @@ def test_build_writes_each_dashboard_and_an_index(tmp_path, capsys):
     assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
     assert json.loads((out / "sales-overview.json").read_text())["id"] == "sales-overview"
     index = json.loads((out / "index.json").read_text())
-    assert index == [{"id": "sales-overview", "title": "Sales overview", "description": GOOD["description"], "roles": ["admin", "manager"]}]
+    assert index == [{"id": "sales-overview", "title": "Sales overview", "description": GOOD["description"], "roles": ["admin", "manager"], "tags": GOOD["tags"]}]
     (out / "gone.json").write_text("{}")                       # a dashboard that no longer exists is not served
     assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
     assert not (out / "gone.json").exists()
@@ -676,3 +676,61 @@ def test_a_share_validates_when_its_total_is_asked_for(show, totals):
     spec = copy.deepcopy(GOOD)
     with_pivot(show=show, totals=totals, measures=["internet_sales.revenue", "internet_sales.units"])(spec)
     assert validate(spec, CATALOG)[0] == []
+
+
+# ---------------------------------------------------------------------------------------------------------------- tags
+@pytest.mark.parametrize("tags", [["sales"], ["sales", "management"], ["satış", "ürün", "çok güzel"], ["2024-q1", "q1 review"], ["a", "b", "c", "d", "e"], ["x" * 24], []])
+def test_good_tags_validate_and_reach_the_compiled_file(tags):
+    spec = copy.deepcopy(GOOD)
+    spec["tags"] = tags
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    assert compile_spec(spec, used)["tags"] == tags
+
+
+TAG_BROKEN = [
+    ("six tags", ["a", "b", "c", "d", "e", "f"], ["dashboard: tags:", "is too long"]),
+    ("an empty tag", [""], ["dashboard: tags[0]:", "non-empty"]),
+    ("a tag of 25 characters", ["x" * 25], ["dashboard: tags[0]:", "is too long"]),
+    ("a tag twice", ["sales", "sales"], ["dashboard: tags:", "non-unique"]),
+    ("capitals", ["Sales"], ["dashboard: tags[0]: 'Sales' is not lower case; write 'sales'"]),
+    ("a Turkish capital", ["İş"], ["dashboard: tags[0]: 'İş' is not lower case"]),
+    ("a space at the end", ["sales "], ["dashboard: tags[0]:", "spaces at its ends"]),
+    ("two spaces in a row", ["a  b"], ["dashboard: tags[0]:", "two in a row"]),
+    ("a comma", ["sales,hr"], ["dashboard: tags[0]:", "contains ','", "letters, digits, spaces and hyphens"]),
+    ("markup", ["<b>"], ["dashboard: tags[0]:", "contains '<' '>'"]),
+    ("a quote", ['a"b'], ["dashboard: tags[0]:", "contains '\"'"]),
+    ("a new line", ["a\nb"], ["dashboard: tags[0]:", "contains '\\n'"]),
+    ("an underscore", ["a_b"], ["dashboard: tags[0]:", "contains '_'"]),
+    ("a hyphen first", ["-sales"], ["dashboard: tags[0]:", "must start with a letter or a digit"]),
+    ("a number", [5], ["dashboard: tags[0]:", "is not of type 'string'"]),
+    ("not a list", "sales", ["dashboard: tags:", "is not of type 'array'"]),
+]
+
+
+@pytest.mark.parametrize("name,tags,needles", TAG_BROKEN, ids=[b[0] for b in TAG_BROKEN])
+def test_bad_tags_are_refused_with_a_message_that_says_what_to_write(name, tags, needles):
+    spec = copy.deepcopy(GOOD)
+    spec["tags"] = tags
+    text = "\n".join(validate(spec, CATALOG)[0])
+    assert text, name
+    for needle in needles:
+        assert needle in text, f"{name}: {needle!r} missing from:\n{text}"
+
+
+def test_every_checked_in_dashboard_has_tags_and_the_index_lists_them():
+    index = {d["id"]: d for d in json.loads((REPO / "dashboards" / "build" / "index.json").read_text())}
+    for path in sorted((REPO / "dashboards").glob("*.yml")):
+        spec = yaml.safe_load(path.read_text())
+        assert spec.get("tags"), f"{path.name} has no tags"
+        assert index[spec["id"]]["tags"] == spec["tags"]
+
+
+def test_a_dashboard_without_tags_has_no_tags_key_in_the_index(tmp_path):
+    src, out = tmp_path / "src", tmp_path / "out"
+    src.mkdir()
+    spec = copy.deepcopy(GOOD)
+    del spec["tags"]
+    (src / "sales-overview.yml").write_text(yaml.safe_dump(spec, allow_unicode=True))
+    assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
+    assert "tags" not in json.loads((out / "index.json").read_text())[0]

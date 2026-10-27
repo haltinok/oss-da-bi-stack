@@ -3,6 +3,10 @@
   "id": "envanter-sagligi",
   "title": "Envanter sağlığı",
   "description": "Stok durumu, yeniden sipariş önerileri ve fazla stok. Yalnızca okunur; onay işlemleri satış panosundaki envanter bölümündedir.",
+  "tags": [
+    "envanter",
+    "stok"
+  ],
   "locale": "tr-TR",
   "currency": "TRY",
   "roles": [

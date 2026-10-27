@@ -3,6 +3,9 @@
   "id": "sales-overview",
   "title": "Sales overview",
   "description": "Revenue, margin and orders by channel, product and territory.",
+  "tags": [
+    "sales"
+  ],
   "locale": "en-US",
   "currency": "USD",
   "roles": [
