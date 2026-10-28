@@ -75,6 +75,7 @@ def test_a_role_that_cannot_have_it_is_told_so_not_given_it():
 def test_the_prompt_is_checked():
     h = token()
     assert client.post("/build", headers=h, json={"prompt": "x"}).status_code == 422
+    assert client.post("/build", headers=h, json={"prompt": "make it a donut", "focus": "a b; drop"}).status_code == 422
     assert client.post("/build", headers=h, json={"prompt": "y" * 2001}).status_code == 422
     assert client.post("/build", headers=h, json={"prompt": "revenue", "current_yaml": "z" * 30_001}).status_code == 422
     assert client.post("/build", headers=h, json={}).status_code == 422

@@ -203,13 +203,28 @@ def _dict(block) -> dict:
     return block.model_dump() if hasattr(block, "model_dump") else dict(vars(block))
 
 
+def _picked_panel(current_yaml: str | None, focus: str | None) -> dict | None:
+    """The panel the designer has picked, found in the current file (an id that is not there is ignored, never trusted)."""
+    if not (current_yaml and focus):
+        return None
+    try:
+        spec = yaml.safe_load(current_yaml)
+        return next((p for p in spec["panels"] if p.get("id") == focus and isinstance(p.get("type"), str)), None)
+    except (yaml.YAMLError, TypeError, KeyError, AttributeError):
+        return None
+
+
 def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml: str | None = None,
-              log: Callable[[str, dict], None] = lambda kind, data: None, mode: str = "llm") -> dict:
+              log: Callable[[str, dict], None] = lambda kind, data: None, mode: str = "llm", focus: str | None = None) -> dict:
     """Run the tool-use loop. `client` is an anthropic.Anthropic or the stand-in. -> { status: ok | cannot | failed, ... }."""
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}")
     system = system_blocks(catalog, role)
     user = prompt.strip()
+    picked = _picked_panel(current_yaml, focus)
+    if picked:
+        user += (f"\n\nFocus: panel id {focus}, titled {picked.get('title', focus)!r}, type {picked['type']}. The request is about this panel: change it and leave every other panel, "
+                 "filter and the layout as they are, unless the request cannot be met without touching them.")
     if current_yaml:
         user += f"\n\nThe current dashboard (change it as asked and submit the complete file):\n```yaml\n{current_yaml}\n```"
     messages = [{"role": "user", "content": user}]

@@ -88,6 +88,10 @@ once. With tabs, the page view lists them: rename a tab or move it earlier or la
 draft in this browser and covers every change to it: the designer, the Change box and the YAML tab. Twenty steps are kept; a new draft (built, opened for editing, copied) starts with none, and a change after an undo
 discards what could have been redone.
 
+**The Change box with a panel picked.** With the designer on and a panel picked, the Change box says "The change applies to “…” only" and sends that panel with your request, so "make this one a donut" or "show the top 5"
+needs no description of which chart. The model is told to leave every other panel, filter and the layout as they are; the result is checked like any other, and Undo takes it back like a designer edit. Without a pick, the Change box
+is about the whole dashboard as before. (The rule-based stand-in understands a pie or donut, bars or columns, a chart style, top N and removing the panel; a language model understands free text.)
+
 **Saved dashboards.** Open a dashboard you own and press **Design**: it is the same draft as **Edit**, tied to the saved dashboard, with the designer already on; **Save** then makes a new version. For a dashboard that is
 someone else's the button is **Design a copy**. In **Versions**, each version lists what it changed from the one before (a panel added, removed or changed with the fields, the layout, a filter, the title, the page's own
 fields), computed on the server from the two files; a version whose predecessor is no longer kept says only "Changed".

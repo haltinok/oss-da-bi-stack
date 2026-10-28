@@ -232,11 +232,13 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   });
 
   // ---------------------------------------------------------------------------------------------------------------- picking a panel, the mode
+  const announce = () => document.dispatchEvent(new CustomEvent("designer:pick", { detail: { panel: on ? selected : null } }));      // the Change box aims at it (render/builder.js)
   function select(id) {
     selected = id;
     for (const [pid, p] of panels) p.root.classList.toggle("dz-selected", pid === id);
     draw();
     write({ ...read(), on: true, panel: id });
+    announce();
     if (id) drawer.querySelector("select, input, textarea")?.focus({ preventScroll: true });
   }
 
@@ -271,6 +273,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     drawer.hidden = !on;
     for (const [, p] of panels) { if (on) p.root.setAttribute("tabindex", "0"); else { p.root.removeAttribute("tabindex"); p.root.classList.remove("dz-selected"); } }
     write({ ...read(), on, panel: on ? selected : null });
+    announce();
     if (on) draw();
   }
   button.addEventListener("click", () => setMode(!on));

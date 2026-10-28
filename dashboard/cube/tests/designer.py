@@ -408,6 +408,41 @@ with sync_playwright() as p:
         ctx.close()
     ms.ROLE["role"] = "manager"
 
+    # ---- the Change box and the designer together: with a panel picked, the model's change is about that panel only, and undo takes it back
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    sent = []
+    page.on("request", lambda r: sent.append(json.loads(r.post_data or "{}")) if r.method == "POST" and r.url.endswith("/build") else None)
+    check(page.locator("#bd-focus").is_hidden(), "with nothing picked the Change box is about the whole dashboard")
+    page.click("#bd-design")
+    bar = panel_of(page, "bar")
+    page.click(f'[data-panel="{bar}"] h2')
+    bar_title = next(x for x in yaml_of(page)["panels"] if x["id"] == bar)["title"]
+    check(page.locator("#bd-focus").is_visible() and bar_title in page.inner_text("#bd-focus"), "picking a panel says the Change box will change that panel only")
+    others = [x for x in yaml_of(page)["panels"] if x["id"] != bar]
+    with page.expect_navigation():
+        page.fill("#bd-change", "make this one a donut")
+        page.click("#bd-go")
+    settled(page)
+    after = yaml_of(page)["panels"]
+    check(sent and sent[-1].get("focus") == bar, "the request names the picked panel")
+    check(next(x for x in after if x["id"] == bar)["type"] == "pie" and [x for x in after if x["id"] != bar] == others, "the picked panel became a pie and no other panel was touched")
+    check(page.locator(f'[data-panel="{bar}"]').evaluate("n => n.classList.contains('dz-selected')") and page.locator("#bd-focus").is_visible(), "the panel stays picked after the model's change")
+    with page.expect_navigation():
+        page.click('#designer [data-hist="undo"]')
+    settled(page)
+    check(next(x for x in yaml_of(page)["panels"] if x["id"] == bar)["type"] == "bar", "undo takes the model's change back, like a designer edit")
+    page.keyboard.press("Escape")
+    check(page.locator("#bd-focus").is_hidden(), "with the panel dropped the Change box is about the whole dashboard again")
+    sent.clear()
+    with page.expect_navigation():
+        page.fill("#bd-change", "show the top 3")
+        page.click("#bd-go")
+    settled(page)
+    check(sent and "focus" not in sent[-1], "with nothing picked the request carries no focus")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

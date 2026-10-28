@@ -28,8 +28,11 @@ class StandInClient:
         m = re.search(r"```yaml\n(.*?)```", text, re.S)
         current = m.group(1) if m else None
         prompt = text.split("\n\nThe current dashboard")[0]
+        f = re.search(r"^Focus: panel id ([\w-]+)", prompt, re.M)
+        focus = f.group(1) if f else None
+        prompt = re.sub(r"\n*Focus: .*", "", prompt, flags=re.S)
         from builder.core import visible_catalog
-        comp = composer.compose(prompt, visible_catalog(self.catalog, self.role), self.role, current)
+        comp = composer.compose(prompt, visible_catalog(self.catalog, self.role), self.role, current, focus)
         usage = SimpleNamespace(input_tokens=0, output_tokens=0)
         if comp.spec is None:
             call = _block(type="tool_use", id=f"toolu_{uuid.uuid4().hex[:12]}", name="cannot_build", input={"reason": comp.reason})

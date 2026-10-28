@@ -52,7 +52,9 @@ Move panels between rows, resize by span (12 columns, the validator's limits sho
 Built as below, with these notes: a **Design** button on a saved dashboard opens the same draft as Edit (with `savedId`) and turns the designer on; a non-owner gets **Design a copy**; undo and redo live in `drafts` (`edit` records a step, `setCurrent` starts a draft with none), so they cover the Change box and the YAML tab as well as the designer, 20 steps, and the history stays in this browser; the version list shows what changed, computed on the server by `builder/changes.py` as facts (`panel_added`, `layout`...) that the page words in either language (so a new kind of change needs a line in both `strings.js` objects); a version whose predecessor has fallen out of the kept window says "Changed". Phase 5 can reuse the history as it is: a model edit already goes through `drafts.edit`.
 Design mode for a saved dashboard you own (it is the draft flow with `savedId`), undo and redo for the session, the version list showing what changed.
 
-### Phase 5: designer and model together
+### Phase 5: designer and model together — done
+Built as below, with these notes: `POST /build` takes an optional `focus` (a panel id; it is checked against the current file and an id that is not there is ignored); the model is told "Focus: panel id …, titled …, type …: change it and leave the rest" and the stand-in (`composer.refine_panel`) edits only that panel without rebuilding the layout, so tabs survive (pie or donut, bars or columns, a chart style, top N, remove). The designer announces its pick with a `designer:pick` event on `document`; the Change box (`builder.js`) shows "The change applies to “…” only" and sends the id. Undo is unchanged: both paths go through `drafts.edit`. **Not run against a real model**: the tests use the stand-in, so how DeepSeek or Claude respects the focus is for the user to check.
+
 The Change box sends the selected panel as the focus ("make this one a donut"); a model edit and a designer edit can be undone the same way.
 
 ### Phase 6: the rest of the types, formulas, and the two things left out

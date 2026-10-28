@@ -32,8 +32,8 @@ PIVOTS = ["a pivot of revenue by category and month, shaded", "revenue by region
 PROFIT = ["profit by month", "gross margin by region", "revenue, profit and margin by category"]
 
 
-def build(role, prompt, current=None):
-    return core.run_build(StandInClient(CATALOG, role), CATALOG, role, prompt, current, mode="standin")
+def build(role, prompt, current=None, focus=None):
+    return core.run_build(StandInClient(CATALOG, role), CATALOG, role, prompt, current, mode="standin", focus=focus)
 
 
 @pytest.mark.parametrize("role", core.ROLES)
@@ -131,6 +131,36 @@ def test_a_refinement_it_does_not_understand_says_so_and_changes_nothing():
     out = build("admin", "make it prettier and more corporate", base)
     assert out["status"] == "ok" and "understood nothing to change" in out["message"]
     assert yaml.safe_load(out["yaml"])["panels"] == yaml.safe_load(base)["panels"]
+
+
+def test_a_picked_panel_is_the_only_one_that_changes():
+    base = build("admin", "revenue by category and region")
+    panels = {p["id"]: p for p in base["spec"]["panels"]}
+    bar = next(p for p in base["spec"]["panels"] if p["type"] == "bar")
+    out = build("admin", "make this one a donut", base["yaml"], focus=bar["id"])
+    assert out["status"] == "ok"
+    after = {p["id"]: p for p in out["spec"]["panels"]}
+    assert after[bar["id"]]["type"] == "pie" and after[bar["id"]]["style"] == "donut" and after[bar["id"]]["title"] == bar["title"]
+    assert all(after[i] == panels[i] for i in panels if i != bar["id"]) and out["spec"]["layout"] == base["spec"]["layout"]
+    back = build("admin", "make it a bar chart", out["yaml"], focus=bar["id"])
+    assert next(p for p in back["spec"]["panels"] if p["id"] == bar["id"])["type"] == "bar"
+    gone = build("admin", "remove this", base["yaml"], focus=bar["id"])
+    assert bar["id"] not in {p["id"] for p in gone["spec"]["panels"]} and bar["id"] not in str(gone["spec"]["layout"])
+
+
+def test_a_picked_panel_that_is_gone_or_not_understood_changes_nothing():
+    base = build("admin", "revenue by category and region")
+    assert build("admin", "make it a donut", base["yaml"], focus="nope")["spec"] == build("admin", "make it a donut", base["yaml"])["spec"]       # an id that is not there is ignored
+    bar = next(p for p in base["spec"]["panels"] if p["type"] == "bar")
+    out = build("admin", "make it prettier", base["yaml"], focus=bar["id"])
+    assert "understood nothing to change" in out["message"] and out["spec"]["panels"] == base["spec"]["panels"]
+
+
+def test_the_model_is_told_which_panel_is_picked_and_an_unknown_id_is_not_passed_on():
+    base = build("admin", "revenue by category")
+    bar = next(p for p in base["spec"]["panels"] if p["type"] == "bar")
+    assert core._picked_panel(base["yaml"], bar["id"])["id"] == bar["id"]
+    assert core._picked_panel(base["yaml"], "nope") is None and core._picked_panel(None, "x") is None and core._picked_panel("a: [", "x") is None
 
 
 USER_REQUEST = CHARTS[0]
