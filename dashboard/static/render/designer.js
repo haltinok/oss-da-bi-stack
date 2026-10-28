@@ -7,7 +7,7 @@ import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, s
 import { createControl, createSlicer } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
-import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
+import { LISTS, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
 import { mountDnd } from "./designer-dnd.js";
@@ -127,7 +127,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   function drawPanel(panel) {
-    const fields = fieldsFor(panel, { isMeasure: (m) => catalog.some((c) => c.measures.some((x) => x.member === m)), filters: (source.filters || []).filter((x) => x.visible !== false) });
+    const fields = fieldsFor(panel, { isMeasure: (m) => catalog.some((c) => c.measures.some((x) => x.member === m)), filters: (source.filters || []).filter((x) => x.visible !== false), typeOf: (m) => memberInfo(m)?.type });
     let lastGroup = null;
     const rows = fields.map((fd) => {
       const heading = fd.group && fd.group.of > 1 && fd.group.n !== lastGroup ? `<h3 class="dz-item">${esc(dz.item(fd.group.n, fd.group.of))}</h3>` : "";
@@ -148,16 +148,22 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
       if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
       if (fd.kind === "crossfilter") { slot.append(crossControl(panel)); continue; }
+      if (fd.kind === "aggregate") { slot.append(aggregateControl(fd, panel)); continue; }
+      if (fd.kind === "builtin") { slot.append(el("span", { class: "dz-formula" }, esc(dz.builtinAgg(memberInfo(fd.member)?.type)))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
       else slot.append(control(fd, panel, (v) => {
         const edit = setField(source, selected, fd.path, v, { optional: fd.optional });
         return commit(edit, { message: dz.changed(edit.source.panels.find((p) => p.id === selected)?.title || selected) });          // named as it will be after the change
       }));
+      if (fd.list === "columns" && fd.kind === "member") {                          // a table field: earlier, later (the remove button is added below)
+        for (const [dir, glyph] of [[-1, "↑"], [1, "↓"]]) slot.append(el("button", { type: "button", class: "dz-mini", "data-colmove": `${fd.index}:${dir}`, "aria-label": dz[dir < 0 ? "tabEarlier" : "tabLater"] || glyph, ...((dir < 0 ? fd.index === 0 : fd.index === fd.count - 1) ? { disabled: "" } : {}) }, glyph));
+      }
       if (fd.rm) slot.append(el("button", { type: "button", class: "dz-mini", "data-rmrule": fd.rm }, esc(dz.f.removeRule)));
       if (fd.list && fd.count > listRule(panel, fd.list).min) slot.append(el("button", { type: "button", class: "dz-mini", "data-rmitem": `${fd.list}:${fd.index}` }, esc(dz.removeItem)));
     }
-    const lists = Object.keys(LISTS).filter((k) => k.startsWith(`${panel.type}.`)).map((k) => k.split(".")[1]);
+    const lists = Object.keys(LISTS).filter((k) => k.startsWith(`${panel.type}.`) && k !== "table.columns").map((k) => k.split(".")[1]);
     const form = drawer.querySelector(".dz-form");
+    if (panel.type === "table") form.append(addFieldRow());
     for (const name of lists) if (Array.isArray(panel[name]) && panel[name].length < listRule(panel, name).max) form.append(el("button", { type: "button", class: "dz-mini", "data-additem": name }, esc(name === "series" ? dz.addSeries : dz.addMeasure)));
   }
 
@@ -172,6 +178,43 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     wrap.append(pick);
     if (panel.on_click && !panel.cross_filter) wrap.append(el("p", { class: "hint" }, esc(dz.crossByHand)));
     return wrap;
+  }
+
+  /** What the catalog says a member is: { type: "measure type" | "string" | "number" | "time", measure: true } or undefined. */
+  function memberInfo(member) {
+    for (const c of catalog) {
+      const m = c.measures.find((x) => x.member === member);
+      if (m) return { measure: true, type: m.type };
+      const d = c.dimensions.find((x) => x.member === member);
+      if (d) return { measure: false, type: d.type };
+    }
+    return undefined;
+  }
+
+  /** A dimension field of a table: a group (no aggregate) or a value with one. A number field offers sum and average too. */
+  function aggregateControl(fd, panel) {
+    const pick = el("select", { "data-path": fd.path, "aria-label": dz.f.aggregate });
+    pick.append(el("option", { value: "" }, esc(dz.v.agg_group)));
+    for (const a of aggregatesFor(fd.type)) pick.append(el("option", { value: a }, esc(dz.v[`agg_${a}`])));
+    pick.value = panel.columns[fd.index]?.aggregate || "";
+    pick.addEventListener("change", () => commit(setColumnAggregate(source, selected, fd.index, pick.value), { message: dz.changed(panel.title || selected) }));
+    return pick;
+  }
+
+  /** "Add a field": any member the role may read (a number field starts as a Sum). */
+  function addFieldRow() {
+    const row = el("div", { class: "dz-addfield" });
+    const pick = el("select", { id: "dz-newfield", "aria-label": dz.addField });
+    const byCube = new Map();
+    for (const o of anyMemberOptions(catalog)) byCube.set(o.cube, [...(byCube.get(o.cube) || []), o]);
+    for (const [cube, items] of byCube) { const og = el("optgroup", { label: cube }); for (const o of items) og.append(el("option", { value: o.value }, esc(o.label))); pick.append(og); }
+    const add = el("button", { type: "button", class: "dz-mini", id: "dz-addfield" }, esc(dz.addField));
+    add.addEventListener("click", () => {
+      const info = memberInfo(pick.value);
+      commit(addColumn(source, selected, pick.value, info?.measure ? "measure" : info?.type), { message: dz.changed(panelDef()?.title || selected) });
+    });
+    row.append(pick, add);
+    return row;
   }
 
   /** A measure no part of `item` uses yet (what "add a measure" and a change to a sum or ratio start with); undefined when the role may read no other. */
@@ -427,6 +470,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (rmRule) { commit(setField(source, selected, rmRule.dataset.rmrule, "", { optional: true }), { message: dz.changed(panelDef()?.title || selected) }); return; }
     const addRuleBtn = e.target.closest("[data-addrule]");
     if (addRuleBtn) { commit(addRule(source, selected, addRuleBtn.dataset.addrule), { message: dz.changed(panelDef()?.title || selected) }); return; }
+    const colMove = e.target.closest("[data-colmove]");
+    if (colMove) { const [i, dir] = colMove.dataset.colmove.split(":").map(Number); commit(moveColumn(source, selected, i, dir), { message: dz.changed(panelDef()?.title || selected) }); return; }
     const rmItem = e.target.closest("[data-rmitem]");
     if (rmItem) { const [name, i] = rmItem.dataset.rmitem.split(":"); commit(removeItem(source, selected, name, Number(i)), { message: dz.changed(panelDef()?.title || selected) }); return; }
     const addItemBtn = e.target.closest("[data-additem]");

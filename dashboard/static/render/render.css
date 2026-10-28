@@ -359,3 +359,5 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .slicer-chip:focus-visible, .slicer-item:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
 .selection-bar { gap: 6px; }
 .designer .dz-default .slicer-list { max-height: 160px; }
+.designer .dz-addfield { display: flex; gap: 6px; margin-top: 6px; }
+.designer .dz-addfield select { flex: 1; min-width: 0; }
