@@ -13,7 +13,7 @@ export const RULE_TONES = ["good", "warn", "bad"];
 const f = (path, kind, extra = {}) => ({ path, kind, ...extra });
 
 /** The fields the drawer shows for a panel, in order. Each is { path, kind, key (the words' name), options?, min?, max?, optional?, group? (a heading for a repeated item) }. */
-export function fieldsFor(panel, { isMeasure = () => false, filters = [] } = {}) {
+export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf = () => undefined } = {}) {
   const out = [];
   const each = (list, make) => (Array.isArray(list) ? list : []).forEach((item, i) => make(item, i));
   // Colour rules of a key figure or a measure column: three fields per rule (with a remove button on the first), then a button for one more.
@@ -68,9 +68,12 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [] } = {})
       each(panel.columns, (c, i) => {
         const g = { n: i + 1, of: panel.columns.length };
         const isObj = c && typeof c === "object";
-        out.push(f(isObj ? `columns.${i}.member` : `columns.${i}`, "member", { key: "column", group: g }));
-        if (isObj) out.push(f(`columns.${i}.label`, "text", { key: "label", optional: true, group: g }));
         const member = isObj ? c.member : c;
+        out.push(f(isObj ? `columns.${i}.member` : `columns.${i}`, "member", { key: "column", group: g, list: "columns", index: i, count: panel.columns.length }));
+        if (isObj) out.push(f(`columns.${i}.label`, "text", { key: "label", optional: true, group: g }));
+        // A measure has its aggregation built in; a dimension is a group, or a value with an aggregate (sum, max, ...).
+        if (isMeasure(member)) out.push({ path: `columns.${i}.~builtin`, kind: "builtin", key: "aggregate", member, group: g });
+        else out.push({ path: `columns.${i}.aggregate`, kind: "aggregate", key: "aggregate", type: typeOf(member), index: i, group: g });
         if (isMeasure(member)) ruleFields(`columns.${i}`, isObj ? c : {}, true);
       });
       out.push(f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }), f("totals", "choice", { key: "totals", options: ["footer", "header"], optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));

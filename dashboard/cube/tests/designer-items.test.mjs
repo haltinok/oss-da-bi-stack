@@ -112,3 +112,50 @@ test("the rule fields appear for a key figure and for a table's measure columns,
   const gone = setField(src, "k", "measures.0.rules.0", "", { optional: true }).source;
   assert.equal("rules" in gone.panels[0].measures[0], false);
 });
+
+// ---- table fields
+import { addColumn, aggregatesFor, moveColumn, setColumnAggregate } from "../../static/lib/designer-items.js";
+
+const TABLE = () => ({ panels: [{ id: "t", type: "table", columns: ["inventory_health.status", { member: "inventory_health.stockout_items", label: "Out" }], order: { "inventory_health.stockout_items": "desc" }, limit: 20 }] });
+
+test("a table takes any number of fields: a number field starts as a Sum, a key or a text field is a group, a measure is left as it is", () => {
+  let src = TABLE();
+  src = addColumn(src, "t", "inventory_health.on_hand", "number").source;
+  assert.deepEqual(src.panels[0].columns.at(-1), { member: "inventory_health.on_hand", aggregate: "sum" });
+  src = addColumn(src, "t", "inventory_health.key", "number").source;
+  assert.deepEqual(src.panels[0].columns.at(-1), { member: "inventory_health.key" }, "a key is a group, not something to add up");
+  src = addColumn(src, "t", "inventory_health.vendor_name", "string").source;
+  assert.deepEqual(src.panels[0].columns.at(-1), { member: "inventory_health.vendor_name" });
+  src = addColumn(src, "t", "inventory_health.reorder_items", "measure").source;
+  assert.deepEqual(src.panels[0].columns.at(-1), { member: "inventory_health.reorder_items" });
+  for (let i = 0; i < 30; i++) src = addColumn(src, "t", `inventory_health.f${i}`, "string").source;
+  assert.equal(src.panels[0].columns.length, 36, "no limit");
+  assert.equal(addColumn(src, "nope", "a.b", "string").problem, "item");
+  assert.equal(addColumn({ panels: [{ id: "k", type: "kpi", measures: [] }] }, "k", "a.b", "string").problem, "item");
+  assert.equal(TABLE().panels[0].columns.length, 2, "the argument is not touched");
+});
+
+test("each field's aggregate: set, changed, and removed (a group again); sum and average are for numbers", () => {
+  const set = setColumnAggregate(TABLE(), "t", 0, "count_distinct").source;
+  assert.deepEqual(set.panels[0].columns[0], { member: "inventory_health.status", aggregate: "count_distinct" }, "a plain member becomes an object");
+  const kept = setColumnAggregate(set, "t", 1, "max").source;
+  assert.deepEqual(kept.panels[0].columns[1], { member: "inventory_health.stockout_items", label: "Out", aggregate: "max" }, "the label stays");
+  assert.deepEqual(setColumnAggregate(kept, "t", 0, "").source.panels[0].columns[0], { member: "inventory_health.status" });
+  assert.equal(setColumnAggregate(TABLE(), "t", 9, "sum").problem, "item");
+  assert.deepEqual(aggregatesFor("number"), ["sum", "max", "min", "avg", "count", "count_distinct", "first", "last"]);
+  assert.deepEqual(aggregatesFor("string"), ["max", "min", "count", "count_distinct", "first", "last"]);
+  assert.deepEqual(aggregatesFor("time"), aggregatesFor("string"));
+});
+
+test("a field is moved earlier or later, and removed down to the last one; its sort goes with it", () => {
+  const moved = moveColumn(TABLE(), "t", 0, 1).source;
+  assert.deepEqual(moved.panels[0].columns.map((c) => c.member || c), ["inventory_health.stockout_items", "inventory_health.status"]);
+  assert.equal(moveColumn(TABLE(), "t", 0, -1).problem, "edge");
+  assert.equal(moveColumn(TABLE(), "t", 1, 1).problem, "edge");
+  const gone = removeItem(TABLE(), "t", "columns", 1).source;
+  assert.equal(gone.panels[0].columns.length, 1);
+  assert.equal("order" in gone.panels[0], false, "the sort on the removed field is dropped, and an empty sort with it");
+  assert.equal(removeItem(gone, "t", "columns", 0).problem, "min");
+  const twice = { panels: [{ id: "t", type: "table", columns: ["a.x", { member: "a.y", aggregate: "sum" }], order: { "a.y": "asc", "a.x": "asc" } }] };
+  assert.deepEqual(removeItem(twice, "t", "columns", 1).source.panels[0].order, { "a.x": "asc" });
+});

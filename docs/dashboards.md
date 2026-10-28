@@ -182,6 +182,8 @@ In the designer, a bar, pie, treemap or table has **Clicking it filters the othe
 The source file keeps only `cross_filter`: the filters are added when the file is compiled. What a click chose shows as chips in a **selection bar** above the panels ("Name: Road-150 ✕"), each with a button that removes it; a click on the chosen mark again undoes it, **Reset** clears them, and they are in the address (`?xf_by_region_1=France`), so a link carries the selection. With `page` the chips show only on the tab they filter.
 
 ### Table fields with an aggregate
+In the designer a table has **Add a field** (any member the role may read, any number of them), earlier/later buttons, Remove, and an **Aggregation** choice on every dimension field: *Group by (no aggregation)*, Sum, Max, Min, Avg, Count, Count distinct, First, Last (Sum and Avg only for number fields). A number field starts as a Sum, as in Power BI; a key or a text field starts as a group; a measure shows the aggregation it already has and cannot be changed.
+
 A `table` column that is a **dimension** can carry `aggregate`, which makes it a *value* summarised over the rows of each group, as in Power BI: `sum` and `avg` (number fields only), `max`, `min`, `count` (rows with a value), `count_distinct`, `first` and `last`. Dimension columns without `aggregate` are the groups (the rows of the table); measures keep the aggregation built into them in Cube.
 
 ```yaml

@@ -1,6 +1,7 @@
 // The designer's edits to the items of a list inside a panel: a KPI's measures, a time chart's series, a pivot's measures, and the formulas (sum, ratio) a KPI or a series may be.
 // Pure functions on the dashboard's source spec; each returns a copy (the argument is not touched) or { problem }. The validator has the last word, as for every other edit.
 import { getAt } from "./designer-model.js";
+import { AGGREGATES } from "./aggregate.js";
 import { guessFormat, humanize } from "./designer-structure.js";
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -10,6 +11,7 @@ export const LISTS = {
   "kpi.measures": { min: 1, max: 8, formula: true },
   "timeseries.series": { min: 1, max: 12, formula: true },
   "pivot.measures": { min: 1, max: 3, formula: false },
+  "table.columns": { min: 1, max: Infinity, formula: false },             // a table takes any number of fields
 };
 export const listRule = (panel, name) => LISTS[`${panel.type}.${name}`] || null;
 
@@ -102,6 +104,10 @@ export function removeItem(source, panelId, name, index) {
   if (!rule || !Array.isArray(panel[name]) || panel[name].length <= rule.min || index >= panel[name].length) return { problem: "min" };
   const [gone] = panel[name].splice(index, 1);
   if (panel.type === "pivot" && panel.heat && firstMember(gone) === panel.heat.measure) delete panel.heat;
+  if (panel.type === "table" && panel.order && !panel.columns.some((c) => firstMember(c) === firstMember(gone))) {           // a sort on a field that is gone
+    delete panel.order[firstMember(gone)];
+    if (!Object.keys(panel.order).length) delete panel.order;
+  }
   return { source: next };
 }
 
@@ -117,5 +123,41 @@ export function addRule(source, panelId, path) {
   (target.rules ||= []).push({ when: "below", value: 0, tone: "bad" });
   const steps = path.split("."), last = steps.pop();
   steps.reduce((o, k) => o[k], panel)[last] = target;
+  return { source: next };
+}
+
+// ------------------------------------------------------------------------------------------------------------------ table fields
+/** The aggregates a dimension field of this type can have: sum and average need a number. */
+export const aggregatesFor = (type) => (type === "number" ? AGGREGATES : AGGREGATES.filter((a) => a !== "sum" && a !== "avg"));
+const KEYLIKE = /(^|_)(key|id)$/;                                              // a number that names a thing (a key, an id) is a group, not something to add up
+
+/**
+ * Adds a field to the end of a table. `type` is what the catalog says it is ("measure", or the dimension's "string", "number", "time"): a measure keeps its own aggregation, a number
+ * field starts as a Sum (Power BI's way), anything else is a group (a column of the table's rows).
+ */
+export function addColumn(source, panelId, member, type) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "table" || !member) return { problem: "item" };
+  panel.columns = [...(panel.columns || []), type === "number" && !KEYLIKE.test(member.split(".")[1] || "") ? { member, aggregate: "sum" } : { member }];
+  return { source: next };
+}
+
+/** Sets a dimension field's aggregate ("" makes it a group again). A field written as a plain member becomes { member } first. */
+export function setColumnAggregate(source, panelId, index, aggregate) {
+  const { next, panel } = at(source, panelId, "id");
+  const col = panel?.columns?.[index];
+  if (!col) return { problem: "item" };
+  const made = typeof col === "string" ? { member: col } : col;
+  if (aggregate) made.aggregate = aggregate; else delete made.aggregate;
+  panel.columns[index] = made;
+  return { source: next };
+}
+
+/** Moves a field one place earlier (-1) or later (1). */
+export function moveColumn(source, panelId, index, dir) {
+  const { next, panel } = at(source, panelId, "id");
+  const cols = panel?.columns;
+  if (!cols || !cols[index] || !cols[index + dir]) return { problem: "edge" };
+  [cols[index], cols[index + dir]] = [cols[index + dir], cols[index]];
   return { source: next };
 }

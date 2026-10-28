@@ -928,6 +928,53 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- table fields: any number, each with an aggregate (Power BI style)
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    tbl = panel_of(page, "table")
+    page.click(f'[data-panel="{tbl}"] h2')
+    n0 = len(next(x for x in yaml_of(page)["panels"] if x["id"] == tbl)["columns"])
+    cols = lambda: next(x for x in yaml_of(page)["panels"] if x["id"] == tbl)["columns"]
+    check(page.locator("#dz-newfield").count() == 1 and page.locator('#designer [data-colmove]').count() >= 2, "a table has an Add a field row and earlier/later buttons")
+    for member in ["internet_sales.order_status", "internet_sales.order_line_id", "products.subcategory", "territories.region", "products.name"]:
+        with changes(page):
+            page.select_option("#dz-newfield", member)
+            page.click("#dz-addfield")
+        settled(page)
+    check(len(cols()) == n0 + 5, f"fields keep being added: {n0} columns became {len(cols())} (no limit of two)")
+    added = {(c["member"] if isinstance(c, dict) else c): c for c in cols()}
+    check(isinstance(added["internet_sales.order_status"], dict) and added["internet_sales.order_status"].get("aggregate") == "sum", "a number field starts as a Sum")
+    check(isinstance(added["internet_sales.order_line_id"], str) or "aggregate" not in added["internet_sales.order_line_id"], "a text field starts as a group")
+    idx = [(c["member"] if isinstance(c, dict) else c) for c in cols()].index("internet_sales.order_line_id")
+    opts = page.locator(f'#designer [data-path="columns.{idx}.aggregate"] option').evaluate_all("os => os.map((o) => o.value)")
+    check(opts == ["", "max", "min", "count", "count_distinct", "first", "last"], f"a text field offers group, max, min, count, count distinct, first and last ({opts})")
+    nidx = [(c["member"] if isinstance(c, dict) else c) for c in cols()].index("internet_sales.order_status")
+    nopts = page.locator(f'#designer [data-path="columns.{nidx}.aggregate"] option').evaluate_all("os => os.map((o) => o.value)")
+    check(nopts == ["", "sum", "max", "min", "avg", "count", "count_distinct", "first", "last"], f"a number field offers all eight ({nopts})")
+    with changes(page):
+        page.select_option(f'#designer [data-path="columns.{idx}.aggregate"]', "count_distinct")
+    settled(page)
+    check(next(c for c in cols() if (c["member"] if isinstance(c, dict) else c) == "internet_sales.order_line_id") == {"member": "internet_sales.order_line_id", "aggregate": "count_distinct"}, "choosing Count distinct writes it")
+    page.wait_for_selector(f'[data-panel="{tbl}"] table', timeout=15000)
+    heads = [h.replace("↑", "").replace("↓", "").strip() for h in page.locator(f'[data-panel="{tbl}"] thead th').all_inner_texts()]
+    check("Sum Order status" in heads and "Count distinct Order line id" in heads, f"the page shows them as aggregated columns ({heads[-6:]})")
+    last = len(cols()) - 1
+    with changes(page):
+        page.click(f'#designer [data-colmove="{last}:-1"]')
+    settled(page)
+    check((cols()[last - 1]["member"] if isinstance(cols()[last - 1], dict) else cols()[last - 1]) == "products.name", "the earlier button moves a field up")
+    before = len(cols())
+    with changes(page):
+        page.locator("#designer [data-rmitem]").nth(before - 1).click()
+    settled(page)
+    check(len(cols()) == before - 1, "Remove this one takes a field out")
+    measure_idx = next(i for i, c in enumerate(cols()) if (c["member"] if isinstance(c, dict) else c).endswith(("revenue", "orders", "units")) or False) if any((c["member"] if isinstance(c, dict) else c).endswith(("revenue", "orders", "units")) for c in cols()) else None
+    check(measure_idx is None or "Built into the measure" in page.locator("#designer .dz-formula").first.inner_text(), "a measure shows the aggregation it already has (not editable)")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
