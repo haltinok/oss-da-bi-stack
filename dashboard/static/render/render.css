@@ -315,3 +315,22 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 /* the designer's logo picker */
 .designer .dz-logo-preview { display: block; max-height: 40px; max-width: 100%; margin-bottom: 6px; background: var(--card, transparent); }
 .designer .dz-logo input[type="file"] { max-width: 100%; }
+
+/* filter controls other than the plain select (render/filter-controls.js) */
+.filters .field.fc { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; }
+.fc-row { display: grid; gap: 4px; }
+.fc-boxes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.fc-boxes input, .fc-boxes select, .fc-btn, .fc-search { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; min-width: 0; max-width: 100%; }
+.fc-boxes input[type="number"].fc-n { width: 5.5em; }
+.fc-boxes input[type="text"], .fc-boxes input[type="number"]:not(.fc-n), .fc-boxes input[type="date"] { flex: 1 1 8em; }
+.fc-btn { text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-btn.set, .field.fc.set .fc-row select { border-color: var(--focus); }
+.fc-pop { position: absolute; top: 100%; left: 0; z-index: 30; min-width: 240px; max-width: 90vw; margin-top: 4px; padding: 10px; display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); font-size: 13px; color: var(--ink); }
+.fc-pop[hidden] { display: none; }
+.fc-search { width: 100%; box-sizing: border-box; }
+.fc-ex { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.fc-actions { display: flex; gap: 8px; }
+.fc-mini { border: 0; background: none; color: var(--focus); cursor: pointer; padding: 2px 0; font-size: 12.5px; }
+.fc-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; display: grid; gap: 2px; }
+.fc-list label { display: flex; gap: 6px; align-items: center; padding: 3px 2px; cursor: pointer; }
+.fc-more { margin: 0; }

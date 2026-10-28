@@ -113,6 +113,34 @@ fields), computed on the server from the two files; a version whose predecessor 
 
 The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. The plan is in [`PLAN-designer.md`](../PLAN-designer.md).
 
+## Filter types
+A filter is a single select unless it says otherwise. `type` on a filter in the file:
+
+| `type` | the reader chooses | needs a dimension that is |
+|---|---|---|
+| `select` (the default) | one value from a list | any |
+| `multiselect` | several values, or "all except the selected", with a search box in the list | any |
+| `text` | contains, does not contain, starts with, ends with, is empty, is not empty | a string |
+| `number` | equals, does not equal, greater than (or equal), less than (or equal), between, is empty, is not empty | a number |
+| `date` | between, on, after (or on), before (or on), **a dynamic period**, is empty, is not empty | a time dimension |
+
+A dynamic period is kept by its name, not as dates, so a saved dashboard stays current: `today`, `yesterday`, `tomorrow`; `this_`, `last_`, `next_` + `week`, `month`, `quarter`, `year` (and the fiscal quarter and year, from `time.fiscal_year_start`);
+`week_to_date` ... `year_to_date`, `fiscal_year_to_date`; `all_time`; and with a number: `last_30_days` (the 30 complete days before today), `next_2_weeks`, `past_7_days` (the 7 days ending today; the current day or week counts).
+The dates are worked out in the reader's browser, from their own date and the page's `locale` (the first day of the week) when the queries are sent.
+
+`default` is where the page opens, written the way the address writes it: `in:Bikes,Clothing`, `not:Clothing`, `contains:bike`, `gte:100`, `between:10..20`, `between:2024-01-01..2024-03-31`, `rel:last_30_days`, `set:`, `unset:`. **Reset** goes back
+to the default. The address holds only what differs from it (`?cats=` with nothing after means "cleared"). A value the page cannot read narrows nothing, so a mangled link shows everything rather than half a filter.
+
+```yaml
+filters:
+  - { id: fy, dimension: dates.fiscal_year, label: Fiscal year }
+  - { id: cats, dimension: products.category, label: Categories, type: multiselect, default: "not:Clothing" }
+  - { id: when, dimension: dates.full_date, label: Order date, type: date, default: "rel:last_90_days" }
+```
+
+Rules: a click on a chart can only set a `select` filter (a click carries one value; clicking into multiselect and other types comes with the slicer, see the plan), a `parent` is only for `select` and `multiselect`, and its filter must be a `select`.
+Not yet: filters that belong to one tab or one panel, hidden filters, and the slicer (the plan's phases 8 and 9), and "same period last year".
+
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
 **Sand** (warm light), **Mint** (cool light with a green accent) and **High contrast** (black and white with a yellow focus ring), or **System**, which follows the

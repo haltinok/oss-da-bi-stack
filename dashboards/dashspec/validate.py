@@ -6,6 +6,8 @@ import re
 
 from jsonschema import Draft202012Validator
 
+from . import filters as filters_mod
+
 SCHEMA = json.loads((pathlib.Path(__file__).parent.parent / "schema" / "dashboard.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
 
@@ -168,6 +170,39 @@ def _logo_errors(logo):
     return []
 
 
+# what each filter type needs of its dimension: the type Cube gives it (`select` and `multiselect` take any)
+FILTER_DIMENSION = {"text": "string", "number": "number", "date": "time"}
+FILTER_EXAMPLES = {"multiselect": "in:A,B or not:A", "text": "contains:bike", "number": "gte:100 or between:10..20", "date": "rel:last_30_days or between:2024-01-01..2024-03-31"}
+
+
+def _filter_type_errors(w, f, filters, used):
+    """The type of a filter must fit its dimension, its default must be a value of that type, and `parent` and click rules are for the kinds that can take them."""
+    typ = f.get("type", "select")
+    errs = []
+    want = FILTER_DIMENSION.get(typ)
+    have = used.get(f["dimension"], {}).get("type")
+    if want and have and have != want:
+        errs.append(f"{w}: type: '{typ}' needs a {want} dimension, '{f['dimension']}' is {have}")
+    if "default" in f:
+        if typ == "select":
+            pass
+        else:
+            v = filters_mod.parse_value(f["default"])
+            ok = v is not None and v["op"] in filters_mod.OPS[typ] and (filters_mod.to_cube(f, f["default"], filters_mod.default_env({})) or f["default"] == "rel:all_time" or v["op"] in ("set", "unset"))
+            if v is not None and v["op"] == "rel" and filters_mod.resolve_preset(v["args"][0], filters_mod.default_env({})) is None:
+                ok = False
+            if not ok:
+                errs.append(f"{w}: default: '{f['default']}' is not a value of a {typ} filter (for example {FILTER_EXAMPLES[typ]})")
+    if "parent" in f:
+        if typ not in ("select", "multiselect"):
+            errs.append(f"{w}: parent: only a select or multiselect filter can be narrowed by a parent, this one is '{typ}'")
+        else:
+            parent = next((g for g in filters if g["dimension"] == f["parent"]), None)
+            if parent is not None and parent.get("type", "select") != "select":
+                errs.append(f"{w}: parent: the filter on '{f['parent']}' is a {parent['type']} filter; a parent must be a plain select")
+    return errs
+
+
 def semantic_errors(spec, catalog):
     errs = _logo_errors(spec.get("theme", {}).get("logo"))
     used = {}  # member -> (kind, type), for the compiler
@@ -200,6 +235,7 @@ def semantic_errors(spec, catalog):
             check(w, "parent", f["parent"], "dimension")
             if f["parent"] == f["dimension"]:
                 errs.append(f"{w}: parent: a filter cannot be its own parent")
+        errs.extend(_filter_type_errors(w, f, filters, used))
 
     for i, tag in enumerate(spec.get("tags", [])):
         why = tag_problem(tag)
@@ -311,6 +347,9 @@ def _click_errors(p, w, ids, filters, catalog, errs):
     of the clicked mark (the bar's `by`, the treemap's group in order, a table row's dimension columns), or, for a time chart, a year."""
     by_id = {f["id"]: f for f in filters}
     ids = [i for i in ids if i in by_id]
+    for i in ids:
+        if by_id[i].get("type", "select") != "select":
+            errs.append(f"{w}: on_click.set_filter: filter '{i}' is a {by_id[i]['type']} filter; a click sets a single value, so it can only set a select filter")
     kind = p["type"]
     if kind == "timeseries":
         if len(ids) > 1:

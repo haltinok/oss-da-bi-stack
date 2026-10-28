@@ -4,6 +4,7 @@
 import { createCubeClient } from "/cube/cube-client.mjs";
 import { $, el, esc } from "../lib/dom.js";
 import { createFormat } from "../lib/format.js";
+import { describeValue } from "../lib/filters.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
@@ -11,6 +12,7 @@ import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, PE
 import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
+import { createControl } from "./filter-controls.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
 import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
@@ -160,7 +162,8 @@ async function showDashboard() {
   const asDate = (b) => new Date(`${String(b).slice(0, 19)}Z`);
 
   const qs = new URLSearchParams(location.search);
-  const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, qs.get(f.id) || ""]));
+  // A filter opens at its `default` unless the address says otherwise (an address with `?id=` and nothing after it means "cleared", see writeUrl).
+  const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, qs.has(f.id) ? qs.get(f.id) : f.default || ""]));
   values[PERIOD] = parsePeriod(qs.get("period")) ? qs.get("period") : "";             // the date range a drill-down sets (other panels follow it)
   const drills = Object.fromEntries(spec.panels.filter((p) => p.drill).map((p) => [p.id, (qs.get(`drill_${p.id}`) || "").split(",").filter((b) => /^\d{4}-\d{2}-\d{2}/.test(b))]));
   const clearedHooks = [];
@@ -189,7 +192,7 @@ async function showDashboard() {
     },
     dateTime: (v) => dateTimeFmt.format(new Date(v)),
     subtitle() {
-      const parts = (spec.filters || []).filter((f) => values[f.id]).map((f) => `${f.label || f.id}: ${values[f.id]}`);
+      const parts = (spec.filters || []).filter((f) => values[f.id]).map((f) => `${f.label || f.id}: ${describeValue(f, values[f.id])}`);
       return `${t.filters}: ${parts.length ? parts.join(" · ") : t.none} · ${t.exported} ${dateTimeFmt.format(new Date())} ${t.from} ${dataset.mart}`;
     },
     exportSheets: (sheets, name) => downloadXlsx(sheets.filter(Boolean), { prefix: spec.id, slug: slugify(name), symbol: fmt.symbol }),
@@ -241,12 +244,20 @@ async function showDashboard() {
   // ---- filters
   const optionRows = new Map();                         // filter id -> per-cube query results ([parent?, dimension] pairs)
   const bar = $("#filters");
-  const selects = new Map();
+  const selects = new Map();                            // select filters: the <select>
+  const controls = new Map();                           // every other type: a control from filter-controls.js
+  /** Shows a filter's value in its control, and marks it as set. */
+  const showValue = (f) => {
+    const sel = selects.get(f.id);
+    if (sel) { sel.value = values[f.id]; sel.classList.toggle("set", !!values[f.id]); } else controls.get(f.id)?.show(values[f.id]);
+  };
   const parentFilter = (f) => (spec.filters || []).find((g) => g.dimension === f.parent);
   function fillOptions(f) {
     const sel = selects.get(f.id);
     const pf = parentFilter(f);
     const opts = optionsOf(optionRows.get(f.id) || [], f, pf ? values[pf.id] : "");
+    if (f.type === "multiselect") { controls.get(f.id)?.setOptions(opts); return; }       // its chosen values stay, even ones the options do not hold now
+    if (!sel) return;                                                                      // text, number and date filters have no options
     if (values[f.id] && !opts.some((o) => o.value === values[f.id])) values[f.id] = "";
     const groups = new Map();
     for (const o of opts) {
@@ -261,7 +272,7 @@ async function showDashboard() {
     sel.classList.toggle("set", !!values[f.id]);
   }
   async function loadOptions(signal) {
-    await Promise.all((spec.filters || []).map(async (f) => {
+    await Promise.all((spec.filters || []).filter((f) => !f.type || f.type === "select" || f.type === "multiselect").map(async (f) => {
       const measures = optionMeasures(spec, f);
       const dims = [...(f.parent ? [f.parent] : []), f.dimension];
       optionRows.set(f.id, measures.length ? await runAll(ctx.run, queriesPerCube(measures, { dimensions: dims }), signal) : []);
@@ -271,47 +282,59 @@ async function showDashboard() {
   function buildFilters() {
     if (!(spec.filters || []).length) return;
     bar.innerHTML = "";
+    /** The reader changed filter `f` to `value` (the bar, either kind of control). */
+    const changed = (f, value) => {
+      if ((values[f.id] || "") === value) return;                                           // Enter and then leaving the box say the same thing twice: load once
+      for (const k of Object.keys(saved)) delete saved[k];
+      values[f.id] = value;
+      for (const g of spec.filters) if (parentFilter(g)?.id === f.id) fillOptions(g);       // a child's options follow its parent's value
+      for (const g of spec.filters) { const sel = selects.get(g.id); if (sel) sel.classList.toggle("set", !!values[g.id]); }
+      writeUrl();
+      loadAll();
+    };
     for (const f of spec.filters) {
+      if (f.type && f.type !== "select") {
+        const control = createControl(f, t);
+        controls.set(f.id, control);
+        control.onChange = (v) => changed(f, v);
+        control.show(values[f.id]);
+        bar.append(control.el);
+        continue;
+      }
       const sel = el("select", { "aria-label": f.label || f.id });
       selects.set(f.id, sel);
       const field = el("label", { class: "field" }, `${esc(f.label || f.id)} `);
       field.append(sel);
       bar.append(field);
-      sel.addEventListener("change", () => {
-        for (const k of Object.keys(saved)) delete saved[k];
-        values[f.id] = sel.value;
-        for (const g of spec.filters) if (parentFilter(g)?.id === f.id) fillOptions(g);   // a child's options follow its parent's value
-        for (const g of spec.filters) selects.get(g.id).classList.toggle("set", !!values[g.id]);
-        writeUrl();
-        loadAll();
-      });
+      sel.addEventListener("change", () => changed(f, sel.value));
     }
     const reset = el("button", { class: "reset", type: "button", hidden: "" }, esc(t.reset));
     reset.addEventListener("click", () => {
       for (const k of Object.keys(saved)) delete saved[k];
-      for (const f of spec.filters) values[f.id] = "";
+      for (const f of spec.filters) values[f.id] = f.default || "";                         // Reset goes back to where the page opened
       values[PERIOD] = "";
       clearedHooks.forEach((h) => h());
       renderPeriod();
-      for (const f of spec.filters) fillOptions(f);
+      for (const f of spec.filters) { fillOptions(f); showValue(f); }
       writeUrl();
       loadAll();
     });
     bar.append(reset);
     bar.hidden = false;
-    ctx.syncReset = () => { reset.hidden = !Object.values(values).some(Boolean); };
+    ctx.syncReset = () => { reset.hidden = !(spec.filters.some((f) => (values[f.id] || "") !== (f.default || "")) || !!values[PERIOD]); };
   }
   /** Set filters from a patch { filterId: value } (a click on a panel): children's options follow, the selects show it, the URL records it. */
   function apply(patch) {
     Object.assign(values, patch);
     for (const f of spec.filters) if (parentFilter(f) && parentFilter(f).id in patch) fillOptions(f);
-    for (const f of spec.filters) { const sel = selects.get(f.id); sel.value = values[f.id]; sel.classList.toggle("set", !!values[f.id]); }
+    for (const f of spec.filters) showValue(f);
     writeUrl();
     loadAll();
   }
   function writeUrl() {
     const q = new URLSearchParams(location.search);
-    for (const f of spec.filters || []) { if (values[f.id]) q.set(f.id, values[f.id]); else q.delete(f.id); }
+    // Only what differs from the default is written; a filter cleared while it has a default is written as `?id=` (so a reload does not bring the default back).
+    for (const f of spec.filters || []) { const v = values[f.id] || ""; if (v === (f.default || "")) q.delete(f.id); else q.set(f.id, v); }
     if (values[PERIOD]) q.set("period", values[PERIOD]); else q.delete("period");
     for (const [id, path] of Object.entries(drills)) { if (path.length) q.set(`drill_${id}`, path.join(",")); else q.delete(`drill_${id}`); }
     if (tabbed && activeTab !== tabs[0].id) q.set("tab", activeTab); else q.delete("tab");
