@@ -178,6 +178,7 @@ panels:
 
 The page adds a filter for each field the mark carries (a bar's or pie's `by`, a treemap's group in order, a table row's dimension columns, at most two) and the panel's own click rule; the clicked panel keeps showing every mark, as with `on_click`. If the dashboard already has a visible `select` filter on that field, the click sets that one instead, so the header select and the click stay in step.
 `cross_filter: page` (needs `tabs`) filters only the panels of the clicked panel's tab. A panel that cannot join to the field is skipped, with no `ignore_filters` to write. It cannot be written together with `on_click` (use `on_click` when you want to choose the filters yourself), filter ids may not start with `xf_` (those are made here), and time charts and pivots do not have it yet.
+In the designer, a bar, pie, treemap or table has **Clicking it filters the other panels** (No, the whole dashboard, or this tab only when there are tabs); choosing Yes replaces a click rule written by hand and says so. Changing what the panel groups by no longer drops anything: the filters follow the new field.
 The source file keeps only `cross_filter`: the filters are added when the file is compiled. What a click chose shows as chips in a **selection bar** above the panels ("Name: Road-150 ✕"), each with a button that removes it; a click on the chosen mark again undoes it, **Reset** clears them, and they are in the address (`?xf_by_region_1=France`), so a link carries the selection. With `page` the chips show only on the tab they filter.
 
 ### The slicer

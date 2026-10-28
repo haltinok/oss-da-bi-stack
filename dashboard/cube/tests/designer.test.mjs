@@ -26,7 +26,7 @@ const panel = (id) => SOURCE.panels.find((p) => p.id === id);
 
 test("a bar offers its title, each stacked measure, the grouping, sort, limit, direction and format", () => {
   const paths = fieldsFor(panel("top")).map((f) => f.path);
-  assert.deepEqual(paths, ["title", "stack.0.member", "stack.0.label", "stack.0.color", "stack.1.member", "stack.1.label", "stack.1.color", "by", "sort", "limit", "orientation", "format"]);
+  assert.deepEqual(paths, ["title", "stack.0.member", "stack.0.label", "stack.0.color", "stack.1.member", "stack.1.label", "stack.1.color", "by", "sort", "limit", "orientation", "format", "cross_filter"]);
   assert.equal(fieldsFor(panel("top")).find((f) => f.path === "by").kind, "dimension");
   assert.equal(fieldsFor(panel("top")).find((f) => f.path === "limit").max, 1000);
 });

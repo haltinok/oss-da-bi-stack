@@ -6,7 +6,7 @@ import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -147,6 +147,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
       if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
       if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
+      if (fd.kind === "crossfilter") { slot.append(crossControl(panel)); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
       else slot.append(control(fd, panel, (v) => {
         const edit = setField(source, selected, fd.path, v, { optional: fd.optional });
@@ -158,6 +159,19 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const lists = Object.keys(LISTS).filter((k) => k.startsWith(`${panel.type}.`)).map((k) => k.split(".")[1]);
     const form = drawer.querySelector(".dz-form");
     for (const name of lists) if (Array.isArray(panel[name]) && panel[name].length < listRule(panel, name).max) form.append(el("button", { type: "button", class: "dz-mini", "data-additem": name }, esc(name === "series" ? dz.addSeries : dz.addMeasure)));
+  }
+
+  /** "Clicking it filters the other panels": off, the whole dashboard, or this panel's tab. A click rule written by hand in the YAML shows as off, with a hint; choosing a mode replaces it. */
+  function crossControl(panel) {
+    const wrap = el("div", { class: "dz-cross" });
+    const pick = el("select", { "data-path": "cross_filter", "aria-label": dz.f.crossFilter });
+    const modes = ["", "all", ...(tabsOf(source).length ? ["page"] : [])];
+    for (const m of modes) pick.append(el("option", { value: m }, esc(dz.v[m ? `cross_${m}` : "cross_off"])));
+    pick.value = crossModeOf(panel);
+    pick.addEventListener("change", () => commit(setCrossFilter(source, selected, pick.value), { message: dz.changed(panel.title || selected) }));
+    wrap.append(pick);
+    if (panel.on_click && !panel.cross_filter) wrap.append(el("p", { class: "hint" }, esc(dz.crossByHand)));
+    return wrap;
   }
 
   /** A measure no part of `item` uses yet (what "add a measure" and a change to a sum or ratio start with); undefined when the role may read no other. */

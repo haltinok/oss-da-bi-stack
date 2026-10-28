@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; all nine phases done (phases 7 to 9, filter types, filter scopes with hidden filters and the slicer, were added 2026-10-28); phase 10 (cross-filtering without a filter) planned**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; all nine phases done (phases 7 to 9, filter types, filter scopes with hidden filters and the slicer, were added 2026-10-28); phase 10 (cross-filtering without a filter) done**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -128,7 +128,9 @@ A **slicer** is a filter drawn as a panel (a `slicer` panel type): a list, butto
 - The designer: it joins the gallery, and the drawer for it is the filter card plus the display choice; "make this filter a slicer" and back from the filter card.
 - Order: after 7 and 8 (it needs the types and the scopes). The panel type must meet the project's own rule that "a new panel type needs two real use cases"; the two here are a region slicer on a sales page and a status slicer beside the reorder list.
 
-### Phase 10: cross-filtering without a filter (added 2026-10-28; 10a spec and compile done, 10b renderer done)
+### Phase 10: cross-filtering without a filter (added 2026-10-28; 10a spec and compile, 10b renderer, 10c designer: all done)
+**10c, built:** `setCrossFilter` (off, the whole dashboard, this tab; page needs tabs; turning it on replaces a hand-written `on_click` with a note; only bar, pie, treemap and table) and a select in the panel drawer ("Clicking it filters the other panels"); a hand-written click rule shows as off with a hint. Changing what a panel groups by keeps working with `cross_filter` because the filters are made from the current field.
+
 **10b, built:** the made filters (`implicit`) have no header control and no option queries; the selection bar (`#selection-bar`, role group, a chip per set filter with a ✕ and a label that names what it removes; a tab's own filters only on that tab); a chip's ✕ goes through the same `changeFilter` as the header; the address, Reset, the Excel header and the click-again-to-undo all work on the filters as before. English and Turkish.
 
 **10a, built:** `cross_filter` (`true` | `page`) on bar, pie, treemap and table in the schema; `dashspec/crossfilter.py` `expand` (called first in `compile_spec`): reuses a visible `select` filter on the same field, else adds `xf_<panel>_<n>` (marked `implicit`, `source`), fills `on_click`, skips panels that cannot join with `ignore_filters`, and with `page` makes them page filters on the panel's tab; the source is not touched. Validator: not with `on_click`, `page` needs tabs, a table needs one or two dimension columns, `xf_` ids are reserved. Tests include the Python/JS query agreement on a compiled dashboard that uses it. Until 10b the renderer draws the made filters as header selects (they work; they just are not chips yet).

@@ -295,3 +295,31 @@ test("removing a filter takes its slicer, hiding one that has a slicer is refuse
   assert.equal("display" in slicerOf(text.source, "region"), false);
   assert.ok(text.notes.includes("displayDropped"));
 });
+
+// ---- cross-filtering
+import { CROSS_PANELS, crossModeOf, setCrossFilter } from "../../static/lib/designer-structure.js";
+
+test("clicking a panel can filter the others: the whole dashboard, this tab, or not at all", () => {
+  const on = setCrossFilter(SOURCE, "top", "all");
+  assert.equal(on.source.panels.find((p) => p.id === "top").cross_filter, true);
+  assert.deepEqual(on.notes, []);
+  assert.equal(crossModeOf(on.source.panels.find((p) => p.id === "top")), "all");
+  const off = setCrossFilter(on.source, "top", "");
+  assert.equal("cross_filter" in off.source.panels.find((p) => p.id === "top"), false);
+  assert.equal(setCrossFilter(SOURCE, "top", "page").problem, "notabs");
+  const tabbed = { ...SOURCE, layout: undefined, tabs: [{ id: "a", title: "A", layout: SOURCE.layout }, { id: "b", title: "B", layout: [[{ x: 12 }]] }] };
+  const page = setCrossFilter(tabbed, "top", "page");
+  assert.equal(page.source.panels.find((p) => p.id === "top").cross_filter, "page");
+  assert.equal(crossModeOf(page.source.panels.find((p) => p.id === "top")), "page");
+  assert.equal(SOURCE.panels.find((p) => p.id === "top").cross_filter, undefined, "the argument is not touched");
+});
+
+test("turning it on replaces a click rule written by hand, and only bars, pies, treemaps and tables can", () => {
+  const withRule = setCrossFilter({ ...SOURCE, panels: SOURCE.panels.map((p) => (p.id === "top" ? { ...p, on_click: { set_filter: "region" } } : p)) }, "top", "all");
+  assert.equal("on_click" in withRule.source.panels.find((p) => p.id === "top"), false);
+  assert.deepEqual(withRule.notes, ["clickReplaced"]);
+  assert.equal(setCrossFilter(SOURCE, "trend", "all").problem, "type", "a time chart cannot yet");
+  assert.equal(setCrossFilter(SOURCE, "kpis", "all").problem, "type");
+  assert.equal(setCrossFilter(SOURCE, "nope", "all").problem, "missing");
+  assert.deepEqual(CROSS_PANELS, ["bar", "pie", "treemap", "table"]);
+});

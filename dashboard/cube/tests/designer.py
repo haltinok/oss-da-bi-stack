@@ -859,6 +859,46 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- "Clicking it filters the other panels": a switch in the drawer, no filter to define
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    bar = panel_of(page, "bar")
+    page.click(f'[data-panel="{bar}"] h2')
+    check(page.locator('#designer [data-path="cross_filter"] option').evaluate_all("os => os.map((o) => o.value)") == ["", "all"], "a bar offers Clicking it filters the other panels: No or the whole dashboard (no tab option without tabs)")
+    with changes(page):
+        page.select_option('#designer [data-path="cross_filter"]', "all")
+    settled(page)
+    src = next(x for x in yaml_of(page)["panels"] if x["id"] == bar)
+    check(src.get("cross_filter") is True and "on_click" not in src and not any(f["id"].startswith("xf_") for f in yaml_of(page).get("filters", [])), "choosing Yes writes cross_filter: true and nothing else (no filter in the file)")
+    page.click("#bd-design")                                       # design mode off: a click on a chart filters again
+    page.locator(f'[data-panel="{bar}"] .rrow').first.click()
+    settled(page)
+    page.wait_for_selector("#selection-bar .chip", timeout=10000)
+    check(page.locator("#selection-bar .chip").count() >= 1, "and a click on the chart now makes a chip in the selection bar")
+    page.click("#bd-design")
+    page.click(f'[data-panel="{bar}"] h2')
+    with changes(page):
+        page.select_option('#designer [data-path="cross_filter"]', "")
+    settled(page)
+    check("cross_filter" not in next(x for x in yaml_of(page)["panels"] if x["id"] == bar), "choosing No takes it out again")
+    page.click("#dz-back")
+    with changes(page):
+        page.click("#dz-totabs")
+    page.wait_for_selector("[role=tab]", timeout=20000)
+    page.wait_for_selector("#designer:not([hidden])", timeout=20000)
+    settled(page)
+    bar2 = panel_of(page, "bar")
+    page.click(f'[data-panel="{bar2}"] h2')
+    check(page.locator('#designer [data-path="cross_filter"] option').evaluate_all("os => os.map((o) => o.value)") == ["", "all", "page"], "with tabs it can also be this tab only")
+    with changes(page):
+        page.select_option('#designer [data-path="cross_filter"]', "page")
+    settled(page)
+    check(next(x for x in yaml_of(page)["panels"] if x["id"] == bar2).get("cross_filter") == "page", "choosing this tab only writes cross_filter: page")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
