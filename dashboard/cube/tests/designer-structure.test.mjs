@@ -143,3 +143,51 @@ test("the page's own fields: a description may be empty (and goes), a title may 
   assert.equal(setPageField({ ...SOURCE, time: { dimension: "a.b", fiscal_year_start: 7 } }, "time.fiscal_year_start", "").source.time.fiscal_year_start, undefined);
   assert.deepEqual(timeDimensions(CATALOG).map((d) => d.value), ["dates.full_date"]);
 });
+
+// ---- filter types
+import { dimensionTypeOf, setFilterType, typesFor } from "../../static/lib/designer-structure.js";
+
+test("a dimension's type decides which filter types it can have", () => {
+  assert.deepEqual(typesFor("string"), ["select", "multiselect", "text"]);
+  assert.deepEqual(typesFor("number"), ["select", "multiselect", "number"]);
+  assert.deepEqual(typesFor("time"), ["select", "multiselect", "date"]);
+  assert.deepEqual(typesFor(undefined), ["select", "multiselect"]);
+  assert.equal(dimensionTypeOf(CATALOG, "dates.full_date"), "time");
+  assert.equal(dimensionTypeOf(CATALOG, "nope.x"), undefined);
+});
+
+test("changing a filter's type drops the default, and what cannot work with the new type, saying so", () => {
+  const src = { ...SOURCE, filters: [{ id: "region", dimension: "territories.region", label: "Region", default: "France", parent: "territories.group" }, { id: "kid", dimension: "territories.country", parent: "territories.region" }] };
+  const multi = setFilterType(src, CATALOG, "region", "multiselect");
+  assert.equal(multi.source.filters[0].type, "multiselect");
+  assert.equal("default" in multi.source.filters[0], false);
+  assert.equal(multi.source.filters[0].parent, "territories.group", "a multiselect may keep its parent");
+  assert.deepEqual(multi.notes.sort(), ["click", "defaultDropped", "parentDropped"].sort(), "a click rule on it, and a child filter that took it as its parent, cannot stay");
+  assert.equal("on_click" in multi.source.panels.find((p) => p.id === "trend"), false);
+  assert.equal("parent" in multi.source.filters[1], false);
+  const text = setFilterType(src, CATALOG, "region", "text");
+  assert.equal("parent" in text.source.filters[0], false, "a text filter has no parent");
+  const back = setFilterType(multi.source, CATALOG, "region", "select");
+  assert.equal("type" in back.source.filters[0], false, "select is the absence of a type");
+  assert.equal(src.filters[0].default, "France", "the argument is not touched");
+});
+
+test("a type that does not fit the filter's dimension is refused", () => {
+  assert.equal(setFilterType(SOURCE, CATALOG, "region", "date").problem, "type");
+  assert.equal(setFilterType(SOURCE, CATALOG, "region", "number").problem, "type");
+  assert.equal(setFilterType(SOURCE, CATALOG, "nope", "text").problem, "missing");
+  const dated = { ...SOURCE, filters: [{ id: "d", dimension: "dates.full_date" }] };
+  assert.equal(setFilterType(dated, CATALOG, "d", "date").source.filters[0].type, "date");
+});
+
+test("a default is set and emptied like the other optional fields; a new dimension that the type no longer fits resets it", () => {
+  const withDefault = setFilter(SOURCE, CATALOG, "region", "default", "France").source;
+  assert.equal(withDefault.filters[0].default, "France");
+  assert.equal("default" in setFilter(withDefault, CATALOG, "region", "default", "").source.filters[0], false);
+  const dated = { ...SOURCE, filters: [{ id: "d", dimension: "dates.full_date", type: "date", default: "rel:last_30_days" }] };
+  const moved = setFilter(dated, CATALOG, "d", "dimension", "products.name");
+  assert.equal("type" in moved.source.filters[0] || "default" in moved.source.filters[0], false);
+  assert.ok(moved.notes.includes("typeReset"));
+  const kept = setFilter({ ...SOURCE, filters: [{ id: "t", dimension: "products.name", type: "text", default: "contains:x" }] }, CATALOG, "t", "dimension", "products.category");
+  assert.equal(kept.source.filters[0].type, "text", "a type that still fits stays");
+});

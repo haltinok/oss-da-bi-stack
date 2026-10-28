@@ -4,7 +4,9 @@
 // The logic is in lib/designer-model.js (a panel's fields) and lib/designer-structure.js (new panels, removing, filters, the page's fields).
 import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
-import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setPageField, timeDimensions } from "../lib/designer-structure.js";
+import { createControl } from "./filter-controls.js";
+import { describeValue, formatValue, parseValue } from "../lib/filters.js";
+import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setFilterType, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -89,7 +91,13 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     for (const f of source.filters || []) {
       const card = el("div", { class: "dz-filter" });
       card.append(el("h4", {}, esc(f.id)));
-      for (const fd of FILTER_FIELDS) card.append(field(fd, f, (v) => commit(setFilter(source, catalog, f.id, fd.path, v), { message: dz.filterChanged, panel: null })));
+      const typ = f.type || "select";
+      const edit = (path, v) => commit(setFilter(source, catalog, f.id, path, v), { message: dz.filterChanged, panel: null });
+      for (const fd of FILTER_FIELDS.filter((x) => x.path !== "parent")) card.append(field(fd, f, (v) => edit(fd.path, v)));
+      card.append(field({ path: "type", kind: "choice", key: "filterType", options: typesFor(dimensionTypeOf(catalog, f.dimension)) }, { ...f, type: typ },
+        (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
+      if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
+      card.append(defaultRow(f, typ, (v) => edit("default", v)));
       const rm = el("button", { type: "button", class: "dz-danger", "data-rm-filter": f.id }, esc(dz.removeFilter));
       card.append(rm);
       list.append(card);
@@ -172,6 +180,33 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     else wrap.append(members("num", item.ratio.num, canRemovePart(item, "num")), members("den", item.ratio.den, canRemovePart(item, "den")));
     if (kind !== "member") wrap.append(el("p", { class: "hint dz-preview" }, esc(dz.formulaIs(describe(item)))));
     return wrap;
+  }
+
+  /** The row for a filter's default value: the filter's own control for the types that have one, and plain boxes for a select (a value) and a multiselect (values; the options come from data the designer does not read). */
+  function defaultRow(f, typ, set) {
+    if (typ === "select") return field({ path: "default", kind: "text", key: "filterDefault", optional: true }, f, set);
+    const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
+    const slot = el("span", { class: "dz-input" });
+    wrap.append(slot);
+    if (typ === "multiselect") {
+      const cur = parseValue(f.default), box = el("input", { type: "text", maxlength: 200, "aria-label": dz.f.filterDefault, placeholder: dz.multiHint, "data-path": "default" });
+      box.value = cur ? cur.args.join(", ") : "";
+      const not = el("input", { type: "checkbox", "aria-label": dz.exceptSelected });
+      not.checked = cur?.op === "not";
+      const push = () => { const args = box.value.split(",").map((x) => x.trim()).filter(Boolean); set(args.length ? formatValue({ op: not.checked ? "not" : "in", args }) : ""); };
+      box.addEventListener("change", push);
+      not.addEventListener("change", () => { if (box.value.trim()) push(); });
+      const label = el("label", { class: "dz-except" }, "");
+      label.append(not, document.createTextNode(` ${dz.exceptSelected}`));
+      slot.append(box, label);
+      return wrap;
+    }
+    const control = createControl({ ...f, label: dz.f.filterDefault }, t);
+    control.show(f.default || "");
+    control.onChange = set;
+    control.el.classList.add("dz-default");
+    if (f.default) control.el.append(el("p", { class: "hint" }, esc(describeValue(f, f.default))));
+    return control.el;
   }
 
   /** The dashboard's look: the organisation's name and its logo (kept inside the file as a small data URI, `theme.logo`). */

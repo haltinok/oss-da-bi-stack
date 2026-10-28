@@ -141,6 +141,7 @@ filters:
 ```
 
 Rules: a click on a chart can only set a `select` filter (a click carries one value; clicking into multiselect and other types comes with the slicer, see the plan), a `parent` is only for `select` and `multiselect`, and its filter must be a `select`.
+In the designer, each filter card has the type (only the types its field allows) and the default value, chosen with the same control the filter bar uses. Changing the type drops the default and anything that cannot work with the new type, and says so.
 Not yet: filters that belong to one tab or one panel, hidden filters, and the slicer (the plan's phases 8 and 9), and "same period last year".
 
 ## Themes

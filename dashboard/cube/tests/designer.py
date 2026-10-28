@@ -693,6 +693,68 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- filter types in the filter card: the type, a default for each, and what a change of type takes with it
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    filters = lambda: yaml_of(page).get("filters", [])
+    page.select_option("#dz-newfilter", "products.category")
+    with changes(page):
+        page.click("#dz-addfilter")
+    settled(page)
+    cat = next(f for f in filters() if f["dimension"] == "products.category")
+    card = f'.dz-filter:has(h4:text-is("{cat["id"]}"))'
+    opts = page.locator(f'{card} [data-path="type"] option').evaluate_all("os => os.map((o) => o.value)")
+    check(opts == ["select", "multiselect", "text"], f"a text dimension offers select, multiselect and text ({opts})")
+    with changes(page):
+        page.select_option(f'{card} [data-path="type"]', "multiselect")
+    settled(page)
+    check(next(f for f in filters() if f["id"] == cat["id"]).get("type") == "multiselect", "choosing Several values sets the type")
+    with changes(page):
+        page.fill(f'{card} [data-path="default"]', "Bikes, Clothing")
+        page.press(f'{card} [data-path="default"]', "Tab")
+    settled(page)
+    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "in:Bikes,Clothing", "a multiselect's default is typed as values and stored as in:Bikes,Clothing")
+    with changes(page):
+        page.check(f'{card} .dz-except input')
+    settled(page)
+    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "not:Bikes,Clothing", "'All except these' makes it not:...")
+    page.wait_for_selector("#filters .fc", timeout=10000)
+    check(page.locator('#filters .fc .fc-btn').first.inner_text() == "all but 2", "and the page opens with that default ('all but 2')")
+    with changes(page):
+        page.select_option(f'{card} [data-path="type"]', "text")
+    settled(page)
+    now = next(f for f in filters() if f["id"] == cat["id"])
+    check(now.get("type") == "text" and "default" not in now, "changing the type drops the default (it was a value of the old type)")
+    check("default value was removed" in page.inner_text("#bd-msg").lower() or "default" in page.inner_text("#bd-msg").lower(), "and the draft bar says so")
+    ctl = f'{card} .fc[aria-label="Default value"]'
+    page.locator(f"{ctl} select").select_option("contains")
+    page.locator(f"{ctl} input").fill("mountain")
+    with changes(page):
+        page.locator(f"{ctl} input").press("Enter")
+    settled(page)
+    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "contains:mountain", "a text filter's default is chosen with the filter's own control")
+    page.select_option("#dz-newfilter", "dates.full_date")
+    with changes(page):
+        page.click("#dz-addfilter")
+    settled(page)
+    day = next(f for f in filters() if f["dimension"] == "dates.full_date")
+    dcard = f'.dz-filter:has(h4:text-is("{day["id"]}"))'
+    check(page.locator(f'{dcard} [data-path="type"] option').evaluate_all("os => os.map((o) => o.value)") == ["select", "multiselect", "date"], "a time dimension offers date")
+    with changes(page):
+        page.select_option(f'{dcard} [data-path="type"]', "date")
+    settled(page)
+    dctl = f'{dcard} .fc[aria-label="Default value"]'
+    page.locator(f"{dctl} select").first.select_option("rel")
+    page.locator(f"{dctl} select").nth(1).select_option("last_month")
+    page.wait_for_function("document.querySelectorAll('.dz-filter').length > 0", timeout=5000)
+    settled(page)
+    check(next(f for f in filters() if f["id"] == day["id"]).get("default") == "rel:last_month", "a date default can be a dynamic period (rel:last_month)")
+    check("last month" in page.inner_text(dcard), "and the card says it in words")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
