@@ -108,10 +108,12 @@ export function unplace(next, id) {
 /** Removes a panel and its place in the layout. The dashboard must keep one panel (the validator says so; here the caller is told with `problem`). */
 export function removePanel(source, id) {
   if (source.panels.length < 2) return { problem: "last" };
-  const next = clone(source);
+  let next = clone(source);
   next.panels = next.panels.filter((p) => p.id !== id);
   unplace(next, id);
-  return { source: next };
+  const notes = [];
+  for (const f of (next.filters || []).filter((g) => g.scope === "panel" && g.panel === id)) { next = removeFilter(next, f.id).source; notes.push("filtersRemoved"); }          // a pane filter goes with its panel
+  return { source: next, notes };
 }
 
 /** A copy of a panel with a new id, placed as a new full-width row right under the original's row. */
@@ -202,12 +204,59 @@ export function setFilter(source, catalog, id, field, value) {
   if (!filter) throw new Error(`no filter '${id}'`);
   if ((field === "parent" || field === "label" || field === "default") && !value) delete filter[field]; else filter[field] = value;
   let notes = [];
+  if (field === "panel") dropOtherClicks(next, filter, notes);
   if (field === "dimension") {
     notes = ignoreWhereUnreachable(next, catalog, filter).length ? ["ignored"] : [];
     if (!typesFor(dimensionTypeOf(catalog, value)).includes(filter.type || "select")) { delete filter.type; delete filter.default; notes.push("typeReset"); }        // the type no longer fits the new field
     if (filter.parent === value) delete filter.parent;
     for (const p of next.panels) if (p.on_click) { const ids = [].concat(p.on_click.set_filter || []); if (ids.includes(id)) { delete p.on_click; notes.push("click"); } }       // a click rule names this filter for the old dimension
   }
+  return { source: next, notes };
+}
+
+/**
+ * Where a filter applies: `dashboard`, `page` (`target` is a tab id, else the first tab; { problem: "notabs" } without tabs) or `panel` (`target` is a panel id, else the first panel with data).
+ * A pane filter cannot be set by a click on another panel, so those click rules are dropped with a note; a dashboard filter re-decides which panels ignore it.
+ */
+export function setFilterScope(source, catalog, id, scope, target) {
+  const next = clone(source);
+  const filter = (next.filters || []).find((f) => f.id === id);
+  if (!filter) return { problem: "missing" };
+  const notes = [];
+  delete filter.tab;
+  delete filter.panel;
+  if (scope === "page") {
+    if (!next.tabs?.length) return { problem: "notabs" };
+    filter.scope = "page";
+    filter.tab = next.tabs.some((t) => t.id === target) ? target : next.tabs[0].id;
+  } else if (scope === "panel") {
+    const pane = next.panels.find((p) => p.id === target && p.type !== "text") || next.panels.find((p) => p.type !== "text");
+    if (!pane) return { problem: "missing" };
+    filter.scope = "panel";
+    filter.panel = pane.id;
+    dropOtherClicks(next, filter, notes);
+  } else {
+    delete filter.scope;
+    if (ignoreWhereUnreachable(next, catalog, filter).length) notes.push("ignored");
+  }
+  return { source: next, notes };
+}
+
+function dropOtherClicks(next, filter, notes) {
+  for (const p of next.panels) if (p.id !== filter.panel && p.on_click && [].concat(p.on_click.set_filter || []).includes(filter.id)) { delete p.on_click; notes.push("click"); }
+}
+
+/** Shows a filter to the reader, or hides it (`visible: false`: it always applies with its default, so one is needed first; a hidden filter has no parent and is not set by clicks). */
+export function setFilterVisible(source, id, visible) {
+  const next = clone(source);
+  const filter = (next.filters || []).find((f) => f.id === id);
+  if (!filter) return { problem: "missing" };
+  const notes = [];
+  if (visible) { delete filter.visible; return { source: next, notes }; }
+  if (!filter.default) return { problem: "needsDefault" };
+  filter.visible = false;
+  if (filter.parent) { delete filter.parent; notes.push("parentDropped"); }
+  for (const p of next.panels) if (p.on_click && [].concat(p.on_click.set_filter || []).includes(id)) { delete p.on_click; notes.push("click"); }
   return { source: next, notes };
 }
 

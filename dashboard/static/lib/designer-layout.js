@@ -187,10 +187,11 @@ export function layoutToTabs(source, titles = ["Overview", "Details"]) {
 /** The reverse: every tab's rows one after another on a single page. */
 export function tabsToLayout(source) {
   if (!source.tabs) return { problem: "tabs" };
-  const next = clone(source);
+  const next = clone(source), notes = [];
   next.layout = next.tabs.flatMap((t) => t.layout);
   delete next.tabs;
-  return { source: next };
+  for (const f of next.filters || []) if (f.scope === "page") { delete f.scope; delete f.tab; notes.push("scopeReset"); }          // a page filter belongs to a tab; on one page it is a dashboard filter
+  return { source: next, notes: [...new Set(notes)] };
 }
 
 /** A new tab at the end. It cannot be empty, so it starts with a text panel (`note`: the words for it) that the person replaces or keeps; { problem: "max" } at eight tabs. */
@@ -212,6 +213,8 @@ export function removeTab(source, tabId) {
   const i = (source.tabs || []).findIndex((t) => t.id === tabId);
   if (i < 0) return { problem: "missing" };
   const next = clone(source), [gone] = next.tabs.splice(i, 1);
-  (next.tabs[i - 1] || next.tabs[0]).layout.push(...gone.layout);
+  const heir = next.tabs[i - 1] || next.tabs[0];
+  heir.layout.push(...gone.layout);
+  for (const f of next.filters || []) if (f.scope === "page" && f.tab === tabId) f.tab = heir.id;           // the tab's page filters go where its panels went
   return next.tabs.length < 2 ? tabsToLayout(next) : { source: next };
 }
