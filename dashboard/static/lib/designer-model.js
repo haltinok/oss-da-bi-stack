@@ -58,7 +58,7 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
         f("orientation", "choice", { key: "orientation", options: ["horizontal", "vertical"], optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "pie":
-      if (panel.measure) out.push(f("measure", "measure", { key: "measure" }));
+      out.push({ path: "~value", kind: "pievalue", key: "measure" }, f("label", "text", { key: "label", optional: true }));
       out.push(f("by", "dimension", { key: "by" }), f("style", "choice", { key: "style", options: ["pie", "donut"], optional: true }), f("limit", "number", { key: "limit", min: 2, max: 30, optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "treemap":

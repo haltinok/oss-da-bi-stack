@@ -161,3 +161,40 @@ export function moveColumn(source, panelId, index, dir) {
   [cols[index], cols[index + dir]] = [cols[index + dir], cols[index]];
   return { source: next };
 }
+
+// ------------------------------------------------------------------------------------------------------------------ a pie's value
+/** What a pie's slices are sized by: one `measure`, or the `sum` of several (with a `label`). */
+export const pieKind = (panel) => (panel.sum ? "sum" : "member");
+
+/** Switches a pie between one measure and a sum of measures (`spare` is the second measure a sum starts with). */
+export function setPieKind(source, panelId, kind, spare) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "pie") return { problem: "item" };
+  if (kind === pieKind(panel)) return { source: next };
+  if (kind === "member") { panel.measure = panel.sum[0]; delete panel.sum; return { source: next }; }
+  if (!spare) return { problem: "spare" };
+  panel.sum = [panel.measure, spare];
+  panel.label ||= `${humanize(panel.measure)} + ${humanize(spare)}`;
+  delete panel.measure;
+  return { source: next };
+}
+
+/** Sets, adds or removes a member of a pie's sum (two stay). */
+export function setPieSum(source, panelId, index, value) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel?.sum || index >= panel.sum.length) return { problem: "item" };
+  panel.sum[index] = value;
+  return { source: next };
+}
+export function addPieSum(source, panelId, spare) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel?.sum || !spare) return { problem: "item" };
+  panel.sum.push(spare);
+  return { source: next };
+}
+export function removePieSum(source, panelId, index) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel?.sum || panel.sum.length <= 2 || index >= panel.sum.length) return { problem: "min" };
+  panel.sum.splice(index, 1);
+  return { source: next };
+}

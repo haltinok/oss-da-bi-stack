@@ -975,6 +975,42 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- a pie's measure: one, or the sum of several (it used to be missing from the drawer when the pie had a `sum`)
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    with changes(page):
+        page.click('#dz-gallery [data-add="pie"]')
+    settled(page)
+    pid = [x for x in yaml_of(page)["panels"] if x["type"] == "pie"][-1]["id"]                # the one just added (the draft may have a pie already)
+    pie = lambda: next(x for x in yaml_of(page)["panels"] if x["id"] == pid)
+    check(page.locator('#designer [data-path="measure"]').count() == 1, "a pie with one measure shows it in the drawer")
+    with changes(page):
+        page.select_option('#designer [data-path="~kind"]', "sum")
+    settled(page)
+    check(len(pie().get("sum", [])) == 2 and "measure" not in pie() and pie().get("label"), f"switching to Sum makes a sum of two measures with a label ({pie().get('sum')})")
+    check(page.locator('#designer [data-path="sum.0"]').count() == 1 and page.locator('#designer [data-path="sum.1"]').count() == 1, "and the drawer shows each member (this was the missing field)")
+    third = page.locator('#designer [data-path="sum.1"] option').evaluate_all("os => os.map((o) => o.value)")[-1]
+    with changes(page):
+        page.click("#designer .dz-parts .dz-mini:has-text('Add a measure')")
+    settled(page)
+    check(len(pie()["sum"]) == 3, "Add a measure adds a member")
+    with changes(page):
+        page.select_option('#designer [data-path="sum.2"]', third)
+    settled(page)
+    check(pie()["sum"][2] == third, "a member can be changed")
+    with changes(page):
+        page.locator('#designer .dz-parts .dz-mini[aria-label]').first.click()
+    settled(page)
+    check(len(pie()["sum"]) == 2, "and removed (two stay)")
+    with changes(page):
+        page.select_option('#designer [data-path="~kind"]', "member")
+    settled(page)
+    check("sum" not in pie() and pie().get("measure"), "back to One measure")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
