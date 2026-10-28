@@ -38,7 +38,7 @@ A file has `layout` **or** `tabs` (2 to 8 tabs). Every panel is placed once in a
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string |  | A small label above the title (the organisation). |
-| `logo` | string |  | An image in the header: a path on this site (`/assets/logo.svg`) or an `https://` URL. |
+| `logo` | string |  | An image in the header: a path on this site (`/assets/logo.svg`), an `https://` URL, or the image itself as `data:image/png;base64,...` (also `jpeg` or `webp`, at most 20,000 characters, about 15 KB, which leaves room for the rest of the file in the 30,000-character limit; the designer shrinks an uploaded file to fit). The bytes must really be that image type; SVG is not accepted inline. |
 | `colors` | object |  | Replaces theme tokens, in both the light and the dark theme. |
 
 ### `theme.colors`

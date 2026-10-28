@@ -202,7 +202,10 @@ export function setPageField(source, path, value) {
   const last = steps.pop();
   let cur = next;
   for (const k of steps) cur = cur[k] ??= {};
-  if ((value === "" || value == null) && ["description", "fiscal_year_start", "locale", "currency"].includes(last)) delete cur[last]; else cur[last] = value;
+  if ((value === "" || value == null) && ["description", "fiscal_year_start", "locale", "currency", "name", "logo"].includes(last)) {
+    delete cur[last];
+    if (next.theme && !Object.keys(next.theme).length) delete next.theme;                  // `theme: {}` says nothing
+  } else cur[last] = value;
   return { source: next, notes: [] };
 }
 

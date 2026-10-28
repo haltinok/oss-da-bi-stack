@@ -7,6 +7,7 @@ import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, s
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setPageField, timeDimensions } from "../lib/designer-structure.js";
 import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
+import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
 import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
 
@@ -58,6 +59,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     drawer.innerHTML = `<div class="dz-head"><h2>${esc(dz.page)}</h2>${closeBtn()}</div><div id="dz-msg" class="bmsg" role="alert" hidden></div>
       <p class="hint">${esc(dz.pick)}</p>
       <form class="dz-form" id="dz-page" onsubmit="return false"></form>
+      <h3 class="dz-section">${esc(dz.look)}</h3><div id="dz-look" class="dz-look"></div>
       <h3 class="dz-section">${esc(dz.tabs)}</h3>
       ${tabsOf(source).length ? `<div id="dz-tabs" class="dz-tabs"></div>
         <div class="dz-add-filter"><input type="text" id="dz-newtab" maxlength="40" placeholder="${esc(dz.newTabName)}" aria-label="${esc(dz.addTab)}"><button type="button" id="dz-addtab" ${tabsOf(source).length >= MAX_TABS ? "disabled" : ""}>${esc(dz.addTab)}</button></div>
@@ -69,6 +71,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <div class="dz-gallery" id="dz-gallery">${PANEL_TYPES.map((ty) => `<button type="button" class="dz-type" data-add="${ty}"><strong>${esc(typeName(ty))}</strong><span>${esc(dz.typeHint[ty])}</span></button>`).join("")}</div>`;
     const form = drawer.querySelector("#dz-page");
     for (const fd of PAGE_FIELDS) form.append(field(fd, source, (v) => commit(setPageField(source, fd.path, v), { message: dz.pageChanged, panel: null })));
+    drawLook(drawer.querySelector("#dz-look"));
     const tabList = drawer.querySelector("#dz-tabs");
     tabsOf(source).forEach((tab, i, all) => {
       const row = el("div", { class: "dz-tab" });
@@ -168,6 +171,45 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     else wrap.append(members("num", item.ratio.num, canRemovePart(item, "num")), members("den", item.ratio.den, canRemovePart(item, "den")));
     if (kind !== "member") wrap.append(el("p", { class: "hint dz-preview" }, esc(dz.formulaIs(describe(item)))));
     return wrap;
+  }
+
+  /** The dashboard's look: the organisation's name and its logo (kept inside the file as a small data URI, `theme.logo`). */
+  function drawLook(host) {
+    const setTheme = (path, v) => commit(setPageField(source, path, v), { message: dz.pageChanged, panel: null });
+    host.append(field({ path: "theme.name", kind: "text", key: "orgName", optional: true }, source, (v) => setTheme("theme.name", v)));
+    const logo = source.theme?.logo;
+    const row = el("div", { class: "dz-field dz-logo" }, `<span>${esc(dz.f.logo)}</span>`);
+    const slot = el("span", { class: "dz-input" });
+    if (logo) slot.append(el("img", { src: logo, alt: "", class: "dz-logo-preview", id: "dz-logo-img" }));
+    const file = el("input", { type: "file", id: "dz-logo-file", accept: ACCEPTED.join(","), "aria-label": dz.logoPick });
+    file.addEventListener("change", () => { if (file.files[0]) pickLogo(file.files[0], setTheme); });
+    slot.append(file);
+    if (logo) {
+      const rm = el("button", { type: "button", class: "dz-mini", id: "dz-logo-rm" }, esc(dz.logoRemove));
+      rm.addEventListener("click", () => setTheme("theme.logo", ""));
+      slot.append(rm);
+    }
+    slot.append(el("p", { class: "hint" }, esc(dz.logoHint)));
+    row.append(slot);
+    host.append(row);
+  }
+
+  /** Shrinks the picked picture until it fits in the file: sizes from large to small, and at each size PNG, then WebP, then JPEG. */
+  async function pickLogo(file, setTheme) {
+    if (!ACCEPTED.includes(file.type)) { problems([dz.logoType]); return; }
+    let bitmap;
+    try { bitmap = await createImageBitmap(file); } catch { problems([dz.logoRead]); return; }
+    for (const { w, h } of sizesToTry(bitmap.width, bitmap.height)) {
+      const canvas = el("canvas", { width: w, height: h }), c2d = canvas.getContext("2d");
+      for (const enc of ENCODINGS) {
+        c2d.clearRect(0, 0, w, h);
+        if (enc.onWhite) { c2d.fillStyle = "#fff"; c2d.fillRect(0, 0, w, h); }
+        c2d.drawImage(bitmap, 0, 0, w, h);
+        const uri = canvas.toDataURL(enc.type, enc.quality);
+        if (uri.startsWith(`data:${enc.type}`) && fits(uri)) { setTheme("theme.logo", uri); return; }
+      }
+    }
+    problems([dz.logoBig]);
   }
 
   /** The dimensions a filter may be on: any the role may read. */

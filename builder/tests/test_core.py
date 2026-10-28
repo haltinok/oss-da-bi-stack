@@ -112,6 +112,18 @@ def test_a_logo_is_stripped_and_oversized_or_broken_files_are_rejected():
     assert core.check_submission("- a\n- b", CATALOG, "admin")[1] == ["the file must be a YAML mapping"]
 
 
+def test_an_inline_logo_is_kept_but_a_fake_one_is_refused():
+    import base64
+    png = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 30).decode()
+    spec = yaml.safe_load(GOOD)
+    spec["theme"] = {"logo": png}
+    built, problems = core.check_submission(yaml.safe_dump(spec), CATALOG, "admin")
+    assert problems == [] and built["spec"]["theme"]["logo"] == png and built["notes"] == []
+    spec["theme"] = {"logo": "data:image/png;base64," + base64.b64encode(b"<script>alert(1)</script>").decode()}
+    built, problems = core.check_submission(yaml.safe_dump(spec), CATALOG, "admin")
+    assert built is None and any("not really a PNG" in p for p in problems)
+
+
 def test_refining_hands_the_model_the_current_file_and_the_request():
     model = Script([submit(GOOD)])
     run(model, prompt="make the trend a line", current_yaml=GOOD)

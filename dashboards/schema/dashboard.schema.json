@@ -25,7 +25,7 @@
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "maxLength": 60 },
-        "logo": { "type": "string", "pattern": "^(/|https://)[^\\s\"'<>]+$" },
+        "logo": { "type": "string", "maxLength": 20000, "pattern": "^((/|https://)[^\\s\"'<>]+|data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$" },
         "colors": {
           "type": "object",
           "additionalProperties": false,

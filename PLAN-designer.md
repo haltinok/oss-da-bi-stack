@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phases 1 to 5 done, phase 6 in four parts (6a, 6b done; 6c-1 colour rules done; 6c-2 logo upload left)**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1 to 6 done; phases 7 and 8 (filter types, filter scopes) added 2026-10-28 and not started**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -60,12 +60,43 @@ The Change box sends the selected panel as the focus ("make this one a donut"); 
 ### Phase 6: the rest of the types, formulas, and the two things left out
 Split into three PRs: **6a** pivot's own fields and the sum/ratio builder (done), **6b** tabs (add, delete, layout into tabs; done), **6c** conditional formatting (**6c-1**, done) and logo upload (**6c-2**: `theme.logo` already takes a path or an `https://` URL; the upload would add a small data URI, decided with the user: inside the spec, PNG/JPEG/WebP up to about 20 KB, shrunk in the browser, no SVG).
 
+**6c-2, built:** `theme.logo` also takes `data:image/(png|jpeg|webp);base64,...` (at most 20,000 characters; the validator decodes it and checks the file signature, so a script or an SVG cannot pass as an image); `lib/designer-logo.js` (sizes to try, encodings, what fits) and the Look section of the drawer (organisation name, upload, preview, remove; the browser draws the picture smaller until PNG, WebP or JPEG fits). The builder's check no longer strips an inline logo, only a path or an address. No content-security policy exists in this repository; a bank gateway's would need `img-src data:`.
+
 **6c-1, built:** `rules` in the schema (`$defs/rules`, on a KPI measure and on a table column object; 1 to 4 of `{ when, value, tone }`), validator errors for a rule on a dimension column or a pivot measure, `lib/rules.js` (`toneOf`, first match wins), the tone drawn on a KPI tile and on table cells with a symbol and a hidden word, and in the designer three fields per rule with Add and Remove (`addRule` in `designer-items.js`). The scope the user chose: key figures and table cells only; no bars, no rules that compare with another measure. The model learns the field from the generated spec reference.
 
 **6b, built:** in `lib/designer-layout.js`: `layoutToTabs` (a plain layout becomes two tabs, the first half of the rows and the rest; needs two rows), `tabsToLayout`, `addTab` (a tab cannot be empty, so it starts with a text `note` panel; eight at most) and `removeTab` (its panels join the neighbouring tab; at one tab left the dashboard goes back to a plain layout). The page view of the drawer has the buttons.
 
 **6a, built:** `lib/designer-items.js` (pure: add/remove a KPI measure, a series or a pivot measure within the list's limits; turn a KPI measure or a series into a sum or a ratio and back, edit, add and remove its members, minimums two for a sum and one per side of a ratio; the formula told in words) and the pivot's `columns` step, `heat.measure`, `order` and `limit` in `designer-model.js`. An optional field emptied leaves no empty object behind (`heat: {}` would not validate). A pie's `sum` and a bar's `stack` are not in this: they stay as they were. Pivot measures cannot be formulas in the spec, so they are not offered as such.
 Pivot's measures and heat, `sum` and `ratio` builders with a plain-words preview, **conditional formatting**, **logo upload** (both need spec fields and validator rules first).
+
+### Phase 7: filter types (added 2026-10-28, not started)
+Today a filter is `{ id, dimension, label?, parent? }`: one value picked from a select, sent to Cube as `equals` with one value (`plan.js` and, mirrored for the tests, `dashspec/queries.py`), kept in the URL as `?id=value`. The request is more than a single select, and the designer should be able to make all of them.
+
+**Types** (a new `type` on a filter; the existing one stays the default, `select`):
+- **`select`**: one value (today).
+- **`multiselect`**: several values, `equals` with a list. A switch makes it the inverse (**not** multiselect: `notEquals`). A search box inside the list (the options are read from the data; past a limit, the search asks Cube with `contains`). Select all, clear, and invert the selection.
+- **`text`**: contains, does not contain, starts with, ends with (`contains`, `notContains`, `startsWith`, `endsWith`), for names and codes.
+- **`number`** (numeric dimensions): equals, not equals, **between**, **greater than**, **greater than or equal**, **less than**, **less than or equal** (`gt`, `gte`, `lt`, `lte`; between is a `gte` and a `lte`). Boxes for the numbers, with the unit of the dimension's format.
+- **`date`** (time dimensions): the same comparisons (**between**, **after**, **on or after**, **before**, **on or before**: `inDateRange`, `afterDate`, `afterOrOnDate`, `beforeDate`, `beforeOrOnDate`) with date pickers, **and dynamic dates**: today, yesterday, tomorrow; this / last / next week, month, quarter, year; **last N** days, weeks, months, quarters, years (and next N); week, month, quarter, year **to date**; **fiscal** year, quarter and year to date and previous fiscal year (the spec already has `time.fiscal_year_start`); same period last year; all time. A dynamic choice is saved as a name (`last_30_days`), not as dates, so a saved dashboard stays current.
+- Improvised extras worth having: **is empty / is not empty** (`notSet`, `set`) on any dimension; a **default value** for every type (the dashboard opens already filtered, and Reset goes back to it); a **"keep this filter out of the URL"** flag for filters a link should not carry; **boolean** dimensions as a three-way toggle (yes, no, both).
+
+**What has to change underneath**
+- Spec: `type`, `operator` where the type has several, `default`, and for `date` a `range` of named presets or a pair of dates; schema, validator rules (the type must fit the dimension's type: no `between` on a text dimension, no `date` on a number; a default must be one the type allows), `docs.py` and the generated reference.
+- Renderer: the filter bar draws a control per type; `plan.js` turns a filter value into Cube filters (one function, tested), dynamic dates are resolved to concrete dates **in the browser at query time** (Cube's relative ranges only exist for `timeDimensions`, not for filters) using the dashboard's locale, week start and fiscal year; the URL carries `?id=a,b`, `?id=between:10..20`, `?id=last_30_days`; a click rule (`on_click.set_filter`) still sets a filter, as a one-value selection on a multiselect.
+- Python mirror in `queries.py` (the tests keep the two equal), the Excel sheet's header lines that say which filters were on, and the saved views if there are any.
+- Cascading: `parent` keeps working for `select` and `multiselect`; the other types ignore it.
+- Designer: the filter card in the page view gets a type choice, the dimension (only those that fit the type), the default and, for a date, the preset list; a filter can change type without being deleted when the new type fits. The Change box and the model learn the new fields from the generated reference.
+- Tests: node tests for the value-to-Cube-filter function and the date presets (including month ends, leap years, the fiscal year, a week that starts on Monday), the Python mirror, schema and validator cases, Playwright for each control and the URL.
+
+### Phase 8: where a filter applies (added 2026-10-28, not started)
+Three kinds, by scope (a `scope` on a filter, `dashboard` by default):
+- **Dashboard filter**: in the header, applies to every panel on every tab (today's only kind).
+- **Page filter**: belongs to one tab (`tab: <id>`; a plain one-page dashboard has just the one page): shown in that tab's own bar, applies to the panels on that tab only, and is not in the URL of the other tabs.
+- **Pane filter**: belongs to one panel (`panel: <id>`): a small control on the panel's own card, applies to that panel only, so a chart can be narrowed without changing the page. **Open question for the user:** "pane" is read here as a single panel's card. If a different meaning was intended (for example a group of panels inside a tab), say so and this changes.
+
+Rules to decide in the build: a panel's filters are the dashboard's, then its page's, then its own, ANDed; two filters on the same dimension in different scopes are allowed and both apply (the designer warns about it); a page or pane filter's id is unique across the file (it is a URL key) while its `ignore_filters` entry works as it does now; **Reset** resets what is in view (dashboard and the open tab's), and a pane has its own; a click rule may set a dashboard or page filter, and a pane filter only from its own panel; the designer moves a filter between scopes with a choice on the card and offers a pane filter from the picked panel's drawer; removing a tab or a panel removes the filters scoped to it (and says so). The validator refuses a scope that points at something that is not there. The built-in list order, the tab bar, and the print/export layout need a look.
+
+**Order:** 7 before 8: the types are useful on their own, and the scopes then apply to all of them. Each is several PRs (spec and validator, renderer and queries, designer), the same one-at-a-time rhythm as before.
 
 ## Open decisions
 - Whether phase 2's gallery should offer "start from a template" (a finished panel) as well as an empty type. Leaning yes, but it is a content job.
