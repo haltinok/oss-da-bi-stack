@@ -6,7 +6,7 @@ import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setFilterScope, setFilterType, setFilterVisible, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -111,6 +111,12 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       const eyeRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterVisible)}</span>`);
       eyeRow.append(el("span", { class: "dz-input" }, "")); eyeRow.lastChild.append(eye);
       card.append(eyeRow);
+      const slicer = el("input", { type: "checkbox", "data-path": "slicer", "aria-label": dz.f.filterSlicer });
+      slicer.checked = !!slicerOf(source, f.id);
+      slicer.addEventListener("change", async () => { if (!(await commit(setFilterSlicer(source, f.id, slicer.checked, { tab: activeTab() }), { message: dz.filterChanged, panel: null }))) slicer.checked = !slicer.checked; });
+      const slicerRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterSlicer)}</span>`);
+      slicerRow.append(el("span", { class: "dz-input" }, "")); slicerRow.lastChild.append(slicer);
+      card.append(slicerRow);
       if (f.visible === false) card.querySelector("h4").insertAdjacentHTML("beforeend", ` <span class="badge" title="${esc(dz.hiddenHint)}">${esc(dz.hidden)}</span>`);
       const rm = el("button", { type: "button", class: "dz-danger", "data-rm-filter": f.id }, esc(dz.removeFilter));
       card.append(rm);
@@ -121,7 +127,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   function drawPanel(panel) {
-    const fields = fieldsFor(panel, { isMeasure: (m) => catalog.some((c) => c.measures.some((x) => x.member === m)) });
+    const fields = fieldsFor(panel, { isMeasure: (m) => catalog.some((c) => c.measures.some((x) => x.member === m)), filters: (source.filters || []).filter((x) => x.visible !== false) });
     let lastGroup = null;
     const rows = fields.map((fd) => {
       const heading = fd.group && fd.group.of > 1 && fd.group.n !== lastGroup ? `<h3 class="dz-item">${esc(dz.item(fd.group.n, fd.group.of))}</h3>` : "";

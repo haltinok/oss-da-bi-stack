@@ -13,7 +13,7 @@ export const RULE_TONES = ["good", "warn", "bad"];
 const f = (path, kind, extra = {}) => ({ path, kind, ...extra });
 
 /** The fields the drawer shows for a panel, in order. Each is { path, kind, key (the words' name), options?, min?, max?, optional?, group? (a heading for a repeated item) }. */
-export function fieldsFor(panel, { isMeasure = () => false } = {}) {
+export function fieldsFor(panel, { isMeasure = () => false, filters = [] } = {}) {
   const out = [];
   const each = (list, make) => (Array.isArray(list) ? list : []).forEach((item, i) => make(item, i));
   // Colour rules of a key figure or a measure column: three fields per rule (with a remove button on the first), then a button for one more.
@@ -87,6 +87,10 @@ export function fieldsFor(panel, { isMeasure = () => false } = {}) {
       break;
     case "text":
       out.push(f("markdown", "textarea", { key: "markdown" }));
+      break;
+    case "slicer":
+      out.push(f("filter", "choice", { key: "slicerFilter", options: filters.map((x) => x.id), labels: Object.fromEntries(filters.map((x) => [x.id, x.label || x.id])) }),
+        f("display", "choice", { key: "slicerDisplay", options: ["list", "chips", "dropdown"], optional: true }));
       break;
     default:
   }
