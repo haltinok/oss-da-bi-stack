@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; all nine phases done (phases 7 to 9, filter types, filter scopes with hidden filters and the slicer, were added 2026-10-28)**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; all nine phases done (phases 7 to 9, filter types, filter scopes with hidden filters and the slicer, were added 2026-10-28); phase 10 (cross-filtering without a filter) planned**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -128,6 +128,26 @@ A **slicer** is a filter drawn as a panel (a `slicer` panel type): a list, butto
 - The designer: it joins the gallery, and the drawer for it is the filter card plus the display choice; "make this filter a slicer" and back from the filter card.
 - Order: after 7 and 8 (it needs the types and the scopes). The panel type must meet the project's own rule that "a new panel type needs two real use cases"; the two here are a region slicer on a sales page and a status slicer beside the reorder list.
 
+### Phase 10: cross-filtering without a filter (added 2026-10-28, planned, not started)
+**Why.** Today a click on a chart can only set a filter that someone defined (`on_click: { set_filter: region }`), because a click is a remote control for a filter's value. So "click a bar to filter the rest" needs a filter first, and a hidden filter cannot be set by a click (phase 8's rule: a hidden filter holds its default). The reader's expectation is simpler: click, and the rest follows. The user chose this fix on 2026-10-28.
+
+**Design.** A panel says `cross_filter: true` (or `cross_filter: page`) and nothing else:
+- **What it makes.** For each dimension the clicked mark carries (the bar's and pie's `by`; a treemap's group, in order; a table row's dimension columns) the **compiler** adds an *implicit* filter to the compiled file (`filters[]` with `implicit: true`, `source: <panel id>`, an id like `xf_<panel>_<n>`, type `select`). The source file is not touched, so the designer, versions and review show only `cross_filter`. The panel's `on_click` is filled in the same way. Nothing else in the renderer changes: `activeFilters`, `pick`, `isSelected`, the own-panel exclusion (a cross-filtering panel does not narrow itself), the URL, Reset and the Excel header all work on filters.
+- **An explicit filter wins.** If the dashboard already has a visible `select` filter on that dimension, the click sets that one (the header select and the click stay in step, as today) and no implicit filter is made.
+- **Scope.** `true`: every panel it can reach, on every tab. `page`: only the panels of its own tab (needs tabs). A panel that cannot join to the dimension is skipped automatically (no `ignore_filters` to write; the explicit-filter rule about joins stays for explicit filters).
+- **What the reader sees.** A **selection bar** (the period bar's twin, above the panels): one chip per implicit filter that is set, "Region: France ✕", each removable; a click on the chosen mark again undoes it (as now). Reset clears them. The address holds them (`?xf_bar_1=France`), so a link carries the selection.
+- **Not in this phase:** time charts (their click sets a year filter and is tied to drill-down), pivots (two dimensions at once), and ctrl-click to select several marks (an implicit filter could be a multiselect later; that is also what lets a click reach multiselect filters).
+
+**Spec and validator.** `cross_filter` on `bar`, `pie`, `treemap`, `table` only. Errors: together with `on_click` (one way or the other, with a message naming both), on a panel type that cannot, `page` on a dashboard without tabs, and a table with no dimension column. The generated reference and the model's instructions learn it from the schema. Compile: `dashspec/crossfilter.py` expands the compiled spec (shared by the validator's join checks and `dashspec lint`, mirrored nowhere else: the renderer reads the compiled file).
+
+**Pieces (three PRs).**
+- **10a, spec and compile:** schema, validator, `crossfilter.py`, docs, tests: the expansion on every checked-in dashboard pattern, an explicit filter being reused, `page` scope, skipped unreachable panels, the Python query mirror and the JS builders agreeing on a compiled dashboard that uses it.
+- **10b, renderer:** the selection bar (chips with ✕, keyboard and screen-reader text), the address, Reset, the Excel header, a click on the chosen mark again, English and Turkish; Playwright for a bar, a pie, a treemap and a table, in a tabbed dashboard with `page`.
+- **10c, designer:** a box in the drawer, "Clicking this filters the other panels" with a choice of the whole dashboard or this tab (`setCrossFilter`); turning it on removes an `on_click` (with a note); changing what the panel groups by no longer drops the click rule (the implicit filter follows the new dimension), which removes today's "its click filter was removed" note for panels that use it. Existing `on_click` stays valid and editable in the YAML.
+
+**Questions the build should settle with the user, not guess:** whether the selection bar should also be a place to add a hidden-by-default "pinned" selection (probably no), and whether a click on a bar of a panel inside a tab should default to `page` (leaning: the designer offers `true` first).
+
 ## Open decisions
+- Phase 10's open questions are listed in its section.
 - Whether phase 2's gallery should offer "start from a template" (a finished panel) as well as an empty type. Leaning yes, but it is a content job.
 - Whether design mode should be allowed on the built (checked-in) dashboards. They are reviewed in pull requests, so the likely answer is: it opens a draft copy, like a shared saved dashboard.
