@@ -240,7 +240,20 @@ async function showDashboard() {
       tabBar.append(b);
     }
   }
-  $("#main").replaceChildren(periodBar, ...(tabbed ? [tabBar] : []), ...grids.values());
+  // The selection bar: what clicks on cross-filtering panels have chosen (the filters `cross_filter` made, marked `implicit`), one chip each with a way to remove it.
+  const selectionBar = el("div", { id: "selection-bar", class: "period-bar selection-bar", role: "group", "aria-label": t.selection, hidden: "" });
+  function renderSelection() {
+    const shown = (spec.filters || []).filter((f) => f.implicit && values[f.id] && (!f.tab || f.tab === activeTab));          // a tab's own filters show on that tab
+    selectionBar.hidden = !shown.length;
+    selectionBar.replaceChildren(...shown.flatMap((f) => {
+      const text = `${f.label || f.id}: ${values[f.id]}`;
+      const chip = el("span", { class: "chip on" }, esc(text));
+      const x = el("button", { type: "button", class: "chip-x", "aria-label": t.removeSelection(text), title: t.removeSelection(text) }, "✕");
+      x.addEventListener("click", () => changeFilter(f, ""));
+      return [chip, x];
+    }));
+  }
+  $("#main").replaceChildren(periodBar, selectionBar, ...(tabbed ? [tabBar] : []), ...grids.values());
   renderPeriod();
 
   // ---- filters
@@ -274,7 +287,7 @@ async function showDashboard() {
     sel.classList.toggle("set", !!values[f.id]);
   }
   async function loadOptions(signal) {
-    await Promise.all(visibleFilters().filter((f) => !f.type || f.type === "select" || f.type === "multiselect").map(async (f) => {
+    await Promise.all(visibleFilters().filter((f) => !f.implicit && (!f.type || f.type === "select" || f.type === "multiselect")).map(async (f) => {
       if (slicerOf.has(f.id)) { optionRows.set(f.id, await runAll(ctx.run, slicerQueries(spec, slicerOf.get(f.id), values), signal)); return; }          // narrowed by the other filters
       const measures = optionMeasures(spec, f);
       const dims = [...(f.parent ? [f.parent] : []), f.dimension];
@@ -308,20 +321,23 @@ async function showDashboard() {
     } else bar.append(node);
   }
   ctx.attachPaneFilters = (panelId) => { for (const f of visibleFilters()) if ((slicerOf.get(f.id)?.id ?? (f.scope === "panel" ? f.panel : null)) === panelId) attach(f); };
+  /** The reader changed filter `f` to `value` (the bar, a slicer, or a chip's remove button). */
+  function changeFilter(f, value) {
+    if ((values[f.id] || "") === value) return;                                           // Enter and then leaving the box say the same thing twice: load once
+    for (const k of Object.keys(saved)) delete saved[k];
+    values[f.id] = value;
+    for (const g of spec.filters) if (parentFilter(g)?.id === f.id) fillOptions(g);       // a child's options follow its parent's value
+    for (const g of spec.filters) { const sel = selects.get(g.id); if (sel) sel.classList.toggle("set", !!values[g.id]); }
+    writeUrl();
+    loadAll();
+  }
   function buildFilters() {
     if (!visibleFilters().length) return;
     bar.innerHTML = "";
     /** The reader changed filter `f` to `value` (the bar, either kind of control). */
-    const changed = (f, value) => {
-      if ((values[f.id] || "") === value) return;                                           // Enter and then leaving the box say the same thing twice: load once
-      for (const k of Object.keys(saved)) delete saved[k];
-      values[f.id] = value;
-      for (const g of spec.filters) if (parentFilter(g)?.id === f.id) fillOptions(g);       // a child's options follow its parent's value
-      for (const g of spec.filters) { const sel = selects.get(g.id); if (sel) sel.classList.toggle("set", !!values[g.id]); }
-      writeUrl();
-      loadAll();
-    };
+    const changed = changeFilter;
     for (const f of visibleFilters()) {
+      if (f.implicit) continue;                                                              // drawn as a chip in the selection bar, not as a control
       const slicer = slicerOf.get(f.id);
       if (slicer && (slicer.display || "list") !== "dropdown" && (!f.type || f.type === "select" || f.type === "multiselect")) {
         const control = createSlicer(f, t, slicer.display || "list");
@@ -361,7 +377,7 @@ async function showDashboard() {
       loadAll();
     });
     bar.append(reset);
-    const dashboardBar = visibleFilters().some((f) => (!f.scope || f.scope === "dashboard") && !slicerOf.has(f.id));
+    const dashboardBar = visibleFilters().some((f) => (!f.scope || f.scope === "dashboard") && !slicerOf.has(f.id) && !f.implicit);
     bar.hidden = !dashboardBar;                                                              // with only page and pane filters the header bar shows when Reset is needed
     ctx.syncReset = () => {
       const needed = visibleFilters().some((f) => (values[f.id] || "") !== (f.default || "")) || !!values[PERIOD];
@@ -403,6 +419,7 @@ async function showDashboard() {
     history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
     ctx.syncReset?.();
     refreshSlicers();
+    renderSelection();
   }
 
   // ---- loading
@@ -507,6 +524,7 @@ async function showDashboard() {
   }
   buildFilters();
   ctx.syncReset?.();
+  renderSelection();
   setStatus(esc(t.loading));
   await loadOptions(new AbortController().signal).catch((e) => console.warn("filter options failed:", e?.message || e));
   await loadAll();

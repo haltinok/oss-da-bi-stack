@@ -981,6 +981,82 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # cross_filter: a click filters the other panels with no filter written; the choices are chips in a selection bar (the compiler made the filters)
+    sys.path.insert(0, str(ms.ROOT / "dashboards"))
+    import yaml as _yaml
+    from dashspec import catalog as _cat
+    from dashspec.compile import compile_spec as _compile
+    from dashspec.validate import validate as _validate
+
+    def compiled_with_cross(tabbed=False):
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-overview.yml").read_text())
+        src["filters"] = [f for f in src["filters"] if f["id"] not in ("category", "subcategory")]
+        for p in src["panels"]:
+            p.pop("on_click", None) if p["id"] in ("top", "mix") else None
+        next(p for p in src["panels"] if p["id"] == "top")["cross_filter"] = True
+        next(p for p in src["panels"] if p["id"] == "mix")["cross_filter"] = "page" if tabbed else True
+        if tabbed:
+            src["tabs"] = [{"id": "a", "title": "A", "layout": src["layout"][:2]}, {"id": "b", "title": "B", "layout": src["layout"][2:]}]
+            del src["layout"]
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        return _compile(src, used, catalog)
+
+    def serve(compiled):
+        return lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(compiled))
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_cross()))])
+    settled(page)
+    top = '[data-panel="top"]'
+    check(page.locator("#selection-bar").is_hidden() and not any("xf_" in x for x in page.locator("#filters label.field").all_inner_texts()), "no click yet: the selection bar is empty, and the made filters have no control in the header")
+    first = page.locator(f"{top} .rrow").first
+    name = first.locator(".name").inner_text()
+    page.queries.clear()
+    first.click()
+    settled(page)
+    chip = page.locator("#selection-bar .chip").first
+    check(page.locator("#selection-bar").is_visible() and name in chip.inner_text() and "Name" in chip.inner_text(), f"a click on a bar puts a chip in the selection bar ({chip.inner_text()})")
+    check("xf_top_1=" in here(page), "and the choice in the address")
+    qs = sent(page)
+    check(any(has_filter(q, "products.name") for q in qs if q.get("measures") and q.get("dimensions") != ["products.name"]) and not [q for q in qs if q.get("dimensions") == ["products.name"] and has_filter(q, "products.name")], "the other panels are narrowed, the clicked panel keeps showing every bar")
+    page.locator("#selection-bar .chip-x").first.click()
+    settled(page)
+    check(page.locator("#selection-bar").is_hidden() and "xf_top_1" not in here(page), "the chip's ✕ removes the choice")
+    page.locator(f"{top} .rrow").first.click()
+    settled(page)
+    page.locator(f"{top} .rrow").first.click()
+    settled(page)
+    check(page.locator("#selection-bar").is_hidden(), "a click on the chosen bar again undoes it")
+    tile = page.locator('[data-panel="mix"] .cell').first
+    tile.click()
+    settled(page)
+    check(page.locator("#selection-bar .chip").count() == 2, f"a treemap tile makes two chips (category and subcategory): {page.locator('#selection-bar .chip').all_inner_texts()}")
+    page.click("#filters .reset")
+    settled(page)
+    check(page.locator("#selection-bar").is_hidden() and "xf_" not in here(page), "Reset clears the chips and the address")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?lang=tr", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_cross()))])
+    settled(page)
+    page.locator('[data-panel="top"] .rrow').first.click()
+    settled(page)
+    check(page.get_attribute("#selection-bar", "aria-label") == "Tıklayarak seçilenler" and "kaldır" in page.get_attribute("#selection-bar .chip-x", "aria-label"), "the selection bar and its remove buttons speak Turkish")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_cross(tabbed=True)))])
+    settled(page)
+    page.click('[role="tab"][data-tab="b"]')
+    settled(page)
+    page.locator('[data-panel="mix"] .cell').first.click()
+    settled(page)
+    check(page.locator("#selection-bar .chip").count() == 2, "on tab b a page-scoped cross-filter shows its chips")
+    page.click('[role="tab"][data-tab="a"]')
+    settled(page)
+    check(page.locator("#selection-bar").is_hidden(), "and on tab a, which it does not filter, they are not shown")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())
