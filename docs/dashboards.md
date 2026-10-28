@@ -166,7 +166,28 @@ filters:
 ```
 
 Rules the validator enforces: a page filter names a tab that exists, a pane filter a panel that exists (not a text panel), a click rule cannot set a hidden filter or another panel's pane filter, a hidden filter has no `parent`, and a filter is only checked against the panels it applies to (a pane filter on inventory data on a sales panel is refused; on a panel that can join to it, fine).
-Not yet: the slicer (a filter drawn as a panel in the layout), the plan's phase 9. In the designer, a filter card has **Applies to** (the whole dashboard, one tab, one panel), the tab or panel, and a checkbox for whether the reader can see it; a hidden filter shows a "hidden" badge and needs a default first. Removing a panel takes its pane filters with it, removing a tab hands its page filters to the tab that receives its panels, and putting the tabs back on one page makes page filters dashboard filters (each says so).
+In the designer, a filter card has **Applies to** (the whole dashboard, one tab, one panel), the tab or panel, and a checkbox for whether the reader can see it; a hidden filter shows a "hidden" badge and needs a default first. Removing a panel takes its pane filters with it, removing a tab hands its page filters to the tab that receives its panels, and putting the tabs back on one page makes page filters dashboard filters (each says so).
+
+### The slicer
+A `slicer` panel draws a filter **in the layout** instead of in the header, the tab's bar or a card: a list, buttons or the usual control, placed and sized like any panel.
+
+```yaml
+filters:
+  - { id: region, dimension: territories.region, label: Region, type: multiselect }
+panels:
+  - { id: region_slicer, type: slicer, filter: region, display: chips, title: Region }
+layout:
+  - [region_slicer: 4, trend: 8]
+```
+
+The filter keeps its type, `scope` and `default` and still narrows the panels it applies to; the slicer only decides where it is drawn (so it is not in the header any more). A filter has at most one slicer, it must be visible, and a page filter's slicer sits on its own tab.
+`display` is `list` (every option shown, picked or ticked; the default), `chips` (buttons) or `dropdown` (the usual control) for a `select` or `multiselect` filter; a text, number or date filter always shows its usual control.
+
+It takes part in everything the other filters do:
+- **Other filters narrow its options**: the dashboard's, its tab's, and pane filters set on the slicer itself (a pane filter whose `panel` is the slicer only narrows the list). The slicer's own filter never narrows its own list, so it does not shrink to what you chose.
+- **A chosen value stays chosen** even when the other filters narrow the list down to nothing; nothing is cleared behind your back, so two slicers can never undo each other.
+- **Cross-filtering**: a click on a chart that sets the filter (`on_click.set_filter`) shows in the slicer, and picking in the slicer narrows the chart, like the header filter does.
+- **Drill-down**: the period a drill-down opens narrows the options too.
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),

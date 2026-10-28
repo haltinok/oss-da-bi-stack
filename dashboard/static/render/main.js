@@ -8,11 +8,11 @@ import { describeValue } from "../lib/filters.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, pickTab, queriesPerCube, runAll, tabKeyTarget, tabPanelIds } from "./plan.js";
+import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, pickTab, queriesPerCube, runAll, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
 import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
-import { createControl } from "./filter-controls.js";
+import { createControl, createSlicer } from "./filter-controls.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
 import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
@@ -258,7 +258,7 @@ async function showDashboard() {
     const sel = selects.get(f.id);
     const pf = parentFilter(f);
     const opts = optionsOf(optionRows.get(f.id) || [], f, pf ? values[pf.id] : "");
-    if (f.type === "multiselect") { controls.get(f.id)?.setOptions(opts); return; }       // its chosen values stay, even ones the options do not hold now
+    if (controls.get(f.id)?.setOptions && (f.type === "multiselect" || slicerOf.has(f.id))) { controls.get(f.id).setOptions(opts); return; }       // its chosen values stay, even ones the options do not hold now
     if (!sel) return;                                                                      // text, number and date filters have no options
     if (values[f.id] && !opts.some((o) => o.value === values[f.id])) values[f.id] = "";
     const groups = new Map();
@@ -275,6 +275,7 @@ async function showDashboard() {
   }
   async function loadOptions(signal) {
     await Promise.all(visibleFilters().filter((f) => !f.type || f.type === "select" || f.type === "multiselect").map(async (f) => {
+      if (slicerOf.has(f.id)) { optionRows.set(f.id, await runAll(ctx.run, slicerQueries(spec, slicerOf.get(f.id), values), signal)); return; }          // narrowed by the other filters
       const measures = optionMeasures(spec, f);
       const dims = [...(f.parent ? [f.parent] : []), f.dimension];
       optionRows.set(f.id, measures.length ? await runAll(ctx.run, queriesPerCube(measures, { dimensions: dims }), signal) : []);
@@ -284,9 +285,15 @@ async function showDashboard() {
   // Where a filter is drawn: the header (dashboard), above one tab's panels (page), or in one panel's card (pane). `filterEls` keeps each control's element so a rebuilt card gets its filter back.
   const filterEls = new Map();
   const tabBars = new Map();
+  /** filter id -> the slicer panel that draws it (a slicer draws a filter in the layout instead of the header, the tab's bar or a card). */
+  const slicerOf = new Map(spec.panels.filter((p) => p.type === "slicer").map((p) => [p.filter, p]));
   function attach(f) {
     const node = filterEls.get(f.id);
     if (!node) return;
+    if (slicerOf.has(f.id)) {
+      panels.get(slicerOf.get(f.id).id)?.root.querySelector(".slicer-body")?.append(node);
+      return;
+    }
     if (f.scope === "page") {
       let host = tabBars.get(f.tab);
       if (!host) { host = el("nav", { class: "filters rfilters tab-filters", "aria-label": t.filters }); tabBars.set(f.tab, host); grids.get(f.tab)?.prepend(host); }
@@ -300,7 +307,7 @@ async function showDashboard() {
       host.append(node);
     } else bar.append(node);
   }
-  ctx.attachPaneFilters = (panelId) => { for (const f of visibleFilters()) if (f.scope === "panel" && f.panel === panelId) attach(f); };
+  ctx.attachPaneFilters = (panelId) => { for (const f of visibleFilters()) if ((slicerOf.get(f.id)?.id ?? (f.scope === "panel" ? f.panel : null)) === panelId) attach(f); };
   function buildFilters() {
     if (!visibleFilters().length) return;
     bar.innerHTML = "";
@@ -315,6 +322,16 @@ async function showDashboard() {
       loadAll();
     };
     for (const f of visibleFilters()) {
+      const slicer = slicerOf.get(f.id);
+      if (slicer && (slicer.display || "list") !== "dropdown" && (!f.type || f.type === "select" || f.type === "multiselect")) {
+        const control = createSlicer(f, t, slicer.display || "list");
+        controls.set(f.id, control);
+        control.onChange = (v) => changed(f, v);
+        control.show(values[f.id]);
+        filterEls.set(f.id, control.el);
+        attach(f);
+        continue;
+      }
       if (f.type && f.type !== "select") {
         const control = createControl(f, t);
         controls.set(f.id, control);
@@ -344,7 +361,7 @@ async function showDashboard() {
       loadAll();
     });
     bar.append(reset);
-    const dashboardBar = visibleFilters().some((f) => !f.scope || f.scope === "dashboard");
+    const dashboardBar = visibleFilters().some((f) => (!f.scope || f.scope === "dashboard") && !slicerOf.has(f.id));
     bar.hidden = !dashboardBar;                                                              // with only page and pane filters the header bar shows when Reset is needed
     ctx.syncReset = () => {
       const needed = visibleFilters().some((f) => (values[f.id] || "") !== (f.default || "")) || !!values[PERIOD];
@@ -360,6 +377,22 @@ async function showDashboard() {
     writeUrl();
     loadAll();
   }
+  /** A slicer's options follow the other filters and the period: after any change they are asked for again (one request at a time, the last one wins). */
+  let slicerCtrl = null, slicerTimer = 0;
+  function refreshSlicers() {
+    if (!slicerOf.size) return;
+    clearTimeout(slicerTimer);
+    slicerTimer = setTimeout(async () => {
+      slicerCtrl?.abort();
+      slicerCtrl = new AbortController();
+      const signal = slicerCtrl.signal;
+      await Promise.all([...slicerOf].map(async ([id, panel]) => {
+        const f = (spec.filters || []).find((x) => x.id === id);
+        if (!f || f.visible === false || !["select", "multiselect"].includes(f.type || "select")) return;
+        try { optionRows.set(id, await runAll(ctx.run, slicerQueries(spec, panel, values), signal)); fillOptions(f); } catch (e) { if (e?.name !== "AbortError") console.warn(`slicer ${panel.id} options failed:`, e?.message || e); }
+      }));
+    }, 120);
+  }
   function writeUrl() {
     const q = new URLSearchParams(location.search);
     // Only what differs from the default is written; a filter cleared while it has a default is written as `?id=` (so a reload does not bring the default back).
@@ -369,6 +402,7 @@ async function showDashboard() {
     if (tabbed && activeTab !== tabs[0].id) q.set("tab", activeTab); else q.delete("tab");
     history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
     ctx.syncReset?.();
+    refreshSlicers();
   }
 
   // ---- loading
@@ -420,6 +454,8 @@ async function showDashboard() {
     const tabHeads = (s) => JSON.stringify(s.tabs ? s.tabs.map((t) => [t.id, t.title]) : null);
     if (rest(next) !== rest(spec) || tabHeads(next) !== tabHeads(spec) || next.panels.length !== spec.panels.length || next.panels.some((p, i) => p.id !== spec.panels[i].id)) return false;
     const changed = next.panels.map((def, i) => [def, i]).filter(([def, i]) => JSON.stringify(def) !== JSON.stringify(spec.panels[i]));
+    const titleOnly = (a, b) => JSON.stringify({ ...a, title: 0 }) === JSON.stringify({ ...b, title: 0 });
+    if (changed.some(([def, i]) => def.type === "slicer" && !titleOnly(def, spec.panels[i]))) return false;                    // moving a filter between the bar and a slicer is left to a reload
     spec.members = next.members;
     spec.cubes = next.cubes;
     const rebuilt = [];

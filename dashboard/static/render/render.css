@@ -346,3 +346,14 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .card-h .pane-filters .field { flex-direction: row; font-size: 11.5px; }
 .card-h .pane-filters .field select { max-width: 150px; padding: 3px 24px 3px 8px; font-size: 12px; }
 .kpis > .pane-filters { grid-column: 1 / -1; margin: 0; }
+
+/* the slicer: a filter drawn in the layout */
+.slicer-panel { display: grid; gap: 8px; align-content: start; }
+.slicer-body .field.fc { display: grid; gap: 4px; }
+.slicer { display: grid; gap: 6px; font-size: 13px; color: var(--ink); }
+.slicer-list { display: grid; gap: 2px; max-height: 260px; overflow: auto; }
+.slicer-item { display: flex; gap: 6px; align-items: center; padding: 3px 2px; cursor: pointer; }
+.slicer-chips .slicer-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: none; }
+.slicer-chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
+.slicer-chip[aria-pressed="true"] { border-color: var(--focus); background: var(--focus); color: #fff; }
+.slicer-chip:focus-visible, .slicer-item:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }

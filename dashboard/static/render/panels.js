@@ -20,7 +20,7 @@ export function readable(e) {
 }
 
 export function createPanel(def, ctx) {
-  const make = { kpi: kpiPanel, timeseries: timeseriesPanel, bar: barPanel, pie: piePanel, treemap: treemapPanel, table: tablePanel, pivot: pivotPanel, text: textPanel }[def.type] || unsupportedPanel;
+  const make = { kpi: kpiPanel, timeseries: timeseriesPanel, bar: barPanel, pie: piePanel, treemap: treemapPanel, table: tablePanel, pivot: pivotPanel, text: textPanel, slicer: slicerPanel }[def.type] || unsupportedPanel;
   const panel = make(def, ctx);
   addTimers(panel.root);
   return panel;
@@ -722,6 +722,13 @@ function pivotPanel(def, ctx) {
 function textPanel(def, ctx) {
   const root = el("section", { class: "card text-panel", "data-panel": def.id });
   root.innerHTML = `${def.title ? `<div class="card-h"><div><h2>${esc(def.title)}</h2></div></div>` : ""}<div class="md">${markdown(def.markdown, esc)}</div>`;
+  return { root, redraw() {}, load: async () => {}, sheet: () => null };
+}
+
+/** A slicer: a filter drawn in the layout. It has no data of its own; the page puts the filter's control into `.slicer-body` (render/main.js `attach`). */
+function slicerPanel(def) {
+  const root = el("section", { class: "card slicer-panel", "data-panel": def.id });
+  root.innerHTML = `${def.title ? `<div class="card-h"><div><h2>${esc(def.title)}</h2></div></div>` : ""}<div class="slicer-body"></div>`;
   return { root, redraw() {}, load: async () => {}, sheet: () => null };
 }
 

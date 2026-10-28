@@ -127,7 +127,7 @@ Either a member string, or an object with these fields.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | id | yes | The panel's id; `layout` and `ignore_filters` refer to it. |
-| `type` | `kpi` \| `timeseries` \| `bar` \| `pie` \| `treemap` \| `table` \| `pivot` \| `text` | yes | `kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot` or `text`. |
+| `type` | `kpi` \| `timeseries` \| `bar` \| `pie` \| `treemap` \| `table` \| `pivot` \| `text` \| `slicer` | yes | `kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot`, `text` or `slicer`. |
 | `title` | string |  | The card heading. |
 | `ignore_filters` | list of id |  | Filters this panel does not apply, for a panel whose measures cannot join to the filter's dimension (an inventory panel under a territory filter). The reserved id `period` is the date range a drill-down sets. |
 
@@ -215,6 +215,13 @@ Exactly one of `measure` or `stack`.
 | `order` | object |  | How the rows are ordered: `{ by: total | label, dir: asc | desc }`. `total` (default, `desc`) orders by the first measure's row total; `label` orders by the row names (`asc` unless said). |
 | `limit` | object |  | `{ rows, columns }`: how many rows (default 25, at most 200) and columns (default 12, at most 24) are shown. The panel says when more exist. |
 | `on_click` | on_click |  | A click on a cell sets the filters named, from the row's and the column's values (each filter's dimension must be one of `rows`, or the `columns` dimension when it is a plain dimension: a time column carries no filter; up to two filters). |
+
+### `slicer`
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `filter` | id | yes | The id of the filter this slicer draws, in the layout instead of the header (or tab bar, or card). The filter keeps its type, scope and default and still narrows the panels it applies to; the slicer only decides where it is drawn. A filter has at most one slicer; it must be visible; a page filter's slicer sits on its own tab. |
+| `display` | `list` \| `chips` \| `dropdown` |  | How a `select` or `multiselect` filter is drawn: `list` (every option shown, ticked or picked; the default), `chips` (the options as buttons) or `dropdown` (the usual control). A text, number or date filter always shows its usual control. The options are narrowed by the other filters that apply to the slicer (the dashboard's, its tab's, its own pane filters) and by a drill-down's period, never by its own filter, and a chosen value stays chosen even when the others narrow it away. |
 
 ### `text`
 

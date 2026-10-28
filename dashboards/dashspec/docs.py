@@ -64,7 +64,7 @@ D = {  # "<section>.<field>": meaning
     "column.rules": "On a measure column of a table (not on a total row). Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal.",
     "on_click.set_filter": "A filter id, or a list of up to two. A click on a mark sets those filters from what was clicked; a second click undoes it and restores what the filters held before. The panel that was clicked does not narrow itself with these filters. See the click rules below.",
     "panel.id": "The panel's id; `layout` and `ignore_filters` refer to it.",
-    "panel.type": "`kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot` or `text`.",
+    "panel.type": "`kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot`, `text` or `slicer`.",
     "panel.title": "The card heading.",
     "panel.ignore_filters": "Filters this panel does not apply, for a panel whose measures cannot join to the filter's dimension (an inventory panel under a territory filter). The reserved id `period` is the date range a drill-down sets.",
     "kpi.measures": "One tile per measure, up to 8. Each tile loads on its own, so a slow measure does not hold back the others.",
@@ -116,6 +116,8 @@ D = {  # "<section>.<field>": meaning
     "pivot.order": "How the rows are ordered: `{ by: total | label, dir: asc | desc }`. `total` (default, `desc`) orders by the first measure's row total; `label` orders by the row names (`asc` unless said).",
     "pivot.limit": "`{ rows, columns }`: how many rows (default 25, at most 200) and columns (default 12, at most 24) are shown. The panel says when more exist.",
     "pivot.on_click": "A click on a cell sets the filters named, from the row's and the column's values (each filter's dimension must be one of `rows`, or the `columns` dimension when it is a plain dimension: a time column carries no filter; up to two filters).",
+    "slicer.filter": "The id of the filter this slicer draws, in the layout instead of the header (or tab bar, or card). The filter keeps its type, scope and default and still narrows the panels it applies to; the slicer only decides where it is drawn. A filter has at most one slicer; it must be visible; a page filter's slicer sits on its own tab.",
+    "slicer.display": "How a `select` or `multiselect` filter is drawn: `list` (every option shown, ticked or picked; the default), `chips` (the options as buttons) or `dropdown` (the usual control). A text, number or date filter always shows its usual control. The options are narrowed by the other filters that apply to the slicer (the dashboard's, its tab's, its own pane filters) and by a drill-down's period, never by its own filter, and a chosen value stays chosen even when the others narrow it away.",
     "text.markdown": "A short note: paragraphs, `**bold**`, `` `code` ``, `[links](https://...)` and `- ` lists. Everything else is shown as text.",
 }
 
