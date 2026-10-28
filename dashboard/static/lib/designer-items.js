@@ -12,6 +12,7 @@ export const LISTS = {
   "timeseries.series": { min: 1, max: 12, formula: true },
   "pivot.measures": { min: 1, max: 3, formula: false },
   "table.columns": { min: 1, max: Infinity, formula: false },             // a table takes any number of fields
+  "bar.stack": { min: 2, max: Infinity, formula: false },                 // a stacked bar: two measures or more
 };
 export const listRule = (panel, name) => LISTS[`${panel.type}.${name}`] || null;
 
@@ -93,7 +94,7 @@ export function addItem(source, panelId, name, spare) {
   const list = (panel[name] ||= []);
   if (list.length >= rule.max) return { problem: "max" };
   const item = { member: spare, label: humanize(spare), format: guessFormat(spare) };
-  list.push(panel.type === "pivot" ? { member: spare, label: item.label, format: item.format } : item);
+  list.push(panel.type === "pivot" ? { member: spare, label: item.label, format: item.format } : name === "stack" ? { member: spare, label: item.label } : item);
   return { source: next };
 }
 
@@ -196,5 +197,76 @@ export function removePieSum(source, panelId, index) {
   const { next, panel } = at(source, panelId, "id");
   if (!panel?.sum || panel.sum.length <= 2 || index >= panel.sum.length) return { problem: "min" };
   panel.sum.splice(index, 1);
+  return { source: next };
+}
+
+// ------------------------------------------------------------------------------------------------------------------ the rest of the panels' own fields
+export const GRAN_ORDER = ["hour", "day", "week", "month", "quarter", "year"];
+/** The drill-down paths the designer offers (`drill` goes from coarse to fine; a week does not fit in a month or quarter). */
+export const DRILL_PRESETS = { off: null, ymd: ["year", "month", "day"], yqm: ["year", "quarter", "month"], ym: ["year", "month"], md: ["month", "day"], wd: ["week", "day"] };
+export const drillKeyOf = (panel) => Object.entries(DRILL_PRESETS).find(([, v]) => JSON.stringify(v) === JSON.stringify(panel.drill ?? null))?.[0] || "custom";
+
+/** Sets a time chart's drill-down path. The chart starts at its first level; a drill-down replaces `granularities` and a click rule (the file may not have both). */
+export function setDrill(source, panelId, key) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "timeseries") return { problem: "item" };
+  const notes = [];
+  const levels = DRILL_PRESETS[key];
+  if (!levels) { delete panel.drill; return { source: next, notes }; }
+  panel.drill = [...levels];
+  panel.granularity = levels[0];
+  if (panel.granularities) { delete panel.granularities; notes.push("granularitiesDropped"); }
+  if (panel.on_click) { delete panel.on_click; notes.push("click"); }
+  return { source: next, notes };
+}
+
+/** The time steps a reader may switch a time chart between (two or more; the chart's own step is always one of them). Fewer than two removes the switch. */
+export function setGranularities(source, panelId, list) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "timeseries") return { problem: "item" };
+  if (panel.drill) return { problem: "drill" };
+  const set = new Set([...list, panel.granularity]);                      // the chart's own step is always one of them
+  if (set.size < 2) { delete panel.granularities; return { source: next }; }
+  panel.granularities = GRAN_ORDER.filter((g) => set.has(g));
+  return { source: next };
+}
+
+/** The filters a panel does not follow (`ignore_filters`); an empty list removes the field. */
+export function setIgnoredFilters(source, panelId, ids) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel) return { problem: "item" };
+  if (ids.length) panel.ignore_filters = [...ids]; else delete panel.ignore_filters;
+  return { source: next };
+}
+
+/** A table's sort: by one field, ascending or descending ("" removes it; the table then sorts by its groups). */
+export function setTableOrder(source, panelId, member, dir) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "table") return { problem: "item" };
+  if (!member) delete panel.order; else panel.order = { [member]: dir === "asc" ? "asc" : "desc" };
+  return { source: next };
+}
+
+/** Switches a bar between one measure and stacked measures (`spare` is the second measure). A stack has no `split` (the file may not have both) and a measure has no stack. */
+export function setBarKind(source, panelId, kind, spare) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "bar") return { problem: "item" };
+  const stacked = !!panel.stack;
+  if (kind === (stacked ? "stack" : "member")) return { source: next };
+  if (kind === "member") { panel.measure = panel.stack[0].member; panel.label = panel.stack[0].label || humanize(panel.measure); delete panel.stack; return { source: next }; }
+  if (!spare) return { problem: "spare" };
+  panel.stack = [{ member: panel.measure, label: panel.label || humanize(panel.measure) }, { member: spare, label: humanize(spare) }];
+  delete panel.measure;
+  delete panel.label;
+  delete panel.split;
+  return { source: next };
+}
+
+/** A pivot's columns: a plain field, or a time field grouped by a step (`{ member, granularity }`); "" makes it plain again. */
+export function setPivotColumnStep(source, panelId, step) {
+  const { next, panel } = at(source, panelId, "id");
+  if (!panel || panel.type !== "pivot") return { problem: "item" };
+  const member = typeof panel.columns === "string" ? panel.columns : panel.columns?.member;
+  panel.columns = step ? { member, granularity: step } : member;
   return { source: next };
 }
