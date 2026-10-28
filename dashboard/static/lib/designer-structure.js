@@ -166,15 +166,45 @@ export function addFilter(source, catalog, dimension) {
   return { source: next, id, notes: ignored.length ? ["ignored"] : [] };
 }
 
-/** Changes a filter's label, dimension or parent (an empty parent removes it). A new dimension re-decides which panels ignore the filter. */
+export const FILTER_TYPES = ["select", "multiselect", "text", "number", "date"];
+const NEEDS = { text: "string", number: "number", date: "time" };              // the dimension type a filter type needs; select and multiselect take any
+
+/** The filter types a dimension of this type (string, number, time) can have. */
+export const typesFor = (dimType) => FILTER_TYPES.filter((t) => !NEEDS[t] || NEEDS[t] === dimType);
+/** The type Cube gives a dimension, from the catalog (undefined when it is not there). */
+export const dimensionTypeOf = (catalog, member) => catalog.flatMap((c) => c.dimensions).find((d) => d.member === member)?.type;
+
+/**
+ * Changes a filter's type. The default is dropped (it was a value of the old type); a `parent` stays only on a select or multiselect; and what cannot work with the new type is
+ * dropped with a note: click rules that set this filter (only a select can be set by a click) and the `parent` of another filter that points at this one.
+ * Returns { source, notes } or { problem: "type" } when the type does not fit the filter's dimension.
+ */
+export function setFilterType(source, catalog, id, type) {
+  const next = clone(source);
+  const filter = (next.filters || []).find((f) => f.id === id);
+  if (!filter) return { problem: "missing" };
+  if (!typesFor(dimensionTypeOf(catalog, filter.dimension)).includes(type)) return { problem: "type" };
+  const notes = [];
+  if (type === "select") delete filter.type; else filter.type = type;
+  if ("default" in filter) { delete filter.default; notes.push("defaultDropped"); }
+  if (type !== "select" && type !== "multiselect" && filter.parent) { delete filter.parent; notes.push("parentDropped"); }
+  if (type !== "select") {
+    for (const p of next.panels) if (p.on_click && [].concat(p.on_click.set_filter || []).includes(id)) { delete p.on_click; notes.push("click"); }
+    for (const g of next.filters) if (g.parent === filter.dimension) { delete g.parent; notes.push("parentDropped"); }
+  }
+  return { source: next, notes: [...new Set(notes)] };
+}
+
+/** Changes a filter's label, dimension, default or parent (an empty one removes it). A new dimension re-decides which panels ignore the filter. */
 export function setFilter(source, catalog, id, field, value) {
   const next = clone(source);
   const filter = next.filters.find((f) => f.id === id);
   if (!filter) throw new Error(`no filter '${id}'`);
-  if ((field === "parent" || field === "label") && !value) delete filter[field]; else filter[field] = value;
+  if ((field === "parent" || field === "label" || field === "default") && !value) delete filter[field]; else filter[field] = value;
   let notes = [];
   if (field === "dimension") {
     notes = ignoreWhereUnreachable(next, catalog, filter).length ? ["ignored"] : [];
+    if (!typesFor(dimensionTypeOf(catalog, value)).includes(filter.type || "select")) { delete filter.type; delete filter.default; notes.push("typeReset"); }        // the type no longer fits the new field
     if (filter.parent === value) delete filter.parent;
     for (const p of next.panels) if (p.on_click) { const ids = [].concat(p.on_click.set_filter || []); if (ids.includes(id)) { delete p.on_click; notes.push("click"); } }       // a click rule names this filter for the old dimension
   }
