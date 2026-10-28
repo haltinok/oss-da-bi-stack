@@ -1138,3 +1138,92 @@ def test_slicer_options_are_queried_with_the_other_filters_and_the_period_but_no
     assert all(all(f["member"] != "products.category" for f in q["filters"]) for q in qs), "its own filter does not"
     period = next(s for s in dumped if s["values"].get("_period"))
     assert any(q["query"].get("timeDimensions") for q in period["panels"]["sl"]), "a drill-down's period narrows them"
+
+
+# ---- cross_filter: a click filters the other panels with no filter written
+def _cross(pid, mode=True, **extra):
+    def f(spec):
+        panel(spec, pid)["cross_filter"] = mode
+        panel(spec, pid).pop("on_click", None)
+        panel(spec, pid).update(extra)
+    return f
+
+
+def test_cross_filter_validates_and_the_compiler_writes_the_filters_and_the_click_rule():
+    spec = copy.deepcopy(GOOD)
+    _cross("top")(spec)                      # a bar by products.name: no explicit filter on that field
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    assert "cross_filter" not in json.dumps(compile_spec(spec, used, CATALOG)["panels"]), "the renderer never sees it"
+    out = compile_spec(spec, used, CATALOG)
+    made = [f for f in out["filters"] if f.get("implicit")]
+    assert [(f["id"], f["dimension"], f["source"]) for f in made] == [("xf_top_1", "products.name", "top")]
+    assert panel(out, "top")["on_click"] == {"set_filter": ["xf_top_1"]}
+    assert not any(f["id"].startswith("xf_") for f in spec["filters"]) and "on_click" not in panel(spec, "top"), "the source is not touched"
+
+
+def test_an_existing_visible_select_filter_on_the_field_is_used_instead():
+    spec = copy.deepcopy(GOOD)
+    _cross("territories")(spec)              # a bar by territories.region, and there is a `region` filter
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    assert not [f for f in out["filters"] if f.get("implicit")]
+    assert panel(out, "territories")["on_click"] == {"set_filter": ["region"]}
+
+
+def test_a_treemap_carries_its_groups_in_order_and_page_scope_makes_page_filters():
+    spec = copy.deepcopy(GOOD)
+    _tabbed(spec)
+    spec["filters"] = [f for f in spec["filters"] if f["id"] not in ("category", "subcategory")]
+    _cross("mix", "page")(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    made = [f for f in out["filters"] if f.get("implicit")]
+    assert [f["dimension"] for f in made] == ["products.category", "products.subcategory"]
+    assert all(f["scope"] == "page" and f["tab"] == "b" for f in made), "the tab of the treemap"
+    assert panel(out, "mix")["on_click"] == {"set_filter": ["xf_mix_1", "xf_mix_2"]}
+
+
+def test_panels_that_cannot_join_to_the_made_filter_ignore_it():
+    spec = copy.deepcopy(GOOD)
+    spec["panels"].append({"id": "stock", "type": "bar", "measure": "inventory_health.stockout_items", "by": "inventory_health.status", "cross_filter": True, "ignore_filters": ["fy", "region", "category", "subcategory"]})
+    spec["layout"].append([{"stock": 12}])
+    spec["roles"] = ["admin"]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert "xf_stock_1" in panel(out, "kpis")["ignore_filters"], "sales panels cannot be combined with an inventory status"
+    assert "xf_stock_1" not in panel(out, "stock").get("ignore_filters", []) and panel(out, "stock")["on_click"] == {"set_filter": ["xf_stock_1"]}
+
+
+@pytest.mark.parametrize("mutate,needle", [
+    (lambda s: panel(s, "top").update(cross_filter=True, on_click={"set_filter": "category"}), "not together with on_click"),
+    (lambda s: panel(s, "top").update(cross_filter="page"), "has no tabs"),
+    (lambda s: panel(s, "top").update(cross_filter="everywhere"), "cross_filter"),
+    (lambda s: panel(s, "trend").update(cross_filter=True), "cross_filter"),
+    (lambda s: panel(s, "kpis").update(cross_filter=True), "cross_filter"),
+    (lambda s: s["filters"].append({"id": "xf_mine", "dimension": "products.name"}), "made by cross_filter"),
+    (lambda s: (panel(s, "lines").update(cross_filter=True, columns=["internet_sales.order_number", "territories.country", "products.name", "internet_sales.revenue"])), "at most 2 dimension columns"),
+], ids=["with-on-click", "page-without-tabs", "bad-value", "time-chart", "kpi", "reserved-id", "table-three-dims"])
+def test_a_cross_filter_that_does_not_make_sense_is_refused(mutate, needle):
+    errors = run(mutate)
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_the_python_queries_and_the_renderers_agree_on_a_dashboard_with_cross_filter(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    _cross("top")(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "x.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        for p in out["panels"]:
+            assert panel_queries(out, p, state["values"]) == state["panels"][p["id"]], f"{p['id']} under {state['values']}"
+    narrowed = next(s for s in dumped if s["values"].get("xf_top_1") == "y")
+    assert not any(f["member"] == "products.name" for q in narrowed["panels"]["top"] for f in q["query"]["filters"]), "the clicked panel keeps showing every mark"
+    assert any(f["member"] == "products.name" for q in narrowed["panels"]["trend"] for f in q["query"]["filters"]), "the others are narrowed"

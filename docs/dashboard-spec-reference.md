@@ -155,6 +155,7 @@ Exactly one of `measure` or `stack`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
+| `cross_filter` | cross_filter |  | `true`: a click on a mark filters the other panels, with no filter to write. The page adds a filter for each field the mark carries (the bar's or pie's `by`; a treemap's group; a table row's dimension columns, at most two) and the panel's own click rule; a visible `select` filter that already exists on that field is used instead. `page` (needs `tabs`): only the panels of this panel's tab are filtered. A panel it cannot join to is skipped. Not together with `on_click`. The chosen values show in a bar above the panels with a remove button on each (and in the address), and a click on the chosen mark again undoes it. |
 | `measure` | member (`cube.name`) |  | The measure ranked. Use this or `stack`. |
 | `label` | string |  | The measure's name in tooltips, the Table view and Excel (with `measure`). Default: the measure's name, capitalised (English): write it in your language. |
 | `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
@@ -171,6 +172,7 @@ Exactly one of `measure` or `stack`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
+| `cross_filter` | cross_filter |  | `true`: a click on a mark filters the other panels, with no filter to write. The page adds a filter for each field the mark carries (the bar's or pie's `by`; a treemap's group; a table row's dimension columns, at most two) and the panel's own click rule; a visible `select` filter that already exists on that field is used instead. `page` (needs `tabs`): only the panels of this panel's tab are filtered. A panel it cannot join to is skipped. Not together with `on_click`. The chosen values show in a bar above the panels with a remove button on each (and in the address), and a click on the chosen mark again undoes it. |
 | `measure` | member (`cube.name`) |  | The measure each slice stands for. Use this or `sum`. |
 | `sum` | list of member (`cube.name`) (2+) |  | Two or more measures added together, typically the same measure of both sales facts (each is queried separately and the slices are added up by name). Needs a `label`. Each cube contributes its top 100 slices. |
 | `label` | string |  | The measure's name in the tooltip, the Table view and Excel. Default: the measure's name, capitalised (English): write it in your language. |
@@ -185,6 +187,7 @@ Exactly one of `measure` or `stack`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
+| `cross_filter` | cross_filter |  | `true`: a click on a mark filters the other panels, with no filter to write. The page adds a filter for each field the mark carries (the bar's or pie's `by`; a treemap's group; a table row's dimension columns, at most two) and the panel's own click rule; a visible `select` filter that already exists on that field is used instead. `page` (needs `tabs`): only the panels of this panel's tab are filtered. A panel it cannot join to is skipped. Not together with `on_click`. The chosen values show in a bar above the panels with a remove button on each (and in the address), and a click on the chosen mark again undoes it. |
 | `measure` | member (`cube.name`) | yes | The measure that sets each tile's area. |
 | `label` | string |  | The measure's name in tooltips, the Table view and Excel. Default: the measure's name, capitalised (English). |
 | `group` | list of member (`cube.name`) (1+) | yes | One dimension (tiles) or two (tiles grouped under headings, as category and subcategory). |
@@ -196,6 +199,7 @@ Exactly one of `measure` or `stack`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
+| `cross_filter` | cross_filter |  | `true`: a click on a mark filters the other panels, with no filter to write. The page adds a filter for each field the mark carries (the bar's or pie's `by`; a treemap's group; a table row's dimension columns, at most two) and the panel's own click rule; a visible `select` filter that already exists on that field is used instead. `page` (needs `tabs`): only the panels of this panel's tab are filtered. A panel it cannot join to is skipped. Not together with `on_click`. The chosen values show in a bar above the panels with a remove button on each (and in the address), and a click on the chosen mark again undoes it. |
 | `columns` | list of column (1+) | yes | The columns, up to 20: members or `{ member, label, format }`. With measures, the dimension columns are the grouping. |
 | `order` | object |  | The order the table opens in: `{ member: asc | desc }`, members that are columns. Without it the rows are sorted by every dimension column, left to right, ascending. Viewers re-sort by clicking a column title (measures: descending, ascending, none; dimensions: ascending, descending, none; none is the dimension order above). |
 | `limit` | integer 1-1000 |  | How many rows. Default 100. |

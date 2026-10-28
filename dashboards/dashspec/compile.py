@@ -1,8 +1,11 @@
 """Compile a validated spec to the JSON the renderer loads: the layout (or each tab's) as explicit rows, plus the type of every member used."""
 import copy
 
+from .crossfilter import expand
+
 
 def compile_spec(spec, used, catalog=None):
+    spec = expand(spec, used, catalog)            # `cross_filter` on a panel becomes filters and an `on_click` (dashspec/crossfilter.py)
     out = copy.deepcopy({k: v for k, v in spec.items() if k not in ("layout", "tabs")})
     for panel in out["panels"]:
         if panel["type"] == "table":     # every column as { member, label?, format? }, so the renderer reads one shape
