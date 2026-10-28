@@ -163,7 +163,9 @@ async function showDashboard() {
 
   const qs = new URLSearchParams(location.search);
   // A filter opens at its `default` unless the address says otherwise (an address with `?id=` and nothing after it means "cleared", see writeUrl).
-  const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, qs.has(f.id) ? qs.get(f.id) : f.default || ""]));
+  // A hidden filter always holds its default, whatever the address says.
+  const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, f.visible !== false && qs.has(f.id) ? qs.get(f.id) : f.default || ""]));
+  const visibleFilters = () => (spec.filters || []).filter((f) => f.visible !== false);
   values[PERIOD] = parsePeriod(qs.get("period")) ? qs.get("period") : "";             // the date range a drill-down sets (other panels follow it)
   const drills = Object.fromEntries(spec.panels.filter((p) => p.drill).map((p) => [p.id, (qs.get(`drill_${p.id}`) || "").split(",").filter((b) => /^\d{4}-\d{2}-\d{2}/.test(b))]));
   const clearedHooks = [];
@@ -272,15 +274,34 @@ async function showDashboard() {
     sel.classList.toggle("set", !!values[f.id]);
   }
   async function loadOptions(signal) {
-    await Promise.all((spec.filters || []).filter((f) => !f.type || f.type === "select" || f.type === "multiselect").map(async (f) => {
+    await Promise.all(visibleFilters().filter((f) => !f.type || f.type === "select" || f.type === "multiselect").map(async (f) => {
       const measures = optionMeasures(spec, f);
       const dims = [...(f.parent ? [f.parent] : []), f.dimension];
       optionRows.set(f.id, measures.length ? await runAll(ctx.run, queriesPerCube(measures, { dimensions: dims }), signal) : []);
     }));
-    for (const f of spec.filters || []) fillOptions(f);
+    for (const f of visibleFilters()) fillOptions(f);
   }
+  // Where a filter is drawn: the header (dashboard), above one tab's panels (page), or in one panel's card (pane). `filterEls` keeps each control's element so a rebuilt card gets its filter back.
+  const filterEls = new Map();
+  const tabBars = new Map();
+  function attach(f) {
+    const node = filterEls.get(f.id);
+    if (!node) return;
+    if (f.scope === "page") {
+      let host = tabBars.get(f.tab);
+      if (!host) { host = el("nav", { class: "filters rfilters tab-filters", "aria-label": t.filters }); tabBars.set(f.tab, host); grids.get(f.tab)?.prepend(host); }
+      host.append(node);
+    } else if (f.scope === "panel") {
+      const head = panels.get(f.panel)?.root.querySelector(".card-h");
+      if (!head) return;
+      let host = head.querySelector(".pane-filters");
+      if (!host) { host = el("div", { class: "pane-filters" }); head.querySelector(".spacer")?.before(host); }
+      host.append(node);
+    } else bar.append(node);
+  }
+  ctx.attachPaneFilters = (panelId) => { for (const f of visibleFilters()) if (f.scope === "panel" && f.panel === panelId) attach(f); };
   function buildFilters() {
-    if (!(spec.filters || []).length) return;
+    if (!visibleFilters().length) return;
     bar.innerHTML = "";
     /** The reader changed filter `f` to `value` (the bar, either kind of control). */
     const changed = (f, value) => {
@@ -292,49 +313,56 @@ async function showDashboard() {
       writeUrl();
       loadAll();
     };
-    for (const f of spec.filters) {
+    for (const f of visibleFilters()) {
       if (f.type && f.type !== "select") {
         const control = createControl(f, t);
         controls.set(f.id, control);
         control.onChange = (v) => changed(f, v);
         control.show(values[f.id]);
-        bar.append(control.el);
+        filterEls.set(f.id, control.el);
+        attach(f);
         continue;
       }
       const sel = el("select", { "aria-label": f.label || f.id });
       selects.set(f.id, sel);
       const field = el("label", { class: "field" }, `${esc(f.label || f.id)} `);
       field.append(sel);
-      bar.append(field);
+      filterEls.set(f.id, field);
+      attach(f);
       sel.addEventListener("change", () => changed(f, sel.value));
     }
     const reset = el("button", { class: "reset", type: "button", hidden: "" }, esc(t.reset));
     reset.addEventListener("click", () => {
       for (const k of Object.keys(saved)) delete saved[k];
-      for (const f of spec.filters) values[f.id] = f.default || "";                         // Reset goes back to where the page opened
+      for (const f of visibleFilters()) values[f.id] = f.default || "";                     // Reset goes back to where the page opened (a hidden filter never moved)
       values[PERIOD] = "";
       clearedHooks.forEach((h) => h());
       renderPeriod();
-      for (const f of spec.filters) { fillOptions(f); showValue(f); }
+      for (const f of visibleFilters()) { fillOptions(f); showValue(f); }
       writeUrl();
       loadAll();
     });
     bar.append(reset);
-    bar.hidden = false;
-    ctx.syncReset = () => { reset.hidden = !(spec.filters.some((f) => (values[f.id] || "") !== (f.default || "")) || !!values[PERIOD]); };
+    const dashboardBar = visibleFilters().some((f) => !f.scope || f.scope === "dashboard");
+    bar.hidden = !dashboardBar;                                                              // with only page and pane filters the header bar shows when Reset is needed
+    ctx.syncReset = () => {
+      const needed = visibleFilters().some((f) => (values[f.id] || "") !== (f.default || "")) || !!values[PERIOD];
+      reset.hidden = !needed;
+      bar.hidden = !(dashboardBar || needed);
+    };
   }
   /** Set filters from a patch { filterId: value } (a click on a panel): children's options follow, the selects show it, the URL records it. */
   function apply(patch) {
     Object.assign(values, patch);
-    for (const f of spec.filters) if (parentFilter(f) && parentFilter(f).id in patch) fillOptions(f);
-    for (const f of spec.filters) showValue(f);
+    for (const f of visibleFilters()) if (parentFilter(f) && parentFilter(f).id in patch) fillOptions(f);
+    for (const f of visibleFilters()) showValue(f);
     writeUrl();
     loadAll();
   }
   function writeUrl() {
     const q = new URLSearchParams(location.search);
     // Only what differs from the default is written; a filter cleared while it has a default is written as `?id=` (so a reload does not bring the default back).
-    for (const f of spec.filters || []) { const v = values[f.id] || ""; if (v === (f.default || "")) q.delete(f.id); else q.set(f.id, v); }
+    for (const f of spec.filters || []) { const v = values[f.id] || ""; if (f.visible === false || v === (f.default || "")) q.delete(f.id); else q.set(f.id, v); }
     if (values[PERIOD]) q.set("period", values[PERIOD]); else q.delete("period");
     for (const [id, path] of Object.entries(drills)) { if (path.length) q.set(`drill_${id}`, path.join(",")); else q.delete(`drill_${id}`); }
     if (tabbed && activeTab !== tabs[0].id) q.set("tab", activeTab); else q.delete("tab");
@@ -403,6 +431,7 @@ async function showDashboard() {
       made.root.style.gridColumn = previous.style.gridColumn;
       previous.replaceWith(made.root);
       panels.set(def.id, made);
+      ctx.attachPaneFilters?.(def.id);
       rebuilt.push(made);
     }
     const moved = JSON.stringify([next.layout, next.tabs]) !== JSON.stringify([spec.layout, spec.tabs]);

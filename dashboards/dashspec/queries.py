@@ -2,7 +2,7 @@
 `dashspec lint` asks Cube about these, so they must be the queries the page really sends; dashboards/tests runs the JS builders and
 compares, on every checked-in dashboard and several filter states."""
 
-from .filters import default_env, to_cube
+from .filters import applies, default_env, effective_value, to_cube
 
 DEFAULT_LIMIT = {"bar": 10, "table": 100}
 PIVOT_LIMIT = {"rows": 25, "columns": 12}
@@ -19,7 +19,8 @@ def active_filters(spec, values, panel, env=None):
     own = [] if clicked is None else [clicked] if isinstance(clicked, str) else list(clicked)
     ignored = set(panel.get("ignore_filters", [])) | set(own)
     env = env or default_env(spec)
-    return [c for f in spec.get("filters", []) if values.get(f["id"]) not in (None, "") and f["id"] not in ignored for c in to_cube(f, values[f["id"]], env)]
+    return [c for f in spec.get("filters", []) if f["id"] not in ignored and applies(spec, f, panel.get("id")) and effective_value(f, values) not in (None, "")
+            for c in to_cube(f, effective_value(f, values), env)]
 
 
 def term_members(m):

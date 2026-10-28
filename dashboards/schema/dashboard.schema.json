@@ -115,6 +115,10 @@
         "label": { "type": "string" },
         "type": { "enum": ["select", "multiselect", "text", "number", "date"] },
         "default": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "scope": { "enum": ["dashboard", "page", "panel"] },
+        "tab": { "$ref": "#/$defs/id" },
+        "panel": { "$ref": "#/$defs/id" },
+        "visible": { "type": "boolean" },
         "parent": { "$ref": "#/$defs/member" }
       }
     },
