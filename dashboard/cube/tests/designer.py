@@ -267,7 +267,7 @@ with sync_playwright() as p:
     page.wait_for_function("(n) => document.querySelectorAll('#dz-filters .dz-filter').length > n", arg=filters_before, timeout=20000)
     settled(page)
     added_filter = yaml_of(page)["filters"][-1]
-    check(added_filter["dimension"] == "products.color" and page.locator("#filters select").count() == filters_before + 1, "a new filter appears in the page's filter bar")
+    check(added_filter["dimension"] == "products.color" and page.locator("#filters .field").count() == filters_before + 1, "a new filter appears in the page's filter bar")
     page.click(f'[data-rm-filter="{added_filter["id"]}"]')
     page.wait_for_function("(n) => document.querySelectorAll('#dz-filters .dz-filter').length === n", arg=filters_before, timeout=20000)
     settled(page)
@@ -707,19 +707,22 @@ with sync_playwright() as p:
     card = f'.dz-filter:has(h4:text-is("{cat["id"]}"))'
     opts = page.locator(f'{card} [data-path="type"] option').evaluate_all("os => os.map((o) => o.value)")
     check(opts == ["select", "multiselect", "text"], f"a text dimension offers select, multiselect and text ({opts})")
+    check(cat.get("type") == "multiselect", "a new filter is Several values from the start")
+    page.wait_for_selector(f"{card} .slicer-item", timeout=15000)
     with changes(page):
-        page.select_option(f'{card} [data-path="type"]', "multiselect")
+        page.locator(f"{card} .slicer-item input").nth(0).check()
     settled(page)
-    check(next(f for f in filters() if f["id"] == cat["id"]).get("type") == "multiselect", "choosing Several values sets the type")
+    page.wait_for_selector(f"{card} .slicer-item", timeout=15000)
     with changes(page):
-        page.fill(f'{card} [data-path="default"]', "Bikes, Clothing")
-        page.press(f'{card} [data-path="default"]', "Tab")
+        page.locator(f"{card} .slicer-item input").nth(1).check()
     settled(page)
-    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "in:Bikes,Clothing", "a multiselect's default is typed as values and stored as in:Bikes,Clothing")
+    two = next(f for f in filters() if f["id"] == cat["id"]).get("default", "")
+    check(two.startswith("in:") and two.count(",") == 1, f"a multiselect's default is ticked from the real values and stored as in:a,b ({two})")
+    page.wait_for_selector(f"{card} .fc-ex", timeout=15000)
     with changes(page):
-        page.check(f'{card} .dz-except input')
+        page.locator(f"{card} .fc-ex input").check()
     settled(page)
-    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "not:Bikes,Clothing", "'All except these' makes it not:...")
+    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "not:" + two[3:], "'All except the selected' makes it not:...")
     page.wait_for_selector("#filters .fc", timeout=10000)
     check(page.locator('#filters .fc .fc-btn').first.inner_text() == "all but 2", "and the page opens with that default ('all but 2')")
     with changes(page):
@@ -789,19 +792,19 @@ with sync_playwright() as p:
     settled(page)
     now = next(f for f in filters() if f["id"] == fid)
     check(now.get("scope") == "page" and now.get("tab") == "tab_1" and page.locator(f'{fcard} [data-path="tab"]').count() == 1, "One tab sets scope page and the first tab")
-    check(page.locator("#tabpanel-tab_1 .tab-filters select").count() == 1, "and the page draws it above that tab's panels")
+    check(page.locator("#tabpanel-tab_1 .tab-filters .field").count() == 1, "and the page draws it above that tab's panels")
     page.click(f'{fcard} [data-path="visible"]')
     page.wait_for_selector("#dz-msg:not([hidden])", timeout=10000)
     check("default" in page.inner_text("#dz-msg").lower(), "hiding a filter that has no default is refused, saying why")
+    page.wait_for_selector(f"{fcard} .slicer-item", timeout=15000)
     with changes(page):
-        page.fill(f'{fcard} [data-path="default"]', "Bikes")
-        page.press(f'{fcard} [data-path="default"]', "Tab")
+        page.locator(f"{fcard} .slicer-item input").nth(0).check()
     settled(page)
     with changes(page):
         page.click(f'{fcard} [data-path="visible"]')
     settled(page)
     check(next(f for f in filters() if f["id"] == fid).get("visible") is False and "hidden" in page.inner_text(f"{fcard} h4").lower(), "with a default it can be hidden, and the card says so")
-    check(page.locator("#tabpanel-tab_1 .tab-filters select").count() == 0, "a hidden filter has no control on the page")
+    check(page.locator("#tabpanel-tab_1 .tab-filters .field").count() == 0, "a hidden filter has no control on the page")
     page.once("dialog", lambda d: d.accept())
     with changes(page):
         page.click("#dz-onepage")
@@ -896,6 +899,32 @@ with sync_playwright() as p:
         page.select_option('#designer [data-path="cross_filter"]', "page")
     settled(page)
     check(next(x for x in yaml_of(page)["panels"] if x["id"] == bar2).get("cross_filter") == "page", "choosing this tab only writes cross_filter: page")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
+    # ---- a new filter starts as several values, and its default is picked from the real values
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    page.select_option("#dz-newfilter", "products.category")
+    with changes(page):
+        page.click("#dz-addfilter")
+    settled(page)
+    nf = next(f for f in yaml_of(page).get("filters", []) if f["dimension"] == "products.category")
+    check(nf.get("type") == "multiselect", "a filter added in the designer starts as Several values")
+    ncard = f'.dz-filter:has(h4:text-is("{nf["id"]}"))'
+    page.wait_for_selector(f"{ncard} .slicer-item", timeout=15000)
+    check(page.locator(f"{ncard} .slicer-item").count() >= 3, "its default value is picked from a list of the real values")
+    with changes(page):
+        page.locator(f"{ncard} .slicer-item input").nth(0).check()
+    settled(page)
+    page.wait_for_selector(f"{ncard} .slicer-item", timeout=15000)
+    with changes(page):
+        page.locator(f"{ncard} .slicer-item input").nth(1).check()
+    settled(page)
+    d = next(f for f in yaml_of(page)["filters"] if f["id"] == nf["id"]).get("default", "")
+    check(d.startswith("in:") and d.count(",") == 1, f"ticking two values makes the default in:a,b ({d})")
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
