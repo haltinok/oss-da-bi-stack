@@ -587,6 +587,27 @@ with sync_playwright() as p:
     check(big.startswith("data:image/") and len(big) <= 20000, f"a large noisy picture is shrunk until it fits ({len(big)} characters, {big[:15]})")
     ctx.close()
 
+    # ---- a builder service that does not send the source back (built before the designer): a clear message, not an empty drawer
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    ctx.close()
+    ctx = browser.new_context(viewport={"width": 1440, "height": 1500})
+    ctx.add_init_script(ms.SEED + f"localStorage.setItem('builder.draft', {json.dumps(kept_draft)}); sessionStorage.setItem('designer', JSON.stringify({{on: true, panel: null}}));")
+    page = ctx.new_page()
+    page.problems = []
+    page.on("pageerror", lambda e: page.problems.append(str(e)))
+
+    def old_validate(route):
+        r = json.loads(route.fetch().text())
+        r.pop("source", None)
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(r))
+    page.route("**/validate", old_validate)
+    page.goto(f"{BASE}/d/draft")
+    page.wait_for_selector("#bd-design-note", timeout=20000)
+    check("out of date" in page.inner_text("#bd-design-note") and page.locator("#bd-design").is_disabled() and page.locator("#designer").is_hidden(), "a builder that does not send the source back gets a message next to the button, and the drawer does not open empty")
+    check(not page.problems, f"and no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
