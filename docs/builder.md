@@ -32,7 +32,7 @@ with Turkish labels) and the role's catalog: roughly 7,500-10,000 tokens in (the
 **None of the three has been run against its real API here** (no keys); the wire format is tested against a fake compatible server through the real SDK.
 
 **Where the provider is:** Anthropic's API and DeepSeek's hosted API are outside your network. DeepSeek is operated from China; the request text and the catalog (names and descriptions, never
-data) would go there. For a bank that needs InfoSec's approval like any external service; a model you host yourself behind a compatible gateway keeps everything inside.
+data) would go there. Treat it like any external service: check it against your own data policy first. A model you host yourself behind a compatible gateway keeps everything inside.
 
 ## What leaves your network (LLM mode only)
 | Sent to the Anthropic API | Never sent |
@@ -41,7 +41,7 @@ data) would go there. For a bank that needs InfoSec's approval like any external
 | The spec format guide, and one valid example composed for the user's role | Other roles' catalogs: a rep's catalog has no profit members and no inventory |
 | The catalog the role may read: cube, measure and dimension **names, types and descriptions**, and which cubes join | Tokens, passwords, the API key of anyone else, anything from `.env` except the key itself |
 
-Member names and descriptions describe the bank's data model, so **demo data only until InfoSec has approved real data** ([`SECURITY.md`](../SECURITY.md)). Without
+Member names and descriptions describe your data model, so **use demo data only until you are happy to send those names to the provider** ([`SECURITY.md`](../SECURITY.md)). Without
 `ANTHROPIC_API_KEY` nothing leaves: the rule-based stand-in runs inside the service.
 
 ## Why a draft is safe to show

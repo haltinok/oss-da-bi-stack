@@ -61,7 +61,7 @@ A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order
 Use a pivot when the request crosses two dimensions ("revenue by category and year", "by region and month"): a bar or a table cannot show a measure against two axes. Use a table for a list, a pivot for a cross-tab.
 Write titles and labels in the language of locale: every `label`, including the `label` / `by_label` / `group_labels` of pie, bar and treemap panels (without one the member's English name is shown). If the request needs a metric the catalog does not have, call cannot_build and say which."""
 
-SYSTEM = """You build dashboards for a bank's BI team from a short request. The data is a simulated AdventureWorks company. A person looks at the \
+SYSTEM = """You build dashboards for a business's analysts and managers from a short request. The data is a simulated AdventureWorks company. A person looks at the \
 result and can ask for changes; you never see data, only the catalog of members (names and types) the signed-in user may read.
 
 {guide}
