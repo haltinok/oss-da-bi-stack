@@ -112,6 +112,7 @@ Either a member string, or an object with these fields.
 | `member` | member (`cube.name`) | yes | A Cube measure or dimension. |
 | `label` | string |  | The column heading. Default: the member's name, capitalised. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How the value is shown. A measure defaults to `number`; a dimension is shown as text unless it has a format (a numeric dimension, `int`) or is a time dimension (shown as a date and time). |
+| `aggregate` | aggregate |  | Makes a dimension column a **value** summarised over the rows of each group, as Power BI does: `sum` and `avg` (number fields only), `max`, `min`, `count` (rows with a value), `count_distinct`, `first` and `last` (in the order of the cube's primary key). Dimension columns without it are the groups. A measure has its aggregation built in and cannot have this; all aggregated fields come from one cube, which needs a primary key; the page fetches up to 20,000 rows to aggregate and says when it reaches that. The default label is e.g. `Sum Unit cost`. |
 | `rules` | list of rules (1-4) |  | On a measure column of a table (not on a total row). Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal. |
 
 ### `on_click`

@@ -89,6 +89,7 @@
     "member": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" },
     "format": { "enum": ["money", "int", "decimal", "pct", "number"] },
     "cross_filter": { "enum": [true, "page"] },
+    "aggregate": { "enum": ["sum", "max", "min", "avg", "count", "count_distinct", "first", "last"] },
     "rules": {
       "type": "array",
       "minItems": 1,
@@ -155,6 +156,7 @@
             "member": { "$ref": "#/$defs/member" },
             "label": { "type": "string" },
             "format": { "$ref": "#/$defs/format" },
+            "aggregate": { "$ref": "#/$defs/aggregate" },
             "rules": { "$ref": "#/$defs/rules" }
           }
         }

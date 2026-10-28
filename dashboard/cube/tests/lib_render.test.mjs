@@ -119,7 +119,7 @@ test("optionMeasures picks one measure per cube from the panels that apply the f
 
 test("panelMeasures and tableParts split a table's members by kind", () => {
   assert.deepEqual(panelMeasures(spec.panels[0], spec.members), ["a.rev", "b.rev"]);
-  assert.deepEqual(tableParts(spec.panels[1], spec.members), { measures: ["a.rev"], dimensions: ["p.name"] });
+  assert.deepEqual(tableParts(spec.panels[1], spec.members), { measures: ["a.rev"], dimensions: ["p.name"], values: [] });
 });
 
 test("colorOf maps theme names to CSS variables, passes hex through and cycles a palette", () => {

@@ -1057,6 +1057,52 @@ with sync_playwright() as p:
     check(page.locator("#selection-bar").is_hidden(), "and on tab a, which it does not filter, they are not shown")
     ctx.close()
 
+    # a table with aggregated fields (Power BI style): groups, values summarised over the rows of each group, a total row of its own
+    def compiled_with_aggregates():
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-overview.yml").read_text())
+        src["roles"] = ["admin"]
+        src["panels"].append({"id": "inv", "type": "table", "title": "Stock by status", "totals": "footer", "limit": 10,
+                              "ignore_filters": ["fy", "region", "category", "subcategory"],
+                              "columns": ["inventory_health.status", {"member": "inventory_health.on_hand", "aggregate": "sum"}, {"member": "inventory_health.unit_cost", "aggregate": "avg", "label": "Average cost"},
+                                          {"member": "inventory_health.vendor_name", "aggregate": "count_distinct"}, {"member": "inventory_health.replenishment_type", "aggregate": "first", "label": "First type"}]})
+        src["layout"].append([{"inv": 12}])
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        out = _compile(src, used, catalog)
+        out["roles"] = ["admin", "manager"]
+        return out
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_aggregates()))])
+    settled(page)
+    inv = '[data-panel="inv"]'
+    page.wait_for_selector(f"{inv} table", timeout=20000)
+    heads = page.locator(f"{inv} thead th").all_inner_texts()
+    clean = [h.replace("↑", "").replace("↓", "").strip() for h in heads]
+    check(clean == ["Status", "Sum On hand", "Average cost", "Count distinct Vendor name", "First type"], f"the group column and the four aggregated fields, named for what they do ({clean})")
+    asked = [q for q in sent(page) if q.get("dimensions") and "inventory_health.key" in q["dimensions"]]
+    check(len(asked) == 1 and asked[0]["order"] == {"inventory_health.key": "asc"} and asked[0]["limit"] == 20000 and "measures" not in asked[0], "the rows to aggregate are asked for once, by the cube's primary key, with no measure")
+    rows_dom = page.locator(f"{inv} tbody tr")
+    expected = ms.fake_rows(asked[0])
+    statuses = list(dict.fromkeys(r["inventory_health.status"] for r in expected))
+    check(rows_dom.count() == len(statuses), f"one row per status ({rows_dom.count()})")
+    cells = rows_dom.first.locator("td").all_inner_texts()
+    mine = [r for r in expected if r["inventory_health.status"] == cells[0]]
+    want_sum = sum(float(r["inventory_health.on_hand"]) for r in mine)
+    check(cells[1].replace(",", "") == f"{want_sum:g}", f"the first group's Sum matches an independent sum over its rows ({cells[1]} vs {want_sum:g})")
+    avg = sum(float(r["inventory_health.unit_cost"]) for r in mine) / len(mine)
+    check(abs(float(cells[2].replace(",", "")) - round(avg, 2)) < 0.011, f"and its Avg ({cells[2]} vs {avg:.2f})")
+    check(cells[3] == "3" and cells[4] == mine[0]["inventory_health.replenishment_type"], f"Count distinct and First ({cells[3]}, {cells[4]})")
+    foot = page.locator(f"{inv} tfoot tr.tot td").all_inner_texts()
+    all_sum = sum(float(r["inventory_health.on_hand"]) for r in expected)
+    check(foot[1].replace(",", "") == f"{all_sum:g}", f"the total row aggregates over every row ({foot[1]} vs {all_sum:g})")
+    page.locator(f"{inv} th.sortable", has_text="Sum On hand").click()
+    settled(page)
+    vals = [float(x.replace(",", "")) for x in page.locator(f"{inv} tbody tr td:nth-child(2)").all_inner_texts()]
+    check(vals == sorted(vals, reverse=True), f"a click on an aggregated column's title sorts by it, biggest first ({vals})")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())

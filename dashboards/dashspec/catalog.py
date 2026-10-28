@@ -58,6 +58,7 @@ def from_model(model_dir):
                 "measures": {m["name"]: m["type"] for m in cube.get("measures", [])},
                 "dimensions": {d["name"]: d["type"] for d in cube.get("dimensions", [])},
                 "joins": {j["name"] for j in cube.get("joins", [])},
+                "primary_key": next((d["name"] for d in cube.get("dimensions", []) if d.get("primary_key")), None),         # what tells one row of the cube from another
                 "description": cube.get("description", ""),
                 "docs": {m["name"]: m["description"] for m in members if m.get("description")},
             }
@@ -78,6 +79,7 @@ def from_cube(url, token):
             "measures": {short(m): m["type"] for m in c["measures"]},
             "dimensions": {short(d): d["type"] for d in c["dimensions"]},
             "joins": None,
+            "primary_key": next((short(d) for d in c["dimensions"] if d.get("primaryKey")), None),
             "description": c.get("description", ""),
             "docs": {short(m): m["description"] for m in [*c["measures"], *c["dimensions"]] if m.get("description")},
         }

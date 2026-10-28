@@ -41,9 +41,19 @@ def per_cube(measures, base=None):
     return [{"cube": c, "query": {**(base or {}), "measures": ms}} for c, ms in groups.items()]
 
 
+AGGREGATE_LIMIT = 20000            # rows fetched to aggregate a table's value fields client-side; the page says so when it hit this
+
+
 def table_parts(panel, members):
-    cols = [c["member"] if isinstance(c, dict) else c for c in panel["columns"]]
-    return ([m for m in cols if members.get(m, {}).get("kind") == "measure"], [m for m in cols if members.get(m, {}).get("kind") != "measure"])
+    """(measures, key dimensions) of a table. A dimension column with `aggregate` is a value, not a key: see table_values."""
+    cols = [c if isinstance(c, dict) else {"member": c} for c in panel["columns"]]
+    keys = [c["member"] for c in cols if members.get(c["member"], {}).get("kind") != "measure" and "aggregate" not in c]
+    return ([c["member"] for c in cols if members.get(c["member"], {}).get("kind") == "measure"], keys)
+
+
+def table_values(panel):
+    """The aggregated dimension columns of a table: [(member, aggregate)]."""
+    return [(c["member"], c["aggregate"]) for c in panel["columns"] if isinstance(c, dict) and "aggregate" in c]
 
 
 PERIOD = "_period"
@@ -225,13 +235,22 @@ def panel_queries(spec, panel, values):
         return pivot_queries(spec, panel, values)
     if kind == "table":
         measures, dims = table_parts(panel, spec["members"])
+        agg = table_values(panel)
         order = dict(panel.get("order") or {}) or {d: "asc" for d in dims}   # the author's order, else every dimension ascending
         limit = panel.get("limit", DEFAULT_LIMIT["table"])
         base = {"dimensions": dims, "filters": filters}
-        if not measures:
+        out = []
+        if measures:
+            single = len({cube_of(m) for m in measures}) <= 1 and not agg           # with aggregated fields the rows are merged and ordered here, not in Cube
+            out += follow_period(spec, panel, values, per_cube(measures, {**base, **({"order": order, "limit": limit} if single else {})}))
+        elif not agg:
             return [{"cube": "", "query": {**base, "order": order, "limit": limit}}]
-        single = len({cube_of(m) for m in measures}) <= 1
-        rows = follow_period(spec, panel, values, per_cube(measures, {**base, **({"order": order, "limit": limit} if single else {})}))
-        total = follow_period(spec, panel, values, per_cube(measures, {"filters": filters})) if panel.get("totals") else []
-        return rows + total
+        if agg:                                                                   # the rows the value fields are aggregated over: one per row of their cube, tagged `agg:<cube>`
+            cube = cube_of(agg[0][0])
+            key = spec["rowKeys"][cube]
+            fields = list(dict.fromkeys(m for m, _ in agg))
+            out.append({"cube": f"agg:{cube}", "query": {"dimensions": [*dims, key, *fields], "filters": filters, "order": {key: "asc"}, "limit": AGGREGATE_LIMIT}})
+        if panel.get("totals") and measures:
+            out += follow_period(spec, panel, values, per_cube(measures, {"filters": filters}))
+        return out
     return []
