@@ -203,6 +203,38 @@ def _filter_type_errors(w, f, filters, used):
     return errs
 
 
+def _filter_scope_errors(w, f, spec):
+    """Where a filter applies (`scope`, with `tab` or `panel`) and whether the reader sees it (`visible`)."""
+    scope = f.get("scope", "dashboard")
+    errs = []
+    tabs = [t["id"] for t in spec.get("tabs", [])]
+    panels = {p["id"]: p for p in spec["panels"]}
+    if scope == "page":
+        if not tabs:
+            errs.append(f"{w}: scope: a page filter belongs to a tab, and this dashboard has no tabs (use scope: dashboard)")
+        elif "tab" not in f:
+            errs.append(f"{w}: tab: a page filter must say which tab it belongs to ({', '.join(tabs)})")
+        elif f["tab"] not in tabs:
+            errs.append(f"{w}: tab: no tab with id '{f['tab']}' ({', '.join(tabs)})")
+    elif "tab" in f:
+        errs.append(f"{w}: tab: only a page filter (scope: page) belongs to a tab")
+    if scope == "panel":
+        if "panel" not in f:
+            errs.append(f"{w}: panel: a pane filter must say which panel it belongs to")
+        elif f["panel"] not in panels:
+            errs.append(f"{w}: panel: no panel with id '{f['panel']}'")
+        elif panels[f["panel"]]["type"] == "text":
+            errs.append(f"{w}: panel: '{f['panel']}' is a text panel; it has no data to filter")
+    elif "panel" in f:
+        errs.append(f"{w}: panel: only a pane filter (scope: panel) belongs to a panel")
+    if f.get("visible", True) is False:
+        if "default" not in f:
+            errs.append(f"{w}: visible: a hidden filter needs a `default`, the value it always applies")
+        if "parent" in f:
+            errs.append(f"{w}: parent: a hidden filter has no list to narrow")
+    return errs
+
+
 def semantic_errors(spec, catalog):
     errs = _logo_errors(spec.get("theme", {}).get("logo"))
     used = {}  # member -> (kind, type), for the compiler
@@ -236,6 +268,7 @@ def semantic_errors(spec, catalog):
             if f["parent"] == f["dimension"]:
                 errs.append(f"{w}: parent: a filter cannot be its own parent")
         errs.extend(_filter_type_errors(w, f, filters, used))
+        errs.extend(_filter_scope_errors(w, f, spec))
 
     for i, tag in enumerate(spec.get("tags", [])):
         why = tag_problem(tag)
@@ -348,6 +381,10 @@ def _click_errors(p, w, ids, filters, catalog, errs):
     by_id = {f["id"]: f for f in filters}
     ids = [i for i in ids if i in by_id]
     for i in ids:
+        if by_id[i].get("visible", True) is False:
+            errs.append(f"{w}: on_click.set_filter: filter '{i}' is hidden; a click cannot change it")
+        if by_id[i].get("scope") == "panel" and by_id[i].get("panel") != p["id"]:
+            errs.append(f"{w}: on_click.set_filter: filter '{i}' is the pane filter of panel '{by_id[i].get('panel')}'; only a click on that panel can set it")
         if by_id[i].get("type", "select") != "select":
             errs.append(f"{w}: on_click.set_filter: filter '{i}' is a {by_id[i]['type']} filter; a click sets a single value, so it can only set a select filter")
     kind = p["type"]
@@ -381,7 +418,7 @@ def _join_errors(spec, p, w, catalog, errs):
     if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
         dims.append(("the time axis (time.dimension)", spec["time"]["dimension"]))
     ignored = set(p.get("ignore_filters", []))
-    dims += [(f"filter '{f['id']}'", f["dimension"]) for f in spec.get("filters", []) if f["id"] not in ignored]
+    dims += [(f"filter '{f['id']}'", f["dimension"]) for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])]
     for meas in sorted(set(measures)):
         mc = meas.partition(".")[0]
         for origin, dim in dims:
@@ -458,7 +495,7 @@ def _role_errors(spec, errs):
         w = f"panel '{p['id']}' ({p['type']})"
         members = [m for _, m, _ in _panel_members(p)]
         ignored = set(p.get("ignore_filters", []))
-        members += [f["dimension"] for f in spec.get("filters", []) if f["id"] not in ignored] if members else []
+        members += [f["dimension"] for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])] if members else []
         if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
             members.append(spec["time"]["dimension"])
         if not members:

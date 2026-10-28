@@ -187,3 +187,27 @@ def default_env(spec, today=None):
     """The calendar a page's dynamic dates use. The browser asks its locale data for the first day of the week; this table is its fallback and what the lint uses."""
     region = (spec.get("locale") or "en-US").partition("-")[2]
     return {"today": today or date.today(), "weekStart": 0 if region in _SUNDAY_FIRST else 1, "fiscalStart": spec.get("time", {}).get("fiscal_year_start", 1)}
+
+
+# ---- where a filter applies, and whether the reader sees it
+def tab_of(spec, panel_id):
+    """The id of the tab that places a panel (None on a dashboard without tabs)."""
+    for t in spec.get("tabs", []):
+        if any(panel_id in cell or cell.get("panel") == panel_id for row in t["layout"] for cell in row):         # source cells are { id: span }, compiled ones { panel, span }
+            return t["id"]
+    return None
+
+
+def applies(spec, flt, panel_id):
+    """Does this filter narrow this panel? A dashboard filter every panel; a page filter the panels of its tab; a pane filter its own panel."""
+    scope = flt.get("scope", "dashboard")
+    if scope == "panel":
+        return flt.get("panel") == panel_id
+    if scope == "page":
+        return panel_id is not None and flt.get("tab") == tab_of(spec, panel_id)
+    return True
+
+
+def effective_value(flt, values):
+    """What the filter holds: a hidden filter always holds its default; a visible one what the reader chose (or the page opened with)."""
+    return flt.get("default", "") if flt.get("visible", True) is False else values.get(flt["id"])

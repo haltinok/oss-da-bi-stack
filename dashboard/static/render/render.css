@@ -339,3 +339,9 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .designer .field.fc { display: grid; gap: 4px; position: relative; color: var(--muted); font-size: 12.5px; }
 .designer .fc-pop { position: static; box-shadow: none; }
 .designer .dz-except { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+
+/* filters that belong to one tab or one panel, and the header's bar when only Reset is in it */
+.rgrid > .tab-filters { grid-column: 1 / -1; margin: 0 0 4px; }
+.card-h .pane-filters { display: flex; gap: 8px; align-items: center; margin: 0 8px; }
+.card-h .pane-filters .field { flex-direction: row; font-size: 11.5px; }
+.card-h .pane-filters .field select { max-width: 150px; padding: 3px 24px 3px 8px; font-size: 12px; }

@@ -964,3 +964,102 @@ def test_a_parent_must_be_a_plain_select_and_a_click_can_only_set_a_select():
         next(f for f in spec["filters"] if f["id"] == "region")["type"] = "multiselect"          # the territories table's click sets it
     errors = run(click)
     assert any("can only set a select filter" in e for e in errors), errors
+
+
+# ---- where a filter applies, and hidden filters
+def _tabbed(spec):
+    """The sales overview split into two tabs: its first two rows on tab a, the rest on tab b."""
+    spec["tabs"] = [{"id": "a", "title": "A", "layout": spec["layout"][:2]}, {"id": "b", "title": "B", "layout": spec["layout"][2:]}]
+    del spec["layout"]
+
+
+def _add(*fs, tabbed=False):
+    def f(spec):
+        if tabbed:
+            _tabbed(spec)
+        spec["filters"] = [*spec["filters"], *fs]
+    return f
+
+
+@pytest.mark.parametrize("flt,tabbed", [
+    ({"id": "pg", "dimension": "products.category", "scope": "page", "tab": "a"}, True),
+    ({"id": "pn", "dimension": "products.category", "scope": "panel", "panel": "kpis"}, False),
+    ({"id": "hid", "dimension": "territories.region", "visible": False, "default": "France"}, False),
+    ({"id": "hidp", "dimension": "products.category", "scope": "panel", "panel": "lines", "visible": False, "default": "Bikes"}, False),
+])
+def test_filter_scopes_and_hidden_filters_validate(flt, tabbed):
+    assert run(_add(flt, tabbed=tabbed)) == []
+
+
+@pytest.mark.parametrize("flt,tabbed,needle", [
+    ({"id": "p", "dimension": "products.category", "scope": "page", "tab": "a"}, False, "has no tabs"),
+    ({"id": "p", "dimension": "products.category", "scope": "page"}, True, "must say which tab"),
+    ({"id": "p", "dimension": "products.category", "scope": "page", "tab": "zzz"}, True, "no tab with id 'zzz'"),
+    ({"id": "p", "dimension": "products.category", "tab": "a"}, True, "only a page filter"),
+    ({"id": "p", "dimension": "products.category", "scope": "panel"}, False, "must say which panel"),
+    ({"id": "p", "dimension": "products.category", "scope": "panel", "panel": "zzz"}, False, "no panel with id 'zzz'"),
+    ({"id": "p", "dimension": "products.category", "panel": "kpis"}, False, "only a pane filter"),
+    ({"id": "h", "dimension": "products.category", "visible": False}, False, "needs a `default`"),
+    ({"id": "h", "dimension": "products.category", "visible": False, "default": "Bikes", "parent": "products.category"}, False, "no list to narrow"),
+    ({"id": "p", "dimension": "products.category", "scope": "everywhere"}, False, "scope"),
+])
+def test_a_filter_scope_that_does_not_make_sense_is_refused(flt, tabbed, needle):
+    errors = run(_add(flt, tabbed=tabbed))
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_clicks_cannot_set_a_hidden_filter_or_another_panels_pane_filter():
+    def hidden(spec):
+        next(f for f in spec["filters"] if f["id"] == "region")["visible"] = False
+        next(f for f in spec["filters"] if f["id"] == "region")["default"] = "France"
+        next(f for f in spec["filters"] if f["id"] == "region").pop("parent", None)
+    assert any("is hidden; a click cannot change it" in e for e in run(hidden))
+
+    def pane(spec):
+        next(f for f in spec["filters"] if f["id"] == "region").update(scope="panel", panel="kpis")
+    assert any("only a click on that panel can set it" in e for e in run(pane))
+
+
+def test_a_filter_is_only_joined_with_the_panels_it_applies_to():
+    """A pane filter on a dimension that panel's measures cannot join to is a mistake; the same filter on another panel is not the panel's business."""
+    inv = {"id": "st", "dimension": "inventory_health.status", "scope": "panel", "panel": "kpis"}
+    errors = run(_add(inv))
+    assert any("kpis" in e and "inventory_health" in e for e in errors), errors
+    assert not any("panel 'trend'" in e and "inventory_health" in e for e in errors), errors
+
+
+def test_scoped_and_hidden_filters_reach_the_same_queries_in_python_and_the_renderer(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    _tabbed(spec)
+    spec["filters"] = [*spec["filters"],
+                       {"id": "pg", "dimension": "products.name", "scope": "page", "tab": "b", "label": "Page only"},
+                       {"id": "pn", "dimension": "territories.country", "scope": "panel", "panel": "territories"},
+                       {"id": "hid", "dimension": "territories.group_name", "visible": False, "default": "Europe"}]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    assert len(dumped) >= 4
+    for state in dumped:
+        for p in out["panels"]:
+            assert panel_queries(out, p, state["values"]) == state["panels"][p["id"]], f"{p['id']} under {state['values']}"
+    # and the scopes mean what they say
+    state = next(s for s in dumped if s["values"].get("pg") == "y" and s["values"].get("pn") == "y")
+    members = lambda pid: {f["member"]: f["values"] for q in _queries(state["panels"][pid]) for f in q.get("filters", [])}
+    tab_a, tab_b = members("kpis"), members("mix")          # `kpis` is on tab a, `mix` on tab b
+    assert "products.name" not in tab_a and tab_b["products.name"] == ["y"], "the page filter narrows tab b's panels only"
+    assert "territories.country" not in tab_b and "territories.country" not in tab_a and members("territories")["territories.country"] == ["y"], "the pane filter narrows its own panel only"
+    assert tab_a["territories.group_name"] == ["Europe"] == tab_b["territories.group_name"], "the hidden filter holds its default on every panel, whatever the address says"
+
+
+def _queries(panel_queries_out):
+    """Every Cube query inside whatever a panel's builder returned (a list, or a dict of lists)."""
+    if isinstance(panel_queries_out, dict):
+        if "measures" in panel_queries_out or "dimensions" in panel_queries_out:
+            return [panel_queries_out]
+        return [q for v in panel_queries_out.values() for q in _queries(v)]
+    if isinstance(panel_queries_out, list):
+        return [q for v in panel_queries_out for q in _queries(v)]
+    return []

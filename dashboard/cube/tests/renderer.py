@@ -881,6 +881,58 @@ with sync_playwright() as p:
     check("tümü" not in page.locator('.fc[aria-label="Product name"] select').inner_text() and "içerir" in page.locator('.fc[aria-label="Product name"] select').inner_text() and "Hepsi" in page.locator('.fc[aria-label="Product name"] select').inner_text(), "the controls speak Turkish on a Turkish page")
     ctx.close()
 
+    # filter scopes (patched into the spec): a page filter above one tab, a pane filter in one card, a hidden filter nowhere; what each narrows
+    def with_scopes(route):
+        spec = json.loads(route.fetch().text())
+        rows = spec.pop("layout")
+        spec["tabs"] = [{"id": "a", "title": "A", "layout": rows[:2]}, {"id": "b", "title": "B", "layout": rows[2:]}]
+        spec["filters"] += [
+            {"id": "pg", "dimension": "products.name", "label": "Page name", "scope": "page", "tab": "b"},
+            {"id": "pn", "dimension": "territories.country", "label": "Pane country", "scope": "panel", "panel": "territories"},
+            {"id": "hid", "dimension": "territories.group_name", "label": "Hidden group", "visible": False, "default": "Europe"},
+        ]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+
+    def members_of(queries):
+        return {f["member"]: f["values"] for q in queries for f in q.get("filters", []) if f.get("operator") == "equals"}
+
+    ctx, page = open_page(browser, "/d/sales-overview?hid=Asia", routes=[("**/dashboards/sales-overview.json", with_scopes)])
+    settled(page)
+    check(page.locator('#filters label.field').count() == 4 and page.locator('#filters label.field:has-text("Page name")').count() == 0, "the header holds the four dashboard filters, not the page or pane filter")
+    check(page.locator('#tabpanel-b .tab-filters select').count() == 1 and page.locator('#tabpanel-a .tab-filters').count() == 0, "the page filter is drawn above tab b's panels only")
+    check(page.locator('[data-panel="territories"] .pane-filters select').count() == 1, "the pane filter is drawn in its own panel's card")
+    check(page.locator('label:has-text("Hidden group")').count() == 0, "a hidden filter has no control anywhere")
+    check(any(members_of([q]).get("territories.group_name") == ["Europe"] for q in sent(page)), "a hidden filter's default is in the queries, and an address that names another value (?hid=Asia) is ignored")
+    check(not any(members_of([q]).get("territories.group_name") == ["Asia"] for q in sent(page)), "...really ignored")
+    page.click('[role="tab"][data-tab="b"]')
+    settled(page)
+    page.locator('#tabpanel-b .tab-filters select').select_option(index=1)
+    pg_value = page.locator('#tabpanel-b .tab-filters select').input_value()
+    page.wait_for_function("location.search.includes('pg=')", timeout=10000)
+    settled(page)
+    mark = len(page.queries)
+    page.select_option('[data-panel="territories"] .pane-filters select', index=1)
+    page.wait_for_function("location.search.includes('pn=')", timeout=10000)
+    settled(page)
+    after = sent(page)[mark:]
+    mix = [q for q in after if any(m.startswith("products.") for m in q.get("dimensions", []))]
+    check("hid" not in here(page) and "pn=" in here(page) and "pg=" in here(page), "the address has the page and pane filters and never the hidden one")
+    check(page.locator("#filters .reset").is_visible(), "Reset is offered")
+    all_b = sent(page)
+    check(any(members_of([q]).get("products.name") == [pg_value] and not members_of([q]).get("territories.country") for q in all_b), f"the page filter narrows tab b's panels ({pg_value})")
+    territories_q = [q for q in after if members_of([q]).get("territories.country")]
+    check(territories_q and all(set(members_of([q])) >= {"territories.country"} for q in territories_q) and not any(members_of([q]).get("territories.country") for q in all_b if "products.category" in q.get("dimensions", []) and "territories.country" not in q.get("dimensions", [])), "the pane filter reaches its own panel's queries")
+    page.click("#filters .reset")
+    settled(page)
+    check("pg=" not in here(page) and "pn=" not in here(page), "Reset clears the page and pane filters")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/sales-overview?pg=HL%20Road%20Frame&pn=France", routes=[("**/dashboards/sales-overview.json", with_scopes)])
+    settled(page)
+    only_a = [q for q in sent(page) if q.get("measures")]
+    check(only_a and not any("products.name" in members_of([q]) or "territories.country" in members_of([q]) for q in only_a), f"tab a, opened first with both filters in the address, never carries the page or pane filter ({len(only_a)} queries)")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())

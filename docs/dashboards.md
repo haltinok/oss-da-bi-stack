@@ -142,7 +142,31 @@ filters:
 
 Rules: a click on a chart can only set a `select` filter (a click carries one value; clicking into multiselect and other types comes with the slicer, see the plan), a `parent` is only for `select` and `multiselect`, and its filter must be a `select`.
 In the designer, each filter card has the type (only the types its field allows) and the default value, chosen with the same control the filter bar uses. Changing the type drops the default and anything that cannot work with the new type, and says so.
-Not yet: filters that belong to one tab or one panel, hidden filters, and the slicer (the plan's phases 8 and 9), and "same period last year".
+
+### Where a filter applies, and who sees it
+`scope` says which panels a filter narrows, and where it is drawn:
+
+| `scope` | narrows | drawn |
+|---|---|---|
+| `dashboard` (the default) | every panel on every tab | in the header |
+| `page` + `tab: <id>` | the panels of that tab | above that tab's panels, and only while that tab is open |
+| `panel` + `panel: <id>` | that one panel | in that panel's card |
+
+A panel is narrowed by every filter that applies to it, all at once (AND). A page filter needs a dashboard with tabs. **Reset** puts every visible filter back to its default.
+
+`visible: false` makes a filter **hidden**: no control anywhere, it always applies with its `default` (so a default is required), it is not in the address (an address that names it is ignored), Reset does not touch it, and a click cannot set it.
+Use it to scope a view ("only Ontario"), for example a hidden pane filter on one chart. **A hidden filter is not a security boundary**: its value is in the page's own queries, so anyone with the browser's developer tools can read it. Who may read which data is the role rules' job in Cube.
+
+```yaml
+filters:
+  - { id: region, dimension: territories.region, label: Region }                                   # in the header
+  - { id: name, dimension: products.name, label: Product, scope: page, tab: details }               # above the Details tab
+  - { id: top, dimension: products.category, scope: panel, panel: trend, label: Category }          # in the trend panel's card
+  - { id: only, dimension: territories.group_name, visible: false, default: Europe }                # hidden, always on
+```
+
+Rules the validator enforces: a page filter names a tab that exists, a pane filter a panel that exists (not a text panel), a click rule cannot set a hidden filter or another panel's pane filter, a hidden filter has no `parent`, and a filter is only checked against the panels it applies to (a pane filter on inventory data on a sales panel is refused; on a panel that can join to it, fine).
+Not yet: the slicer (a filter drawn as a panel in the layout), the plan's phase 9. The designer can set these fields in the YAML for now; its filter card follows (phase 8's designer part).
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),

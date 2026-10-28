@@ -26,9 +26,23 @@ export const ownFilterIds = (def) => {
 export function activeFilters(spec, values, panel = {}, env = defaultEnv(spec)) {
   const ignored = new Set([...(panel.ignore_filters || []), ...ownFilterIds(panel)]);
   return (spec.filters || [])
-    .filter((f) => values[f.id] !== undefined && values[f.id] !== "" && !ignored.has(f.id))
-    .flatMap((f) => toCube(f, values[f.id], env));                    // a filter of a kind other than `select` can mean several Cube filters, or none
+    .filter((f) => filterApplies(spec, f, panel) && !ignored.has(f.id))
+    .flatMap((f) => { const v = filterValue(f, values); return v === undefined || v === "" ? [] : toCube(f, v, env); });          // a filter of a kind other than `select` can mean several Cube filters, or none
 }
+
+/** The id of the tab that places a panel (null on a dashboard without tabs). `spec` is the compiled one: tab layouts are rows of { panel, span }. */
+export const tabOf = (spec, panelId) => spec.tabs?.find((t) => t.layout.flat().some((c) => c.panel === panelId))?.id ?? null;
+
+/** Does a filter narrow this panel? A dashboard filter every panel; a page filter the panels of its tab; a pane filter its own panel (`panel` may be `{}`: only dashboard filters then). */
+export function filterApplies(spec, f, panel = {}) {
+  const scope = f.scope || "dashboard";
+  if (scope === "panel") return f.panel === panel.id;
+  if (scope === "page") return panel.id !== undefined && f.tab === tabOf(spec, panel.id);
+  return true;
+}
+
+/** What a filter holds: a hidden filter always holds its default; a visible one what the reader chose. */
+export const filterValue = (f, values) => (f.visible === false ? f.default || "" : values[f.id]);
 
 /** A KPI measure as a term: what to fetch (members) and how to turn the fetched numbers into the tile's value. */
 export function term(def) {
@@ -145,7 +159,7 @@ export function optionsOf(results, filter, parentValue = "") {
 export function optionMeasures(spec, filter) {
   const per = new Map();
   for (const p of spec.panels) {
-    if ((p.ignore_filters || []).includes(filter.id)) continue;
+    if ((p.ignore_filters || []).includes(filter.id) || !filterApplies(spec, filter, p)) continue;
     for (const m of panelMeasures(p, spec.members)) if (!per.has(cubeOf(m))) per.set(cubeOf(m), m);
   }
   return [...per.values()];
