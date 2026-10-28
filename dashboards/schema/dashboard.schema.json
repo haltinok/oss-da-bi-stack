@@ -190,7 +190,7 @@
       "required": ["id", "type"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
-        "type": { "enum": ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"] },
+        "type": { "enum": ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text", "slicer"] },
         "title": { "type": "string" },
         "ignore_filters": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
       },
@@ -339,6 +339,16 @@
                 }
               },
               "on_click": { "$ref": "#/$defs/on_click" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "slicer" } } },
+          "then": {
+            "required": ["filter"],
+            "properties": {
+              "filter": { "$ref": "#/$defs/id" },
+              "display": { "enum": ["list", "chips", "dropdown"] }
             }
           }
         },

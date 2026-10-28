@@ -6,6 +6,67 @@ import { fold } from "../lib/search.js";
 
 const MAX_SHOWN = 300;                                               // options drawn at once; more than that and the search narrows them
 
+/**
+ * A slicer's control for a select or multiselect filter: the options shown in the layout as a `list` (radio buttons or ticks) or as `chips` (buttons). Same contract as createControl:
+ * `show(value)`, `setOptions(list)`, `onChange(value)`. A chosen value stays chosen (and shown) when the options no longer hold it, so other filters never undo a choice.
+ */
+export function createSlicer(f, t, display = "list") {
+  const fc = t.fc, multi = f.type === "multiselect", label = f.label || f.id;
+  const control = { onChange: () => {} };
+  const root = el("div", { class: `slicer slicer-${display}`, role: "group", "aria-label": label });
+  const search = el("input", { type: "search", class: "fc-search", placeholder: fc.search, "aria-label": `${label}: ${fc.search}`, hidden: "" });
+  const list = el("div", { class: "slicer-list" });
+  const except = el("input", { type: "checkbox" });
+  const exceptRow = el("label", { class: "fc-ex", hidden: "" }, "");
+  exceptRow.append(except, document.createTextNode(` ${fc.exclude}`));
+  const clear = el("button", { type: "button", class: "fc-mini", hidden: "" }, esc(fc.clear));
+  root.append(search, list, el("div", { class: "fc-actions" }), exceptRow);
+  root.querySelector(".fc-actions").append(clear);
+  let options = [], chosen = new Set(), exclude = false;
+  const value = () => (!chosen.size ? "" : multi ? formatValue({ op: exclude ? "not" : "in", args: [...chosen] }) : [...chosen][0]);
+  const emit = () => { control.onChange(value()); draw(); };
+  function draw() {
+    const q = fold(search.value);
+    const known = options.map((o) => o.value);
+    const all = [...known, ...[...chosen].filter((v) => !known.includes(v))];                 // a chosen value the options no longer hold stays, after them (the list does not jump when you pick)
+    search.hidden = all.length <= 12;
+    const hits = all.filter((v) => !q || fold(v).includes(q)).slice(0, MAX_SHOWN);
+    list.replaceChildren(...hits.map((v) => {
+      const on = chosen.has(v);
+      if (display === "chips") {
+        const b = el("button", { type: "button", class: "slicer-chip", "aria-pressed": String(on) }, esc(v));
+        b.addEventListener("click", () => toggle(v));
+        return b;
+      }
+      const box = el("input", { type: multi ? "checkbox" : "radio", name: `sl-${f.id}` });
+      box.checked = on;
+      box.addEventListener("click", () => toggle(v));                              // a click on the chosen radio clears it
+      const lab = el("label", { class: "slicer-item" }, "");
+      lab.append(box, document.createTextNode(` ${v}`));
+      return lab;
+    }));
+    exceptRow.hidden = !multi || !chosen.size;
+    except.checked = exclude;
+    clear.hidden = !chosen.size;
+  }
+  function toggle(v) {
+    if (multi) { if (chosen.has(v)) chosen.delete(v); else chosen.add(v); } else chosen = chosen.has(v) ? new Set() : new Set([v]);
+    emit();
+  }
+  search.addEventListener("input", draw);
+  except.addEventListener("change", () => { exclude = except.checked; emit(); });
+  clear.addEventListener("click", () => { chosen.clear(); emit(); });
+  return Object.assign(control, {
+    el: root,
+    setOptions(list_) { options = list_; draw(); },
+    show(v) {
+      const p = parseValue(v);
+      if (multi) { chosen = new Set(p && (p.op === "in" || p.op === "not") ? p.args : []); exclude = !!p && p.op === "not"; } else chosen = new Set(v ? [String(v)] : []);
+      draw();
+    },
+  });
+}
+
 /** { el, show(value), setOptions(list), onChange } for a filter of type multiselect, text, number or date. `t.fc` holds the words. */
 export function createControl(f, t) {
   const control = { onChange: () => {}, setOptions: () => {} };

@@ -1063,3 +1063,78 @@ def _queries(panel_queries_out):
     if isinstance(panel_queries_out, list):
         return [q for v in panel_queries_out for q in _queries(v)]
     return []
+
+
+# ---- the slicer
+def _slicer(fid="category", **extra):
+    def f(spec):
+        spec["panels"].append({"id": "sl", "type": "slicer", "filter": fid, **extra})
+        spec["layout"].append([{"sl": 12}])
+    return f
+
+
+@pytest.mark.parametrize("extra", [{}, {"display": "chips"}, {"display": "dropdown"}, {"title": "Pick a category"}])
+def test_a_slicer_validates(extra):
+    assert run(_slicer(**extra)) == []
+
+
+def _hide_category(spec):
+    next(f for f in spec["filters"] if f["id"] == "category").update(visible=False, default="Bikes")
+
+
+def _second_slicer(spec):
+    spec["panels"].append({"id": "sl2", "type": "slicer", "filter": "category"})
+    spec["layout"].append([{"sl2": 12}])
+
+
+def _category_as_text(spec):
+    next(f for f in spec["filters"] if f["id"] == "category")["type"] = "text"
+    next(p for p in spec["panels"] if p["id"] == "sl")["display"] = "list"
+
+
+@pytest.mark.parametrize("mutate,needle", [
+    (_slicer("nope"), "no filter with id 'nope'"),
+    (_slicer(display="grid"), "display"),
+    (lambda s: (_slicer()(s), _hide_category(s)), "is hidden"),
+    (lambda s: (_slicer()(s), _second_slicer(s)), "already drawn by the slicer"),
+    (lambda s: (_slicer()(s), _category_as_text(s)), "only a select or multiselect"),
+], ids=["unknown-filter", "bad-display", "hidden", "two-slicers", "text-filter-list"])
+def test_a_slicer_that_does_not_make_sense_is_refused(mutate, needle):
+    errors = run(mutate)
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_a_slicer_for_a_page_filter_sits_on_its_tab():
+    def tabbed(spec):
+        _tabbed(spec)
+        spec["filters"].append({"id": "pg", "dimension": "products.name", "scope": "page", "tab": "b"})
+        spec["panels"].append({"id": "sl", "type": "slicer", "filter": "pg"})
+        spec["tabs"][0]["layout"].append([{"sl": 12}])          # tab a: the wrong tab
+    assert any("must sit on that tab" in e for e in run(tabbed))
+
+    def right(spec):
+        _tabbed(spec)
+        spec["filters"].append({"id": "pg", "dimension": "products.name", "scope": "page", "tab": "b"})
+        spec["panels"].append({"id": "sl", "type": "slicer", "filter": "pg"})
+        spec["tabs"][1]["layout"].append([{"sl": 12}])
+    assert run(right) == []
+
+
+def test_slicer_options_are_queried_with_the_other_filters_and_the_period_but_not_their_own_filter(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    _slicer("category")(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        assert panel_queries(out, panel(out, "sl"), state["values"]) == state["panels"]["sl"], f"under {state['values']}"
+    both = next(s for s in dumped if s["values"].get("category") == "y" and s["values"].get("fy") == "y")
+    qs = [q["query"] for q in both["panels"]["sl"]]
+    assert qs and all(q["dimensions"] == ["products.category"] for q in qs)
+    assert all(any(f["member"] == "dates.fiscal_year" for f in q["filters"]) for q in qs), "another filter narrows the options"
+    assert all(all(f["member"] != "products.category" for f in q["filters"]) for q in qs), "its own filter does not"
+    period = next(s for s in dumped if s["values"].get("_period"))
+    assert any(q["query"].get("timeDimensions") for q in period["panels"]["sl"]), "a drill-down's period narrows them"

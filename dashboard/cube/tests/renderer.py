@@ -933,6 +933,54 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # slicers (patched into the spec): a filter drawn in the layout; options narrowed by the other filters and the period, never by its own filter; chosen values stay
+    def with_slicers(route):
+        spec = json.loads(route.fetch().text())
+        spec["filters"] += [{"id": "sc", "dimension": "products.color", "label": "Colour", "type": "multiselect"}]
+        spec["panels"] += [{"id": "sl_cat", "type": "slicer", "filter": "category", "title": "Pick a category"},
+                           {"id": "sl_col", "type": "slicer", "filter": "sc", "display": "chips", "title": "Colours"}]
+        spec["layout"] += [[{"panel": "sl_cat", "span": 6}, {"panel": "sl_col", "span": 6}]]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+
+    def slicer_options(page, dim):
+        return [q for q in sent(page) if q.get("dimensions") == [dim]]
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", with_slicers)])
+    settled(page)
+    page.wait_for_selector('[data-panel="sl_cat"] .slicer-item', timeout=20000)
+    check(page.locator('#filters label.field').all_inner_texts().count("Category") == 0 and not any(x.strip() == "Category" for x in page.locator('#filters label.field').all_inner_texts()), "a filter that has a slicer is not in the header")
+    check(page.locator('[data-panel="sl_cat"] h2').inner_text() == "Pick a category" and page.locator('[data-panel="sl_cat"] .slicer-item').count() >= 3, "the slicer is a card in the layout listing the options")
+    check(page.locator('[data-panel="sl_col"] .slicer-chip').count() >= 2, "display: chips draws buttons")
+    before = len(page.queries)
+    page.locator('[data-panel="sl_cat"] .slicer-item').nth(1).locator("input").click()
+    page.wait_for_function("/[?&]category=/.test(location.search)", timeout=10000)
+    settled(page)
+    chosen = parse_qs(urlparse(here(page)).query)["category"][0]
+    check(bool(chosen), f"picking an option sets the filter and the address ({chosen})")
+    check(any(has_filter(q, "products.category") for q in sent(page)[before:] if q.get("measures") and not q.get("dimensions") == ["products.category"]), "the other panels' queries carry it")
+    page.wait_for_timeout(400)
+    opts_after = [q for q in sent(page)[before:] if q.get("dimensions") == ["products.category"]]
+    check(opts_after and not any(has_filter(q, "products.category") for q in opts_after), "the slicer's own options are asked for without its own filter, so the list does not shrink to the choice")
+    page.locator('[data-panel="sl_col"] .slicer-chip').first.click()
+    page.wait_for_function("location.search.includes('sc=')", timeout=10000)
+    page.wait_for_timeout(400)
+    settled(page)
+    color_opts = [q for q in sent(page) if q.get("dimensions") == ["products.color"]]
+    check(any(has_filter(q, "products.category") for q in color_opts[1:]), "the colour slicer's options are narrowed by the category slicer's choice")
+    check("sc=in" in here(page) or "sc=in%3A" in here(page), "a multiselect slicer writes in:... to the address")
+    check(page.locator('[data-panel="sl_col"] .slicer-chip[aria-pressed="true"]').count() == 1, "and shows the chosen chip pressed")
+    page.locator('[data-panel="mix"] .cell', has_text="Helmets").first.click()
+    settled(page)
+    check(page.locator('[data-panel="sl_cat"] input:checked').count() == 1, "cross-filtering: a click on a treemap tile sets the filter and the slicer shows the choice")
+    page.locator('[data-panel="sl_cat"] input:checked').click()
+    page.wait_for_function("!/[?&]category=/.test(location.search)", timeout=10000)
+    check(page.locator('[data-panel="sl_cat"] input:checked').count() == 0, "a click on the chosen option clears it")
+    page.click("#filters .reset")
+    settled(page)
+    check(page.locator('[data-panel="sl_col"] .slicer-chip[aria-pressed="true"]').count() == 0 and "sc=" not in here(page), "Reset clears the slicers too")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())

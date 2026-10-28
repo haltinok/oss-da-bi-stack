@@ -235,6 +235,24 @@ def _filter_scope_errors(w, f, spec):
     return errs
 
 
+def _slicer_errors(w, p, spec):
+    """A slicer draws one visible filter, where its tab is; display is for the kinds of filter that have a list."""
+    errs = []
+    flt = next((f for f in spec.get("filters", []) if f["id"] == p["filter"]), None)
+    if flt is None:
+        return [f"{w}: filter: no filter with id '{p['filter']}'"]
+    if flt.get("visible", True) is False:
+        errs.append(f"{w}: filter: '{flt['id']}' is hidden; a slicer shows its filter to the reader")
+    others = [q["id"] for q in spec["panels"] if q["type"] == "slicer" and q["filter"] == flt["id"] and q["id"] != p["id"]]
+    if others:
+        errs.append(f"{w}: filter: '{flt['id']}' is already drawn by the slicer '{others[0]}'; a filter has one")
+    if "display" in p and flt.get("type", "select") not in ("select", "multiselect"):
+        errs.append(f"{w}: display: only a select or multiselect filter can be a list or chips; '{flt['id']}' is a {flt.get('type')} filter and shows its own control")
+    if flt.get("scope") == "page" and filters_mod.tab_of(spec, p["id"]) != flt.get("tab"):
+        errs.append(f"{w}: filter: '{flt['id']}' is a filter of tab '{flt.get('tab')}'; its slicer must sit on that tab")
+    return errs
+
+
 def semantic_errors(spec, catalog):
     errs = _logo_errors(spec.get("theme", {}).get("logo"))
     used = {}  # member -> (kind, type), for the compiler
@@ -294,6 +312,8 @@ def semantic_errors(spec, catalog):
                 if fid not in filter_ids:
                     errs.append(f"{w}: on_click.set_filter: no filter with id '{fid}'")
             _click_errors(p, w, ids, filters, catalog, errs)
+        if p["type"] == "slicer":
+            errs.extend(_slicer_errors(w, p, spec))
         if p["type"] == "timeseries" and "drill" in p:
             _drill_errors(p, w, errs)
         if p["type"] == "timeseries" and p.get("granularities") and p["granularity"] not in p["granularities"]:

@@ -55,6 +55,34 @@ def parse_period(v):
     return [m.group(1), m.group(2)] if m else None
 
 
+def option_measures(spec, flt, nested=False):
+    """One measure per cube among the panels this filter narrows: what a filter's (or a slicer's) option query can use. A slicer has no data of its own: a pane filter on a slicer
+    narrows that slicer's options, so it uses the measures its slicer's filter uses (`nested` stops it there)."""
+    per = {}
+    for p in spec["panels"]:
+        if flt["id"] in p.get("ignore_filters", []) or not applies(spec, flt, p["id"]):
+            continue
+        if p["type"] == "slicer":
+            inner = next((f for f in spec.get("filters", []) if f["id"] == p["filter"]), None)
+            members = [] if nested or inner is None or inner["id"] == flt["id"] else option_measures(spec, inner, True)
+        else:
+            members = panel_measures(p, spec.get("members", {}))
+        for m in members:
+            per.setdefault(cube_of(m), m)
+    return list(per.values())
+
+
+def slicer_queries(spec, panel, values):
+    """The queries behind a slicer's options (mirror of slicerQueries in render/plan.js): its filter's dimension, narrowed by every other filter that applies to the slicer."""
+    flt = next((f for f in spec.get("filters", []) if f["id"] == panel["filter"]), None)
+    if flt is None:
+        return []
+    measures = option_measures(spec, flt)
+    own = {**panel, "ignore_filters": [*panel.get("ignore_filters", []), flt["id"]], "optionMeasures": measures}
+    dims = [*([flt["parent"]] if "parent" in flt else []), flt["dimension"]]
+    return follow_period(spec, own, values, per_cube(measures, {"dimensions": dims, "filters": active_filters(spec, values, own)}))
+
+
 def panel_measures(panel, members):
     kind = panel["type"]
     if kind == "kpi":
@@ -71,6 +99,8 @@ def panel_measures(panel, members):
         return table_parts(panel, members)[0]
     if kind == "pivot":
         return [m["member"] for m in panel["measures"]]
+    if kind == "slicer":
+        return panel.get("optionMeasures", [])                 # set by slicer_queries
     return []
 
 
@@ -164,8 +194,10 @@ def pivot_queries(spec, panel, values):
 
 def panel_queries(spec, panel, values):
     """Every query the panel sends for these filter values, at its default granularity (a KPI's tiles and sparklines included)."""
-    filters = active_filters(spec, values, panel)
     kind = panel["type"]
+    if kind == "slicer":
+        return slicer_queries(spec, panel, values)
+    filters = active_filters(spec, values, panel)
     if kind == "kpi":
         out = []
         for m in panel["measures"]:

@@ -156,11 +156,16 @@ export function optionsOf(results, filter, parentValue = "") {
 }
 
 /** The measures a filter's option query can use: one measure per cube of the panels that apply that filter. */
-export function optionMeasures(spec, filter) {
+export function optionMeasures(spec, filter, nested = false) {
   const per = new Map();
   for (const p of spec.panels) {
     if ((p.ignore_filters || []).includes(filter.id) || !filterApplies(spec, filter, p)) continue;
-    for (const m of panelMeasures(p, spec.members)) if (!per.has(cubeOf(m))) per.set(cubeOf(m), m);
+    let members;
+    if (p.type === "slicer") {                                // no data of its own: a pane filter on a slicer narrows that slicer's options, so it uses its slicer's filter's measures
+      const inner = (spec.filters || []).find((f) => f.id === p.filter);
+      members = nested || !inner || inner.id === filter.id ? [] : optionMeasures(spec, inner, true);
+    } else members = panelMeasures(p, spec.members);
+    for (const m of members) if (!per.has(cubeOf(m))) per.set(cubeOf(m), m);
   }
   return [...per.values()];
 }
@@ -175,6 +180,7 @@ export function panelMeasures(p, members = {}) {
     case "treemap": return [p.measure];
     case "table": return tableParts(p, members).measures;
     case "pivot": return p.measures.map((m) => m.member);
+    case "slicer": return p.optionMeasures || [];                       // set by slicerQueries (the measures of the panels its filter applies to)
     default: return [];
   }
 }
@@ -517,8 +523,23 @@ export function heatScale(model, member) {
 }
 
 /** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
+/**
+ * The queries behind a slicer's options: the values of its filter's dimension, as many queries as the measures of the panels the filter applies to need (one measure per cube, so
+ * the values are those that have data). The other filters that apply to the slicer narrow them (the dashboard's, its tab's, its own pane filters) and so does a drill-down's period;
+ * its own filter never does, so the list does not shrink to what is chosen.
+ */
+export function slicerQueries(spec, def, values) {
+  const f = (spec.filters || []).find((x) => x.id === def.filter);
+  if (!f) return [];
+  const measures = optionMeasures(spec, f);
+  const own = { ...def, ignore_filters: [...(def.ignore_filters || []), f.id], optionMeasures: measures };
+  const dims = [...(f.parent ? [f.parent] : []), f.dimension];
+  return followPeriod(spec, own, values, queriesPerCube(measures, { dimensions: dims, filters: activeFilters(spec, values, own) }));
+}
+
 export function panelQueries(spec, def, values) {
   switch (def.type) {
+    case "slicer": return slicerQueries(spec, def, values);
     case "kpi": return def.measures.map(term).flatMap((t) => { const q = kpiQueries(spec, def, t, values); return [...q.now, ...(q.series || [])]; });
     case "timeseries": return timeseriesQueries(spec, def, values, def.granularity);
     case "bar": return barQueries(spec, def, values);
