@@ -159,3 +159,24 @@ test("a field is moved earlier or later, and removed down to the last one; its s
   const twice = { panels: [{ id: "t", type: "table", columns: ["a.x", { member: "a.y", aggregate: "sum" }], order: { "a.y": "asc", "a.x": "asc" } }] };
   assert.deepEqual(removeItem(twice, "t", "columns", 1).source.panels[0].order, { "a.x": "asc" });
 });
+
+// ---- a pie's value: one measure, or a sum of several
+import { addPieSum, pieKind, removePieSum, setPieKind, setPieSum } from "../../static/lib/designer-items.js";
+
+test("a pie is sized by one measure or by the sum of several, and can be switched, edited and extended", () => {
+  const one = { panels: [{ id: "p", type: "pie", measure: "internet_sales.orders", by: "products.category" }] };
+  const sum = setPieKind(one, "p", "sum", "reseller_sales.orders").source;
+  assert.deepEqual([sum.panels[0].sum, sum.panels[0].label, "measure" in sum.panels[0]], [["internet_sales.orders", "reseller_sales.orders"], "Orders + Orders", false]);
+  assert.equal(pieKind(sum.panels[0]), "sum");
+  assert.equal(setPieKind(one, "p", "sum").problem, "spare");
+  assert.deepEqual(setPieSum(sum, "p", 1, "internet_sales.units").source.panels[0].sum, ["internet_sales.orders", "internet_sales.units"]);
+  const three = addPieSum(sum, "p", "internet_sales.units").source;
+  assert.equal(three.panels[0].sum.length, 3);
+  assert.deepEqual(removePieSum(three, "p", 0).source.panels[0].sum, ["reseller_sales.orders", "internet_sales.units"]);
+  assert.equal(removePieSum(sum, "p", 0).problem, "min", "a sum keeps two");
+  const back = setPieKind(three, "p", "member").source;
+  assert.equal(back.panels[0].measure, "internet_sales.orders");
+  assert.equal("sum" in back.panels[0], false);
+  assert.equal(pieKind(back.panels[0]), "member");
+  assert.equal(one.panels[0].measure, "internet_sales.orders", "the argument is not touched");
+});

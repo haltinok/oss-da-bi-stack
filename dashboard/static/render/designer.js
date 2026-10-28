@@ -7,7 +7,7 @@ import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, s
 import { createControl, createSlicer } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
-import { LISTS, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
+import { LISTS, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
 import { mountDnd } from "./designer-dnd.js";
@@ -148,6 +148,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
       if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
       if (fd.kind === "crossfilter") { slot.append(crossControl(panel)); continue; }
+      if (fd.kind === "pievalue") { slot.append(pieControl(panel)); continue; }
       if (fd.kind === "aggregate") { slot.append(aggregateControl(fd, panel)); continue; }
       if (fd.kind === "builtin") { slot.append(el("span", { class: "dz-formula" }, esc(dz.builtinAgg(memberInfo(fd.member)?.type)))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
@@ -177,6 +178,37 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     pick.addEventListener("change", () => commit(setCrossFilter(source, selected, pick.value), { message: dz.changed(panel.title || selected) }));
     wrap.append(pick);
     if (panel.on_click && !panel.cross_filter) wrap.append(el("p", { class: "hint" }, esc(dz.crossByHand)));
+    return wrap;
+  }
+
+  /** A pie's measure: one measure, or the sum of several (the members, add and remove, the sum in words). */
+  function pieControl(panel) {
+    const wrap = el("div", { class: "dz-value" }), named = () => dz.changed(panel.title || selected);
+    const kinds = el("select", { "data-path": "~kind", "aria-label": dz.f.formula });
+    for (const k of ["member", "sum"]) kinds.append(el("option", { value: k }, esc(dz.kind[k])));
+    kinds.value = pieKind(panel);
+    const spare = () => measureOptions(catalog).find((o) => !(panel.sum || [panel.measure]).includes(o.value))?.value;
+    kinds.addEventListener("change", () => commit(setPieKind(source, selected, kinds.value, spare()), { message: named() }));
+    wrap.append(kinds);
+    if (!panel.sum) {
+      wrap.append(control({ path: "measure", kind: "measure" }, panel, (v) => commit(setField(source, selected, "measure", v), { message: named() })));
+      return wrap;
+    }
+    const box = el("div", { class: "dz-parts" });
+    panel.sum.forEach((m, i) => {
+      const row = el("div", { class: "dz-part" });
+      row.append(control({ path: `sum.${i}`, kind: "measure" }, panel, (v) => commit(setPieSum(source, selected, i, v), { message: named() })));
+      if (panel.sum.length > 2) {
+        const rm = el("button", { type: "button", class: "dz-mini", "aria-label": dz.removePart }, "−");
+        rm.addEventListener("click", () => commit(removePieSum(source, selected, i), { message: named() }));
+        row.append(rm);
+      }
+      box.append(row);
+    });
+    const add = el("button", { type: "button", class: "dz-mini" }, esc(dz.addPart));
+    add.addEventListener("click", () => commit(spare() ? addPieSum(source, selected, spare()) : { problem: "spare" }, { message: named() }));
+    box.append(add);
+    wrap.append(box, el("p", { class: "hint dz-preview" }, esc(dz.formulaIs(panel.sum.map(humanize).join(" + ")))));
     return wrap;
   }
 

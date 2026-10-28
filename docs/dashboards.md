@@ -84,6 +84,8 @@ Between two neighbours in a row there is a **bar**: drag it sideways to change t
 (Up, Down, Left, Right, Narrower, Wider, Join the row above or below, Own row, Move to tab), so a keyboard needs no pointer; a button that would do nothing is off. Every row always adds up to 12 and every panel is placed
 once. With tabs, the page view lists them: rename a tab or move it earlier or later.
 
+**A pie's measure** is one measure or the sum of several (Internet plus Reseller): the drawer shows the members, Add a measure, remove (two stay) and the label, like a key figure's sum.
+
 **Measures, formulas and pivots.** A key figure and a time chart's series are each a measure, a **sum** of measures or a **ratio** of two sums: pick which, then the members, and the drawer tells the formula in words ("(Gross profit + Tax) ÷ Revenue").
 **Add a measure** / **Add a series** and **Remove this one** change how many there are (a key-figures row holds up to eight, a pivot three, and one always stays). A pivot also offers its time step for the columns, which of its measures
 carries the **heat map**, how rows are ordered, and a row and column limit.
