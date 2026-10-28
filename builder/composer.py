@@ -402,7 +402,7 @@ def _fill_row(row: list[dict]) -> list[dict]:
         return row
     new = [max(1, round(12 * w / sum(spans))) for w in spans]
     new[0] += 12 - sum(new)
-    return [{next(iter(c)): w} for c, w in zip(row, new)]
+    return [{next(iter(c)): w} for c, w in zip(row, new, strict=True)]
 
 
 def refine_panel(p, spec: dict, focus: str) -> Composition:
