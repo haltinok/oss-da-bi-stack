@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phases 1 to 6 done; phases 7 and 8 (filter types, filter scopes) added 2026-10-28 and not started**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1 to 6 done; phases 7 to 9 (filter types, filter scopes with hidden filters, the slicer) added 2026-10-28 and not started**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -96,7 +96,20 @@ Three kinds, by scope (a `scope` on a filter, `dashboard` by default):
 
 Rules to decide in the build: a panel's filters are the dashboard's, then its page's, then its own, ANDed; two filters on the same dimension in different scopes are allowed and both apply (the designer warns about it); a page or pane filter's id is unique across the file (it is a URL key) while its `ignore_filters` entry works as it does now; **Reset** resets what is in view (dashboard and the open tab's), and a pane has its own; a click rule may set a dashboard or page filter, and a pane filter only from its own panel; the designer moves a filter between scopes with a choice on the card and offers a pane filter from the picked panel's drawer; removing a tab or a panel removes the filters scoped to it (and says so). The validator refuses a scope that points at something that is not there. The built-in list order, the tab bar, and the print/export layout need a look.
 
-**Order:** 7 before 8: the types are useful on their own, and the scopes then apply to all of them. Each is several PRs (spec and validator, renderer and queries, designer), the same one-at-a-time rhythm as before.
+**Order:** 7, then 8 (with 8b), then 9: 7 before 8: the types are useful on their own, and the scopes then apply to all of them. Each is several PRs (spec and validator, renderer and queries, designer), the same one-at-a-time rhythm as before.
+
+### Phase 8b: hidden filters (added 2026-10-28, not started; goes with phase 8)
+A filter is **visible** (the reader sees it and changes it; today's behaviour) or **hidden** (`visible: false`, chosen at design time): the reader never sees it, it always applies, with the value the designer gave it. It works at every scope (a hidden dashboard filter "region = Ontario", a hidden page filter, a hidden pane filter). A hidden filter must have a value (`default`), is never in the URL, is not cleared by Reset, and shows in the designer with an eye icon so it cannot be forgotten. The spec already lists "fixed (non-selectable) filters" under *Not in v1* in `docs/dashboards.md`: this removes that line.
+**It is not a security boundary.** The value is in the page's own queries, so a reader with the browser's developer tools can see it. Who may read what stays Cube's job (the role rules); a hidden filter is for scoping a view, not for hiding data from someone. The docs say so in those words.
+
+### Phase 9: the slicer, a filter that is a panel (added 2026-10-28, not started)
+A **slicer** is a filter drawn as a panel (a `slicer` panel type): a list, buttons, a dropdown or a range slider placed in the layout like any chart, instead of in the header bar. It is the "physical" filter: the reader changes it while interacting, and it takes part in the same things the header filters do. Chosen design:
+- It **is** a filter (the types of phase 7, an `id` that is a URL key, a dimension, a default); the panel only decides where and how it is drawn. A header filter and a slicer are the same thing in two places, so one spec shape (`filters[]` with `display: bar | slicer`, or a panel that points at a filter id; settle in the build) avoids two engines.
+- **Affected by** the dashboard and page filters (they narrow the options it offers, and its figures if it shows counts), by **cross-filtering** (a click on a bar sets the slicer's value, and the slicer shows it) and by **drill-down** (the drill period narrows its options and the slicer does not fight it). It may have **its own pane filters**, narrowing the options only.
+- **Options are never narrowed by the slicer itself**, and two slicers narrow each other's options only in one direction at a time (the one changed last does not narrow itself), so there are no cycles. This is the rule that needs a test with three slicers.
+- Hidden slicers do not exist (a hidden filter has no panel); a slicer on a page belongs to that tab, like a page filter.
+- The designer: it joins the gallery, and the drawer for it is the filter card plus the display choice; "make this filter a slicer" and back from the filter card.
+- Order: after 7 and 8 (it needs the types and the scopes). The panel type must meet the project's own rule that "a new panel type needs two real use cases"; the two here are a region slicer on a sales page and a status slicer beside the reorder list.
 
 ## Open decisions
 - Whether phase 2's gallery should offer "start from a template" (a finished panel) as well as an empty type. Leaning yes, but it is a content job.
