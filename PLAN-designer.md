@@ -57,6 +57,9 @@ Built as below, with these notes: `POST /build` takes an optional `focus` (a pan
 
 The Change box sends the selected panel as the focus ("make this one a donut"); a model edit and a designer edit can be undone the same way.
 
+### Live changes (added 2026-10-28, after phase 7b)
+A change in the designer no longer loads the page again when it can be applied in place: `patch(next)` in `render/main.js` writes a changed title into the card, builds a panel whose own fields changed again in the same place (and loads only it), and puts the cards in their new rows and widths after a move or a drag and drop. Everything else (the page's own fields, filters, the tabs themselves, panels added or removed, undo and redo) still loads the page; those can follow the same way one at a time. The draft bar, the YAML tab and the Change box are told with a `draft:changed` event.
+
 ### Phase 6: the rest of the types, formulas, and the two things left out
 Split into three PRs: **6a** pivot's own fields and the sum/ratio builder (done), **6b** tabs (add, delete, layout into tabs; done), **6c** conditional formatting (**6c-1**, done) and logo upload (**6c-2**: `theme.logo` already takes a path or an `https://` URL; the upload would add a small data URI, decided with the user: inside the spec, PNG/JPEG/WebP up to about 20 KB, shrunk in the browser, no SVG).
 

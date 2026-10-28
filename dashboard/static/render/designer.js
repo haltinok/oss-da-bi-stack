@@ -283,6 +283,17 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       if (!r.ok) { draw(); problems(r.problems); return false; }                     // the controls go back to what the draft holds
       drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message, notes: (edit.notes || []).map((n) => dz.notes[n] || n) });
       write({ on: true, panel: edit.id ?? panel, scroll: window.scrollY });
+      Object.assign(draft, drafts.current());                                         // the page's draft object is the one the draft bar and the Change box read from
+      // A change to a panel's own fields is applied to that panel alone (the page patches it in place); anything else (layout, tabs, filters, a new or removed panel) draws the page again.
+      if (!edit.id && panel === selected && window.__render?.patch?.(r.spec)) {
+        source = edit.source;
+        const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset?.path : null;
+        resync();
+        draw();
+        if (focused) drawer.querySelector(`[data-path="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+        document.dispatchEvent(new CustomEvent("draft:changed"));
+        return true;
+      }
       location.reload();
       return true;
     } catch (e) {
@@ -291,6 +302,16 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     } finally {
       busy = false;
       drawer.classList.remove("busy");
+    }
+  }
+
+  /** After the page replaced a panel's DOM: the new one is picked, can be reached by keyboard, and has its grip again. */
+  function resync() {
+    dnd.disable();
+    dnd.enable();
+    for (const [pid, p] of panels) {
+      p.root.setAttribute("tabindex", "0");
+      p.root.classList.toggle("dz-selected", pid === selected);
     }
   }
 

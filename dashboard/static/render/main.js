@@ -380,7 +380,51 @@ async function showDashboard() {
       openTab(tabs[to].id, { focus: true });
     });
   }
-  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, activeTab: () => activeTab, ready: null };
+  /**
+   * The designer's way of applying a change without drawing the page again (render/designer.js `commit`): `next` is the new compiled spec. Changes to panels' own fields
+   * (a changed title is written into the card, any other change builds that one panel again in the same place and loads it) and to the layout (the cards are put in their
+   * new rows and widths) are applied here; everything else (the page's own fields, filters, the tabs themselves, panels added or removed) is left to a reload.
+   * Returns true when the change was applied here.
+   */
+  function patch(next) {
+    const rest = (s) => JSON.stringify({ ...s, panels: undefined, members: undefined, cubes: undefined, layout: undefined, tabs: undefined });
+    const tabHeads = (s) => JSON.stringify(s.tabs ? s.tabs.map((t) => [t.id, t.title]) : null);
+    if (rest(next) !== rest(spec) || tabHeads(next) !== tabHeads(spec) || next.panels.length !== spec.panels.length || next.panels.some((p, i) => p.id !== spec.panels[i].id)) return false;
+    const changed = next.panels.map((def, i) => [def, i]).filter(([def, i]) => JSON.stringify(def) !== JSON.stringify(spec.panels[i]));
+    spec.members = next.members;
+    spec.cubes = next.cubes;
+    const rebuilt = [];
+    for (const [def, i] of changed) {
+      const { title: oldTitle, ...oldRest } = spec.panels[i], { title: newTitle, ...newRest } = def;
+      const h2 = panels.get(def.id).root.querySelector(".card-h h2");
+      if (JSON.stringify(oldRest) === JSON.stringify(newRest) && h2) { spec.panels[i].title = newTitle; h2.textContent = newTitle || ""; continue; }          // only the title: nothing else is touched
+      spec.panels[i] = def;
+      const made = createPanel(def, ctx), previous = panels.get(def.id).root;
+      made.root.style.gridColumn = previous.style.gridColumn;
+      previous.replaceWith(made.root);
+      panels.set(def.id, made);
+      rebuilt.push(made);
+    }
+    const moved = JSON.stringify([next.layout, next.tabs]) !== JSON.stringify([spec.layout, spec.tabs]);
+    if (moved) {
+      if (tabbed) next.tabs.forEach((t, i) => { tabs[i].layout = t.layout; }); else { spec.layout = next.layout; tabs[0].layout = next.layout; }
+      for (const k of Object.keys(span)) delete span[k];
+      for (const c of tabs.flatMap((tab) => tab.layout.flat())) span[c.panel] = c.span;
+      for (const tab of tabs) {
+        const roots = tab.layout.flat().map((c) => { const root = panels.get(c.panel).root; root.style.gridColumn = `span ${c.span}`; return root; });
+        grids.get(tab.id).replaceChildren(...roots);
+      }
+    }
+    if (moved) loadAll();                                    // cards that came into the open tab are loaded; the others only redraw to their new width (their data is cached)
+    else {
+      const open = new Set(openPanels());
+      const now = rebuilt.filter((p) => open.has(p));
+      if (now.length) { const c = new AbortController(); Promise.allSettled(now.map((p) => p.load(c.signal))); }
+    }
+    window.__render.patchCount = (window.__render.patchCount || 0) + 1;                 // for the tests: a change applied here
+    return true;
+  }
+  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, activeTab: () => activeTab, ready: null };
 
   $("#export-all").hidden = false;
   $("#export-all").addEventListener("click", async () => {

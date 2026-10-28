@@ -295,6 +295,12 @@ export function mountDraftBar(host, api, t, draft) {
   };
   document.addEventListener("designer:pick", (e) => aim(e.detail?.panel));
   try { const s = JSON.parse(sessionStorage.getItem("designer") || "{}"); if (s.on) aim(s.panel); } catch { /* no designer state: the whole dashboard */ }
+  // The designer changed the draft without drawing the page again: the YAML tab, the message and the Change box follow.
+  document.addEventListener("draft:changed", () => {
+    yamlBox.value = draft.yaml;
+    show(msg, outcome({ status: "ok", message: draft.message, notes: draft.notes }, t));
+    aim(focus);
+  });
   async function change() {
     const text = $("#bd-change").value.trim();
     if (text.length < 3) return;

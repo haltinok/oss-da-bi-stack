@@ -4,6 +4,7 @@
 
 The mock's builder answers with the real validator (builder/), so a change is accepted or refused exactly as it would be for a hand-edited file.
 """
+import contextlib
 import json
 import os
 import pathlib
@@ -11,6 +12,7 @@ import re
 import struct
 import sys
 import zlib
+from urllib.parse import parse_qs, urlparse
 
 import yaml
 from playwright.sync_api import sync_playwright
@@ -29,6 +31,26 @@ def check(ok, msg):
     if not ok:
         failures.append(msg)
     return ok
+
+
+@contextlib.contextmanager
+def changes(page, timeout=20000):
+    """What the body does ends in a change that the page either applies in place (render/main.js `patch`, which counts them) or by loading itself again; waits for whichever happens."""
+    n = page.evaluate("window.__render?.patchCount || 0")
+    origin = page.evaluate("performance.timeOrigin")
+    yield
+    waited = 0
+    while waited < timeout:
+        try:
+            now = page.evaluate("[performance.timeOrigin, window.__render?.patchCount || 0]")
+        except Exception:                                    # the page is being replaced
+            page.wait_for_load_state()
+            return
+        if now[0] != origin or now[1] > n:
+            return
+        page.wait_for_timeout(50)
+        waited += 50
+    raise TimeoutError("the change was neither applied in place nor by a reload")
 
 
 def open_page(browser, path, width=1440, draft=None):
@@ -114,7 +136,7 @@ with sync_playwright() as p:
     # ---- changing a field: the page is drawn again with the change, design mode and the selection are still there
     page.click(f'[data-panel="{bar}"] h2')
     check(page.locator("#designer .dz-head h2").inner_text() == draft_yaml(page)["panels"][[x["id"] for x in draft_yaml(page)["panels"]].index(bar)]["title"], "picking the bar chart shows its own title in the drawer")
-    with page.expect_navigation():
+    with changes(page):
         page.fill('#designer [data-path="title"]', "Best sellers")
         page.press('#designer [data-path="title"]', "Tab")
     settled(page)
@@ -126,14 +148,14 @@ with sync_playwright() as p:
     # ---- a dimension: only groupings the measure can reach are offered; changing it keeps the page valid
     opts = page.locator('#designer [data-path="by"] option').evaluate_all("os => os.map((o) => o.value)")
     check("products.category" in opts and "territories.region" in opts and not any(o.startswith("inventory") for o in opts), f"the grouping list holds what the bar's measures can join to ({len(opts)} options)")
-    with page.expect_navigation():
+    with changes(page):
         page.select_option('#designer [data-path="by"]', "territories.region")
     settled(page)
     check(next(x for x in draft_yaml(page)["panels"] if x["id"] == bar)["by"] == "territories.region", "choosing another grouping changes the bar's `by`")
     check("on_click" not in next(x for x in draft_yaml(page)["panels"] if x["id"] == bar), "its click rule, which pointed at the old grouping, is gone")
 
     # ---- a number, and a refusal
-    with page.expect_navigation():
+    with changes(page):
         page.fill('#designer [data-path="limit"]', "3")
         page.press('#designer [data-path="limit"]', "Tab")
     settled(page)
@@ -155,7 +177,7 @@ with sync_playwright() as p:
     page.keyboard.press("Escape")
     check(page.locator("#dz-gallery [data-add]").count() == 8 and page.locator("#dz-newfilter option").count() > 5, "with nothing picked the drawer shows the page: a gallery of eight panel types and a list of fields to filter by")
     check(page.input_value('#designer [data-path="title"]') == page.inner_text("#title"), "and the page's own fields, starting with its title")
-    with page.expect_navigation():
+    with changes(page):
         page.fill('#designer [data-path="title"]', "Board pack")
         page.press('#designer [data-path="title"]', "Tab")
     settled(page)
@@ -167,29 +189,29 @@ with sync_playwright() as p:
     # ---- undo and redo
     check(page.locator('#designer [data-hist="undo"]').is_enabled() and page.locator('#designer [data-hist="redo"]').is_disabled(), "undo is on after changes and redo is off")
     check("Board pack" in (page.get_attribute('#designer [data-hist="undo"]', "title") or "") or "page" in (page.get_attribute('#designer [data-hist="undo"]', "title") or "").lower(), "its tooltip says what it would undo")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-hist="undo"]')
     settled(page)
     check(page.inner_text("#title") != "Board pack" and yaml_of(page)["title"] != "Board pack", "Undo brings back the title before the change")
     check("Undid" in page.inner_text("#bd-msg") and page.get_attribute("#bd-design", "aria-pressed") == "true", "the draft bar says so and design mode stays on")
     check(page.locator('#designer [data-hist="redo"]').is_enabled(), "and now redo is on")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-hist="redo"]')
     settled(page)
     check(page.inner_text("#title") == "Board pack" and "Redid" in page.inner_text("#bd-msg"), "Redo puts it back")
     page.evaluate("document.activeElement && document.activeElement.blur()")
-    with page.expect_navigation():
+    with changes(page):
         page.keyboard.press("Control+z")
     settled(page)
     check(page.inner_text("#title") != "Board pack", "Ctrl+Z undoes")
-    with page.expect_navigation():
+    with changes(page):
         page.keyboard.press("Control+Shift+z")
     settled(page)
     check(page.inner_text("#title") == "Board pack", "Ctrl+Shift+Z redoes")
-    with page.expect_navigation():
+    with changes(page):
         page.keyboard.press("Control+z")
     settled(page)
-    with page.expect_navigation():
+    with changes(page):
         page.keyboard.press("Control+y")
     settled(page)
     check(page.inner_text("#title") == "Board pack", "and so does Ctrl+Y")
@@ -206,7 +228,7 @@ with sync_playwright() as p:
     for ty in ("kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"):
         before = {x["id"] for x in yaml_of(page)["panels"]}
         try:
-            with page.expect_navigation(timeout=15000):
+            with changes(page, timeout=15000):
                 page.click(f'#dz-gallery [data-add="{ty}"]')
         except Exception:
             pass                                               # a refusal does not reload: the check below says what the drawer showed
@@ -256,23 +278,23 @@ with sync_playwright() as p:
     page.click('[data-panel="pie"]', position={"x": 140, "y": 24})
     check(page.locator('#designer [data-cmd]').count() == 9 and page.locator('#designer [data-cmd="narrower"]').is_disabled(), "a picked panel offers nine layout commands; Narrower is off while it is alone in its row")
     before = [i for i, row in enumerate(rows_of(page)) if any(c[0] == "pie" for c in row)][0]
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-cmd="up"]')
     settled(page)
     after = [i for i, row in enumerate(rows_of(page)) if any(c[0] == "pie" for c in row)][0]
     check(after == before - 1 and page.locator('[data-panel="pie"].dz-selected').count() == 1, "Up swaps its row with the one above, and the panel stays picked")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-cmd="join-up"]')
     settled(page)
     shared = row_with(rows_of(page), "pie")
     check(len(shared) == 2 and sum(w for _, w in shared) == 12, f"Join the row above puts it beside the panel there ({shared})")
     check(page.locator('#designer [data-cmd="narrower"]').is_enabled(), "and now it can be made narrower")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-cmd="wider"]')
     settled(page)
     widths = [w for _, w in row_with(rows_of(page), "pie")]
     check(widths == [5, 7] or widths == [7, 5] or sum(widths) == 12 and widths != [6, 6], f"Wider moves a column from its neighbour ({widths})")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-cmd="own-row"]')
     settled(page)
     check(len(row_with(rows_of(page), "pie")) == 1, "Own row takes it out again")
@@ -281,7 +303,7 @@ with sync_playwright() as p:
     page.locator('[data-panel="pivot"]').scroll_into_view_if_needed()
     check(page.locator('[data-panel="text"] .dz-grip').count() == 1, "every panel has a grip in design mode")
     pivot = page.locator('[data-panel="pivot"]').bounding_box()
-    with page.expect_navigation():
+    with changes(page):
         drag(page, '[data-panel="text"] .dz-grip', pivot["x"] + pivot["width"] * 0.08, pivot["y"] + pivot["height"] / 2, shot="designer-drag.png")
     settled(page)
     shared = row_with(rows_of(page), "pivot")
@@ -301,7 +323,7 @@ with sync_playwright() as p:
     page.mouse.move(box["x"] + box["width"] / 2 + step * 2, box["y"] + box["height"] / 2, steps=6)
     page.wait_for_timeout(150)
     check(page.locator(".dz-tip").inner_text().replace(" ", "") == "8|4", "while dragging, a tip says the widths (8 | 4) and the panels follow")
-    with page.expect_navigation():
+    with changes(page):
         page.mouse.up()
     settled(page)
     check([w for _, w in row_with(rows_of(page), "text")] == [8, 4], "letting go sets the widths: two columns wider on the left")
@@ -343,7 +365,7 @@ with sync_playwright() as p:
     settled(page)
     page.click("#bd-design")
     page.keyboard.press("Escape")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#dz-gallery [data-add="pie"]')
     settled(page)
     tabs = yaml_of(page)["tabs"]
@@ -355,7 +377,7 @@ with sync_playwright() as p:
     page.click('[data-panel="pie_2"]', position={"x": 140, "y": 24})
     page.locator('[data-panel="pie_2"] .dz-grip').scroll_into_view_if_needed()
     grip = page.locator('[data-panel="pie_2"] .dz-grip').bounding_box()
-    with page.expect_navigation():
+    with changes(page):
         page.mouse.move(grip["x"] + 10, grip["y"] + 10)
         page.mouse.down()
         page.mouse.move(grip["x"] + 40, 4, steps=4)                    # to the top edge of the window: the page scrolls by itself
@@ -368,12 +390,12 @@ with sync_playwright() as p:
     tabs = yaml_of(page)["tabs"]
     check(list(tabs[0]["layout"][-1][0]) == ["pie_2"] and not any("pie_2" in c for row in tabs[1]["layout"] for c in row), "a panel dropped on a tab moves to the end of that tab")
     page.keyboard.press("Escape")
-    with page.expect_navigation():
+    with changes(page):
         page.fill('#dz-tabs [data-tab-title="details"]', "More")
         page.press('#dz-tabs [data-tab-title="details"]', "Tab")
     settled(page)
     check(page.locator('[role="tab"]').all_inner_texts() == ["Overview", "More"], "renaming a tab changes its title in the tab bar")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#dz-tabs [data-tab-move="overview:1"]')
     settled(page)
     check([t["id"] for t in yaml_of(page)["tabs"]] == ["details", "overview"] and page.locator('[role="tab"]').all_inner_texts() == ["More", "Overview"], "the arrow moves a tab one place later")
@@ -395,7 +417,7 @@ with sync_playwright() as p:
         for ty in ("kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot"):
             before = len(yaml_of(page)["panels"])
             try:
-                with page.expect_navigation(timeout=15000):
+                with changes(page, timeout=15000):
                     page.click(f'#dz-gallery [data-add="{ty}"]')
             except Exception:
                 pass
@@ -424,7 +446,7 @@ with sync_playwright() as p:
     bar_title = next(x for x in yaml_of(page)["panels"] if x["id"] == bar)["title"]
     check(page.locator("#bd-focus").is_visible() and bar_title in page.inner_text("#bd-focus"), "picking a panel says the Change box will change that panel only")
     others = [x for x in yaml_of(page)["panels"] if x["id"] != bar]
-    with page.expect_navigation():
+    with changes(page):
         page.fill("#bd-change", "make this one a donut")
         page.click("#bd-go")
     settled(page)
@@ -432,14 +454,14 @@ with sync_playwright() as p:
     check(sent and sent[-1].get("focus") == bar, "the request names the picked panel")
     check(next(x for x in after if x["id"] == bar)["type"] == "pie" and [x for x in after if x["id"] != bar] == others, "the picked panel became a pie and no other panel was touched")
     check(page.locator(f'[data-panel="{bar}"]').evaluate("n => n.classList.contains('dz-selected')") and page.locator("#bd-focus").is_visible(), "the panel stays picked after the model's change")
-    with page.expect_navigation():
+    with changes(page):
         page.click('#designer [data-hist="undo"]')
     settled(page)
     check(next(x for x in yaml_of(page)["panels"] if x["id"] == bar)["type"] == "bar", "undo takes the model's change back, like a designer edit")
     page.keyboard.press("Escape")
     check(page.locator("#bd-focus").is_hidden(), "with the panel dropped the Change box is about the whole dashboard again")
     sent.clear()
-    with page.expect_navigation():
+    with changes(page):
         page.fill("#bd-change", "show the top 3")
         page.click("#bd-go")
     settled(page)
@@ -453,7 +475,7 @@ with sync_playwright() as p:
     page.click("#bd-design")
 
     def reload_after(action):
-        with page.expect_navigation():
+        with changes(page):
             action()
         settled(page)
 
@@ -509,12 +531,12 @@ with sync_playwright() as p:
     page.fill("#dz-newtab", "Notes")
     reload_after(lambda: page.click("#dz-addtab"))
     check([t["title"] for t in yaml_of(page)["tabs"]][-1] == "Notes" and len(yaml_of(page)["tabs"]) == 3, "Add a tab adds one at the end, holding a text panel")
-    with page.expect_navigation():
+    with changes(page):
         page.once("dialog", lambda d: d.accept())
         page.locator('#designer [data-tab-remove="tab_3"]').click()
     settled(page)
     check(len(yaml_of(page)["tabs"]) == 2 and placed() == sorted([*all_ids, "note"]), "removing a tab keeps its panels (on the neighbouring tab)")
-    with page.expect_navigation():
+    with changes(page):
         page.once("dialog", lambda d: d.accept())
         page.click("#dz-onepage")
     settled(page)
@@ -610,6 +632,65 @@ with sync_playwright() as p:
     page.wait_for_selector("#bd-design-note", timeout=20000)
     check("out of date" in page.inner_text("#bd-design-note") and page.locator("#bd-design").is_disabled() and page.locator("#designer").is_hidden(), "a builder that does not send the source back gets a message next to the button, and the drawer does not open empty")
     check(not page.problems, f"and no script errors {page.problems[:2]}")
+    ctx.close()
+
+    # ---- a change to a panel's own fields is applied to that panel alone: the page is not drawn again
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    bar = panel_of(page, "bar")
+    other = panel_of(page, "timeseries")
+    page.evaluate("window.__stay = 1; for (const n of document.querySelectorAll('[data-panel]')) n.dataset.stay = 'yes';")
+    page.click(f'[data-panel="{bar}"] h2')
+    reqs = []
+    page.on("request", lambda r: reqs.append(r.url) if "/cube-" in r.url and "/load" in r.url else None)
+    with changes(page):
+        page.fill('#designer [data-path="title"]', "Only the title")
+        page.press('#designer [data-path="title"]', "Tab")
+    check(page.evaluate("window.__stay") == 1, "changing a title does not load the page again")
+    check(page.inner_text(f'[data-panel="{bar}"] h2') == "Only the title" and page.get_attribute(f'[data-panel="{bar}"]', "data-stay") == "yes", "the title is written into the same card (it is the same element)")
+    check(not reqs, f"and no data is asked for again ({len(reqs)} queries)")
+    check(page.locator("#designer .dz-head h2").inner_text() == "Only the title" and "Only the title" in page.inner_text("#bd-msg"), "the drawer and the draft bar show the new title")
+    check(draft_yaml(page)["panels"][[x["id"] for x in draft_yaml(page)["panels"]].index(bar)]["title"] == "Only the title" and "Only the title" in page.input_value("#bd-yaml"), "the draft and the YAML tab hold it")
+
+    with changes(page):
+        page.fill('#designer [data-path="limit"]', "4")
+        page.press('#designer [data-path="limit"]', "Tab")
+    settled(page)
+    check(page.evaluate("window.__stay") == 1, "changing the limit does not load the page either")
+    check(page.get_attribute(f'[data-panel="{bar}"]', "data-stay") is None and page.get_attribute(f'[data-panel="{other}"]', "data-stay") == "yes", "only that panel was built again: the others are the same elements")
+    check(page.locator(f'[data-panel="{bar}"]').evaluate("n => n.classList.contains('dz-selected')") and page.locator(f'[data-panel="{bar}"] .dz-grip').count() == 1, "the new card is still picked and has its grip")
+    queried = [json.loads(parse_qs(urlparse(u).query)["query"][0]) for u in reqs]
+    check(0 < len(queried) <= 3 and all(any(m.startswith(("internet_sales", "reseller_sales")) for m in q.get("measures", [])) for q in queried), f"and only its own data was asked for ({len(queried)} queries)")
+    with changes(page):
+        page.select_option('#designer [data-path="by"]', "territories.region")
+    check(page.evaluate("window.__stay") == 1 and next(x for x in draft_yaml(page)["panels"] if x["id"] == bar)["by"] == "territories.region", "changing what it groups by is also in place")
+    order_before = page.evaluate("[...document.querySelectorAll('.rgrid [data-panel]')].map((n) => n.dataset.panel)")
+    page.click(f'[data-panel="{bar}"] h2')
+    cmd = "up" if page.locator('#designer [data-cmd="up"]:not([disabled])').count() else "down"
+    with changes(page):
+        page.click(f'#designer [data-cmd="{cmd}"]')
+    settled(page)
+    order_after = page.evaluate("[...document.querySelectorAll('.rgrid [data-panel]')].map((n) => n.dataset.panel)")
+    check(page.evaluate("window.__stay") == 1 and order_after != order_before and sorted(order_after) == sorted(order_before), f"moving a panel with a button re-arranges the cards without loading the page ({order_before} -> {order_after})")
+    check(page.locator(f'[data-panel="{other}"]').get_attribute("data-stay") == "yes", "the cards are the same elements, only moved")
+    grip = f'[data-panel="{bar}"] .dz-grip'
+    box = page.locator(grip).bounding_box()
+    target = page.locator(f'[data-panel="{order_after[0] if order_after[0] != bar else order_after[1]}"]').bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(target["x"] + target["width"] / 2, target["y"] + target["height"] - 6, steps=8)
+    with changes(page):
+        page.mouse.up()
+    settled(page)
+    check(page.evaluate("window.__stay") == 1, "a drag and drop does not load the page either")
+    page.keyboard.press("Escape")
+    with changes(page):
+        page.fill('#designer [data-path="title"]', "Page title")
+        page.press('#designer [data-path="title"]', "Tab")
+    check(page.evaluate("window.__stay") is None, "a change to the page itself (its title) still draws the page again")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
     # ---- on a phone the drawer is a sheet at the bottom
