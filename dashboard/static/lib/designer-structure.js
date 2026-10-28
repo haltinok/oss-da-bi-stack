@@ -239,7 +239,8 @@ const newFilterId = (source, dimension) => {
 export function addFilter(source, catalog, dimension) {
   const next = clone(source);
   const id = newFilterId(next, dimension);
-  const filter = { id, dimension, label: humanize(dimension) };
+  // A new filter lets the reader pick several values (or a date range for a time field); one value is still a choice of Type.
+  const filter = { id, dimension, label: humanize(dimension), type: dimensionTypeOf(catalog, dimension) === "time" ? "date" : "multiselect" };
   next.filters = [...(next.filters || []), filter];
   const ignored = ignoreWhereUnreachable(next, catalog, filter);
   return { source: next, id, notes: ignored.length ? ["ignored"] : [] };

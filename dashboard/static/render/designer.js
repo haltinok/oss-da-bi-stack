@@ -4,7 +4,7 @@
 // The logic is in lib/designer-model.js (a panel's fields) and lib/designer-structure.js (new panels, removing, filters, the page's fields).
 import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
-import { createControl } from "./filter-controls.js";
+import { createControl, createSlicer } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
@@ -218,6 +218,19 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
 
   /** The row for a filter's default value: the filter's own control for the types that have one, and plain boxes for a select (a value) and a multiselect (values; the options come from data the designer does not read). */
   function defaultRow(f, typ, set) {
+    const known = (typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : [];
+    if (known.length) {                                        // the real values, picked from a list (one for a select, several for a multiselect)
+      const picker = createSlicer({ ...f, label: dz.f.filterDefault }, t, "list");
+      picker.setOptions(known.map((value) => ({ value })));
+      picker.show(f.default || "");
+      picker.onChange = set;
+      picker.el.classList.add("dz-default");
+      const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
+      const slot = el("span", { class: "dz-input" });
+      slot.append(picker.el);
+      wrap.append(slot);
+      return wrap;
+    }
     if (typ === "select") return field({ path: "default", kind: "text", key: "filterDefault", optional: true }, f, set);
     const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
     const slot = el("span", { class: "dz-input" });

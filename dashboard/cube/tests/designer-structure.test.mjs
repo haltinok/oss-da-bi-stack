@@ -103,7 +103,7 @@ test("duplicating a panel copies it under a new id, marks the title, and puts it
 test("a new filter ignores the panels that cannot join to its dimension, and says so", () => {
   const { source, id, notes } = addFilter(SOURCE, CATALOG, "products.category");
   assert.equal(id, "category");
-  assert.deepEqual(source.filters.at(-1), { id: "category", dimension: "products.category", label: "Category" });
+  assert.deepEqual(source.filters.at(-1), { id: "category", dimension: "products.category", label: "Category", type: "multiselect" });
   assert.ok(!source.panels.some((p) => (p.ignore_filters || []).includes("category")), "everything here joins to products");
   assert.deepEqual(notes, []);
   const unreachable = addFilter(SOURCE, CATALOG, "territories.region");
@@ -322,4 +322,9 @@ test("turning it on replaces a click rule written by hand, and only bars, pies, 
   assert.equal(setCrossFilter(SOURCE, "kpis", "all").problem, "type");
   assert.equal(setCrossFilter(SOURCE, "nope", "all").problem, "missing");
   assert.deepEqual(CROSS_PANELS, ["bar", "pie", "treemap", "table"]);
+});
+
+test("a new filter starts as several values, or a date range for a time field", () => {
+  assert.equal(addFilter(SOURCE, CATALOG, "products.category").source.filters.at(-1).type, "multiselect");
+  assert.equal(addFilter(SOURCE, CATALOG, "dates.full_date").source.filters.at(-1).type, "date");
 });

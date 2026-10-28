@@ -507,7 +507,9 @@ async function showDashboard() {
     window.__render.patchCount = (window.__render.patchCount || 0) + 1;                 // for the tests: a change applied here
     return true;
   }
-  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, activeTab: () => activeTab, ready: null };
+  /** The values a select or multiselect filter offers (for the designer's default-value picker); [] until its options have loaded. */
+  const filterOptions = (id) => { const f = (spec.filters || []).find((x) => x.id === id); return f ? optionsOf(optionRows.get(id) || [], f, "").map((o) => o.value) : []; };
+  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null };
 
   $("#export-all").hidden = false;
   $("#export-all").addEventListener("click", async () => {
