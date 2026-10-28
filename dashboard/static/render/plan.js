@@ -2,6 +2,8 @@
 // members only; this module never writes SQL. Cube cannot join two fact cubes in one query, so a panel that lists measures of several
 // cubes gets one query per cube and the rows are merged here, on the dimensions the panel groups by.
 
+import { defaultEnv, toCube } from "../lib/filters.js";
+
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
 
@@ -21,11 +23,11 @@ export const ownFilterIds = (def) => {
  * The Cube filters for the page's filter values. A panel leaves out the filters in its ignore_filters and the ones its own clicks set:
  * a cross-filtering panel keeps showing every choice (and marks the selected one) instead of narrowing itself to it.
  */
-export function activeFilters(spec, values, panel = {}) {
+export function activeFilters(spec, values, panel = {}, env = defaultEnv(spec)) {
   const ignored = new Set([...(panel.ignore_filters || []), ...ownFilterIds(panel)]);
   return (spec.filters || [])
     .filter((f) => values[f.id] !== undefined && values[f.id] !== "" && !ignored.has(f.id))
-    .map((f) => ({ member: f.dimension, operator: "equals", values: [String(values[f.id])] }));
+    .flatMap((f) => toCube(f, values[f.id], env));                    // a filter of a kind other than `select` can mean several Cube filters, or none
 }
 
 /** A KPI measure as a term: what to fetch (members) and how to turn the fetched numbers into the tile's value. */
