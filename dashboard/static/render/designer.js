@@ -502,6 +502,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (on) draw();
   }
   button.addEventListener("click", () => setMode(!on));
+  // The filters' options arrive after the page is drawn (and the designer may already be open): the page view is drawn again so a default value can be picked from them.
+  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) draw(); });
 
   // The data the drawer needs: the source of this draft and the members the role may read.
   button.disabled = true;
