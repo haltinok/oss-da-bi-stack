@@ -1227,3 +1227,74 @@ def test_the_python_queries_and_the_renderers_agree_on_a_dashboard_with_cross_fi
     narrowed = next(s for s in dumped if s["values"].get("xf_top_1") == "y")
     assert not any(f["member"] == "products.name" for q in narrowed["panels"]["top"] for f in q["query"]["filters"]), "the clicked panel keeps showing every mark"
     assert any(f["member"] == "products.name" for q in narrowed["panels"]["trend"] for f in q["query"]["filters"]), "the others are narrowed"
+
+
+# ---- table fields with an aggregate (Power BI style): groups, and values summarised over the rows of each group
+def _inventory_table(columns, **extra):
+    def f(spec):
+        spec["roles"] = ["admin"]
+        spec["panels"].append({"id": "inv", "type": "table", "columns": columns, "ignore_filters": ["fy", "region", "category", "subcategory"], **extra})
+        spec["layout"].append([{"inv": 12}])
+    return f
+
+
+AGG_COLUMNS = ["inventory_health.status", {"member": "inventory_health.on_hand", "aggregate": "sum"}, {"member": "inventory_health.unit_cost", "aggregate": "avg", "label": "Average cost"},
+               {"member": "inventory_health.vendor_name", "aggregate": "count_distinct"}, "inventory_health.stockout_items"]
+
+
+def test_a_table_with_aggregated_fields_validates_and_compiles_the_row_key():
+    spec = copy.deepcopy(GOOD)
+    _inventory_table(AGG_COLUMNS, totals="footer")(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert out["rowKeys"] == {"inventory_health": "inventory_health.key"}
+    queries = panel_queries(out, panel(out, "inv"), {})
+    grouped = queries[0]["query"]
+    assert grouped["dimensions"] == ["inventory_health.status"] and "order" not in grouped, "the measures are grouped by the key columns only and ordered here"
+    assert queries[-1]["query"].get("dimensions") is None and queries[-1]["query"]["measures"] == ["inventory_health.stockout_items"], "and the total row is a query of its own"
+    agg = next(q["query"] for q in queries if q["cube"] == "agg:inventory_health")
+    assert agg["dimensions"] == ["inventory_health.status", "inventory_health.key", "inventory_health.on_hand", "inventory_health.unit_cost", "inventory_health.vendor_name"]
+    assert agg["order"] == {"inventory_health.key": "asc"} and agg["limit"] == 20000 and "measures" not in agg
+
+
+def test_an_aggregated_field_is_not_a_key_for_clicks():
+    spec = copy.deepcopy(GOOD)
+    _inventory_table(AGG_COLUMNS, cross_filter=True)(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    made = [f for f in out["filters"] if f.get("implicit")]
+    assert [f["dimension"] for f in made] == ["inventory_health.status"], "only the group column is carried by a click"
+
+
+@pytest.mark.parametrize("columns,needle", [
+    (["inventory_health.status", {"member": "inventory_health.stockout_items", "aggregate": "sum"}], "has its aggregation built in"),
+    (["inventory_health.status", {"member": "inventory_health.status", "aggregate": "sum"}], "sum needs a number field"),
+    (["inventory_health.vendor_name", {"member": "inventory_health.on_hand", "aggregate": "median"}], "aggregate"),
+    (["products.name", {"member": "inventory_health.on_hand", "aggregate": "sum"}, {"member": "internet_sales.order_status", "aggregate": "max"}], "must come from one cube"),
+    ([{"member": "inventory_health.on_hand", "aggregate": "sum"}, "territories.region"], "no join to 'territories'"),
+    ([{"member": "inventory_health.on_hand", "aggregate": "sum"}, {"member": "inventory_health.on_hand", "aggregate": "max"}], "aggregated twice"),
+], ids=["measure", "sum-of-text", "bad-name", "two-cubes", "unreachable-key", "twice"])
+def test_an_aggregate_that_does_not_make_sense_is_refused(columns, needle):
+    errors = run(_inventory_table(columns))
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_python_and_renderer_queries_agree_on_a_table_with_aggregated_fields(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    _inventory_table(AGG_COLUMNS, totals="footer")(spec)
+    spec["panels"].append({"id": "inv2", "type": "table", "ignore_filters": ["fy", "region", "category", "subcategory"],
+                           "columns": [{"member": "inventory_health.on_hand", "aggregate": "max"}, {"member": "inventory_health.status", "aggregate": "first"}]})
+    spec["layout"].append([{"inv2": 12}])
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "a.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        for pid in ("inv", "inv2"):
+            assert panel_queries(out, panel(out, pid), state["values"]) == state["panels"][pid], f"{pid} under {state['values']}"
+    only_values = dumped[0]["panels"]["inv2"]
+    assert len(only_values) == 1 and only_values[0]["query"]["dimensions"] == ["inventory_health.key", "inventory_health.on_hand", "inventory_health.status"], "no group column: one query, the cube's key and the fields"

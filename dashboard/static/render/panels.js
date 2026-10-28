@@ -5,6 +5,7 @@ import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade, arcPath, 
 import { addTimers } from "../lib/timer.js";
 import { pinTotals, pivotHtml, tableHtml } from "../lib/table.js";
 import { toneCue, toneOf, toneWord } from "../lib/rules.js";
+import { AGGREGATE_LIMIT, grandAggregates, groupAggregates } from "../lib/aggregate.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
   PERIOD, heatScale, nextSort, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
@@ -579,11 +580,21 @@ function treemapPanel(def, ctx) {
 function tablePanel(def, ctx) {
   const cols = def.columns;
   const ids = ownFilterIds(def);
-  const { measures, dimensions } = tableParts(def, ctx.spec.members);
+  const { measures, dimensions, values: valueCols } = tableParts(def, ctx.spec.members);
   const kindOf = (m) => ctx.spec.members[m] || {};
+  const aggOf = new Map(valueCols.map((v) => [v.member, v.aggregate]));
+  // What an aggregated field comes out as: counts and sums and averages are numbers; max, min, first and last keep the field's own kind (a number, a date, or text).
+  const aggKind = (m) => { const a = aggOf.get(m), t = kindOf(m).type; return ["sum", "avg", "count", "count_distinct"].includes(a) || t === "number" ? "number" : t === "time" ? "date" : "text"; };
   const colFor = (c) => {
     const m = c.member, kind = kindOf(m);
     const label = c.label || humanize(m);
+    if (aggOf.has(m)) {
+      const a = aggOf.get(m), k = aggKind(m), name = c.label || `${ctx.t.aggregates?.[a] || a} ${humanize(m)}`;
+      const get = (r) => r.aggs?.get(m) ?? null;
+      if (k === "number") { const f = c.format || (a.startsWith("count") ? "int" : undefined); return colOf(name, XLSX_TYPE[f || "number"] || "number", (r) => num(get(r)), ctx.formatter(f, true)); }
+      if (k === "date") return colOf(name, "date", (r) => get(r) && String(get(r)).replace(/\.\d+$/, ""), (v) => (v ? ctx.dateTime(v) : ""));
+      return colOf(name, "text", (r) => get(r), (v) => (v == null ? "" : String(v)));
+    }
     if (kind.kind === "measure") return { ...colOf(label, XLSX_TYPE[c.format || "number"] || "number", (r) => r.values.get(m) ?? null, ctx.formatter(c.format, true)), ...(c.rules ? { tone: (v) => toneOf(c.rules, v) } : {}) };
     if (kind.type === "time") return colOf(label, "date", (r) => r.dims[m] && String(r.dims[m]).replace(/\.\d+$/, ""), (v) => (v ? ctx.dateTime(v) : ""));
     if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format, true));
@@ -597,15 +608,26 @@ function tablePanel(def, ctx) {
   let sorting = null;
   const panel = modelPanel(def, ctx, async (signal) => {
     const order = Object.entries(tableOrder(def, dimensions, sort));
-    const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
+    const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1 && !valueCols.length;          // with aggregated fields the rows are merged and ordered here
     const [res, tot] = await Promise.all([
       runAll(ctx.run, tableQueries(ctx.spec, def, ctx.filterValues(), sort), signal),
       // A failed total must not take the rows down with it: its cells show "–".
       runAll(ctx.run, tableTotalQueries(ctx.spec, def, ctx.filterValues()), signal).catch((e) => { if (signal?.aborted) throw e; return null; }),
     ]);
-    let rows = byDims(res, dimensions);
-    if (!single) {                                    // several measure cubes were merged here: order and limit apply after the merge
-      const get = (r, m) => (kindOf(m).kind === "measure" ? r.values.get(m) : r.dims[m]);
+    // The rows of a table with aggregated fields: the measures grouped by the key columns, and the value fields aggregated over the rows of each group (one query of rows, `agg:<cube>`).
+    const aggRes = res.filter((r) => String(r.cube).startsWith("agg:")), plain = res.filter((r) => !String(r.cube).startsWith("agg:"));
+    const aggRows = aggRes.flatMap((r) => r.rows);
+    let rows = valueCols.length && !measures.length ? [] : byDims(plain, dimensions);
+    let aggTotals = null;
+    const truncated = valueCols.length > 0 && aggRows.length >= AGGREGATE_LIMIT;
+    if (valueCols.length) {
+      const groups = groupAggregates(aggRows, dimensions, valueCols);
+      if (measures.length) for (const r of rows) r.aggs = groups.get(r.key)?.aggs ?? null;
+      else rows = [...groups.values()].map((g) => ({ key: g.key, dims: g.dims, values: new Map(), aggs: g.aggs }));
+      aggTotals = grandAggregates(aggRows, valueCols);
+    }
+    if (!single) {                                    // several measure cubes (or aggregated fields) were merged here: order and limit apply after the merge
+      const get = (r, m) => (aggOf.has(m) ? r.aggs?.get(m) : kindOf(m).kind === "measure" ? r.values.get(m) : r.dims[m]);
       const cmp = (x, y) => (x == null) - (y == null) || (x !== "" && y !== "" && isFinite(x) && isFinite(y) ? x - y : x > y ? 1 : x < y ? -1 : 0);
       for (const [m, dir] of [...order].reverse()) rows.sort((a, b) => cmp(get(a, m), get(b, m)) * (dir === "desc" ? -1 : 1));
       rows = rows.slice(0, def.limit || 100);
@@ -617,11 +639,12 @@ function tablePanel(def, ctx) {
     let totalsRow = null;
     if (def.totals) {
       const t = tot && totals(tot);
-      totalsRow = { position: def.totals, cells: cols.map((c) => (kindOf(c.member).kind === "measure" ? (t?.get(c.member) ?? null) : undefined)) };
+      totalsRow = { position: def.totals, cells: cols.map((c) => (aggOf.has(c.member) ? (aggTotals?.get(c.member) ?? null) : kindOf(c.member).kind === "measure" ? (t?.get(c.member) ?? null) : undefined)) };
     }
     const draw = (host) => {
       const shown = showTotals ? totalsRow : null;
       host.innerHTML = tableHtml({ columns: columns(), rows, totals: shown, sort, toneWords: ctx.t.tones });
+      if (truncated) host.insertAdjacentHTML("beforeend", `<div class="pivot-note">${esc(ctx.t.aggTruncated(AGGREGATE_LIMIT))}</div>`);
       if (shown?.position === "header") pinTotals(host);
       host.querySelectorAll("th.sortable").forEach((h) => {
         const go = () => sortBy(h.dataset.sort);
@@ -637,7 +660,7 @@ function tablePanel(def, ctx) {
     return { rows, columns: columns(), draw, get totals() { return showTotals ? totalsRow : null; } };
   }, { table: false, extra: def.totals ? `<button class="tbl-toggle tot-btn" aria-pressed="true">${esc(ctx.t.totals)}</button>` : "" });
   function sortBy(member) {
-    sort = nextSort(sort, member, kindOf(member).kind === "measure");
+    sort = nextSort(sort, member, kindOf(member).kind === "measure" || (aggOf.has(member) && aggKind(member) === "number"));
     sorting?.abort();
     sorting = new AbortController();
     panel.load(sorting.signal, { force: true }).catch(() => {});      // an older click's answer must not land after a newer one

@@ -181,6 +181,23 @@ The page adds a filter for each field the mark carries (a bar's or pie's `by`, a
 In the designer, a bar, pie, treemap or table has **Clicking it filters the other panels** (No, the whole dashboard, or this tab only when there are tabs); choosing Yes replaces a click rule written by hand and says so. Changing what the panel groups by no longer drops anything: the filters follow the new field.
 The source file keeps only `cross_filter`: the filters are added when the file is compiled. What a click chose shows as chips in a **selection bar** above the panels ("Name: Road-150 ✕"), each with a button that removes it; a click on the chosen mark again undoes it, **Reset** clears them, and they are in the address (`?xf_by_region_1=France`), so a link carries the selection. With `page` the chips show only on the tab they filter.
 
+### Table fields with an aggregate
+A `table` column that is a **dimension** can carry `aggregate`, which makes it a *value* summarised over the rows of each group, as in Power BI: `sum` and `avg` (number fields only), `max`, `min`, `count` (rows with a value), `count_distinct`, `first` and `last`. Dimension columns without `aggregate` are the groups (the rows of the table); measures keep the aggregation built into them in Cube.
+
+```yaml
+- id: stock
+  type: table
+  totals: footer
+  columns:
+    - inventory_health.status                                              # the groups
+    - { member: inventory_health.on_hand, aggregate: sum }                 # "Sum On hand"
+    - { member: inventory_health.unit_cost, aggregate: avg, label: Average cost }
+    - { member: inventory_health.vendor_name, aggregate: count_distinct }
+    - inventory_health.stockout_items                                      # a measure, as before
+```
+
+Rules: all aggregated fields come from one cube, which needs a primary key (the page asks Cube for one row per key and aggregates in the browser, up to 20,000 rows, and says when it reaches that); the group columns must be reachable from that cube; a field has one aggregate per table; sum and avg need a number field; a click on a row is carried by the group columns only. The total row aggregates over all the rows. `first` and `last` follow the order of the cube's primary key. The default title of an aggregated column is, for example, `Sum On hand`; `label` renames it. Clicking its title sorts by it.
+
 ### The slicer
 In the designer: the gallery's **Slicer** adds one for a filter that has none (or makes a filter first), a filter card has a **Show it as a slicer in the layout** box, and picking a slicer shows its Filter and *Shown as* (list, buttons, dropdown). Removing a filter removes its slicer; a filter has one slicer, so a slicer cannot be duplicated, and a filter that has one cannot be hidden.
 

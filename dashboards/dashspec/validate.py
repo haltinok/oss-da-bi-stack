@@ -253,6 +253,43 @@ def _slicer_errors(w, p, spec):
     return errs
 
 
+NUMERIC_ONLY = ("sum", "avg")
+
+
+def _aggregate_errors(w, p, catalog):
+    """A dimension column with `aggregate` is a value summarised over the rows of its group (Power BI style): sum and avg need a number field, a measure already has its aggregation
+    built in, all the aggregated fields come from one cube, and that cube has a primary key (the rows are told apart by it) its key columns can be reached from."""
+    errs = []
+    agg = [c for c in p["columns"] if isinstance(c, dict) and "aggregate" in c]
+    cubes = set()
+    for c in agg:
+        found = catalog.lookup(c["member"])
+        if found is None:
+            continue
+        kind, typ = found
+        if kind == "measure":
+            errs.append(f"{w}: columns: '{c['member']}' is a measure and has its aggregation built in; `aggregate` is for dimension columns")
+            continue
+        if c["aggregate"] in NUMERIC_ONLY and typ != "number":
+            errs.append(f"{w}: columns: '{c['member']}' is a {typ} field; {c['aggregate']} needs a number field (use count, count_distinct, first, last, max or min)")
+        cubes.add(c["member"].partition(".")[0])
+    members = [c["member"] for c in agg]
+    for m in sorted({x for x in members if members.count(x) > 1}):
+        errs.append(f"{w}: columns: '{m}' is aggregated twice; each field has one aggregate in a table")
+    if len(cubes) > 1:
+        errs.append(f"{w}: columns: aggregated fields must come from one cube, these come from {', '.join(sorted(cubes))}")
+    elif cubes:
+        cube = next(iter(cubes))
+        if not catalog.cubes.get(cube, {}).get("primary_key"):
+            errs.append(f"{w}: columns: cube '{cube}' has no primary key dimension, so its rows cannot be told apart to aggregate their fields")
+        for c in p["columns"]:
+            m = column_member(c)
+            kind = (catalog.lookup(m) or ("",))[0]
+            if kind == "dimension" and not (isinstance(c, dict) and "aggregate" in c) and not catalog.reachable(cube, m.partition(".")[0]):
+                errs.append(f"{w}: columns: '{m}' cannot be combined with the aggregated fields of '{cube}': cube '{cube}' has no join to '{m.partition('.')[0]}'")
+    return errs
+
+
 def _cross_filter_errors(w, p, spec, used):
     """`cross_filter` is a click rule written for you: not together with `on_click`, `page` only where there are tabs, and a table must show one or two dimension columns."""
     errs = []
@@ -342,6 +379,7 @@ def semantic_errors(spec, catalog):
         if p["type"] == "bar" and "stack" in p and "split" in p:
             errs.append(f"{w}: split: a bar that is stacked by measures (stack) cannot also be split by a dimension")
         if p["type"] == "table":
+            errs.extend(_aggregate_errors(w, p, catalog))
             shown = [column_member(c) for c in p["columns"]]
             for col in p.get("order", {}):
                 if col not in shown:
@@ -349,8 +387,8 @@ def semantic_errors(spec, catalog):
             for c in p["columns"]:
                 if isinstance(c, dict) and "rules" in c and (catalog.lookup(c["member"]) or ("",))[0] != "measure":
                     errs.append(f"{w}: columns: '{c['member']}' has `rules`, which colour a measure column; it is not a measure")
-            if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown):
-                errs.append(f"{w}: totals: a total row needs at least one measure column")
+            if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown) and not any(isinstance(c, dict) and "aggregate" in c for c in p["columns"]):
+                errs.append(f"{w}: totals: a total row needs at least one measure column or aggregated field")
         if p["type"] == "pivot":
             for m in p["measures"]:
                 if isinstance(m, dict) and "rules" in m:
@@ -437,7 +475,7 @@ def _click_errors(p, w, ids, filters, catalog, errs):
             if dim.partition(".")[2] not in TIME_FILTERS:
                 errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}'; a click on a time chart can set a filter on a fiscal_year or calendar_year dimension")
     elif kind in ("bar", "pie", "treemap", "table", "pivot"):
-        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "pivot": [*p.get("rows", []), *([] if not isinstance(p.get("columns"), str) else [p["columns"]])], "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure"]}[kind]
+        carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "pivot": [*p.get("rows", []), *([] if not isinstance(p.get("columns"), str) else [p["columns"]])], "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure" and not (isinstance(c, dict) and "aggregate" in c)]}[kind]
         if kind in ("bar", "pie") and len(ids) > 1:
             errs.append(f"{w}: on_click.set_filter: a click on a {kind} carries one value, {len(ids)} filters are named")
         for pos, i in enumerate(ids):

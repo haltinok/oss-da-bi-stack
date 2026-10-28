@@ -3,6 +3,7 @@
 // cubes gets one query per cube and the rows are merged here, on the dimensions the panel groups by.
 
 import { defaultEnv, toCube } from "../lib/filters.js";
+import { AGGREGATE_LIMIT } from "../lib/aggregate.js";
 
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
@@ -187,8 +188,12 @@ export function panelMeasures(p, members = {}) {
 
 /** The members a table shows, split by kind with the compiled `members` map: { measures, dimensions }. */
 export function tableParts(p, members) {
-  const cols = p.columns.map((c) => c.member);
-  return { measures: cols.filter((m) => members[m]?.kind === "measure"), dimensions: cols.filter((m) => members[m]?.kind !== "measure") };
+  const isMeasure = (c) => members[c.member]?.kind === "measure";
+  return {
+    measures: p.columns.filter(isMeasure).map((c) => c.member),
+    dimensions: p.columns.filter((c) => !isMeasure(c) && !c.aggregate).map((c) => c.member),          // the groups
+    values: p.columns.filter((c) => !isMeasure(c) && c.aggregate).map((c) => ({ member: c.member, aggregate: c.aggregate })),          // summarised over each group's rows
+  };
 }
 
 /** The CSS colour for a series: a theme name (internet, reseller) is a CSS variable, a hex colour is used as is, none cycles a palette. */
@@ -352,12 +357,19 @@ export function nextSort(sort, member, isMeasure) {
 }
 
 export function tableQueries(spec, def, values, sort) {
-  const { measures, dimensions } = tableParts(def, spec.members);
+  const { measures, dimensions, values: agg } = tableParts(def, spec.members);
   const order = tableOrder(def, dimensions, sort);
-  const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1;
-  const base = { dimensions, filters: activeFilters(spec, values, def), ...(single ? { order, limit: def.limit || 100 } : {}) };
-  if (!measures.length) return [{ cube: "", query: { ...base, order, limit: def.limit || 100 } }];
-  return followPeriod(spec, def, values, queriesPerCube(measures, base));
+  const filters = activeFilters(spec, values, def);
+  const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1 && !agg.length;           // with aggregated fields the rows are merged and ordered in the page, not in Cube
+  const base = { dimensions, filters, ...(single ? { order, limit: def.limit || 100 } : {}) };
+  const out = [];
+  if (measures.length) out.push(...followPeriod(spec, def, values, queriesPerCube(measures, base)));
+  else if (!agg.length) return [{ cube: "", query: { ...base, order, limit: def.limit || 100 } }];
+  if (agg.length) {                                                                              // the rows the value fields are aggregated over: one per row of their cube, tagged `agg:<cube>`
+    const cube = cubeOf(agg[0].member), key = spec.rowKeys[cube];
+    out.push({ cube: `agg:${cube}`, query: { dimensions: [...dimensions, key, ...new Set(agg.map((a) => a.member))], filters, order: { [key]: "asc" }, limit: AGGREGATE_LIMIT } });
+  }
+  return out;
 }
 
 /** A table's total row (`def.totals`): its measures with no grouping and no limit, one query per cube, so Cube aggregates over the whole set. */

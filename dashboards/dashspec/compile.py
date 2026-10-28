@@ -21,6 +21,19 @@ def compile_spec(spec, used, catalog=None):
         out["layout"] = rows(spec["layout"])
     out["members"] = {m: used[m] for m in sorted(used)}
     if catalog is not None:
+        # a table that aggregates dimension fields needs to tell the rows of their cube apart: the cube's primary key (the renderer asks for it with those fields)
+        keys = {}
+        for p in spec["panels"]:
+            if p["type"] == "table":
+                for c in p["columns"]:
+                    if isinstance(c, dict) and "aggregate" in c:
+                        cube = c["member"].partition(".")[0]
+                        pk = catalog.cubes.get(cube, {}).get("primary_key")
+                        if pk:
+                            keys[cube] = f"{cube}.{pk}"
+        if keys:
+            out["rowKeys"] = keys
+    if catalog is not None:
         # which cubes each cube joins to: the renderer applies a drill-down's period only to panels that can reach the time dimension
         cubes = {m.partition(".")[0] for m in used} | {spec["time"]["dimension"].partition(".")[0]}
         out["cubes"] = {c: {"joins": sorted(catalog.cubes[c]["joins"])} for c in sorted(cubes)

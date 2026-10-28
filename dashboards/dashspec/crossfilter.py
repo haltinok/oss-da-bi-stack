@@ -18,8 +18,8 @@ def carried(panel, used):
     if kind == "treemap":
         return list(panel["group"])
     if kind == "table":
-        cols = [c["member"] if isinstance(c, dict) else c for c in panel["columns"]]
-        return [m for m in cols if used.get(m, {}).get("kind") != "measure"]
+        cols = [c if isinstance(c, dict) else {"member": c} for c in panel["columns"]]
+        return [c["member"] for c in cols if used.get(c["member"], {}).get("kind") != "measure" and "aggregate" not in c]          # an aggregated field is a value, not a key
     return []
 
 
