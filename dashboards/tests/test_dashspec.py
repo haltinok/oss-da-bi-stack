@@ -917,3 +917,50 @@ def test_an_inline_logo_of_a_real_image_type_is_accepted_and_compiled(uri):
 def test_an_inline_logo_that_is_not_what_it_says_is_refused(logo, needle):
     errors = run(lambda s: s.update(theme={"logo": logo}))
     assert errors and needle in "\n".join(errors), errors
+
+
+# ---- filter types
+def _filters(*fs):
+    def f(spec):
+        spec["filters"] = [*spec["filters"], *fs]
+    return f
+
+
+@pytest.mark.parametrize("flt", [
+    {"id": "m", "dimension": "products.category", "type": "multiselect", "default": "in:Bikes,Clothing"},
+    {"id": "m", "dimension": "products.category", "type": "multiselect", "default": "not:Clothing"},
+    {"id": "t", "dimension": "products.name", "type": "text", "default": "contains:bike"},
+    {"id": "d", "dimension": "dates.full_date", "type": "date", "default": "rel:last_30_days"},
+    {"id": "d", "dimension": "dates.full_date", "type": "date", "default": "between:2024-01-01..2024-03-31"},
+    {"id": "d", "dimension": "dates.full_date", "type": "date"},
+    {"id": "n", "dimension": "dates.fiscal_year", "label": "Year", "type": "select", "default": "2021"},
+])
+def test_the_filter_types_validate(flt):
+    assert run(_filters(flt)) == []
+
+
+@pytest.mark.parametrize("flt,needle", [
+    ({"id": "d", "dimension": "products.category", "type": "date"}, "needs a time dimension"),
+    ({"id": "n", "dimension": "products.category", "type": "number"}, "needs a number dimension"),
+    ({"id": "t", "dimension": "dates.full_date", "type": "text"}, "needs a string dimension"),
+    ({"id": "d", "dimension": "dates.full_date", "type": "date", "default": "rel:last_5_hours"}, "not a value of a date filter"),
+    ({"id": "d", "dimension": "dates.full_date", "type": "date", "default": "contains:x"}, "not a value of a date filter"),
+    ({"id": "m", "dimension": "products.category", "type": "multiselect", "default": "Bikes"}, "not a value of a multiselect filter"),
+    ({"id": "m", "dimension": "products.category", "type": "multiselect", "default": "between:5..1"}, "not a value of a multiselect filter"),
+    ({"id": "x", "dimension": "products.category", "type": "slider"}, "type"),
+    ({"id": "x", "dimension": "products.category", "default": ""}, "default"),
+    ({"id": "t", "dimension": "products.name", "type": "text", "parent": "products.category"}, "only a select or multiselect"),
+])
+def test_a_filter_that_does_not_fit_its_type_is_refused(flt, needle):
+    errors = run(_filters(flt))
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_a_parent_must_be_a_plain_select_and_a_click_can_only_set_a_select():
+    errors = run(_filters({"id": "grp", "dimension": "territories.group_name", "type": "multiselect"}))        # the region filter's parent is this one
+    assert any("must be a plain select" in e for e in errors), errors
+
+    def click(spec):
+        next(f for f in spec["filters"] if f["id"] == "region")["type"] = "multiselect"          # the territories table's click sets it
+    errors = run(click)
+    assert any("can only set a select filter" in e for e in errors), errors

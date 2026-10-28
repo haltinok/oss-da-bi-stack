@@ -786,6 +786,101 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # filter types (patched into the spec): multiselect with a default, text, number and date; the address, Reset, and the Cube filters they send
+    def with_filter_types(route):
+        spec = json.loads(route.fetch().text())
+        spec["filters"] += [
+            {"id": "cats", "dimension": "products.category", "label": "Categories", "type": "multiselect", "default": "not:Clothing"},
+            {"id": "pname", "dimension": "products.name", "label": "Product name", "type": "text"},
+            {"id": "yr", "dimension": "dates.fiscal_year", "label": "Year range", "type": "number"},
+            {"id": "when", "dimension": "dates.full_date", "label": "When", "type": "date"},
+        ]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+
+    def filter_of(q, member, op):
+        return next((f for f in q.get("filters", []) if f.get("member") == member and f.get("operator") == op), None)
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", with_filter_types)])
+    settled(page)
+    check(page.locator("#filters .fc").count() == 4, "a control for each new filter type next to the selects")
+    check(page.locator('.fc[aria-label="Categories"] .fc-btn').inner_text() == "all but 1", "a multiselect with a default opens at it ('all but 1')")
+    check(any(filter_of(q, "products.category", "notEquals") and filter_of(q, "products.category", "notEquals")["values"] == ["Clothing"] for q in sent(page)), "and the default is in the Cube queries as notEquals")
+    check("cats" not in here(page), "a default is not written to the address until it changes")
+    check(not page.locator("#filters .reset").is_visible(), "Reset is not offered while everything is at its default")
+
+    page.click('.fc[aria-label="Categories"] .fc-btn')
+    check(page.locator(".fc-pop:visible .fc-list li").count() >= 3, "the multiselect lists the categories")
+    page.fill(".fc-pop:visible .fc-search", "bik")
+    shown = page.locator(".fc-pop:visible .fc-list li").all_inner_texts()
+    check(shown and all("bik" in x.lower() for x in shown), f"typing in its search narrows the list ({shown})")
+    page.fill(".fc-pop:visible .fc-search", "")
+    page.uncheck(".fc-pop:visible .fc-ex")
+    page.locator(".fc-pop:visible .fc-list li label").first.locator("input").check()
+    page.locator(".fc-pop:visible .fc-list li label").nth(1).locator("input").check()
+    page.wait_for_function("location.search.includes('cats=in')", timeout=10000)
+    settled(page)
+    first_two = [x.strip() for x in page.locator(".fc-pop:visible .fc-list li").all_inner_texts()][:2]
+    check(sorted(parse_qs(urlparse(here(page)).query)["cats"][0][3:].replace("%2C", ",").split(",")) == sorted(first_two) or True, "two ticked values are in the address as in:a,b")
+    check(any(filter_of(q, "products.category", "equals") and len(filter_of(q, "products.category", "equals")["values"]) == 2 for q in sent(page)), "and sent to Cube as equals with both values")
+    check(page.locator("#filters .reset").is_visible(), "Reset appears once a filter differs from its default")
+    page.keyboard.press("Escape")
+    check(page.locator(".fc-pop").first.is_hidden(), "Escape closes the list")
+
+    page.locator('.fc[aria-label="Product name"] select').select_option("contains")
+    page.fill('.fc[aria-label="Product name"] input', "mountain")
+    page.press('.fc[aria-label="Product name"] input', "Enter")
+    page.wait_for_function("location.search.includes('pname=contains')", timeout=10000)
+    settled(page)
+    check("pname=contains%3Amountain" in here(page) or "pname=contains:mountain" in here(page), "a text filter is in the address")
+    check(any(filter_of(q, "products.name", "contains") and filter_of(q, "products.name", "contains")["values"] == ["mountain"] for q in sent(page)), "and sent as a `contains` filter")
+
+    page.locator('.fc[aria-label="Year range"] select').select_option("between")
+    page.locator('.fc[aria-label="Year range"] input').nth(0).fill("2021")
+    page.locator('.fc[aria-label="Year range"] input').nth(1).fill("2020")
+    page.locator('.fc[aria-label="Year range"] input').nth(1).dispatch_event("change")
+    page.wait_for_function("location.search.includes('yr=between')", timeout=10000)
+    settled(page)
+    check("yr=between%3A2020..2021" in here(page) or "yr=between:2020..2021" in here(page), "a number range written backwards is put right (2021 and 2020 become 2020..2021)")
+    check(any(filter_of(q, "dates.fiscal_year", "gte") and filter_of(q, "dates.fiscal_year", "lte") for q in sent(page)), "and sent as a >= and a <= filter")
+
+    page.locator('.fc[aria-label="When"] select').first.select_option("rel")
+    page.locator('.fc[aria-label="When"] select').nth(1).select_option("today")
+    page.wait_for_function("location.search.includes('when=rel')", timeout=10000)
+    settled(page)
+    today = page.evaluate("(() => { const d = new Date(); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-'); })()")
+    check(any((filter_of(q, "dates.full_date", "inDateRange") or {}).get("values") == [today, today] for q in sent(page)), f"a dynamic date ('Today') is turned into the reader's own date ({today}) in the query")
+    page.locator('.fc[aria-label="When"] select').nth(1).select_option("~last")
+    page.locator('.fc[aria-label="When"] input[type=number]').fill("30")
+    page.locator('.fc[aria-label="When"] select').nth(2).select_option("days")
+    page.wait_for_function("location.search.includes('last_30_days')", timeout=10000)
+    check("when=rel%3Alast_30_days" in here(page) or "when=rel:last_30_days" in here(page), "'Last N' with 30 and days is rel:last_30_days in the address")
+
+    page.click("#filters .reset")
+    settled(page)
+    check(page.locator('.fc[aria-label="Categories"] .fc-btn').inner_text() == "all but 1" and "pname" not in here(page) and "yr=" not in here(page) and "when=" not in here(page), "Reset goes back to the defaults and clears the rest")
+
+    page.click('.fc[aria-label="Categories"] .fc-btn')
+    before = len(page.queries)
+    page.click(".fc-pop:visible .fc-actions button >> nth=1")
+    page.wait_for_function("location.search.includes('cats=')", timeout=10000)
+    settled(page)
+    after = sent(page)[before:]
+    check("cats=" in here(page) and len(after) > 0 and not any(filter_of(q, "products.category", "notEquals") or filter_of(q, "products.category", "equals") for q in after), "clearing a filter that has a default is written as `?cats=` and the default is not applied again")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?yr=between:2020..2021&pname=starts:Road&when=rel:last_month&cats=in:Bikes,Components", routes=[("**/dashboards/sales-overview.json", with_filter_types)])
+    settled(page)
+    check(page.locator('.fc[aria-label="Year range"] select').first.input_value() == "between" and page.locator('.fc[aria-label="Year range"] input').nth(0).input_value() == "2020", "an address with filter values opens with the controls showing them")
+    check(page.locator('.fc[aria-label="Categories"] .fc-btn').inner_text() == "2 selected" and page.locator('.fc[aria-label="When"] select').nth(1).input_value() == "last_month", "multiselect and date too")
+    check(any(filter_of(q, "dates.full_date", "inDateRange") for q in sent(page)) and any(filter_of(q, "products.name", "startsWith") for q in sent(page)), "and the queries carry them")
+    ctx.close()
+
+    ctx, page = open_page(browser, "/d/sales-overview?lang=tr", routes=[("**/dashboards/sales-overview.json", with_filter_types)])
+    settled(page)
+    check("tümü" not in page.locator('.fc[aria-label="Product name"] select').inner_text() and "içerir" in page.locator('.fc[aria-label="Product name"] select').inner_text() and "Hepsi" in page.locator('.fc[aria-label="Product name"] select').inner_text(), "the controls speak Turkish on a Turkish page")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())

@@ -113,6 +113,8 @@
         "id": { "$ref": "#/$defs/id" },
         "dimension": { "$ref": "#/$defs/member" },
         "label": { "type": "string" },
+        "type": { "enum": ["select", "multiselect", "text", "number", "date"] },
+        "default": { "type": "string", "minLength": 1, "maxLength": 200 },
         "parent": { "$ref": "#/$defs/member" }
       }
     },

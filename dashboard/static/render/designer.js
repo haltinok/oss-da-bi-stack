@@ -117,6 +117,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <p class="hint">${esc(dz.footer)}</p>`;
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
+      if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
       if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
       else slot.append(control(fd, panel, (v) => {
@@ -404,12 +405,15 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   try {
     const [r, cat] = await Promise.all([api.validate(draft.yaml), api.catalog()]);
     if (!r.ok) throw new Error(r.problems?.[0] || "the draft does not validate");
+    if (!r.source) throw new Error(dz.oldBuilder);                              // a builder service built before the designer existed does not send the source back
     source = r.source;
     catalog = cat;
     button.disabled = false;
     document.body.append(el("datalist", { id: "dz-colors" }, '<option value="internet"><option value="reseller">'));
   } catch (e) {
     button.title = e.message;
+    button.after(el("span", { class: "hint", id: "bd-design-note", role: "status" }, esc(e.message)));
+    write({ ...read(), on: false, panel: null });                                // the designer is not usable: do not reopen it empty on the next load
     return;
   }
   if (state.on) {
