@@ -5,6 +5,7 @@
 import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setPageField, timeDimensions } from "../lib/designer-structure.js";
+import { LISTS, addItem, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { dropPanel, moveCommand, moveTab, moveToTab, renameTab, rowOf, tabsOf } from "../lib/designer-layout.js";
 import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
@@ -107,11 +108,58 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <p class="hint">${esc(dz.footer)}</p>`;
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
-      slot.append(control(fd, panel, (v) => {
+      if (fd.kind === "value") slot.append(valueControl(fd, panel));
+      else slot.append(control(fd, panel, (v) => {
         const edit = setField(source, selected, fd.path, v, { optional: fd.optional });
         return commit(edit, { message: dz.changed(edit.source.panels.find((p) => p.id === selected)?.title || selected) });          // named as it will be after the change
       }));
+      if (fd.list && fd.count > listRule(panel, fd.list).min) slot.append(el("button", { type: "button", class: "dz-mini", "data-rmitem": `${fd.list}:${fd.index}` }, esc(dz.removeItem)));
     }
+    const lists = Object.keys(LISTS).filter((k) => k.startsWith(`${panel.type}.`)).map((k) => k.split(".")[1]);
+    const form = drawer.querySelector(".dz-form");
+    for (const name of lists) if (Array.isArray(panel[name]) && panel[name].length < listRule(panel, name).max) form.append(el("button", { type: "button", class: "dz-mini", "data-additem": name }, esc(name === "series" ? dz.addSeries : dz.addMeasure)));
+  }
+
+  /** A measure no part of `item` uses yet (what "add a measure" and a change to a sum or ratio start with); undefined when the role may read no other. */
+  const spareFor = (item) => {
+    const used = new Set(membersOfItem(item));
+    return measureOptions(catalog).find((o) => !used.has(o.value))?.value;
+  };
+  const membersOfItem = (item) => (typeof item === "string" ? [item] : item?.member ? [item.member] : item?.sum || [...(item?.ratio?.num || []), ...(item?.ratio?.den || [])]);
+
+  /** The control for a measure, a sum or a ratio (a KPI's measure, a time chart's series): which of the three, then its members, and the formula in words. */
+  function valueControl(fd, panel) {
+    const item = getAt(panel, fd.path), kind = kindOf(item);
+    const wrap = el("div", { class: "dz-value" });
+    const kinds = el("select", { "data-path": `${fd.path}.kind`, "aria-label": dz.f.formula });
+    for (const k of ["member", "sum", "ratio"]) kinds.append(el("option", { value: k }, esc(dz.kind[k])));
+    kinds.value = kind;
+    kinds.addEventListener("change", () => commit(changeKind(source, selected, fd.path, kinds.value, spareFor(item)), { message: dz.changed(panel.title || selected) }));
+    wrap.append(kinds);
+    const named = () => dz.changed(panel.title || selected);
+    const members = (part, list, canRm) => {
+      const box = el("div", { class: "dz-parts" });
+      if (part !== "sum" && part !== "member") box.append(el("span", { class: "hint" }, esc(dz.part[part])));
+      list.forEach((m, i) => {
+        const row = el("div", { class: "dz-part" });
+        row.append(control({ path: `${fd.path}.${part === "sum" ? "sum" : `ratio.${part}`}.${i}`, kind: "measure" }, panel, (v) => commit(setPart(source, selected, fd.path, part, i, v), { message: named() })));
+        if (canRm) row.append(el("button", { type: "button", class: "dz-mini", "aria-label": dz.removePart }, "−"));
+        row.querySelector("button")?.addEventListener("click", () => commit(removePart(source, selected, fd.path, part, i), { message: named() }));
+        box.append(row);
+      });
+      const add = el("button", { type: "button", class: "dz-mini" }, esc(dz.addPart));
+      add.addEventListener("click", () => commit(spareFor(item) ? addPart(source, selected, fd.path, part, spareFor(item)) : { problem: "spare" }, { message: named() }));
+      box.append(add);
+      return box;
+    };
+    if (kind === "member") wrap.append(control({ path: `${fd.path}.member`, kind: "measure" }, panel, (v) => {
+      const edit = setField(source, selected, `${fd.path}.member`, v);
+      return commit(edit, { message: named() });
+    }));
+    else if (kind === "sum") wrap.append(members("sum", item.sum, canRemovePart(item, "sum")));
+    else wrap.append(members("num", item.ratio.num, canRemovePart(item, "num")), members("den", item.ratio.den, canRemovePart(item, "den")));
+    if (kind !== "member") wrap.append(el("p", { class: "hint dz-preview" }, esc(dz.formulaIs(describe(item)))));
+    return wrap;
   }
 
   /** The dimensions a filter may be on: any the role may read. */
@@ -212,6 +260,16 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (cmd) { commit(moveCommand(source, selected, cmd.dataset.cmd), { message: dz.moved }); return; }
     const tabMove = e.target.closest("[data-tab-move]");
     if (tabMove) { const [id, dir] = tabMove.dataset.tabMove.split(":"); commit(moveTab(source, id, Number(dir)), { message: dz.tabMoved, panel: null }); return; }
+    const rmItem = e.target.closest("[data-rmitem]");
+    if (rmItem) { const [name, i] = rmItem.dataset.rmitem.split(":"); commit(removeItem(source, selected, name, Number(i)), { message: dz.changed(panelDef()?.title || selected) }); return; }
+    const addItemBtn = e.target.closest("[data-additem]");
+    if (addItemBtn) {
+      const name = addItemBtn.dataset.additem, list = panelDef()?.[name] || [];
+      const used = new Set(list.flatMap(membersOfItem));
+      const spare = measureOptions(catalog).find((o) => !used.has(o.value))?.value || measureOptions(catalog)[0]?.value;       // one already on the panel is fine when the role reads no other
+      commit(addItem(source, selected, name, spare), { message: dz.changed(panelDef()?.title || selected) });
+      return;
+    }
     const add = e.target.closest("[data-add]");
     if (add) { commit(addPanel(source, add.dataset.add, catalog, { tab: activeTab(), title: titleOf }), { message: dz.added(typeName(add.dataset.add)) }); return; }
     const rm = e.target.closest("[data-rm-filter]");
