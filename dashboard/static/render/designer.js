@@ -117,6 +117,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <p class="hint">${esc(dz.footer)}</p>`;
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
+      if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
       if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
       else slot.append(control(fd, panel, (v) => {

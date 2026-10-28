@@ -519,6 +519,10 @@ with sync_playwright() as p:
         page.click("#dz-onepage")
     settled(page)
     check("tabs" not in yaml_of(page) and placed() == sorted([*all_ids, "note"]), "Back to one page puts every panel on a single layout")
+    reload_after(lambda: page.click("#dz-totabs"))
+    page.click(f'[data-panel="{panel_of(page, "kpi")}"] .card', position={"x": 6, "y": 6})
+    check(page.locator("#dz-totab").count() == 1 and page.locator('#designer [data-additem="measures"]').count() == 1 and page.locator('#designer [data-addrule="measures.0"]').count() == 1, "on a dashboard with tabs a picked panel still gets its Move to tab and all its buttons (Add a measure, Add a colour rule)")
+    check(not [p for p in page.problems if "pageerror" in p], f"and no script errors while picking it {page.problems[:2]}")
     ctx.close()
 
     # ---- colour rules on a key figure and on a table's measure column
