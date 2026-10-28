@@ -91,6 +91,29 @@ export function addPanel(source, type, catalog, { tab = null, title } = {}) {
   return { source: next, id };
 }
 
+// ------------------------------------------------------------------------------------------------------------------ cross-filtering
+export const CROSS_PANELS = ["bar", "pie", "treemap", "table"];
+
+/** What a panel's click does: "" (nothing, or a click rule written in the YAML), "all" (`cross_filter: true`) or "page" (`cross_filter: page`). */
+export const crossModeOf = (panel) => (panel.cross_filter === "page" ? "page" : panel.cross_filter ? "all" : "");
+
+/**
+ * Turns "clicking this panel filters the other panels" on (`all`: the whole dashboard; `page`: this panel's tab, needs tabs) or off. Turning it on replaces a click rule written by hand
+ * (the file may not have both) and says so. Returns { source, notes } or { problem: "notabs" | "type" | "missing" }.
+ */
+export function setCrossFilter(source, panelId, mode) {
+  const next = clone(source);
+  const panel = next.panels.find((p) => p.id === panelId);
+  if (!panel) return { problem: "missing" };
+  if (!CROSS_PANELS.includes(panel.type)) return { problem: "type" };
+  const notes = [];
+  if (!mode) { delete panel.cross_filter; return { source: next, notes }; }
+  if (mode === "page" && !next.tabs?.length) return { problem: "notabs" };
+  if (panel.on_click) { delete panel.on_click; notes.push("clickReplaced"); }
+  panel.cross_filter = mode === "page" ? "page" : true;
+  return { source: next, notes };
+}
+
 // ------------------------------------------------------------------------------------------------------------------ slicers
 /** The slicer panel that draws a filter, if there is one. */
 export const slicerOf = (source, filterId) => source.panels.find((p) => p.type === "slicer" && p.filter === filterId);
