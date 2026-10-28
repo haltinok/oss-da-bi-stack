@@ -1011,6 +1011,77 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- the other panel types' own fields: what the drawer did not offer before
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    pnl = lambda pid: next(x for x in yaml_of(page)["panels"] if x["id"] == pid)
+    trend = panel_of(page, "timeseries")
+    page.click(f'[data-panel="{trend}"] h2')
+    check(page.locator('#designer [data-path="granularities"] input').count() == 6 and page.locator('#designer [data-path="drill"]').count() == 1, "a time chart offers the steps to switch between and a drill-down path")
+    with changes(page):
+        page.locator('#designer [data-path="granularities"] input[value="quarter"]').uncheck()
+    settled(page)
+    check(pnl(trend).get("granularities") == ["month", "year"], f"unticking a step takes it out of the switch ({pnl(trend).get('granularities')})")
+    with changes(page):
+        page.select_option('#designer [data-path="drill"]', "ymd")
+    settled(page)
+    check(pnl(trend)["drill"] == ["year", "month", "day"] and pnl(trend)["granularity"] == "year" and "granularities" not in pnl(trend), "choosing Year › Month › Day sets the drill-down and drops the switch")
+    with changes(page):
+        page.select_option('#designer [data-path="drill"]', "off")
+    settled(page)
+    check("drill" not in pnl(trend), "and Off removes it")
+    page.click(f'[data-panel="{trend}"] h2')
+    ign = page.locator('#designer [data-path="ignore_filters"] input')
+    check(ign.count() >= 1, "every panel can say which filters it ignores")
+    with changes(page):
+        ign.first.check()
+    settled(page)
+    check(len(pnl(trend).get("ignore_filters", [])) == 1, "ticking one writes ignore_filters")
+    kp = panel_of(page, "kpi")
+    page.click(f'[data-panel="{kp}"] .card', position={"x": 6, "y": 6})
+    with changes(page):
+        page.select_option('#designer [data-path="sparkline.granularity"]', "month")
+    settled(page)
+    check(pnl(kp).get("sparkline") == {"granularity": "month"}, "a key-figures row can get a sparkline (it could only change one that was there)")
+    with changes(page):
+        page.select_option('#designer [data-path="sparkline.granularity"]', "")
+    settled(page)
+    check("sparkline" not in pnl(kp), "and lose it")
+    bar = panel_of(page, "bar")
+    page.click(f'[data-panel="{bar}"] h2')
+    with changes(page):
+        page.select_option('#designer [data-path="~kind"]', "stack")
+    settled(page)
+    check(len(pnl(bar).get("stack", [])) == 2 and "measure" not in pnl(bar), "a bar can be switched to stacked measures")
+    page.wait_for_selector('#designer [data-additem="stack"]', timeout=10000)
+    with changes(page):
+        page.click('#designer [data-additem="stack"]')
+    settled(page)
+    check(len(pnl(bar)["stack"]) == 3, "and gets another measure")
+    with changes(page):
+        page.locator("#designer [data-rmitem]").first.click()
+    settled(page)
+    check(len(pnl(bar)["stack"]) == 2, "and loses one (two stay)")
+    with changes(page):
+        page.select_option('#designer [data-path="~kind"]', "member")
+    settled(page)
+    check(pnl(bar).get("measure") and "stack" not in pnl(bar), "and back to one measure")
+    tbl = panel_of(page, "table")
+    page.click(f'[data-panel="{tbl}"] h2')
+    first_col = page.locator('#designer [data-path="order.member"] option').nth(1).get_attribute("value")
+    with changes(page):
+        page.select_option('#designer [data-path="order.member"]', first_col)
+    settled(page)
+    check(list(pnl(tbl).get("order", {})) == [first_col], f"a table can be sorted by a field ({pnl(tbl).get('order')})")
+    with changes(page):
+        page.select_option('#designer [data-path="order.dir"]', "asc")
+    settled(page)
+    check(pnl(tbl)["order"] == {first_col: "asc"}, "in either direction")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

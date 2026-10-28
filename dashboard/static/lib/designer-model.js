@@ -40,11 +40,12 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
   switch (panel.type) {
     case "kpi":
       measureItem("measures", panel.measures, { formula: true, rules: true });
-      if (panel.sparkline) out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES }));
+      out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES, optional: true }));
       break;
     case "timeseries":
       out.push(f("style", "choice", { key: "style", options: ["line", "area", "stacked-area", "bar", "stacked-bar"] }));
-      if (!panel.drill) out.push(f("granularity", "choice", { key: "granularity", options: GRANULARITIES }));
+      if (!panel.drill) out.push(f("granularity", "choice", { key: "granularity", options: GRANULARITIES }), { path: "granularities", kind: "multicheck", key: "granularities", options: GRANULARITIES });
+      out.push({ path: "drill", kind: "drill", key: "drill" });
       each(panel.series, (s, i) => {
         const g = { n: i + 1, of: panel.series.length };
         out.push(f(`series.${i}`, "value", { key: "measure", group: g, list: "series", index: i, count: panel.series.length }));
@@ -52,17 +53,19 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
       });
       break;
     case "bar":
-      if (panel.stack) each(panel.stack, (s, i) => { const g = { n: i + 1, of: panel.stack.length }; out.push(f(`stack.${i}.member`, "measure", { key: "measure", group: g }), f(`stack.${i}.label`, "text", { key: "label", group: g }), f(`stack.${i}.color`, "color", { key: "color", optional: true, group: g })); });
+      out.push({ path: "~kind", kind: "barkind", key: "barValue" });
+      if (panel.stack) each(panel.stack, (s, i) => { const g = { n: i + 1, of: panel.stack.length }; out.push(f(`stack.${i}.member`, "measure", { key: "measure", group: g, list: "stack", index: i, count: panel.stack.length }), f(`stack.${i}.label`, "text", { key: "label", group: g }), f(`stack.${i}.color`, "color", { key: "color", optional: true, group: g })); });
       else if (panel.measure) out.push(f("measure", "measure", { key: "measure" }), f("label", "text", { key: "label", optional: true }));
-      out.push(f("by", "dimension", { key: "by" }), f("sort", "choice", { key: "sort", options: DIRECTIONS, optional: true }), f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }),
+      out.push(f("by", "dimension", { key: "by" }), f("by_label", "text", { key: "byLabel", optional: true }), ...(panel.stack ? [] : [f("split", "dimension", { key: "split", optional: true })]),
+        f("sort", "choice", { key: "sort", options: DIRECTIONS, optional: true }), f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }),
         f("orientation", "choice", { key: "orientation", options: ["horizontal", "vertical"], optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "pie":
       out.push({ path: "~value", kind: "pievalue", key: "measure" }, f("label", "text", { key: "label", optional: true }));
-      out.push(f("by", "dimension", { key: "by" }), f("style", "choice", { key: "style", options: ["pie", "donut"], optional: true }), f("limit", "number", { key: "limit", min: 2, max: 30, optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
+      out.push(f("by", "dimension", { key: "by" }), f("by_label", "text", { key: "byLabel", optional: true }), f("style", "choice", { key: "style", options: ["pie", "donut"], optional: true }), f("limit", "number", { key: "limit", min: 2, max: 30, optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "treemap":
-      out.push(f("measure", "measure", { key: "measure" }), f("group.0", "dimension", { key: "group" }), f("group.1", "dimension", { key: "group2", optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
+      out.push(f("measure", "measure", { key: "measure" }), f("label", "text", { key: "label", optional: true }), f("group.0", "dimension", { key: "group" }), f("group_labels.0", "text", { key: "groupLabel", optional: true }), f("group.1", "dimension", { key: "group2", optional: true }), f("group_labels.1", "text", { key: "group2Label", optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "table":
       each(panel.columns, (c, i) => {
@@ -76,12 +79,13 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
         else out.push({ path: `columns.${i}.aggregate`, kind: "aggregate", key: "aggregate", type: typeOf(member), index: i, group: g });
         if (isMeasure(member)) ruleFields(`columns.${i}`, isObj ? c : {}, true);
       });
-      out.push(f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }), f("totals", "choice", { key: "totals", options: ["footer", "header"], optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
+      out.push(f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }), f("totals", "choice", { key: "totals", options: ["footer", "header"], optional: true }), { path: "order", kind: "tableorder", key: "tableOrder" }, f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "pivot":
       out.push(f("rows.0", "dimension", { key: "rows" }), f("rows.1", "dimension", { key: "rows2", optional: true }));
+      out.push({ path: "~step", kind: "pivotstep", key: "columnStep" });
       if (typeof panel.columns === "string") out.push(f("columns", "dimension", { key: "columns" }));
-      else if (panel.columns && typeof panel.columns === "object") out.push(f("columns.member", "dimension", { key: "columns" }), f("columns.granularity", "choice", { key: "columnStep", options: GRANULARITIES }));
+      else if (panel.columns && typeof panel.columns === "object") out.push(f("columns.member", "dimension", { key: "columns" }));
       measureItem("measures", panel.measures);
       out.push(f("totals", "choice", { key: "totals", options: ["both", "rows", "columns", "none"], optional: true }), f("show", "choice", { key: "show", options: ["value", "share_of_row", "share_of_column", "share_of_total"], optional: true }));
       out.push(f("heat.measure", "choice", { key: "heat", options: (panel.measures || []).map((m) => (typeof m === "string" ? m : m?.member)).filter(Boolean), optional: true }),
@@ -97,6 +101,7 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
       break;
     default:
   }
+  if (panel.type !== "text") out.push({ path: "ignore_filters", kind: "ignorefilters", key: "ignoreFilters" });
   return out;
 }
 

@@ -70,7 +70,7 @@ test("removing the measure a pivot's heat map is on removes the heat map", () =>
 
 test("a pivot offers its heat map, order and limits, and a time column its step", () => {
   const paths = fieldsFor(get(SOURCE(), "p")).map((f) => f.path);
-  for (const p of ["columns.member", "columns.granularity", "heat.measure", "order.by", "order.dir", "limit.rows", "limit.columns", "measures.0.label", "measures.1"]) assert.ok(paths.includes(p), p);
+  for (const p of ["columns.member", "~step", "heat.measure", "order.by", "order.dir", "limit.rows", "limit.columns", "measures.0.label", "measures.1"]) assert.ok(paths.includes(p), p);
   const heat = fieldsFor(get(SOURCE(), "p")).find((f) => f.path === "heat.measure");
   assert.deepEqual(heat.options, ["internet_sales.revenue", "internet_sales.orders"]);
   assert.equal(heat.optional, true);
@@ -179,4 +179,50 @@ test("a pie is sized by one measure or by the sum of several, and can be switche
   assert.equal("sum" in back.panels[0], false);
   assert.equal(pieKind(back.panels[0]), "member");
   assert.equal(one.panels[0].measure, "internet_sales.orders", "the argument is not touched");
+});
+
+// ---- the rest of the panels' own fields
+import { DRILL_PRESETS, GRAN_ORDER, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder } from "../../static/lib/designer-items.js";
+
+const TS = () => ({ panels: [{ id: "t", type: "timeseries", series: [{ member: "a.b", label: "B" }], granularity: "month", style: "line", granularities: ["month", "year"], on_click: { set_filter: "fy" } }] });
+
+test("a drill-down path replaces the time-step switch and a click rule, starts at its first level, and can be turned off", () => {
+  const on = setDrill(TS(), "t", "ymd");
+  assert.deepEqual([on.source.panels[0].drill, on.source.panels[0].granularity, "granularities" in on.source.panels[0], "on_click" in on.source.panels[0]], [["year", "month", "day"], "year", false, false]);
+  assert.deepEqual(on.notes.sort(), ["click", "granularitiesDropped"]);
+  assert.equal(drillKeyOf(on.source.panels[0]), "ymd");
+  assert.equal(drillKeyOf({ drill: ["year", "week"] }), "custom");
+  assert.equal(drillKeyOf({}), "off");
+  const off = setDrill(on.source, "t", "off");
+  assert.equal("drill" in off.source.panels[0], false);
+  assert.equal(off.source.panels[0].granularity, "year", "the chart stays at the level it was at");
+  assert.equal(setDrill({ panels: [{ id: "k", type: "kpi", measures: [] }] }, "k", "ymd").problem, "item");
+  assert.ok(Object.values(DRILL_PRESETS).filter(Boolean).every((p) => p.every((g, i) => i === 0 || GRAN_ORDER.indexOf(g) < GRAN_ORDER.indexOf(p[i - 1]))), "every preset goes from coarse to fine");
+});
+
+test("the time steps to switch between: two or more, always including the chart's own, in order; fewer removes the switch; not with a drill-down", () => {
+  const src = { panels: [{ id: "t", type: "timeseries", series: [], granularity: "month" }] };
+  assert.deepEqual(setGranularities(src, "t", ["year", "day"]).source.panels[0].granularities, ["day", "month", "year"]);
+  assert.deepEqual(setGranularities(src, "t", ["year"]).source.panels[0].granularities, ["month", "year"], "one more step is enough: the chart's own is counted");
+  assert.equal("granularities" in setGranularities(src, "t", []).source.panels[0], false, "nothing ticked removes the switch");
+  assert.equal("granularities" in setGranularities(src, "t", ["month"]).source.panels[0], false, "only its own step: no switch");
+  assert.equal(setGranularities({ panels: [{ id: "t", type: "timeseries", series: [], granularity: "year", drill: ["year", "month"] }] }, "t", ["year", "month"]).problem, "drill");
+});
+
+test("ignored filters, a table's sort, a bar's measure or stack, a pivot's column step", () => {
+  assert.deepEqual(setIgnoredFilters(TS(), "t", ["fy", "region"]).source.panels[0].ignore_filters, ["fy", "region"]);
+  assert.equal("ignore_filters" in setIgnoredFilters(setIgnoredFilters(TS(), "t", ["fy"]).source, "t", []).source.panels[0], false);
+  const tbl = { panels: [{ id: "x", type: "table", columns: ["a.b", "a.c"], order: { "a.b": "asc" } }] };
+  assert.deepEqual(setTableOrder(tbl, "x", "a.c", "desc").source.panels[0].order, { "a.c": "desc" }, "one sort field replaces the old one");
+  assert.equal("order" in setTableOrder(tbl, "x", "", "desc").source.panels[0], false);
+  const bar = { panels: [{ id: "b", type: "bar", measure: "a.m", label: "M", by: "p.c", split: "p.d" }] };
+  const stack = setBarKind(bar, "b", "stack", "a.n").source.panels[0];
+  assert.deepEqual([stack.stack.map((s) => s.member), "measure" in stack, "split" in stack, "label" in stack], [["a.m", "a.n"], false, false, false]);
+  const back = setBarKind({ panels: [stack] }, "b", "member").source.panels[0];
+  assert.deepEqual([back.measure, "stack" in back], ["a.m", false]);
+  assert.equal(setBarKind(bar, "b", "stack").problem, "spare");
+  const piv = { panels: [{ id: "p", type: "pivot", rows: ["p.c"], columns: "dates.full_date", measures: ["a.m"] }] };
+  const stepped = setPivotColumnStep(piv, "p", "month").source.panels[0];
+  assert.deepEqual(stepped.columns, { member: "dates.full_date", granularity: "month" });
+  assert.equal(setPivotColumnStep({ panels: [stepped] }, "p", "").source.panels[0].columns, "dates.full_date");
 });

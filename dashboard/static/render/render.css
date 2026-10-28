@@ -361,3 +361,7 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .designer .dz-default .slicer-list { max-height: 160px; }
 .designer .dz-addfield { display: flex; gap: 6px; margin-top: 6px; }
 .designer .dz-addfield select { flex: 1; min-width: 0; }
+.designer .dz-checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.designer .dz-check { display: flex; gap: 4px; align-items: center; font-size: 12.5px; }
+.designer .dz-sort { display: flex; gap: 6px; }
+.designer .dz-sort select { flex: 1; min-width: 0; }

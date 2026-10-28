@@ -7,12 +7,13 @@ import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, s
 import { createControl, createSlicer } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
-import { LISTS, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
+import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
 import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
 
+const GRAN_STEPS = ["day", "week", "month", "quarter", "year"];
 const KEY = "designer";                                           // { on, panel, scroll }: what design mode was doing when the page last loaded
 const read = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || "{}"); } catch { return {}; } };
 const write = (s) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage unavailable: design mode just starts closed after a change */ } };
@@ -149,6 +150,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
       if (fd.kind === "crossfilter") { slot.append(crossControl(panel)); continue; }
       if (fd.kind === "pievalue") { slot.append(pieControl(panel)); continue; }
+      if (["multicheck", "drill", "ignorefilters", "tableorder", "barkind", "pivotstep"].includes(fd.kind)) { slot.append(panelOptionControl(fd, panel)); continue; }
       if (fd.kind === "aggregate") { slot.append(aggregateControl(fd, panel)); continue; }
       if (fd.kind === "builtin") { slot.append(el("span", { class: "dz-formula" }, esc(dz.builtinAgg(memberInfo(fd.member)?.type)))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
@@ -179,6 +181,77 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     wrap.append(pick);
     if (panel.on_click && !panel.cross_filter) wrap.append(el("p", { class: "hint" }, esc(dz.crossByHand)));
     return wrap;
+  }
+
+  /** A set of tick boxes: `options` [{ value, label }], `chosen` values, `onChange(list)`. */
+  function checkList(options, chosen, onChange, path) {
+    const box = el("div", { class: "dz-checks", ...(path ? { "data-path": path } : {}) });
+    for (const o of options) {
+      const lab = el("label", { class: "dz-check" }, "");
+      const cb = el("input", { type: "checkbox", value: o.value });
+      cb.checked = chosen.includes(o.value);
+      cb.addEventListener("change", () => onChange([...box.querySelectorAll("input:checked")].map((x) => x.value)));
+      lab.append(cb, document.createTextNode(` ${o.label}`));
+      box.append(lab);
+    }
+    return box;
+  }
+
+  /** The controls for a panel's own options that are not one plain field: time steps, drill-down, ignored filters, a table's sort, a bar's value, a pivot's column step. */
+  function panelOptionControl(fd, panel) {
+    const named = () => dz.changed(panel.title || selected);
+    const run = (edit) => commit(edit, { message: named() });
+    if (fd.kind === "multicheck") {                                                            // the time steps a reader may switch between
+      if (panel.drill) return el("span", { class: "hint" }, esc(dz.drillReplaces));
+      return checkList(fd.options.map((v) => ({ value: v, label: dz.v[v] || v })), panel.granularities || [], (list) => run(setGranularities(source, selected, list)), "granularities");
+    }
+    if (fd.kind === "drill") {
+      const pick = el("select", { "data-path": "drill", "aria-label": dz.f.drill });
+      for (const k of Object.keys(DRILL_PRESETS)) pick.append(el("option", { value: k }, esc(k === "off" ? dz.v.drill_off : DRILL_PRESETS[k].map((g) => dz.v[g] || g).join(" › "))));
+      const key = drillKeyOf(panel);
+      if (key === "custom") pick.append(el("option", { value: "custom" }, esc((panel.drill || []).join(" › "))));
+      pick.value = key;
+      pick.addEventListener("change", () => { if (pick.value !== "custom") run(setDrill(source, selected, pick.value)); });
+      return pick;
+    }
+    if (fd.kind === "ignorefilters") {
+      const ids = (source.filters || []).map((x) => ({ value: x.id, label: x.label || x.id }));
+      if (source.panels.some((p) => p.drill)) ids.push({ value: "period", label: dz.periodFilter });
+      if (!ids.length) return el("span", { class: "hint" }, esc(dz.noFilters));
+      return checkList(ids, panel.ignore_filters || [], (list) => run(setIgnoredFilters(source, selected, list)), "ignore_filters");
+    }
+    if (fd.kind === "tableorder") {
+      const wrap = el("div", { class: "dz-sort" });
+      const members = panel.columns.map((c) => (typeof c === "string" ? c : c.member));
+      const cur = Object.entries(panel.order || {})[0] || ["", "desc"];
+      const field = el("select", { "data-path": "order.member", "aria-label": dz.f.tableOrder });
+      field.append(el("option", { value: "" }, esc(dz.none)), ...members.map((m) => el("option", { value: m }, esc(m))));
+      const dir = el("select", { "data-path": "order.dir", "aria-label": dz.f.orderDir });
+      for (const d of ["desc", "asc"]) dir.append(el("option", { value: d }, esc(dz.v[d])));
+      field.value = members.includes(cur[0]) ? cur[0] : "";
+      dir.value = cur[1];
+      const push = () => run(setTableOrder(source, selected, field.value, dir.value));
+      field.addEventListener("change", push);
+      dir.addEventListener("change", () => { if (field.value) push(); });
+      wrap.append(field, dir);
+      return wrap;
+    }
+    if (fd.kind === "barkind") {
+      const pick = el("select", { "data-path": "~kind", "aria-label": dz.f.formula });
+      for (const k of ["member", "stack"]) pick.append(el("option", { value: k }, esc(dz.kind[k])));
+      pick.value = panel.stack ? "stack" : "member";
+      pick.addEventListener("change", () => {
+        const used = new Set(panel.stack ? panel.stack.map((x) => x.member) : [panel.measure]);
+        run(setBarKind(source, selected, pick.value, measureOptions(catalog).find((o) => !used.has(o.value))?.value));
+      });
+      return pick;
+    }
+    // pivotstep: the columns are a plain field, or a time field grouped by a step
+    const pick = el("select", { "data-path": "~step", "aria-label": dz.f.columnStep });
+    pick.append(el("option", { value: "" }, esc(dz.none)), ...GRAN_STEPS.map((g) => el("option", { value: g }, esc(dz.v[g] || g))));
+    pick.value = (typeof panel.columns === "object" && panel.columns?.granularity) || "";
+    pick.addEventListener("change", () => run(setPivotColumnStep(source, selected, pick.value)));
+    return pick;
   }
 
   /** A pie's measure: one measure, or the sum of several (the members, add and remove, the sum in words). */
