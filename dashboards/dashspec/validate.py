@@ -6,7 +6,7 @@ import re
 
 from jsonschema import Draft202012Validator
 
-from . import filters as filters_mod
+from . import crossfilter, filters as filters_mod
 
 SCHEMA = json.loads((pathlib.Path(__file__).parent.parent / "schema" / "dashboard.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
@@ -253,6 +253,22 @@ def _slicer_errors(w, p, spec):
     return errs
 
 
+def _cross_filter_errors(w, p, spec, used):
+    """`cross_filter` is a click rule written for you: not together with `on_click`, `page` only where there are tabs, and a table must show one or two dimension columns."""
+    errs = []
+    if "on_click" in p:
+        errs.append(f"{w}: cross_filter: not together with on_click (cross_filter writes the click rule; remove one of them)")
+    if p["cross_filter"] == "page" and "tabs" not in spec:
+        errs.append(f"{w}: cross_filter: 'page' filters the panels of a tab, and this dashboard has no tabs (use true)")
+    if p["type"] == "table":
+        dims = crossfilter.carried(p, used)
+        if not dims:
+            errs.append(f"{w}: cross_filter: a table with no dimension column has nothing to filter by")
+        elif len(dims) > 2:
+            errs.append(f"{w}: cross_filter: a click carries at most 2 dimension columns, this table shows {len(dims)}; use on_click to name the filters of two of them")
+    return errs
+
+
 def semantic_errors(spec, catalog):
     errs = _logo_errors(spec.get("theme", {}).get("logo"))
     used = {}  # member -> (kind, type), for the compiler
@@ -278,6 +294,9 @@ def semantic_errors(spec, catalog):
     filter_ids = [f["id"] for f in filters]
     for dup in sorted({i for i in filter_ids if filter_ids.count(i) > 1}):
         errs.append(f"dashboard: filters: id '{dup}' is used by more than one filter")
+    for fid in filter_ids:
+        if fid.startswith(crossfilter.PREFIX):
+            errs.append(f"dashboard: filters: id '{fid}': ids starting with '{crossfilter.PREFIX}' are made by cross_filter")
     for f in filters:
         w = f"filter '{f['id']}'"
         check(w, "dimension", f["dimension"], "dimension")
@@ -314,6 +333,8 @@ def semantic_errors(spec, catalog):
             _click_errors(p, w, ids, filters, catalog, errs)
         if p["type"] == "slicer":
             errs.extend(_slicer_errors(w, p, spec))
+        if "cross_filter" in p:
+            errs.extend(_cross_filter_errors(w, p, spec, used))
         if p["type"] == "timeseries" and "drill" in p:
             _drill_errors(p, w, errs)
         if p["type"] == "timeseries" and p.get("granularities") and p["granularity"] not in p["granularities"]:

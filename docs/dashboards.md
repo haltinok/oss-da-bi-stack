@@ -168,6 +168,18 @@ filters:
 Rules the validator enforces: a page filter names a tab that exists, a pane filter a panel that exists (not a text panel), a click rule cannot set a hidden filter or another panel's pane filter, a hidden filter has no `parent`, and a filter is only checked against the panels it applies to (a pane filter on inventory data on a sales panel is refused; on a panel that can join to it, fine).
 In the designer, a filter card has **Applies to** (the whole dashboard, one tab, one panel), the tab or panel, and a checkbox for whether the reader can see it; a hidden filter shows a "hidden" badge and needs a default first. Removing a panel takes its pane filters with it, removing a tab hands its page filters to the tab that receives its panels, and putting the tabs back on one page makes page filters dashboard filters (each says so).
 
+### Click to filter, with no filter to write
+`cross_filter: true` on a `bar`, `pie`, `treemap` or `table` makes a click on it filter the other panels, without defining a filter or writing `on_click`:
+
+```yaml
+panels:
+  - { id: by_region, type: bar, measure: internet_sales.revenue, by: territories.region, cross_filter: true }
+```
+
+The page adds a filter for each field the mark carries (a bar's or pie's `by`, a treemap's group in order, a table row's dimension columns, at most two) and the panel's own click rule; the clicked panel keeps showing every mark, as with `on_click`. If the dashboard already has a visible `select` filter on that field, the click sets that one instead, so the header select and the click stay in step.
+`cross_filter: page` (needs `tabs`) filters only the panels of the clicked panel's tab. A panel that cannot join to the field is skipped, with no `ignore_filters` to write. It cannot be written together with `on_click` (use `on_click` when you want to choose the filters yourself), filter ids may not start with `xf_` (those are made here), and time charts and pivots do not have it yet.
+The source file keeps only `cross_filter`: the filters are added when the file is compiled. (Until the selection bar arrives in the next change, they show as ordinary selects in the header.)
+
 ### The slicer
 In the designer: the gallery's **Slicer** adds one for a filter that has none (or makes a filter first), a filter card has a **Show it as a slicer in the layout** box, and picking a slicer shows its Filter and *Shown as* (list, buttons, dropdown). Removing a filter removes its slicer; a filter has one slicer, so a slicer cannot be duplicated, and a filter that has one cannot be hidden.
 

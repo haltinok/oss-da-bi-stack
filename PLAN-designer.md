@@ -128,7 +128,9 @@ A **slicer** is a filter drawn as a panel (a `slicer` panel type): a list, butto
 - The designer: it joins the gallery, and the drawer for it is the filter card plus the display choice; "make this filter a slicer" and back from the filter card.
 - Order: after 7 and 8 (it needs the types and the scopes). The panel type must meet the project's own rule that "a new panel type needs two real use cases"; the two here are a region slicer on a sales page and a status slicer beside the reorder list.
 
-### Phase 10: cross-filtering without a filter (added 2026-10-28, planned, not started)
+### Phase 10: cross-filtering without a filter (added 2026-10-28; 10a spec and compile done)
+**10a, built:** `cross_filter` (`true` | `page`) on bar, pie, treemap and table in the schema; `dashspec/crossfilter.py` `expand` (called first in `compile_spec`): reuses a visible `select` filter on the same field, else adds `xf_<panel>_<n>` (marked `implicit`, `source`), fills `on_click`, skips panels that cannot join with `ignore_filters`, and with `page` makes them page filters on the panel's tab; the source is not touched. Validator: not with `on_click`, `page` needs tabs, a table needs one or two dimension columns, `xf_` ids are reserved. Tests include the Python/JS query agreement on a compiled dashboard that uses it. Until 10b the renderer draws the made filters as header selects (they work; they just are not chips yet).
+
 **Why.** Today a click on a chart can only set a filter that someone defined (`on_click: { set_filter: region }`), because a click is a remote control for a filter's value. So "click a bar to filter the rest" needs a filter first, and a hidden filter cannot be set by a click (phase 8's rule: a hidden filter holds its default). The reader's expectation is simpler: click, and the rest follows. The user chose this fix on 2026-10-28.
 
 **Design.** A panel says `cross_filter: true` (or `cross_filter: page`) and nothing else:
