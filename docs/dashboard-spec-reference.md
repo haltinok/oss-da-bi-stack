@@ -82,6 +82,7 @@ Exactly one of `member`, `sum` (with `label`) or `ratio` (with `label`). `ratio`
 | `ratio` | object |  | The sum of the `num` measures divided by the sum of the `den` measures (a margin over both channels: gross profit over revenue). Needs a `label`. Format it as `pct`. |
 | `label` | string |  | The tile's or series' name. Default for a `member`: the measure's name, capitalised. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How the value is shown. Default `number`. |
+| `rules` | list of rules (1-4) |  | Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal. |
 
 ### A time-chart series (`timeseries.series[]`)
 
@@ -105,6 +106,7 @@ Either a member string, or an object with these fields.
 | `member` | member (`cube.name`) | yes | A Cube measure or dimension. |
 | `label` | string |  | The column heading. Default: the member's name, capitalised. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How the value is shown. A measure defaults to `number`; a dimension is shown as text unless it has a format (a numeric dimension, `int`) or is a time dimension (shown as a date and time). |
+| `rules` | list of rules (1-4) |  | On a measure column of a table (not on a total row). Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal. |
 
 ### `on_click`
 

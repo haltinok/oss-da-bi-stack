@@ -104,3 +104,18 @@ export function removeItem(source, panelId, name, index) {
   if (panel.type === "pivot" && panel.heat && firstMember(gone) === panel.heat.measure) delete panel.heat;
   return { source: next };
 }
+
+// ------------------------------------------------------------------------------------------------------------------ colour rules
+export const MAX_RULES = 4;
+
+/** Adds a colour rule to the key figure or table column at `path` (`measures.0`, `columns.2`); a column written as a plain member becomes { member } first. */
+export function addRule(source, panelId, path) {
+  const { next, panel, item } = at(source, panelId, path);
+  if (!panel || item == null) return { problem: "item" };
+  const target = typeof item === "string" ? { member: item } : item;
+  if ((target.rules || []).length >= MAX_RULES) return { problem: "max" };
+  (target.rules ||= []).push({ when: "below", value: 0, tone: "bad" });
+  const steps = path.split("."), last = steps.pop();
+  steps.reduce((o, k) => o[k], panel)[last] = target;
+  return { source: next };
+}

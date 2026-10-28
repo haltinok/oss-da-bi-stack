@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phases 1 to 5 done, phase 6 in three parts (6a, 6b done)**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1 to 5 done, phase 6 in four parts (6a, 6b done; 6c-1 colour rules done; 6c-2 logo upload left)**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -58,7 +58,9 @@ Built as below, with these notes: `POST /build` takes an optional `focus` (a pan
 The Change box sends the selected panel as the focus ("make this one a donut"); a model edit and a designer edit can be undone the same way.
 
 ### Phase 6: the rest of the types, formulas, and the two things left out
-Split into three PRs: **6a** pivot's own fields and the sum/ratio builder (done), **6b** tabs (add, delete, layout into tabs; done), **6c** conditional formatting and logo upload (spec fields and validator rules first).
+Split into three PRs: **6a** pivot's own fields and the sum/ratio builder (done), **6b** tabs (add, delete, layout into tabs; done), **6c** conditional formatting (**6c-1**, done) and logo upload (**6c-2**: `theme.logo` already takes a path or an `https://` URL; the upload would add a small data URI, decided with the user: inside the spec, PNG/JPEG/WebP up to about 20 KB, shrunk in the browser, no SVG).
+
+**6c-1, built:** `rules` in the schema (`$defs/rules`, on a KPI measure and on a table column object; 1 to 4 of `{ when, value, tone }`), validator errors for a rule on a dimension column or a pivot measure, `lib/rules.js` (`toneOf`, first match wins), the tone drawn on a KPI tile and on table cells with a symbol and a hidden word, and in the designer three fields per rule with Add and Remove (`addRule` in `designer-items.js`). The scope the user chose: key figures and table cells only; no bars, no rules that compare with another measure. The model learns the field from the generated spec reference.
 
 **6b, built:** in `lib/designer-layout.js`: `layoutToTabs` (a plain layout becomes two tabs, the first half of the rows and the rest; needs two rows), `tabsToLayout`, `addTab` (a tab cannot be empty, so it starts with a text `note` panel; eight at most) and `removeTab` (its panels join the neighbouring tab; at one tab left the dashboard goes back to a plain layout). The page view of the drawer has the buttons.
 

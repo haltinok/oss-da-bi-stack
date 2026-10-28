@@ -4,6 +4,7 @@ import { el, esc, svgEl } from "../lib/dom.js";
 import { niceTicks, barPath, sparkline, stackBarHtml, squarify, shade, arcPath, pieSlices } from "../lib/charts.js";
 import { addTimers } from "../lib/timer.js";
 import { pinTotals, pivotHtml, tableHtml } from "../lib/table.js";
+import { toneCue, toneOf, toneWord } from "../lib/rules.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
   PERIOD, heatScale, nextSort, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
@@ -88,6 +89,16 @@ function modelPanel(def, ctx, fetchModel, opts = {}) {
 }
 
 const colOf = (label, type, get, fmt) => ({ label, type, get, fmt });
+
+/** A key figure's colour: the tone its rules give the value, as a class on the tile plus a symbol and a hidden word inside the value (never colour alone). */
+function toneTile(tile, rules, value, words = {}) {
+  const tone = toneOf(rules, value), box = tile.querySelector(".value");
+  tile.classList.remove("tone-good", "tone-warn", "tone-bad");
+  if (!tone) return;
+  tile.classList.add(`tone-${tone}`);
+  box.insertAdjacentHTML("afterbegin", toneCue(tone));
+  box.insertAdjacentHTML("beforeend", toneWord(tone, words));
+}
 const clickable = (node, fn) => {
   node.classList.add("clickable");
   node.setAttribute("role", "button");
@@ -117,6 +128,7 @@ function kpiPanel(def, ctx) {
       const v = evaluate(t, (m) => totals(now).get(m) ?? null);
       values[i] = v;
       tile.querySelector(".value").textContent = fmtOf(t)(v);
+      toneTile(tile, def.measures[i].rules, v, ctx.t.tones);
       tile.querySelector(".delta").textContent = "";
       tile.querySelector("svg.spark")?.remove();
       if (series) {
@@ -132,6 +144,7 @@ function kpiPanel(def, ctx) {
       if (e?.name === "AbortError" || signal?.aborted) throw e;
       values[i] = null;
       tile.querySelector(".value").textContent = "—";
+      toneTile(tile, null, null);
       tile.querySelector(".delta").textContent = readable(e);
       tile.querySelector(".delta").title = readable(e);
       console.warn(`kpi ${t.label} failed:`, e?.message || e);
@@ -571,7 +584,7 @@ function tablePanel(def, ctx) {
   const colFor = (c) => {
     const m = c.member, kind = kindOf(m);
     const label = c.label || humanize(m);
-    if (kind.kind === "measure") return colOf(label, XLSX_TYPE[c.format || "number"] || "number", (r) => r.values.get(m) ?? null, ctx.formatter(c.format, true));
+    if (kind.kind === "measure") return { ...colOf(label, XLSX_TYPE[c.format || "number"] || "number", (r) => r.values.get(m) ?? null, ctx.formatter(c.format, true)), ...(c.rules ? { tone: (v) => toneOf(c.rules, v) } : {}) };
     if (kind.type === "time") return colOf(label, "date", (r) => r.dims[m] && String(r.dims[m]).replace(/\.\d+$/, ""), (v) => (v ? ctx.dateTime(v) : ""));
     if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format, true));
     return colOf(label, "text", (r) => (r.dims[m] == null ? "" : String(r.dims[m])), (v) => v);
@@ -608,7 +621,7 @@ function tablePanel(def, ctx) {
     }
     const draw = (host) => {
       const shown = showTotals ? totalsRow : null;
-      host.innerHTML = tableHtml({ columns: columns(), rows, totals: shown, sort });
+      host.innerHTML = tableHtml({ columns: columns(), rows, totals: shown, sort, toneWords: ctx.t.tones });
       if (shown?.position === "header") pinTotals(host);
       host.querySelectorAll("th.sortable").forEach((h) => {
         const go = () => sortBy(h.dataset.sort);

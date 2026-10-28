@@ -82,3 +82,33 @@ test("emptying an optional field leaves no empty object behind", () => {
   const lim = setField(setField(SOURCE(), "p", "limit.rows", 10, { optional: true }).source, "p", "limit.rows", "", { optional: true }).source;
   assert.equal("limit" in get(lim, "p"), false);
 });
+
+// ---- colour rules
+import { addRule } from "../../static/lib/designer-items.js";
+
+test("a rule is added to a key figure or to a table column (a plain member becomes an object first), four at most", () => {
+  const src = { panels: [{ id: "k", type: "kpi", measures: [{ member: "a.revenue", label: "R" }] }, { id: "t", type: "table", columns: ["a.name", "a.revenue", { member: "a.orders", label: "O" }] }] };
+  let out = addRule(src, "k", "measures.0").source;
+  assert.deepEqual(out.panels[0].measures[0].rules, [{ when: "below", value: 0, tone: "bad" }]);
+  for (let i = 0; i < 3; i++) out = addRule(out, "k", "measures.0").source;
+  assert.equal(addRule(out, "k", "measures.0").problem, "max");
+  assert.deepEqual(addRule(src, "t", "columns.1").source.panels[1].columns[1], { member: "a.revenue", rules: [{ when: "below", value: 0, tone: "bad" }] });
+  assert.equal(addRule(src, "t", "columns.2").source.panels[1].columns[2].label, "O", "an object column keeps its label");
+  assert.equal(addRule(src, "t", "columns.9").problem, "item");
+  assert.equal(src.panels[0].measures[0].rules, undefined, "the argument is not touched");
+});
+
+test("the rule fields appear for a key figure and for a table's measure columns, and removing the last rule leaves no empty list", () => {
+  const src = { panels: [{ id: "k", type: "kpi", measures: [{ member: "a.revenue", label: "R", rules: [{ when: "above", value: 5, tone: "good" }] }] },
+    { id: "t", type: "table", columns: ["a.name", { member: "a.revenue", rules: [{ when: "below", value: 1, tone: "bad" }] }] }] };
+  const kf = fieldsFor(src.panels[0]).map((f) => f.path);
+  for (const p of ["measures.0.rules.0.when", "measures.0.rules.0.value", "measures.0.rules.0.tone", "measures.0.rules"]) assert.ok(kf.includes(p), p);
+  assert.equal(fieldsFor(src.panels[0]).find((f) => f.path === "measures.0.rules.0.when").rm, "measures.0.rules.0");
+  const isMeasure = (m) => m === "a.revenue";
+  const tf = fieldsFor(src.panels[1], { isMeasure });
+  assert.ok(tf.some((f) => f.path === "columns.1.rules.0.tone") && tf.some((f) => f.kind === "addrule" && f.base === "columns.1"));
+  assert.ok(!tf.some((f) => f.base === "columns.0"), "a dimension column is not offered rules");
+  assert.ok(!fieldsFor(src.panels[1]).some((f) => f.kind === "addrule"), "without a catalog no column is known to be a measure");
+  const gone = setField(src, "k", "measures.0.rules.0", "", { optional: true }).source;
+  assert.equal("rules" in gone.panels[0].measures[0], false);
+});
