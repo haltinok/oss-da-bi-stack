@@ -88,6 +88,11 @@ once. With tabs, the page view lists them: rename a tab or move it earlier or la
 **Add a measure** / **Add a series** and **Remove this one** change how many there are (a key-figures row holds up to eight, a pivot three, and one always stays). A pivot also offers its time step for the columns, which of its measures
 carries the **heat map**, how rows are ordered, and a row and column limit.
 
+**The look.** With nothing picked, the drawer's Look section has the organisation's name (the small label above the title) and **Upload a logo**. The picture (PNG, JPEG or WebP; SVG is refused because it can carry script) is shrunk
+in the browser, to at most 56 px high, and kept **inside the dashboard file** as `theme.logo: data:image/...;base64,...` (20,000 characters at most, about 15 KB, so the file stays under its 30,000-character limit). It travels with versions,
+undo, copies and the YAML. The validator checks the bytes really are that image type. A builder draft still drops a logo written as a path or an address (a model must not make the page load something from elsewhere), but keeps an inline one.
+If a gateway sets a content-security policy, its `img-src` needs `data:` for the logo to show.
+
 **Colour rules.** A key figure and a table's measure column offer **Add a colour rule** (up to four): when the value is below, above, at most or at least a number, the figure or cell takes a good, warning or bad tone. The drawer
 shows each rule as three fields and a Remove button; a plain table column becomes `{ member, rules }` when it gets its first rule.
 
@@ -106,8 +111,7 @@ is about the whole dashboard as before. (The rule-based stand-in understands a p
 someone else's the button is **Design a copy**. In **Versions**, each version lists what it changed from the one before (a panel added, removed or changed with the fields, the layout, a filter, the title, the page's own
 fields), computed on the server from the two files; a version whose predecessor is no longer kept says only "Changed".
 
-The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
-uploading a logo (the spec's `theme.logo` takes a path or an `https://` address); the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
+The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. The plan is in [`PLAN-designer.md`](../PLAN-designer.md).
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),

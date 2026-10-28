@@ -25,7 +25,7 @@ D = {  # "<section>.<field>": meaning
     "tab.layout": "The tab's rows, as in `layout`.",
     "dashboard.layout": "Rows from top to bottom. A row is a list of `panel-id: columns` pairs that adds up to 12 (`- [trend: 8, lines: 4]`). Every panel is placed exactly once. Below 900 px every panel takes a full row. Use `layout` or `tabs`, not both.",
     "theme.name": "A small label above the title (the organisation).",
-    "theme.logo": "An image in the header: a path on this site (`/assets/logo.svg`) or an `https://` URL.",
+    "theme.logo": "An image in the header: a path on this site (`/assets/logo.svg`), an `https://` URL, or the image itself as `data:image/png;base64,...` (also `jpeg` or `webp`, at most 20,000 characters, about 15 KB, which leaves room for the rest of the file in the 30,000-character limit; the designer shrinks an uploaded file to fit). The bytes must really be that image type; SVG is not accepted inline.",
     "theme.colors": "Replaces theme tokens, in both the light and the dark theme.",
     "theme.colors.internet": "First series colour (and the blue in `color: internet`).",
     "theme.colors.reseller": "Second series colour (`color: reseller`).",

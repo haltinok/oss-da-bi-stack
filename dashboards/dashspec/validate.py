@@ -1,6 +1,8 @@
 """Schema and member checks. Every message names the panel (or filter) and the field, so a broken file points at its own line."""
+import base64
 import json
 import pathlib
+import re
 
 from jsonschema import Draft202012Validator
 
@@ -148,8 +150,26 @@ def _panel_members(p):
             yield f"measures[{i}]", column_member(m), "measure"
 
 
+MAGIC = {"png": b"\x89PNG\r\n\x1a\n", "jpeg": b"\xff\xd8\xff", "webp": b"RIFF"}
+
+
+def _logo_errors(logo):
+    """An inline logo is `data:image/<png|jpeg|webp>;base64,...`: the bytes must be that image type (a script or an SVG cannot be passed off as one)."""
+    m = re.match(r"data:image/(png|jpeg|webp);base64,(.+)$", logo or "", re.S)
+    if not m:
+        return []
+    try:
+        raw = base64.b64decode(m.group(2), validate=True)
+    except ValueError:
+        return ["theme.logo: the inline image is not valid base64"]
+    kind = m.group(1)
+    if not raw.startswith(MAGIC[kind]) or (kind == "webp" and raw[8:12] != b"WEBP"):
+        return [f"theme.logo: the inline image is not really a {kind.upper()} file"]
+    return []
+
+
 def semantic_errors(spec, catalog):
-    errs = []
+    errs = _logo_errors(spec.get("theme", {}).get("logo"))
     used = {}  # member -> (kind, type), for the compiler
 
     def check(where, field, member, want, time=False):

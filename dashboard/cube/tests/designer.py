@@ -5,9 +5,12 @@
 The mock's builder answers with the real validator (builder/), so a change is accepted or refused exactly as it would be for a hand-edited file.
 """
 import json
+import os
 import pathlib
 import re
+import struct
 import sys
+import zlib
 
 import yaml
 from playwright.sync_api import sync_playwright
@@ -549,6 +552,39 @@ with sync_playwright() as p:
         idx = int(base.split(".")[1])
         col = panel_src(table)["columns"][idx]
         check(isinstance(col, dict) and col.get("rules") and "member" in col, "a plain column became an object with its rule")
+    ctx.close()
+
+    # ---- the look: the organisation's name and an uploaded logo, kept inside the file
+    def png(w, h, noisy=False):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+        rows = b"".join(b"\x00" + (os.urandom(w * 3) if noisy else bytes([30, 90, 200]) * w) for _ in range(h))
+        return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    theme_of = lambda: yaml_of(page).get("theme", {})
+    reload_after(lambda: page.set_input_files("#dz-logo-file", files=[{"name": "logo.png", "mimeType": "image/png", "buffer": png(400, 200)}]))
+    logo = theme_of().get("logo", "")
+    check(logo.startswith("data:image/png;base64,") and len(logo) <= 20000, f"an uploaded picture is kept inside the file as a data URI ({len(logo)} characters)")
+    page.wait_for_selector("#logo:not([hidden])", timeout=10000)
+    check(page.evaluate("document.querySelector('#logo').naturalWidth") > 0 and page.evaluate("document.querySelector('#logo').naturalHeight") <= 56, "the header shows it, shrunk to at most 56 px high")
+    check(page.locator("#dz-logo-img").count() == 1 and page.locator("#dz-logo-rm").count() == 1, "the drawer previews it and offers to remove it")
+    reload_after(lambda: (page.fill('#designer [data-path="theme.name"]', "Fairstone"), page.press('#designer [data-path="theme.name"]', "Tab")))
+    check(theme_of().get("name") == "Fairstone" and theme_of().get("logo") == logo, "the organisation's name is a field and the logo stays")
+    reload_after(lambda: page.click("#dz-logo-rm"))
+    check("logo" not in theme_of() and theme_of().get("name") == "Fairstone", "Remove the logo takes only the logo out")
+    reload_after(lambda: (page.fill('#designer [data-path="theme.name"]', ""), page.press('#designer [data-path="theme.name"]', "Tab")))
+    check("theme" not in yaml_of(page), "with neither left, no empty `theme` stays in the file")
+    before = page.evaluate("localStorage.getItem('builder.draft')")
+    page.set_input_files("#dz-logo-file", files=[{"name": "logo.svg", "mimeType": "image/svg+xml", "buffer": b"<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'/>"}])
+    page.wait_for_selector("#dz-msg:not([hidden])", timeout=10000)
+    check("SVG" in page.inner_text("#dz-msg") and page.evaluate("localStorage.getItem('builder.draft')") == before, "an SVG is refused with a message and the draft is untouched")
+    reload_after(lambda: page.set_input_files("#dz-logo-file", files=[{"name": "photo.png", "mimeType": "image/png", "buffer": png(480, 320, noisy=True)}]))
+    big = theme_of().get("logo", "")
+    check(big.startswith("data:image/") and len(big) <= 20000, f"a large noisy picture is shrunk until it fits ({len(big)} characters, {big[:15]})")
     ctx.close()
 
     # ---- on a phone the drawer is a sheet at the bottom

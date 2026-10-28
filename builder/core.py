@@ -183,8 +183,10 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     notes = []
     spec["id"] = "draft"
     spec["roles"] = [role]                         # the role rules are checked for the user who asked, whatever the model wrote
-    if isinstance(spec.get("theme"), dict) and spec["theme"].pop("logo", None):
-        notes.append("A logo was removed: builder drafts cannot load images.")
+    theme = spec.get("theme")
+    if isinstance(theme, dict) and theme.get("logo") and not str(theme["logo"]).startswith("data:image/"):
+        del theme["logo"]                          # a path or an address would make the page load something from elsewhere; an inline image (checked by the validator) loads nothing
+        notes.append("A logo was removed: builder drafts cannot load images from an address. Upload one in the designer instead.")
     stripped = False
     for p in spec.get("panels", []) if isinstance(spec.get("panels"), list) else []:
         if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("markdown"), str):

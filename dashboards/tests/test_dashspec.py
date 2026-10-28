@@ -886,3 +886,34 @@ def test_rules_belong_on_a_measure_column_not_a_dimension_or_a_pivot():
         spec["layout"].append([{"pv": 12}])
     errors = run(pivot)
     assert any("pv" in e and "heat" in e for e in errors), errors
+
+
+# ---- an inline logo
+import base64 as _b64
+
+PNG = _b64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 40).decode()
+JPEG = _b64.b64encode(b"\xff\xd8\xff\xe0" + b"\x00" * 40).decode()
+WEBP = _b64.b64encode(b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"\x00" * 20).decode()
+
+
+@pytest.mark.parametrize("uri", [f"data:image/png;base64,{PNG}", f"data:image/jpeg;base64,{JPEG}", f"data:image/webp;base64,{WEBP}"])
+def test_an_inline_logo_of_a_real_image_type_is_accepted_and_compiled(uri):
+    spec = copy.deepcopy(GOOD)
+    spec["theme"] = {"logo": uri}
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    assert compile_spec(spec, used)["theme"]["logo"] == uri
+
+
+@pytest.mark.parametrize("logo,needle", [
+    ("data:image/svg+xml;base64," + _b64.b64encode(b"<svg onload=alert(1)/>").decode(), "theme.logo"),
+    ("data:text/html;base64," + _b64.b64encode(b"<script>").decode(), "theme.logo"),
+    ("data:image/png;base64," + _b64.b64encode(b"<script>alert(1)</script>").decode(), "not really a PNG"),
+    ("data:image/jpeg;base64," + PNG, "not really a JPEG"),
+    ("data:image/webp;base64," + _b64.b64encode(b"RIFF\x10\x00\x00\x00WAVEfmt ").decode(), "not really a WEBP"),
+    ("data:image/png;base64,@@@", "theme.logo"),
+    ("data:image/png;base64," + "A" * 20001, "theme.logo"),
+])
+def test_an_inline_logo_that_is_not_what_it_says_is_refused(logo, needle):
+    errors = run(lambda s: s.update(theme={"logo": logo}))
+    assert errors and needle in "\n".join(errors), errors

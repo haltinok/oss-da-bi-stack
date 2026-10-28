@@ -311,3 +311,7 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .kpi.tone-good .value, td.tone-good { color: var(--good); }
 .kpi.tone-warn .value, td.tone-warn { color: var(--warn); }
 .kpi.tone-bad .value, td.tone-bad { color: var(--bad); }
+
+/* the designer's logo picker */
+.designer .dz-logo-preview { display: block; max-height: 40px; max-width: 100%; margin-bottom: 6px; background: var(--card, transparent); }
+.designer .dz-logo input[type="file"] { max-width: 100%; }
