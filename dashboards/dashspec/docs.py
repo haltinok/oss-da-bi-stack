@@ -45,6 +45,7 @@ D = {  # "<section>.<field>": meaning
     "measure.ratio": "The sum of the `num` measures divided by the sum of the `den` measures (a margin over both channels: gross profit over revenue). Needs a `label`. Format it as `pct`.",
     "measure.label": "The tile's or series' name. Default for a `member`: the measure's name, capitalised.",
     "measure.format": "How the value is shown. Default `number`.",
+    "measure.rules": "Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal.",
     "series.member": "A single Cube measure.",
     "series.sum": "Two or more measures added together (needs a `label`).",
     "series.ratio": "A ratio of sums, as for a KPI (needs a `label`).",
@@ -54,6 +55,7 @@ D = {  # "<section>.<field>": meaning
     "column.member": "A Cube measure or dimension.",
     "column.label": "The column heading. Default: the member's name, capitalised.",
     "column.format": "How the value is shown. A measure defaults to `number`; a dimension is shown as text unless it has a format (a numeric dimension, `int`) or is a time dimension (shown as a date and time).",
+    "column.rules": "On a measure column of a table (not on a total row). Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal.",
     "on_click.set_filter": "A filter id, or a list of up to two. A click on a mark sets those filters from what was clicked; a second click undoes it and restores what the filters held before. The panel that was clicked does not narrow itself with these filters. See the click rules below.",
     "panel.id": "The panel's id; `layout` and `ignore_filters` refer to it.",
     "panel.type": "`kpi`, `timeseries`, `bar`, `pie`, `treemap`, `table`, `pivot` or `text`.",
@@ -119,7 +121,7 @@ def _type(s, defs=SCHEMA["$defs"]):
             return {"member": "member (`cube.name`)", "id": "id", "hex": "`#rrggbb`"}[name]
         if name in ("format", "granularity", "direction"):
             return " \\| ".join(f"`{v}`" for v in defs[name]["enum"])
-        return name
+        return "list of rules (1-4)" if name == "rules" else name
     if "const" in s:
         return f"`{s['const']}`"
     if "enum" in s:

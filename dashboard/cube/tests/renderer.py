@@ -786,6 +786,29 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
+    def with_rules(route):
+        spec = json.loads(route.fetch().text())
+        kpis = next(p for p in spec["panels"] if p["type"] == "kpi")
+        kpis["measures"][0]["rules"] = [{"when": "above", "value": -1e15, "tone": "good"}]
+        kpis["measures"][1]["rules"] = [{"when": "above", "value": 1e15, "tone": "bad"}, {"when": "below", "value": -1e15, "tone": "warn"}]       # never matches
+        tbl = next(p for p in spec["panels"] if p["type"] == "table")
+        next(c for c in tbl["columns"] if c["member"] == "internet_sales.revenue")["rules"] = [{"when": "at_least", "value": -1e15, "tone": "warn"}]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(spec))
+    ctx, page = open_page(browser, "/d/sales-overview")
+    page.route("**/dashboards/sales-overview.json", with_rules)
+    page.reload()
+    settled(page)
+    page.wait_for_selector(".kpi.tone-good", timeout=20000)
+    first = page.locator(".kpi").first
+    check(first.evaluate("n => n.classList.contains('tone-good')") and "✓" in first.locator(".value").inner_text() and "(good)" in first.locator(".value").inner_html(), "a key figure whose rule matches shows the tone, a symbol and the tone as a hidden word")
+    check(page.locator(".kpi").nth(1).evaluate("n => !/tone-/.test(n.className)") and "✓" not in page.locator(".kpi").nth(1).inner_text(), "a rule that does not match changes nothing")
+    check(first.locator(".value").evaluate("n => getComputedStyle(n).color") != page.locator(".kpi").nth(1).locator(".value").evaluate("n => getComputedStyle(n).color"), "the value has the tone's colour")
+    page.wait_for_selector("td.tone-warn", timeout=20000)
+    check(page.locator("td.tone-warn").count() >= 1 and "!" in page.locator("td.tone-warn").first.inner_text() and page.locator("tfoot td.tone-warn, tr.tot td.tone-warn").count() == 0, "a table's measure cells take the tone, the total row does not")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
     # pivot panels (patched into the spec): axes, then values for those keys; totals; clicks; the Excel sheet; limits
     def with_pivot(**panel):
         def patch_pivot(route):

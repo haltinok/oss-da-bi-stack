@@ -2,12 +2,13 @@
 // column type (text, int, money, pct, date), and the numeric ones are right-aligned.
 import { el, esc } from "./dom.js";
 import { buildXlsx } from "./xlsx.js";
+import { toneCue, toneWord } from "./rules.js";
 
 /**
  * `totals` (optional) is { position: "header" | "footer", cells: [value per column] }: a bold row pinned inside the scroll area. A column whose
  * cell is `undefined` (a dimension) is left empty; a measure with no value shows "–".
  */
-export const tableHtml = ({ columns, rows, totals = null, sort = null }) => {
+export const tableHtml = ({ columns, rows, totals = null, sort = null, toneWords = {} }) => {
   const num = (c) => (c.type !== "text" && c.type !== "date" ? "n" : "");
   // A column with a `sortKey` has a clickable title; `sort` ({ member, dir }) marks the one the rows are ordered by.
   const th = (c) => {
@@ -16,7 +17,12 @@ export const tableHtml = ({ columns, rows, totals = null, sort = null }) => {
     return `<th class="${num(c)} sortable" data-sort="${esc(c.sortKey)}" tabindex="0" aria-sort="${dir ? (dir === "asc" ? "ascending" : "descending") : "none"}">${esc(c.label)}<i class="arr" aria-hidden="true">${dir === "asc" ? "↑" : dir === "desc" ? "↓" : ""}</i></th>`;
   };
   const head = columns.map(th).join("");
-  const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="${num(c)}">${esc(c.fmt(c.get(r)))}</td>`).join("")}</tr>`).join("");
+  // A column with `tone(value)` (colour rules) marks its cells with the tone, a symbol and, for a screen reader, the tone in words.
+  const cell = (c, r) => {
+    const v = c.get(r), tone = c.tone ? c.tone(v) : null;
+    return tone ? `<td class="${num(c)} tone-${tone}">${toneCue(tone)}${esc(c.fmt(v))}${toneWord(tone, toneWords)}</td>` : `<td class="${num(c)}">${esc(c.fmt(v))}</td>`;
+  };
+  const body = rows.map((r) => `<tr>${columns.map((c) => cell(c, r)).join("")}</tr>`).join("");
   const totalRow = totals && `<tr class="tot">${columns.map((c, i) => `<td class="${num(c)}">${totals.cells[i] === undefined ? "" : totals.cells[i] === null ? "–" : esc(c.fmt(totals.cells[i]))}</td>`).join("")}</tr>`;
   const header = totals?.position === "header" ? totalRow : "";
   const footer = totals?.position === "footer" ? `<tfoot>${totalRow}</tfoot>` : "";

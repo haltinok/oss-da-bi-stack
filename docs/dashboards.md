@@ -88,6 +88,9 @@ once. With tabs, the page view lists them: rename a tab or move it earlier or la
 **Add a measure** / **Add a series** and **Remove this one** change how many there are (a key-figures row holds up to eight, a pivot three, and one always stays). A pivot also offers its time step for the columns, which of its measures
 carries the **heat map**, how rows are ordered, and a row and column limit.
 
+**Colour rules.** A key figure and a table's measure column offer **Add a colour rule** (up to four): when the value is below, above, at most or at least a number, the figure or cell takes a good, warning or bad tone. The drawer
+shows each rule as three fields and a Remove button; a plain table column becomes `{ member, rules }` when it gets its first rule.
+
 **Tabs.** With nothing picked, the drawer's Tabs section turns a one-page dashboard into two tabs (the first half of the rows, and the rest; move panels between them afterwards), adds a tab (it starts with a text note, since a tab
 cannot be empty; eight at most), removes a tab (its panels move to the neighbouring tab, so nothing is lost; the last pair of tabs goes back to one page) and puts all tabs back on a single page.
 
@@ -104,7 +107,7 @@ someone else's the button is **Design a copy**. In **Versions**, each version li
 fields), computed on the server from the two files; a version whose predecessor is no longer kept says only "Changed".
 
 The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
-conditional formatting and a logo (the spec cannot hold them yet); the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
+uploading a logo (the spec's `theme.logo` takes a path or an `https://` address); the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
@@ -208,6 +211,11 @@ showing every choice and marks the selected one. What a click carries: a bar its
 | **`pivot` with `show: share_of_column`** (or `share_of_row`, `share_of_total`): the cells as percentages of a total. Needs the total asked for in `totals` and measures that add up (`sum`, `count`). | ![pivot share](images/dashboards/pivot-share.png) |
 | **`text`**: a short Markdown note. | ![text](images/dashboards/text.png) |
 | **Filters** above the panels, with Reset when one is set. | ![filters](images/dashboards/filters.png) |
+
+**Colour rules.** A key figure (`kpi.measures[]`) and a measure column of a `table` may carry `rules`: up to four, the first that matches a value wins.
+`{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }`, for example `rules: [{ when: below, value: 0.2, tone: bad }, { when: at_least, value: 0.3, tone: good }]` on a margin
+(a `pct` measure's value is a fraction: `0.2` is 20%). The tone is drawn in the theme's good, warning or bad colour **and** with a symbol (✓ ! ✕) and, for a screen reader, the tone in words, so colour is never the
+only signal. A table's total row is not coloured; a pivot has its `heat` map instead, and the validator refuses `rules` there and on a dimension column.
 
 Every panel has a loading state (dimmed), an error state (the message, in its card, while the rest of the page draws), a Table view of the same
 rows and an Excel button; the header has Export all, a refresh, the theme toggle and, when two datasets are served, the dataset switch.

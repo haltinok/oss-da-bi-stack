@@ -5,15 +5,25 @@
 export const FORMATS = ["money", "int", "pct", "decimal", "number"];
 export const GRANULARITIES = ["hour", "day", "week", "month", "quarter", "year"];
 const DIRECTIONS = ["asc", "desc"];
+export const RULE_WHEN = ["below", "above", "at_most", "at_least"];
+export const RULE_TONES = ["good", "warn", "bad"];
 
 // What each field kind is: "text", "textarea", "color" (a theme name or #rrggbb), "number" (min, max), "choice" (options), "measure", "dimension".
 // `optional` means the field may be empty, which removes it from the spec (or, for an item of a list, removes the item).
 const f = (path, kind, extra = {}) => ({ path, kind, ...extra });
 
 /** The fields the drawer shows for a panel, in order. Each is { path, kind, key (the words' name), options?, min?, max?, optional?, group? (a heading for a repeated item) }. */
-export function fieldsFor(panel) {
+export function fieldsFor(panel, { isMeasure = () => false } = {}) {
   const out = [];
   const each = (list, make) => (Array.isArray(list) ? list : []).forEach((item, i) => make(item, i));
+  // Colour rules of a key figure or a measure column: three fields per rule (with a remove button on the first), then a button for one more.
+  const ruleFields = (base, item, canRule) => {
+    each(item?.rules, (r, j) => {
+      const at = `${base}.rules.${j}`;
+      out.push(f(`${at}.when`, "choice", { key: "ruleWhen", options: RULE_WHEN, rm: at }), f(`${at}.value`, "number", { key: "ruleValue", step: "any" }), f(`${at}.tone`, "choice", { key: "ruleTone", options: RULE_TONES }));
+    });
+    if (canRule && (item?.rules || []).length < 4) out.push({ path: `${base}.rules`, kind: "addrule", key: "addRule", base });
+  };
   const measureItem = (name, list, extra = {}) => each(list, (m, i) => {
     const g = { n: i + 1, of: list.length };
     if (extra.formula) out.push(f(`${name}.${i}`, "value", { key: "measure", group: g, list: name, index: i, count: list.length }));
@@ -23,12 +33,13 @@ export function fieldsFor(panel) {
     if (m && typeof m === "object") {
       out.push(f(`${name}.${i}.label`, "text", { key: "label", group: g, optional: extra.optionalLabel }));
       if (extra.format !== false) out.push(f(`${name}.${i}.format`, "choice", { key: "format", options: FORMATS, optional: true, group: g }));
+      if (extra.rules) ruleFields(`${name}.${i}`, m, true);
     }
   });
   if (panel.type !== "text" && panel.type !== "kpi") out.push(f("title", "text", { key: "title", optional: true }));
   switch (panel.type) {
     case "kpi":
-      measureItem("measures", panel.measures, { formula: true });
+      measureItem("measures", panel.measures, { formula: true, rules: true });
       if (panel.sparkline) out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES }));
       break;
     case "timeseries":
@@ -59,6 +70,8 @@ export function fieldsFor(panel) {
         const isObj = c && typeof c === "object";
         out.push(f(isObj ? `columns.${i}.member` : `columns.${i}`, "member", { key: "column", group: g }));
         if (isObj) out.push(f(`columns.${i}.label`, "text", { key: "label", optional: true, group: g }));
+        const member = isObj ? c.member : c;
+        if (isMeasure(member)) ruleFields(`columns.${i}`, isObj ? c : {}, true);
       });
       out.push(f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }), f("totals", "choice", { key: "totals", options: ["footer", "header"], optional: true }));
       break;
@@ -110,9 +123,10 @@ export function setField(source, panelId, path, value, { optional = false } = {}
   });
   if ((value === null || value === undefined || value === "") && optional) {
     if (Array.isArray(cur)) cur.splice(last, 1); else delete cur[last];
-    for (let i = steps.length - 1; i >= 0; i--) {                      // an object the removal left empty (`heat: {}`, `limit: {}`) goes too
+    for (let i = steps.length - 1; i >= 0; i--) {                      // an object or list the removal left empty (`heat: {}`, `limit: {}`, `rules: []`) goes too
       const parent = steps.slice(0, i).reduce((o, k) => o[k], panel), key = steps[i];
-      if (parent[key] && !Array.isArray(parent[key]) && !Object.keys(parent[key]).length) delete parent[key]; else break;
+      const v = parent[key];
+      if (v && typeof v === "object" && !(Array.isArray(v) ? v.length : Object.keys(v).length)) delete parent[key]; else break;
     }
   } else cur[last] = value;
   if (GROUPING.test(path) && panel.on_click) { delete panel.on_click; notes.push("click"); }

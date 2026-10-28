@@ -216,9 +216,15 @@ def semantic_errors(spec, catalog):
             for col in p.get("order", {}):
                 if col not in shown:
                     errs.append(f"{w}: order.{col}: not one of the table's columns")
+            for c in p["columns"]:
+                if isinstance(c, dict) and "rules" in c and (catalog.lookup(c["member"]) or ("",))[0] != "measure":
+                    errs.append(f"{w}: columns: '{c['member']}' has `rules`, which colour a measure column; it is not a measure")
             if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown):
                 errs.append(f"{w}: totals: a total row needs at least one measure column")
         if p["type"] == "pivot":
+            for m in p["measures"]:
+                if isinstance(m, dict) and "rules" in m:
+                    errs.append(f"{w}: measures: '{m['member']}' has `rules`; a pivot is coloured by `heat`, and `rules` are for key figures and tables")
             col = pivot_column_member(p)
             if col in p["rows"]:
                 errs.append(f"{w}: columns: '{col}' is also in `rows`; a dimension is either down the side or across the top")

@@ -518,6 +518,39 @@ with sync_playwright() as p:
     check("tabs" not in yaml_of(page) and placed() == sorted([*all_ids, "note"]), "Back to one page puts every panel on a single layout")
     ctx.close()
 
+    # ---- colour rules on a key figure and on a table's measure column
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    kpi = panel_of(page, "kpi")
+    page.click(f'[data-panel="{kpi}"] .card', position={"x": 6, "y": 6})
+    reload_after(lambda: page.click('#designer [data-addrule="measures.0"]'))
+    check(panel_src(kpi)["measures"][0].get("rules") == [{"when": "below", "value": 0, "tone": "bad"}], "Add a colour rule gives a key figure its first rule")
+    reload_after(lambda: page.select_option('#designer [data-path="measures.0.rules.0.when"]', "above"))
+    reload_after(lambda: (page.fill('#designer [data-path="measures.0.rules.0.value"]', "0.25"), page.press('#designer [data-path="measures.0.rules.0.value"]', "Tab")))
+    reload_after(lambda: page.select_option('#designer [data-path="measures.0.rules.0.tone"]', "good"))
+    check(panel_src(kpi)["measures"][0]["rules"] == [{"when": "above", "value": 0.25, "tone": "good"}], "the rule's comparison, number (a fraction is fine) and tone are fields")
+    page.wait_for_selector(f'[data-panel="{kpi}"] .kpi.tone-good', timeout=20000)
+    check("✓" in page.locator(f'[data-panel="{kpi}"] .kpi.tone-good .value').first.inner_text(), "and the page shows the tone with its symbol")
+    for _ in range(3):
+        reload_after(lambda: page.click('#designer [data-addrule="measures.0"]'))
+    check(len(panel_src(kpi)["measures"][0]["rules"]) == 4 and page.locator('#designer [data-addrule="measures.0"]').count() == 0, "four rules is the most: the button goes")
+    for _ in range(4):
+        reload_after(lambda: page.locator("#designer [data-rmrule]").first.click())
+    check("rules" not in panel_src(kpi)["measures"][0], "removing the last rule leaves no empty `rules` behind")
+    table = panel_of(page, "table")
+    if table:
+        page.click(f'[data-panel="{table}"] h2')
+        n = page.locator("#designer [data-addrule]").count()
+        check(n >= 1, f"a table offers a colour rule for its measure columns only ({n} of its columns)")
+        base = page.locator("#designer [data-addrule]").first.get_attribute("data-addrule")
+        reload_after(lambda: page.click(f'#designer [data-addrule="{base}"]'))
+        idx = int(base.split(".")[1])
+        col = panel_src(table)["columns"][idx]
+        check(isinstance(col, dict) and col.get("rules") and "member" in col, "a plain column became an object with its rule")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

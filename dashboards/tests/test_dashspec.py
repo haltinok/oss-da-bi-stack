@@ -835,3 +835,54 @@ def test_a_checked_in_dashboard_uses_tabs_so_the_real_path_is_exercised_as_well_
     assert "layout" not in built and [t["id"] for t in built["tabs"]] == ["overview", "groups", "heat"]
     placed = [c["panel"] for t in built["tabs"] for row in t["layout"] for c in row]
     assert sorted(placed) == sorted(p["id"] for p in built["panels"]), "every panel is on one tab"
+
+
+# ---- colour rules on key figures and table measure columns
+RULES = [{"when": "below", "value": 0.2, "tone": "bad"}, {"when": "at_least", "value": 0.3, "tone": "good"}]
+
+
+def _kpi_rules(rules):
+    def f(spec):
+        panel(spec, "kpis")["measures"][2]["rules"] = rules
+    return f
+
+
+def _column_rules(member, rules):
+    def f(spec):
+        cols = panel(spec, "lines")["columns"]
+        next(c for c in cols if isinstance(c, dict) and c["member"] == member)["rules"] = rules
+    return f
+
+
+def test_colour_rules_on_a_key_figure_and_a_table_measure_validate_and_reach_the_renderer():
+    spec = copy.deepcopy(GOOD)
+    _kpi_rules(RULES)(spec)
+    _column_rules("internet_sales.revenue", [{"when": "above", "value": 1000, "tone": "good"}])(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used)
+    assert panel(out, "kpis")["measures"][2]["rules"] == RULES
+    assert panel(out, "lines")["columns"][3]["rules"] == [{"when": "above", "value": 1000, "tone": "good"}]
+
+
+@pytest.mark.parametrize("rules,needle", [
+    ([], "rules"), ([{"when": "below", "value": 1, "tone": "bad"}] * 5, "rules"),
+    ([{"when": "under", "value": 1, "tone": "bad"}], "under"), ([{"when": "below", "value": "x", "tone": "bad"}], "x"),
+    ([{"when": "below", "value": 1, "tone": "purple"}], "purple"), ([{"when": "below", "value": 1}], "tone"),
+    ([{"when": "below", "value": 1, "tone": "bad", "color": "red"}], "color"),
+])
+def test_bad_colour_rules_are_refused_naming_the_problem(rules, needle):
+    errors = run(_kpi_rules(rules))
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_rules_belong_on_a_measure_column_not_a_dimension_or_a_pivot():
+    dim = run(_column_rules("territories.country", RULES))
+    assert any("territories.country" in e and "not a measure" in e for e in dim), dim
+
+    def pivot(spec):
+        spec["panels"].append({"id": "pv", "type": "pivot", "rows": ["products.category"], "columns": "dates.fiscal_year",
+                               "measures": [{"member": "internet_sales.revenue", "rules": RULES}]})
+        spec["layout"].append([{"pv": 12}])
+    errors = run(pivot)
+    assert any("pv" in e and "heat" in e for e in errors), errors

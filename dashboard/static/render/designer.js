@@ -5,7 +5,7 @@
 import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setPageField, timeDimensions } from "../lib/designer-structure.js";
-import { LISTS, addItem, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
+import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
@@ -96,11 +96,12 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   function drawPanel(panel) {
-    const fields = fieldsFor(panel);
+    const fields = fieldsFor(panel, { isMeasure: (m) => catalog.some((c) => c.measures.some((x) => x.member === m)) });
     let lastGroup = null;
     const rows = fields.map((fd) => {
       const heading = fd.group && fd.group.of > 1 && fd.group.n !== lastGroup ? `<h3 class="dz-item">${esc(dz.item(fd.group.n, fd.group.of))}</h3>` : "";
       lastGroup = fd.group ? fd.group.n : null;
+      if (fd.kind === "addrule") return `<div class="dz-field"><span></span><span class="dz-input" data-slot="${esc(fd.path)}"></span></div>`;
       return `${heading}<label class="dz-field"><span>${esc(dz.f[fd.key] || fd.key)}</span><span class="dz-input" data-slot="${esc(fd.path)}"></span></label>`;
     }).join("");
     drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn()}</div>
@@ -113,11 +114,13 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <p class="hint">${esc(dz.footer)}</p>`;
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
+      if (fd.kind === "addrule") { slot.append(el("button", { type: "button", class: "dz-mini", "data-addrule": fd.base }, esc(dz.f.addRule))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
       else slot.append(control(fd, panel, (v) => {
         const edit = setField(source, selected, fd.path, v, { optional: fd.optional });
         return commit(edit, { message: dz.changed(edit.source.panels.find((p) => p.id === selected)?.title || selected) });          // named as it will be after the change
       }));
+      if (fd.rm) slot.append(el("button", { type: "button", class: "dz-mini", "data-rmrule": fd.rm }, esc(dz.f.removeRule)));
       if (fd.list && fd.count > listRule(panel, fd.list).min) slot.append(el("button", { type: "button", class: "dz-mini", "data-rmitem": `${fd.list}:${fd.index}` }, esc(dz.removeItem)));
     }
     const lists = Object.keys(LISTS).filter((k) => k.startsWith(`${panel.type}.`)).map((k) => k.split(".")[1]);
@@ -191,7 +194,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     else if (fd.kind === "text" || fd.kind === "color") {
       input = el("input", { type: "text", maxlength: 200, ...(fd.kind === "color" ? { list: "dz-colors", placeholder: "internet · reseller · #rrggbb" } : {}) });
       input.value = value;
-    } else if (fd.kind === "number") { input = el("input", { type: "number", min: fd.min, max: fd.max, step: 1 }); input.value = value; }
+    } else if (fd.kind === "number") { input = el("input", { type: "number", min: fd.min, max: fd.max, step: fd.step || 1 }); input.value = value; }
     else {
       input = el("select");
       const list = fd.kind === "choice" ? fd.options.map((v) => ({ value: v, label: dz.v[v] || v })) : options(fd, holder);
@@ -274,6 +277,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (e.target.id === "dz-onepage") { if (confirm(dz.confirmOnePage)) commit(tabsToLayout(source), { message: dz.tabsUnmade, panel: null }); return; }
     const tabMove = e.target.closest("[data-tab-move]");
     if (tabMove) { const [id, dir] = tabMove.dataset.tabMove.split(":"); commit(moveTab(source, id, Number(dir)), { message: dz.tabMoved, panel: null }); return; }
+    const rmRule = e.target.closest("[data-rmrule]");
+    if (rmRule) { commit(setField(source, selected, rmRule.dataset.rmrule, "", { optional: true }), { message: dz.changed(panelDef()?.title || selected) }); return; }
+    const addRuleBtn = e.target.closest("[data-addrule]");
+    if (addRuleBtn) { commit(addRule(source, selected, addRuleBtn.dataset.addrule), { message: dz.changed(panelDef()?.title || selected) }); return; }
     const rmItem = e.target.closest("[data-rmitem]");
     if (rmItem) { const [name, i] = rmItem.dataset.rmitem.split(":"); commit(removeItem(source, selected, name, Number(i)), { message: dz.changed(panelDef()?.title || selected) }); return; }
     const addItemBtn = e.target.closest("[data-additem]");

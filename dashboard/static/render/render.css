@@ -305,3 +305,9 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .designer .dz-part select { flex: 1; min-width: 0; }
 .designer .dz-mini { font-size: 12px; padding: 2px 8px; justify-self: start; }
 .designer .dz-preview { margin: 0; }
+
+/* colour rules (the spec's `rules`): a tone on a key figure or a table cell, always with a symbol as well */
+.tone-cue { font-weight: 700; margin-right: 0.3em; }
+.kpi.tone-good .value, td.tone-good { color: var(--good); }
+.kpi.tone-warn .value, td.tone-warn { color: var(--warn); }
+.kpi.tone-bad .value, td.tone-bad { color: var(--bad); }
