@@ -529,6 +529,7 @@ async function showDashboard() {
   renderSelection();
   setStatus(esc(t.loading));
   await loadOptions(new AbortController().signal).catch((e) => console.warn("filter options failed:", e?.message || e));
+  document.dispatchEvent(new CustomEvent("filters:options"));                           // the designer's default-value pickers can now list the real values
   await loadAll();
   setInterval(() => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); }, 30_000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); });
