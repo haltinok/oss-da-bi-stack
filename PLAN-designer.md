@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phases 1 to 5 done, **phase 6 done** (6a, 6b, 6c-1, 6c-2); phases 7 and 8 (filter types, filter scopes) added and not started**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1 to 6 done; phases 7 and 8 (filter types, filter scopes) added 2026-10-28 and not started**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
