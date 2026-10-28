@@ -80,7 +80,7 @@ export function createBuilderApi({ stack, client, t }) {
     available: !!base,
     info: () => call("GET", `/info?lang=${t.dateLocale.startsWith("tr") ? "tr" : "en"}`),             // the examples come in the page's language
     catalog: () => (catalog ||= call("GET", "/catalog")),
-    build: (prompt, currentYaml) => call("POST", "/build", { prompt, ...(currentYaml ? { current_yaml: currentYaml } : {}) }),
+    build: (prompt, currentYaml, focus) => call("POST", "/build", { prompt, ...(currentYaml ? { current_yaml: currentYaml } : {}), ...(currentYaml && focus ? { focus } : {}) }),
     validate: (yaml) => call("POST", "/validate", { yaml }),
     listSaved: () => call("GET", "/saved"),
     save: (body) => call("POST", "/saved", body),
@@ -255,6 +255,7 @@ export function mountDraftBar(host, api, t, draft) {
       <button type="button" id="bd-download">${esc(t.download)}</button><button type="button" data-tab="save" id="bd-save-tab" hidden>${esc(t.saveBtn)}</button>
       <a class="btn" href="/d/">${esc(t.newOne)}</a></div>
     <div id="bd-msg" class="bmsg" hidden></div>
+    <p class="hint" id="bd-focus" hidden></p>
     <div class="bb-row"><input type="text" id="bd-change" maxlength="2000" placeholder="${esc(t.changePlaceholder)}" aria-label="${esc(t.change)}"><button type="button" id="bd-go" class="primary">${esc(t.change)}</button></div>
     <div class="bb-tab" id="tab-yaml" hidden><p class="hint">${esc(t.yamlHint)}</p><textarea id="bd-yaml" rows="22" spellcheck="false" aria-label="${esc(t.yaml)}"></textarea>
       <div class="bb-row"><button type="button" id="bd-apply" class="primary">${esc(t.apply)}</button></div><div id="bd-problems" class="bmsg" hidden></div></div>
@@ -283,13 +284,24 @@ export function mountDraftBar(host, api, t, draft) {
       }
     });
   }
+  // With the designer on and a panel picked, the Change box is about that panel (render/designer.js announces the pick on `document`).
+  let focus = null;
+  const aim = (id) => {
+    const panel = id ? draft.spec?.panels?.find((p) => p.id === id) : null;
+    focus = panel ? panel.id : null;
+    $("#bd-focus").hidden = !panel;
+    $("#bd-focus").textContent = panel ? t.focusOn(panel.title || panel.id) : "";
+    $("#bd-change").placeholder = panel ? t.focusPlaceholder : t.changePlaceholder;
+  };
+  document.addEventListener("designer:pick", (e) => aim(e.detail?.panel));
+  try { const s = JSON.parse(sessionStorage.getItem("designer") || "{}"); if (s.on) aim(s.panel); } catch { /* no designer state: the whole dashboard */ }
   async function change() {
     const text = $("#bd-change").value.trim();
     if (text.length < 3) return;
     $("#bd-go").disabled = true;
     $("#bd-go").textContent = t.building;
     try {
-      const result = await api.build(text, draft.yaml);
+      const result = await api.build(text, draft.yaml, focus);
       if (result.status === "ok") {
         drafts.edit({ ...draft, yaml: result.yaml, spec: result.spec, prompt: text, message: result.message, notes: result.notes, mode: result.mode, model: result.model });
         location.reload();

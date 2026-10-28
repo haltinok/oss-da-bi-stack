@@ -99,7 +99,7 @@ def builder_answer(path, body, method="GET", query=None):
     if path == "/build":
         if BUILDER["limit"]:
             return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
-        return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin")
+        return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin", focus=body.get("focus"))
     if path.startswith("/saved"):
         if not BUILDER["saving"]:
             return 503, {"detail": "Saving is not set up on this server (BUILDER_DB_PASSWORD is empty)."}

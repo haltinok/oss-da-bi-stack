@@ -56,7 +56,7 @@ Anything the model writes is shown as text, never as HTML; links in text panels 
 | `GET /catalog` | the semantic layer for the caller's role (cubes, members, descriptions, joins, who else can read each) |
 | `GET/POST /saved`, `GET/PUT/DELETE /saved/{id}` | list what you can see, save, open (re-validated for your role), change sharing/title/YAML, delete |
 | `GET /saved/{id}/versions`, `POST /saved/{id}/restore` `{ version }` | the owner's earlier versions; restoring makes a new version |
-| `POST /build` `{ prompt, current_yaml? }` | `{ status: ok \| cannot \| failed, yaml, spec, message, notes, attempts, mode, model, usage }` |
+| `POST /build` `{ prompt, current_yaml?, focus? }` | `{ status: ok \| cannot \| failed, yaml, spec, message, notes, attempts, mode, model, usage }` |
 
 Every call needs a Keycloak access token of the `dashboard` client. Each user may build `BUILDER_RATE_LIMIT` (20) times an hour; each build writes one log
 line (who, role, mode, status, attempts, tokens, the first 160 characters of the prompt).

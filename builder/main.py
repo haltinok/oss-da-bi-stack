@@ -145,6 +145,7 @@ def clean(text: str) -> str:
 class BuildRequest(BaseModel):
     prompt: str = Field(min_length=3, max_length=core.MAX_PROMPT)
     current_yaml: str | None = Field(default=None, max_length=core.MAX_YAML)
+    focus: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")        # the id of the panel the designer has picked
 
 
 User_ = Annotated[User, Depends(current_user)]
@@ -276,7 +277,7 @@ def build(req: BuildRequest, user: User_) -> dict:
         raise HTTPException(503, "The builder is busy with other requests; try again in a moment.")
     t0, prompt = time.time(), clean(req.prompt)
     try:
-        result = core.run_build(make_client(m, user.role), CATALOG, user.role, prompt, req.current_yaml, mode=m)
+        result = core.run_build(make_client(m, user.role), CATALOG, user.role, prompt, req.current_yaml, mode=m, focus=req.focus)
     except HTTPException:
         raise
     except Exception as exc:  # the model API: a key that is rejected, a timeout, an outage. Never echo anything but the kind of failure.
@@ -288,5 +289,5 @@ def build(req: BuildRequest, user: User_) -> dict:
         _slots.release()
     spend(user, result["usage"])
     audit({"user": user.name, "role": user.role, "mode": m, "status": result["status"], "attempts": result["attempts"], "seconds": round(time.time() - t0, 1),
-           "usage": result["usage"], "refine": bool(req.current_yaml), "prompt": prompt[:160]})
+           "usage": result["usage"], "refine": bool(req.current_yaml), "focus": bool(req.focus), "prompt": prompt[:160]})
     return result

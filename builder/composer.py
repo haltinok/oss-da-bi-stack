@@ -170,10 +170,10 @@ class Builder:
         return {"ratio": {"num": n, "den": d}, "label": self.lab(key), "format": "pct" if key == "margin" else "money"}
 
 
-def compose(prompt: str, catalog: cat.Catalog, role: str, current_yaml: str | None = None) -> Composition:
+def compose(prompt: str, catalog: cat.Catalog, role: str, current_yaml: str | None = None, focus: str | None = None) -> Composition:
     p = parse(prompt)
     if current_yaml:
-        return refine(p, prompt, catalog, role, current_yaml)
+        return refine(p, prompt, catalog, role, current_yaml, focus)
     if p["inventory"]:
         return compose_inventory(p, prompt, catalog, role)
     return compose_sales(p, prompt, catalog, role)
@@ -391,11 +391,80 @@ def finish(b: Builder, prompt: str, time_dim: str, kind: str) -> Composition:
 
 
 # ------------------------------------------------------------------------------------------------------------------ editing
-def refine(p, prompt, catalog, role, current_yaml) -> Composition:
+FOCUS_UNDERSTOOD = "With one panel picked the rule-based stand-in handles: pie or donut, bars or columns, a chart style (line, area, bar, stacked), top N, and removing it."
+KEEP = ("id", "title", "description", "measure", "label", "by", "by_label", "format", "on_click")
+
+
+def _fill_row(row: list[dict]) -> list[dict]:
+    """A row that lost a panel gives its 12 columns to the ones that are left, in the proportions they had."""
+    spans = [next(iter(c.values())) for c in row]
+    if sum(spans) == 12:
+        return row
+    new = [max(1, round(12 * w / sum(spans))) for w in spans]
+    new[0] += 12 - sum(new)
+    return [{next(iter(c)): w} for c, w in zip(row, new, strict=True)]
+
+
+def refine_panel(p, spec: dict, focus: str) -> Composition:
+    """A change to the one panel the designer has picked. Nothing else is touched, and the layout is not rebuilt, so tabs survive."""
+    panel = next((x for x in spec.get("panels", []) if x.get("id") == focus), None)
+    if panel is None:
+        return Composition(reason=f"The picked panel ({focus}) is not in the dashboard any more.")
+    t, notes, kind = p["t"], [], panel["type"]
+    if has(t, "remove", "delete", "drop", "kaldir", "sil"):
+        if len(spec["panels"]) < 2:
+            return Composition(reason="That is the only panel; a dashboard needs at least one.")
+        spec["panels"] = [x for x in spec["panels"] if x is not panel]
+        for holder in [spec, *spec.get("tabs", [])]:
+            if "layout" in holder:
+                rows = [[c for c in row if focus not in c] for row in holder["layout"]]
+                holder["layout"] = [_fill_row(row) for row in rows if row]
+        return Composition(spec=spec, notes=[f"Removed {panel.get('title') or focus}."])
+    if p["pie"] and kind in ("bar", "pie"):
+        if kind == "bar":
+            if "split" in panel or not ("measure" in panel or "stack" in panel):
+                return Composition(reason="This bar chart is split by a second dimension, which a pie cannot show. Edit the YAML, or use a language model.")
+            keep = {k: v for k, v in panel.items() if k in KEEP}
+            keep["type"] = "pie"
+            if "stack" in panel:                                             # stacked measures become one slice size: their sum
+                keep["sum"] = [s["member"] for s in panel["stack"]]
+                keep["label"] = panel.get("label") or panel.get("title") or "Total"
+            if isinstance(panel.get("limit"), int):
+                keep["limit"] = min(30, max(2, panel["limit"]))
+            panel.clear()
+            panel.update(keep)
+        panel["style"] = "donut" if has(t, "donut", "halka") else "pie"
+        notes.append(f"Now a {panel['style']} chart.")
+    elif kind == "pie" and has(t, "bar", "column", "sutun", "kolon") and ("measure" in panel or "sum" in panel):
+        keep = {k: v for k, v in panel.items() if k in KEEP or k == "limit"}
+        if "sum" in panel:                                                  # one slice size made of several measures: they become stacked bars again
+            keep["stack"] = [{"member": m} for m in panel["sum"]]
+            keep.pop("label", None)
+        keep.update(type="bar", orientation="vertical" if p["column"] else "horizontal")
+        panel.clear()
+        panel.update(keep)
+        notes.append("Now a bar chart.")
+    elif kind == "bar" and p["column"]:
+        panel["orientation"] = "vertical"
+        notes.append("Drawn as columns.")
+    elif kind == "timeseries" and p["style"]:
+        panel["style"] = p["style"]
+        notes.append(f"Chart style set to {p['style']}.")
+    if p["top"] and kind in ("bar", "table", "pie"):
+        panel["limit"] = max(p["top"], 2) if kind == "pie" else p["top"]
+        notes.append(f"Limit set to {panel['limit']}.")
+    if not notes:
+        return Composition(spec=spec, notes=[f"The rule-based stand-in understood nothing to change in this panel. {FOCUS_UNDERSTOOD}"])
+    return Composition(spec=spec, notes=notes)
+
+
+def refine(p, prompt, catalog, role, current_yaml, focus: str | None = None) -> Composition:
     try:
         spec = yaml.safe_load(current_yaml)
     except yaml.YAMLError:
         return Composition(reason="The current dashboard is not valid YAML.")
+    if focus and isinstance(spec, dict):
+        return refine_panel(p, spec, focus)
     if isinstance(spec, dict) and "tabs" in spec:        # editing rebuilds `layout` from `panels`, which would flatten the tabs: do not
         return Composition(reason="The rule-based stand-in cannot change a dashboard that has tabs (it would lose them). Edit the YAML, or use a language model, which edits the whole file.")
     t, notes, changed = p["t"], [], False
