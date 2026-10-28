@@ -161,3 +161,57 @@ export function renameTab(source, tabId, title) {
 
 /** Moves a panel to the end of another tab. */
 export const moveToTab = (source, id, tabId) => dropPanel(source, id, { tab: tabId, end: true });
+
+// ------------------------------------------------------------------------------------------------------------------ adding and removing tabs
+export const MAX_TABS = 8;
+const tabIdIn = (next) => {
+  const taken = new Set((next.tabs || []).map((t) => t.id));
+  let n = (next.tabs || []).length + 1;
+  while (taken.has(`tab_${n}`)) n++;
+  return `tab_${n}`;
+};
+
+/**
+ * Turns a plain layout into two tabs: the first half of the rows stay on the first tab, the rest go to a second (the person moves panels between them afterwards).
+ * `titles` names them. Needs two rows; { problem: "rows" } otherwise.
+ */
+export function layoutToTabs(source, titles = ["Overview", "Details"]) {
+  if (source.tabs) return { problem: "tabs" };
+  if (!source.layout || source.layout.length < 2) return { problem: "rows" };
+  const next = clone(source), rows = next.layout, cut = Math.ceil(rows.length / 2);
+  delete next.layout;
+  next.tabs = [{ id: "tab_1", title: titles[0], layout: rows.slice(0, cut) }, { id: "tab_2", title: titles[1], layout: rows.slice(cut) }];
+  return { source: next };
+}
+
+/** The reverse: every tab's rows one after another on a single page. */
+export function tabsToLayout(source) {
+  if (!source.tabs) return { problem: "tabs" };
+  const next = clone(source);
+  next.layout = next.tabs.flatMap((t) => t.layout);
+  delete next.tabs;
+  return { source: next };
+}
+
+/** A new tab at the end. It cannot be empty, so it starts with a text panel (`note`: the words for it) that the person replaces or keeps; { problem: "max" } at eight tabs. */
+export function addTab(source, title, note) {
+  if (!source.tabs) return { problem: "tabs" };
+  if (source.tabs.length >= MAX_TABS) return { problem: "max" };
+  const next = clone(source), id = tabIdIn(next);
+  let pid = "note", n = 2;
+  while (next.panels.some((p) => p.id === pid)) pid = `note_${n++}`;
+  next.panels.push({ id: pid, type: "text", markdown: note });
+  next.tabs.push({ id, title, layout: [[{ [pid]: 12 }]] });
+  return { source: next, id };
+}
+
+/**
+ * Removes a tab; its panels are kept and go to the end of the neighbouring tab (the one before, else the one after). At one tab left the dashboard goes back to a plain layout.
+ */
+export function removeTab(source, tabId) {
+  const i = (source.tabs || []).findIndex((t) => t.id === tabId);
+  if (i < 0) return { problem: "missing" };
+  const next = clone(source), [gone] = next.tabs.splice(i, 1);
+  (next.tabs[i - 1] || next.tabs[0]).layout.push(...gone.layout);
+  return next.tabs.length < 2 ? tabsToLayout(next) : { source: next };
+}

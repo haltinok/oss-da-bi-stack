@@ -1,6 +1,6 @@
 # Plan: a visual designer for dashboards
 
-Status: **approved; phases 1 to 5 done, phase 6 in three parts (6a done)**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
+Status: **approved; phases 1 to 5 done, phase 6 in three parts (6a, 6b done)**. One PR per phase, like [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md) and [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md).
 
 ## Why
 Today a dashboard is made by describing it to a model, or by writing YAML. Neither works for an analyst who knows what the panel should look like and
@@ -58,7 +58,9 @@ Built as below, with these notes: `POST /build` takes an optional `focus` (a pan
 The Change box sends the selected panel as the focus ("make this one a donut"); a model edit and a designer edit can be undone the same way.
 
 ### Phase 6: the rest of the types, formulas, and the two things left out
-Split into three PRs: **6a** pivot's own fields and the sum/ratio builder (done), **6b** tabs (add, delete, layout into tabs), **6c** conditional formatting and logo upload (spec fields and validator rules first).
+Split into three PRs: **6a** pivot's own fields and the sum/ratio builder (done), **6b** tabs (add, delete, layout into tabs; done), **6c** conditional formatting and logo upload (spec fields and validator rules first).
+
+**6b, built:** in `lib/designer-layout.js`: `layoutToTabs` (a plain layout becomes two tabs, the first half of the rows and the rest; needs two rows), `tabsToLayout`, `addTab` (a tab cannot be empty, so it starts with a text `note` panel; eight at most) and `removeTab` (its panels join the neighbouring tab; at one tab left the dashboard goes back to a plain layout). The page view of the drawer has the buttons.
 
 **6a, built:** `lib/designer-items.js` (pure: add/remove a KPI measure, a series or a pivot measure within the list's limits; turn a KPI measure or a series into a sum or a ratio and back, edit, add and remove its members, minimums two for a sum and one per side of a ratio; the formula told in words) and the pivot's `columns` step, `heat.measure`, `order` and `limit` in `designer-model.js`. An optional field emptied leaves no empty object behind (`heat: {}` would not validate). A pie's `sum` and a bar's `stack` are not in this: they stay as they were. Pivot measures cannot be formulas in the spec, so they are not offered as such.
 Pivot's measures and heat, `sum` and `ratio` builders with a plain-words preview, **conditional formatting**, **logo upload** (both need spec fields and validator rules first).

@@ -150,3 +150,47 @@ test("the pointer layer: which edge a point is nearest, and how many columns a d
   assert.equal(columnsMoved(-170, 984), -2, "a drag to the left is negative");
   assert.equal(columnsMoved(40, 984), 0, "less than half a column is not a move");
 });
+
+// ---- adding and removing tabs
+import { addTab, layoutToTabs, removeTab, tabsToLayout } from "../../static/lib/designer-layout.js";
+
+const PLAIN = () => ({ panels: ["a", "b", "c"].map((id) => ({ id, type: "text", markdown: id })), layout: [[{ a: 12 }], [{ b: 6 }, { c: 6 }], [{ c2: 12 }]].slice(0, 2) });
+const placed = (s) => (s.tabs ? s.tabs.flatMap((t) => t.layout) : s.layout).flat().map((c) => Object.keys(c)[0]).sort();
+
+test("a plain layout becomes two tabs with every panel still placed once, and back", () => {
+  const out = layoutToTabs(PLAIN(), ["One", "Two"]).source;
+  assert.deepEqual(out.tabs.map((t) => [t.id, t.title, t.layout.length]), [["tab_1", "One", 1], ["tab_2", "Two", 1]]);
+  assert.equal(out.layout, undefined);
+  assert.deepEqual(placed(out), ["a", "b", "c"]);
+  assert.deepEqual(tabsToLayout(out).source.layout, PLAIN().layout);
+  assert.equal(layoutToTabs({ panels: [], layout: [[{ a: 12 }]] }).problem, "rows", "one row cannot be split");
+  assert.equal(layoutToTabs(out).problem, "tabs");
+});
+
+test("a new tab starts with a text panel; eight is the most", () => {
+  let s = layoutToTabs(PLAIN()).source;
+  const added = addTab(s, "Notes", "words");
+  assert.equal(added.source.tabs.length, 3);
+  assert.deepEqual(added.source.tabs[2], { id: "tab_3", title: "Notes", layout: [[{ note: 12 }]] });
+  assert.deepEqual(added.source.panels.at(-1), { id: "note", type: "text", markdown: "words" });
+  s = addTab(added.source, "More", "x").source;
+  assert.ok(s.panels.some((p) => p.id === "note_2") && s.tabs[3].id === "tab_4");
+  for (let i = 0; i < 4; i++) s = addTab(s, "t", "x").source;
+  assert.equal(s.tabs.length, 8);
+  assert.equal(addTab(s, "t", "x").problem, "max");
+  assert.equal(addTab(PLAIN(), "t", "x").problem, "tabs");
+});
+
+test("removing a tab keeps its panels on the neighbouring tab, and the last pair goes back to one page", () => {
+  const three = addTab(layoutToTabs(PLAIN()).source, "Notes", "w").source;
+  const out = removeTab(three, "tab_2").source;
+  assert.deepEqual(out.tabs.map((t) => t.id), ["tab_1", "tab_3"]);
+  assert.deepEqual(placed(out), ["a", "b", "c", "note"].sort());
+  assert.equal(out.tabs[0].layout.length, 2, "the removed tab's rows join the tab before it");
+  const first = removeTab(three, "tab_1").source;
+  assert.equal(first.tabs[0].id, "tab_2", "the first tab's rows go to the one after it");
+  const flat = removeTab(layoutToTabs(PLAIN()).source, "tab_2").source;
+  assert.equal(flat.tabs, undefined);
+  assert.deepEqual(placed(flat), ["a", "b", "c"]);
+  assert.equal(removeTab(three, "nope").problem, "missing");
+});

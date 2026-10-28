@@ -490,6 +490,34 @@ with sync_playwright() as p:
     check(len(panel_src(pv["id"])["measures"]) == 1 and not page.locator("#designer [data-rmitem]").count(), "a pivot's measure can be removed, and the last one cannot")
     ctx.close()
 
+    # ---- tabs: split a page in two, add one, remove one, put them back on one page
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    all_ids = sorted(x["id"] for x in yaml_of(page)["panels"])
+    placed = lambda: sorted(next(iter(c)) for tab in (yaml_of(page).get("tabs") or [{"layout": yaml_of(page)["layout"]}]) for row in tab["layout"] for c in row)
+    check("layout" in yaml_of(page) and "dz-totabs" in page.inner_html("#designer"), "a one-page dashboard offers to split into tabs")
+    reload_after(lambda: page.click("#dz-totabs"))
+    tabs = yaml_of(page).get("tabs")
+    check(tabs and len(tabs) == 2 and "layout" not in yaml_of(page) and placed() == all_ids, f"it splits into two tabs with every panel still placed once ({[t['title'] for t in tabs]})")
+    page.wait_for_selector("[role=tab]", timeout=10000)
+    check(page.locator("[role=tab]").count() == 2, "and the page shows two tabs")
+    page.fill("#dz-newtab", "Notes")
+    reload_after(lambda: page.click("#dz-addtab"))
+    check([t["title"] for t in yaml_of(page)["tabs"]][-1] == "Notes" and len(yaml_of(page)["tabs"]) == 3, "Add a tab adds one at the end, holding a text panel")
+    with page.expect_navigation():
+        page.once("dialog", lambda d: d.accept())
+        page.locator('#designer [data-tab-remove="tab_3"]').click()
+    settled(page)
+    check(len(yaml_of(page)["tabs"]) == 2 and placed() == sorted([*all_ids, "note"]), "removing a tab keeps its panels (on the neighbouring tab)")
+    with page.expect_navigation():
+        page.once("dialog", lambda d: d.accept())
+        page.click("#dz-onepage")
+    settled(page)
+    check("tabs" not in yaml_of(page) and placed() == sorted([*all_ids, "note"]), "Back to one page puts every panel on a single layout")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
