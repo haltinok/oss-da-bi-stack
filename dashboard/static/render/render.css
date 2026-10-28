@@ -357,3 +357,4 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .slicer-chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
 .slicer-chip[aria-pressed="true"] { border-color: var(--focus); background: var(--focus); color: #fff; }
 .slicer-chip:focus-visible, .slicer-item:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+.selection-bar { gap: 6px; }
