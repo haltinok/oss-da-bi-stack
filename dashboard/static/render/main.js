@@ -292,10 +292,11 @@ async function showDashboard() {
       if (!host) { host = el("nav", { class: "filters rfilters tab-filters", "aria-label": t.filters }); tabBars.set(f.tab, host); grids.get(f.tab)?.prepend(host); }
       host.append(node);
     } else if (f.scope === "panel") {
-      const head = panels.get(f.panel)?.root.querySelector(".card-h");
-      if (!head) return;
-      let host = head.querySelector(".pane-filters");
-      if (!host) { host = el("div", { class: "pane-filters" }); head.querySelector(".spacer")?.before(host); }
+      const root = panels.get(f.panel)?.root;
+      if (!root) return;
+      const head = root.querySelector(".card-h");                                  // a row of key figures has no card header: its filters go above the tiles
+      let host = root.querySelector(".pane-filters");
+      if (!host) { host = el("div", { class: "pane-filters" }); if (head) head.querySelector(".spacer")?.before(host); else root.prepend(host); }
       host.append(node);
     } else bar.append(node);
   }

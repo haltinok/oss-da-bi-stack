@@ -6,7 +6,7 @@ import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setFilterType, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setFilter, setFilterScope, setFilterType, setFilterVisible, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { LISTS, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -98,6 +98,20 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
       if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
       card.append(defaultRow(f, typ, (v) => edit("default", v)));
+      // Where it applies and whether the reader sees it.
+      const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
+      const scopes = ["dashboard", ...(hasTabs || scope === "page" ? ["page"] : []), "panel"];
+      card.append(field({ path: "scope", kind: "choice", key: "filterScope", options: scopes }, { ...f, scope },
+        (v) => commit(setFilterScope(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
+      if (scope === "page") card.append(field({ path: "tab", kind: "choice", key: "filterTab", options: tabsOf(source).map((x) => x.id), labels: Object.fromEntries(tabsOf(source).map((x) => [x.id, x.title])) }, f, (v) => edit("tab", v)));
+      if (scope === "panel") card.append(field({ path: "panel", kind: "choice", key: "filterPanel", options: source.panels.filter((p) => p.type !== "text").map((p) => p.id), labels: Object.fromEntries(source.panels.map((p) => [p.id, p.title || p.id])) }, f, (v) => edit("panel", v)));
+      const eye = el("input", { type: "checkbox", "data-path": "visible", "aria-label": dz.f.filterVisible });
+      eye.checked = f.visible !== false;
+      eye.addEventListener("change", async () => { if (!(await commit(setFilterVisible(source, f.id, eye.checked), { message: dz.filterChanged, panel: null }))) eye.checked = !eye.checked; });         // a refused change puts the box back
+      const eyeRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterVisible)}</span>`);
+      eyeRow.append(el("span", { class: "dz-input" }, "")); eyeRow.lastChild.append(eye);
+      card.append(eyeRow);
+      if (f.visible === false) card.querySelector("h4").insertAdjacentHTML("beforeend", ` <span class="badge" title="${esc(dz.hiddenHint)}">${esc(dz.hidden)}</span>`);
       const rm = el("button", { type: "button", class: "dz-danger", "data-rm-filter": f.id }, esc(dz.removeFilter));
       card.append(rm);
       list.append(card);
@@ -275,7 +289,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     } else if (fd.kind === "number") { input = el("input", { type: "number", min: fd.min, max: fd.max, step: fd.step || 1 }); input.value = value; }
     else {
       input = el("select");
-      const list = fd.kind === "choice" ? fd.options.map((v) => ({ value: v, label: dz.v[v] || v })) : options(fd, holder);
+      const list = fd.kind === "choice" ? fd.options.map((v) => ({ value: v, label: fd.labels?.[v] || dz.v[v] || v })) : options(fd, holder);
       if (fd.optional) input.append(el("option", { value: "" }, esc(dz.none)));
       if (value && !list.some((o) => o.value === value)) list.push({ value, label: value });
       if (fd.kind === "choice") for (const o of list) input.append(el("option", { value: o.value }, esc(o.label)));

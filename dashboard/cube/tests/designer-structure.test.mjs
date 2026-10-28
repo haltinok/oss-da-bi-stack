@@ -191,3 +191,54 @@ test("a default is set and emptied like the other optional fields; a new dimensi
   const kept = setFilter({ ...SOURCE, filters: [{ id: "t", dimension: "products.name", type: "text", default: "contains:x" }] }, CATALOG, "t", "dimension", "products.category");
   assert.equal(kept.source.filters[0].type, "text", "a type that still fits stays");
 });
+
+// ---- filter scopes and hidden filters
+import { setFilterScope, setFilterVisible } from "../../static/lib/designer-structure.js";
+import { removeTab, tabsToLayout } from "../../static/lib/designer-layout.js";
+
+const TABBED = () => ({
+  ...SOURCE, layout: undefined,
+  tabs: [{ id: "a", title: "A", layout: [[{ kpis: 12 }], [{ trend: 8 }, { top: 4 }]] }, { id: "b", title: "B", layout: [[{ note: 12 }]] }],
+  filters: [{ id: "region", dimension: "territories.region", label: "Region" }],
+});
+
+test("a filter can apply to the whole dashboard, one tab or one panel", () => {
+  const page = setFilterScope(TABBED(), CATALOG, "region", "page", "b");
+  assert.deepEqual([page.source.filters[0].scope, page.source.filters[0].tab], ["page", "b"]);
+  assert.equal(setFilterScope(TABBED(), CATALOG, "region", "page").source.filters[0].tab, "a", "the first tab when none is named");
+  assert.equal(setFilterScope(SOURCE, CATALOG, "region", "page").problem, "notabs");
+  const pane = setFilterScope(TABBED(), CATALOG, "region", "panel", "top");
+  assert.deepEqual([pane.source.filters[0].scope, pane.source.filters[0].panel], ["panel", "top"]);
+  assert.ok(pane.notes.includes("click"), "the trend panel's click rule set the filter; a pane filter is set from its own panel only");
+  assert.equal("on_click" in pane.source.panels.find((p) => p.id === "trend"), false);
+  assert.equal(setFilterScope(TABBED(), CATALOG, "region", "panel", "note").source.filters[0].panel, "kpis", "a text panel has no data: the first panel with data instead");
+  const back = setFilterScope(pane.source, CATALOG, "region", "dashboard");
+  assert.deepEqual(["scope" in back.source.filters[0], "panel" in back.source.filters[0], "tab" in back.source.filters[0]], [false, false, false]);
+  assert.equal(setFilterScope(TABBED(), CATALOG, "nope", "page").problem, "missing");
+});
+
+test("hiding a filter needs a default, and drops what a hidden filter cannot have", () => {
+  const src = { ...SOURCE, filters: [{ id: "region", dimension: "territories.region", parent: "territories.group" }] };
+  assert.equal(setFilterVisible(src, "region", false).problem, "needsDefault");
+  const hid = setFilterVisible({ ...src, filters: [{ ...src.filters[0], default: "France" }] }, "region", false);
+  assert.equal(hid.source.filters[0].visible, false);
+  assert.equal("parent" in hid.source.filters[0], false);
+  assert.deepEqual(hid.notes.sort(), ["click", "parentDropped"], "the trend panel's click rule named it");
+  assert.equal("visible" in setFilterVisible(hid.source, "region", true).source.filters[0], false, "visible is the absence of the key");
+});
+
+test("removing a panel takes its pane filters, removing a tab hands its page filters on, and one page again makes them dashboard filters", () => {
+  const src = TABBED();
+  src.filters = [{ id: "p", dimension: "products.name", scope: "panel", panel: "top" }, { id: "g", dimension: "products.category", scope: "page", tab: "b" }, { id: "r", dimension: "territories.region" }];
+  const gone = removePanel(src, "top");
+  assert.deepEqual(gone.source.filters.map((f) => f.id), ["g", "r"]);
+  assert.ok(gone.notes.includes("filtersRemoved"));
+  const three = { ...src, tabs: [...src.tabs, { id: "c", title: "C", layout: [[{ t2: 12 }]] }], panels: [...src.panels, { id: "t2", type: "text", markdown: "x" }] };
+  three.filters = [{ id: "g", dimension: "products.category", scope: "page", tab: "b" }];
+  assert.equal(removeTab(three, "b").source.filters[0].tab, "a", "the tab before takes the panels and the filter");
+  const one = removeTab(src, "b");
+  assert.equal(one.source.tabs, undefined);
+  assert.equal(one.source.filters.find((f) => f.id === "g").scope, undefined, "on one page a page filter becomes a dashboard filter");
+  assert.ok(one.notes.includes("scopeReset"));
+  assert.equal(tabsToLayout(src).source.filters.find((f) => f.id === "p").scope, "panel", "a pane filter stays a pane filter");
+});

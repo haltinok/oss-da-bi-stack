@@ -755,6 +755,61 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- where a filter applies and whether the reader sees it
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    filters = lambda: yaml_of(page).get("filters", [])
+    page.select_option("#dz-newfilter", "products.category")
+    with changes(page):
+        page.click("#dz-addfilter")
+    settled(page)
+    fid = next(f for f in filters() if f["dimension"] == "products.category")["id"]
+    fcard = f'.dz-filter:has(h4:text-is("{fid}"))'
+    check(page.locator(f'{fcard} [data-path="scope"] option').evaluate_all("os => os.map((o) => o.value)") == ["dashboard", "panel"], "without tabs a filter can apply to the dashboard or to one panel")
+    with changes(page):
+        page.select_option(f'{fcard} [data-path="scope"]', "panel")
+    settled(page)
+    now = next(f for f in filters() if f["id"] == fid)
+    check(now.get("scope") == "panel" and now.get("panel") and page.locator(f'{fcard} [data-path="panel"]').count() == 1, f"choosing One panel sets scope and a panel ({now.get('panel')})")
+    page.wait_for_selector(f'[data-panel="{now["panel"]}"] .pane-filters', timeout=10000)
+    check(page.locator(f'#filters .field:has-text("{now.get("label", "Category")}")').count() == 0, "and the page draws it in that panel's card, not in the header")
+    with changes(page):
+        page.select_option(f'{fcard} [data-path="scope"]', "dashboard")
+    settled(page)
+    with changes(page):
+        page.click("#dz-totabs")
+    settled(page)
+    page.wait_for_selector("[role=tab]", timeout=20000)
+    page.wait_for_selector(f'#designer:not([hidden]) {fcard}', timeout=20000)
+    check(page.locator(f'{fcard} [data-path="scope"] option').evaluate_all("os => os.map((o) => o.value)") == ["dashboard", "page", "panel"], "with tabs a filter can also apply to one tab")
+    with changes(page):
+        page.select_option(f'{fcard} [data-path="scope"]', "page")
+    settled(page)
+    now = next(f for f in filters() if f["id"] == fid)
+    check(now.get("scope") == "page" and now.get("tab") == "tab_1" and page.locator(f'{fcard} [data-path="tab"]').count() == 1, "One tab sets scope page and the first tab")
+    check(page.locator("#tabpanel-tab_1 .tab-filters select").count() == 1, "and the page draws it above that tab's panels")
+    page.click(f'{fcard} [data-path="visible"]')
+    page.wait_for_selector("#dz-msg:not([hidden])", timeout=10000)
+    check("default" in page.inner_text("#dz-msg").lower(), "hiding a filter that has no default is refused, saying why")
+    with changes(page):
+        page.fill(f'{fcard} [data-path="default"]', "Bikes")
+        page.press(f'{fcard} [data-path="default"]', "Tab")
+    settled(page)
+    with changes(page):
+        page.click(f'{fcard} [data-path="visible"]')
+    settled(page)
+    check(next(f for f in filters() if f["id"] == fid).get("visible") is False and "hidden" in page.inner_text(f"{fcard} h4").lower(), "with a default it can be hidden, and the card says so")
+    check(page.locator("#tabpanel-tab_1 .tab-filters select").count() == 0, "a hidden filter has no control on the page")
+    page.once("dialog", lambda d: d.accept())
+    with changes(page):
+        page.click("#dz-onepage")
+    settled(page)
+    check("scope" not in next(f for f in filters() if f["id"] == fid) and "tab" not in next(f for f in filters() if f["id"] == fid), "back to one page, a page filter becomes a dashboard filter")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
