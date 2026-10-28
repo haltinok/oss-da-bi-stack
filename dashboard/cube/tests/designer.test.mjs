@@ -37,8 +37,9 @@ test("a treemap's second grouping is optional, a text panel offers only its text
   assert.equal(mix.find((f) => f.path === "group.0").optional, undefined);
   assert.deepEqual(fieldsFor(panel("note")).map((f) => f.path), ["markdown"]);
   const kpi = fieldsFor(panel("kpis"));
-  assert.equal(kpi.find((f) => f.path === "measures.0.member").kind, "measure");
-  assert.equal(kpi.find((f) => f.path === "measures.1").kind, "readonly", "a sum is a formula: not a list to pick from");
+  assert.equal(kpi.find((f) => f.path === "measures.0").kind, "value", "a key figure is a measure, a sum or a ratio: one field that says which");
+  assert.equal(kpi.find((f) => f.path === "measures.1").kind, "value");
+  assert.deepEqual([kpi.find((f) => f.path === "measures.1").index, kpi.find((f) => f.path === "measures.1").count], [1, 2]);
   assert.ok(!kpi.some((f) => f.path === "title"), "a key-figures row has no title of its own");
 });
 

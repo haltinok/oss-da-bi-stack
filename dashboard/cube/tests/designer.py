@@ -443,6 +443,53 @@ with sync_playwright() as p:
     check(sent and "focus" not in sent[-1], "with nothing picked the request carries no focus")
     ctx.close()
 
+    # ---- formulas, lists of measures, and a pivot's own fields
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+
+    def reload_after(action):
+        with page.expect_navigation():
+            action()
+        settled(page)
+
+    def panel_src(pid):
+        return next(x for x in yaml_of(page)["panels"] if x["id"] == pid)
+
+    trend = panel_of(page, "timeseries")
+    page.click(f'[data-panel="{trend}"] h2')
+    n_series = len(panel_src(trend)["series"])
+    reload_after(lambda: page.click('#designer [data-additem="series"]'))
+    check(len(panel_src(trend)["series"]) == n_series + 1, "Add a series adds one to the time chart")
+    reload_after(lambda: page.select_option(f'#designer [data-path="series.{n_series}.kind"]', "sum"))
+    added = panel_src(trend)["series"][n_series]
+    check("sum" in added and len(added["sum"]) == 2 and added.get("label"), f"a series can be turned into a sum ({added.get('sum')})")
+    check("=" in page.inner_text("#designer .dz-preview") and "+" in page.inner_text("#designer .dz-preview"), "and the formula is told in words")
+    reload_after(lambda: page.select_option(f'#designer [data-path="series.{n_series}.kind"]', "ratio"))
+    check("ratio" in panel_src(trend)["series"][n_series] and "÷" in page.inner_text("#designer .dz-preview"), "then into a ratio, shown with a division sign")
+    reload_after(lambda: page.locator("#designer [data-rmitem]").nth(n_series).click())
+    check(len(panel_src(trend)["series"]) == n_series, "Remove this one takes the series out again")
+    page.keyboard.press("Escape")
+
+    n_panels = len(yaml_of(page)["panels"])
+    reload_after(lambda: page.click('#dz-gallery [data-add="pivot"]'))
+    pv = yaml_of(page)["panels"][-1]
+    check(pv["type"] == "pivot" and len(yaml_of(page)["panels"]) == n_panels + 1, "a pivot is added and picked")
+    reload_after(lambda: page.click('#designer [data-additem="measures"]'))
+    pv = panel_src(pv["id"])
+    check(len(pv["measures"]) == 2, "a pivot takes a second measure")
+    second = pv["measures"][1]["member"] if isinstance(pv["measures"][1], dict) else pv["measures"][1]
+    reload_after(lambda: page.select_option('#designer [data-path="heat.measure"]', second))
+    check(panel_src(pv["id"]).get("heat") == {"measure": second}, "the heat map can be put on a measure of the pivot")
+    reload_after(lambda: page.select_option('#designer [data-path="heat.measure"]', ""))
+    check("heat" not in panel_src(pv["id"]), "and taken off again, leaving no empty `heat` behind")
+    reload_after(lambda: (page.fill('#designer [data-path="limit.rows"]', "7"), page.press('#designer [data-path="limit.rows"]', "Tab")))
+    check(panel_src(pv["id"]).get("limit") == {"rows": 7}, "a pivot's row limit is a field")
+    reload_after(lambda: page.locator("#designer [data-rmitem]").first.click())
+    check(len(panel_src(pv["id"])["measures"]) == 1 and not page.locator("#designer [data-rmitem]").count(), "a pivot's measure can be removed, and the last one cannot")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

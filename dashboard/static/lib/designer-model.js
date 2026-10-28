@@ -16,8 +16,10 @@ export function fieldsFor(panel) {
   const each = (list, make) => (Array.isArray(list) ? list : []).forEach((item, i) => make(item, i));
   const measureItem = (name, list, extra = {}) => each(list, (m, i) => {
     const g = { n: i + 1, of: list.length };
-    if (m && typeof m === "object" && m.member) out.push(f(`${name}.${i}.member`, "measure", { key: "measure", group: g }));
-    else out.push({ path: `${name}.${i}`, kind: "readonly", key: "formula", group: g });
+    if (extra.formula) out.push(f(`${name}.${i}`, "value", { key: "measure", group: g, list: name, index: i, count: list.length }));
+    else if (m && typeof m === "object" && m.member) out.push(f(`${name}.${i}.member`, "measure", { key: "measure", group: g, list: name, index: i, count: list.length }));
+    else if (m && typeof m === "object") out.push({ path: `${name}.${i}`, kind: "readonly", key: "formula", group: g });
+    else out.push(f(`${name}.${i}`, "measure", { key: "measure", group: g, list: name, index: i, count: list.length }));
     if (m && typeof m === "object") {
       out.push(f(`${name}.${i}.label`, "text", { key: "label", group: g, optional: extra.optionalLabel }));
       if (extra.format !== false) out.push(f(`${name}.${i}.format`, "choice", { key: "format", options: FORMATS, optional: true, group: g }));
@@ -26,7 +28,7 @@ export function fieldsFor(panel) {
   if (panel.type !== "text" && panel.type !== "kpi") out.push(f("title", "text", { key: "title", optional: true }));
   switch (panel.type) {
     case "kpi":
-      measureItem("measures", panel.measures);
+      measureItem("measures", panel.measures, { formula: true });
       if (panel.sparkline) out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES }));
       break;
     case "timeseries":
@@ -34,8 +36,7 @@ export function fieldsFor(panel) {
       if (!panel.drill) out.push(f("granularity", "choice", { key: "granularity", options: GRANULARITIES }));
       each(panel.series, (s, i) => {
         const g = { n: i + 1, of: panel.series.length };
-        if (s.member) out.push(f(`series.${i}.member`, "measure", { key: "measure", group: g }));
-        else out.push({ path: `series.${i}`, kind: "readonly", key: "formula", group: g });
+        out.push(f(`series.${i}`, "value", { key: "measure", group: g, list: "series", index: i, count: panel.series.length }));
         out.push(f(`series.${i}.label`, "text", { key: "label", group: g }), f(`series.${i}.color`, "color", { key: "color", optional: true, group: g }), f(`series.${i}.format`, "choice", { key: "format", options: FORMATS, optional: true, group: g }));
       });
       break;
@@ -64,8 +65,12 @@ export function fieldsFor(panel) {
     case "pivot":
       out.push(f("rows.0", "dimension", { key: "rows" }), f("rows.1", "dimension", { key: "rows2", optional: true }));
       if (typeof panel.columns === "string") out.push(f("columns", "dimension", { key: "columns" }));
+      else if (panel.columns && typeof panel.columns === "object") out.push(f("columns.member", "dimension", { key: "columns" }), f("columns.granularity", "choice", { key: "columnStep", options: GRANULARITIES }));
       measureItem("measures", panel.measures);
       out.push(f("totals", "choice", { key: "totals", options: ["both", "rows", "columns", "none"], optional: true }), f("show", "choice", { key: "show", options: ["value", "share_of_row", "share_of_column", "share_of_total"], optional: true }));
+      out.push(f("heat.measure", "choice", { key: "heat", options: (panel.measures || []).map((m) => (typeof m === "string" ? m : m?.member)).filter(Boolean), optional: true }),
+        f("order.by", "choice", { key: "orderBy", options: ["total", "label"], optional: true }), f("order.dir", "choice", { key: "orderDir", options: DIRECTIONS, optional: true }),
+        f("limit.rows", "number", { key: "limitRows", min: 1, max: 200, optional: true }), f("limit.columns", "number", { key: "limitColumns", min: 1, max: 24, optional: true }));
       break;
     case "text":
       out.push(f("markdown", "textarea", { key: "markdown" }));
@@ -85,7 +90,7 @@ export function getAt(obj, path) {
 }
 
 // Fields that name what a panel groups or lists by: a click rule (on_click.set_filter) depends on them.
-const GROUPING = /^(by|group\.\d+|rows\.\d+|columns|columns\.\d+(\.member)?)$/;
+const GROUPING = /^(by|group\.\d+|rows\.\d+|columns|columns\.member|columns\.\d+(\.member)?)$/;
 
 /**
  * Sets one field of one panel and returns { source, notes }: a copy of the source with the change (the argument is not touched), and what the person should be told.
@@ -105,6 +110,10 @@ export function setField(source, panelId, path, value, { optional = false } = {}
   });
   if ((value === null || value === undefined || value === "") && optional) {
     if (Array.isArray(cur)) cur.splice(last, 1); else delete cur[last];
+    for (let i = steps.length - 1; i >= 0; i--) {                      // an object the removal left empty (`heat: {}`, `limit: {}`) goes too
+      const parent = steps.slice(0, i).reduce((o, k) => o[k], panel), key = steps[i];
+      if (parent[key] && !Array.isArray(parent[key]) && !Object.keys(parent[key]).length) delete parent[key]; else break;
+    }
   } else cur[last] = value;
   if (GROUPING.test(path) && panel.on_click) { delete panel.on_click; notes.push("click"); }
   return { source: next, notes };

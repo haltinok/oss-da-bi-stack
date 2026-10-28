@@ -84,6 +84,10 @@ Between two neighbours in a row there is a **bar**: drag it sideways to change t
 (Up, Down, Left, Right, Narrower, Wider, Join the row above or below, Own row, Move to tab), so a keyboard needs no pointer; a button that would do nothing is off. Every row always adds up to 12 and every panel is placed
 once. With tabs, the page view lists them: rename a tab or move it earlier or later.
 
+**Measures, formulas and pivots.** A key figure and a time chart's series are each a measure, a **sum** of measures or a **ratio** of two sums: pick which, then the members, and the drawer tells the formula in words ("(Gross profit + Tax) ÷ Revenue").
+**Add a measure** / **Add a series** and **Remove this one** change how many there are (a key-figures row holds up to eight, a pivot three, and one always stays). A pivot also offers its time step for the columns, which of its measures
+carries the **heat map**, how rows are ordered, and a row and column limit.
+
 **Undo and redo.** The drawer has an Undo and a Redo button (a tooltip says which change), and Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y work while design mode is on (in a text field they are that field's own undo). The history belongs to the
 draft in this browser and covers every change to it: the designer, the Change box and the YAML tab. Twenty steps are kept; a new draft (built, opened for editing, copied) starts with none, and a change after an undo
 discards what could have been redone.
@@ -97,7 +101,7 @@ someone else's the button is **Design a copy**. In **Versions**, each version li
 fields), computed on the server from the two files; a version whose predecessor is no longer kept says only "Changed".
 
 The designer edits the same file as everything else, so the YAML tab, the Change box and **Save** keep working with it, and a designed draft is a normal draft. Still in the YAML for now:
-formulas (`sum`, `ratio`), adding and deleting tabs, and turning a plain layout into tabs; the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
+adding and deleting tabs and turning a plain layout into tabs (and conditional formatting and a logo, which the spec cannot hold yet); the plan for those is in [`PLAN-designer.md`](../PLAN-designer.md).
 
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
