@@ -3,7 +3,7 @@
 // service's validator has the last word: these functions only try to hand it a spec that is already as right as can be known here.
 import { membersIn, cubeOf, reachableCubes } from "./designer-model.js";
 
-export const PANEL_TYPES = ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text"];
+export const PANEL_TYPES = ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text", "slicer"];
 
 export const clone = (x) => JSON.parse(JSON.stringify(x));
 export const humanize = (name) => String(name).split(".").pop().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -80,6 +80,7 @@ export function defaultPanel(type, catalog, source, id, title = (ty, m, d) => (d
 
 /** Adds a panel of `type` as a new full-width row at the end of the layout (of tab `tab`, else of the last tab). Returns { source, id } or { problem }. */
 export function addPanel(source, type, catalog, { tab = null, title } = {}) {
+  if (type === "slicer") return addSlicer(source, catalog, { tab });
   const next = clone(source);
   const id = newPanelId(next, type);
   const made = defaultPanel(type, catalog, next, id, title);
@@ -88,6 +89,58 @@ export function addPanel(source, type, catalog, { tab = null, title } = {}) {
   const lay = layoutsOf(next);
   (lay.find((l) => l.tab === tab) || lay[lay.length - 1]).rows.push([{ [id]: 12 }]);
   return { source: next, id };
+}
+
+// ------------------------------------------------------------------------------------------------------------------ slicers
+/** The slicer panel that draws a filter, if there is one. */
+export const slicerOf = (source, filterId) => source.panels.find((p) => p.type === "slicer" && p.filter === filterId);
+
+/** The tab (id, or null on a one-page dashboard) that places a panel. */
+const tabOfPanel = (source, id) => layoutsOf(source).find((l) => l.rows.some((row) => row.some((c) => id in c)))?.tab ?? null;
+
+/** Puts a slicer panel for `filter` as a new full-width row at the end of its tab (a page filter's own, else `tab`, else the last). */
+function placeSlicer(next, filter, tab) {
+  const id = newPanelId(next, `slicer_${filter.id}`);
+  next.panels.push({ id, type: "slicer", filter: filter.id, title: filter.label || humanize(filter.dimension) });
+  const lay = layoutsOf(next), where = filter.scope === "page" ? filter.tab : tab;
+  (lay.find((l) => l.tab === where) || lay[lay.length - 1]).rows.push([{ [id]: 12 }]);
+  return id;
+}
+
+/**
+ * A new slicer for the first visible filter that has none; when every filter has one, or there is none, a new filter on a field of the data the role may read is made first.
+ * Returns { source, id } or { problem: "dimension" }.
+ */
+export function addSlicer(source, catalog, { tab = null } = {}) {
+  const next = clone(source);
+  let filter = (next.filters || []).find((f) => f.visible !== false && !slicerOf(next, f.id) && (f.scope !== "page" || next.tabs?.some((t) => t.id === f.tab)));
+  if (!filter) {
+    const measure = pickMeasure(catalog, next);
+    const dim = measure && pickDimension(catalog, measure, (next.filters || []).map((f) => f.dimension));
+    if (!dim) return { problem: "dimension" };
+    const made = addFilter(next, catalog, dim);
+    filter = made.source.filters.at(-1);
+    next.filters = made.source.filters;
+    next.panels = made.source.panels;                                                        // `addFilter` may have set panels to ignore it
+  }
+  const id = placeSlicer(next, filter, tab);
+  return { source: next, id };
+}
+
+/** Draws a filter as a slicer (a new panel, in its tab) or back where it was (the slicer panel is removed). A hidden filter has no slicer. */
+export function setFilterSlicer(source, id, on, { tab = null } = {}) {
+  const next = clone(source);
+  const filter = (next.filters || []).find((f) => f.id === id);
+  if (!filter) return { problem: "missing" };
+  const existing = slicerOf(next, id);
+  if (!on) {
+    if (existing) { next.panels = next.panels.filter((p) => p !== existing); unplace(next, existing.id); }
+    return { source: next };
+  }
+  if (existing) return { source: next };
+  if (filter.visible === false) return { problem: "hidden" };
+  placeSlicer(next, filter, tab);
+  return { source: next };
 }
 
 /** Takes a panel out of every layout; a row it leaves empty goes, and the others in its row widen so the row still adds up to 12. */
@@ -121,6 +174,7 @@ export function duplicatePanel(source, id, { suffix = " (copy)" } = {}) {
   const next = clone(source);
   const original = next.panels.find((p) => p.id === id);
   if (!original) return { problem: "missing" };
+  if (original.type === "slicer") return { problem: "slicer" };                              // a filter has one slicer
   const copy = { ...clone(original), id: newPanelId(next, id.replace(/_\d+$/, "")) };
   if (copy.title) copy.title += suffix;
   next.panels.splice(next.panels.indexOf(original) + 1, 0, copy);
@@ -190,6 +244,8 @@ export function setFilterType(source, catalog, id, type) {
   if (type === "select") delete filter.type; else filter.type = type;
   if ("default" in filter) { delete filter.default; notes.push("defaultDropped"); }
   if (type !== "select" && type !== "multiselect" && filter.parent) { delete filter.parent; notes.push("parentDropped"); }
+  const slicer = slicerOf(next, id);
+  if (slicer?.display && type !== "select" && type !== "multiselect") { delete slicer.display; notes.push("displayDropped"); }
   if (type !== "select") {
     for (const p of next.panels) if (p.on_click && [].concat(p.on_click.set_filter || []).includes(id)) { delete p.on_click; notes.push("click"); }
     for (const g of next.filters) if (g.parent === filter.dimension) { delete g.parent; notes.push("parentDropped"); }
@@ -228,7 +284,8 @@ export function setFilterScope(source, catalog, id, scope, target) {
   if (scope === "page") {
     if (!next.tabs?.length) return { problem: "notabs" };
     filter.scope = "page";
-    filter.tab = next.tabs.some((t) => t.id === target) ? target : next.tabs[0].id;
+    const sl = slicerOf(next, id);
+    filter.tab = sl ? tabOfPanel(next, sl.id) : next.tabs.some((t) => t.id === target) ? target : next.tabs[0].id;          // a page filter's slicer sits on its tab: it stays where the slicer is
   } else if (scope === "panel") {
     const pane = next.panels.find((p) => p.id === target && p.type !== "text") || next.panels.find((p) => p.type !== "text");
     if (!pane) return { problem: "missing" };
@@ -254,6 +311,7 @@ export function setFilterVisible(source, id, visible) {
   const notes = [];
   if (visible) { delete filter.visible; return { source: next, notes }; }
   if (!filter.default) return { problem: "needsDefault" };
+  if (slicerOf(next, id)) return { problem: "hasSlicer" };
   filter.visible = false;
   if (filter.parent) { delete filter.parent; notes.push("parentDropped"); }
   for (const p of next.panels) if (p.on_click && [].concat(p.on_click.set_filter || []).includes(id)) { delete p.on_click; notes.push("click"); }
@@ -263,9 +321,11 @@ export function setFilterVisible(source, id, visible) {
 /** Removes a filter, and every mention of it: panels' `ignore_filters` and the click rules that name it (those are dropped, with a note). */
 export function removeFilter(source, id) {
   const next = clone(source);
+  const slicer = slicerOf(next, id);
+  if (slicer) { next.panels = next.panels.filter((p) => p !== slicer); unplace(next, slicer.id); }
   next.filters = (next.filters || []).filter((f) => f.id !== id);
   if (!next.filters.length) delete next.filters;
-  const notes = [];
+  const notes = slicer ? ["slicerRemoved"] : [];
   for (const p of next.panels) {
     if (p.ignore_filters) { p.ignore_filters = p.ignore_filters.filter((x) => x !== id); if (!p.ignore_filters.length) delete p.ignore_filters; }
     if (p.on_click && [].concat(p.on_click.set_filter || []).includes(id)) { delete p.on_click; notes.push("click"); }

@@ -169,6 +169,8 @@ Rules the validator enforces: a page filter names a tab that exists, a pane filt
 In the designer, a filter card has **Applies to** (the whole dashboard, one tab, one panel), the tab or panel, and a checkbox for whether the reader can see it; a hidden filter shows a "hidden" badge and needs a default first. Removing a panel takes its pane filters with it, removing a tab hands its page filters to the tab that receives its panels, and putting the tabs back on one page makes page filters dashboard filters (each says so).
 
 ### The slicer
+In the designer: the gallery's **Slicer** adds one for a filter that has none (or makes a filter first), a filter card has a **Show it as a slicer in the layout** box, and picking a slicer shows its Filter and *Shown as* (list, buttons, dropdown). Removing a filter removes its slicer; a filter has one slicer, so a slicer cannot be duplicated, and a filter that has one cannot be hidden.
+
 A `slicer` panel draws a filter **in the layout** instead of in the header, the tab's bar or a card: a list, buttons or the usual control, placed and sized like any panel.
 
 ```yaml

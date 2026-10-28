@@ -175,7 +175,7 @@ with sync_playwright() as p:
 
     # ---- the page view: nothing picked
     page.keyboard.press("Escape")
-    check(page.locator("#dz-gallery [data-add]").count() == 8 and page.locator("#dz-newfilter option").count() > 5, "with nothing picked the drawer shows the page: a gallery of eight panel types and a list of fields to filter by")
+    check(page.locator("#dz-gallery [data-add]").count() == 9 and page.locator("#dz-newfilter option").count() > 5, "with nothing picked the drawer shows the page: a gallery of nine panel types and a list of fields to filter by")
     check(page.input_value('#designer [data-path="title"]') == page.inner_text("#title"), "and the page's own fields, starting with its title")
     with changes(page):
         page.fill('#designer [data-path="title"]', "Board pack")
@@ -807,6 +807,55 @@ with sync_playwright() as p:
         page.click("#dz-onepage")
     settled(page)
     check("scope" not in next(f for f in filters() if f["id"] == fid) and "tab" not in next(f for f in filters() if f["id"] == fid), "back to one page, a page filter becomes a dashboard filter")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
+    # ---- slicers: a filter drawn in the layout
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    filters = lambda: yaml_of(page).get("filters", [])
+    slicers = lambda: [p for p in yaml_of(page)["panels"] if p["type"] == "slicer"]
+    page.select_option("#dz-newfilter", "products.category")
+    with changes(page):
+        page.click("#dz-addfilter")
+    settled(page)
+    fid = next(f for f in filters() if f["dimension"] == "products.category")["id"]
+    fcard = f'.dz-filter:has(h4:text-is("{fid}"))'
+    with changes(page):
+        page.check(f'{fcard} [data-path="slicer"]')
+    settled(page)
+    check(len(slicers()) == 1 and slicers()[0]["filter"] == fid, "ticking 'Show it as a slicer in the layout' adds a slicer panel for the filter")
+    sid = slicers()[0]["id"]
+    page.wait_for_selector(f'[data-panel="{sid}"] .slicer-item', timeout=15000)
+    check(page.locator('#filters label.field').all_inner_texts().count(fid.capitalize()) == 0 and not any(x.strip().lower() == "category" for x in page.locator('#filters label.field').all_inner_texts()), "the filter is no longer in the header; the options are listed in the slicer card")
+    page.click(f'[data-panel="{sid}"] h2')
+    check(page.locator('#designer [data-path="filter"]').count() == 1 and page.locator('#designer [data-path="display"]').count() == 1, "picking the slicer shows its Filter and Shown as")
+    with changes(page):
+        page.select_option('#designer [data-path="display"]', "chips")
+    settled(page)
+    page.wait_for_selector(f'[data-panel="{sid}"] .slicer-chip', timeout=15000)
+    check(slicers()[0].get("display") == "chips", "Shown as: Buttons draws chips")
+    page.click("#dz-back")
+    with changes(page):
+        page.uncheck(f'{fcard} [data-path="slicer"]')
+    settled(page)
+    check(not slicers() and page.locator(f'[data-panel="{sid}"]').count() == 0, "unticking it removes the slicer and the filter is back in the header")
+    with changes(page):
+        page.click('#dz-gallery [data-add="slicer"]')
+    settled(page)
+    check(len(slicers()) == 1, "the gallery's Slicer adds one for a filter that has none")
+    page.click("#dz-back")
+    with changes(page):
+        page.click('#dz-gallery [data-add="slicer"]')
+    settled(page)
+    check(len(slicers()) == 2 and len({s["filter"] for s in slicers()}) == 2, "a second one makes a new filter for it (a filter has one slicer)")
+    page.click("#dz-back")
+    page.once("dialog", lambda d: d.accept())
+    page.click(f'.dz-filter:has(h4:text-is("{slicers()[0]["filter"]}")) [data-rm-filter]')
+    page.wait_for_function("document.querySelectorAll('[data-panel^=\"slicer\"]').length === 1", timeout=15000)
+    check(len(slicers()) == 1, "removing a filter takes its slicer with it")
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 

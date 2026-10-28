@@ -242,3 +242,56 @@ test("removing a panel takes its pane filters, removing a tab hands its page fil
   assert.ok(one.notes.includes("scopeReset"));
   assert.equal(tabsToLayout(src).source.filters.find((f) => f.id === "p").scope, "panel", "a pane filter stays a pane filter");
 });
+
+// ---- slicers
+import { addSlicer, setFilterSlicer, slicerOf } from "../../static/lib/designer-structure.js";
+
+test("a filter becomes a slicer: a new panel in the layout, and back", () => {
+  const on = setFilterSlicer(SOURCE, "region", true);
+  const slicer = slicerOf(on.source, "region");
+  assert.deepEqual([slicer.type, slicer.filter, slicer.title], ["slicer", "region", "Region"]);
+  assert.ok(on.source.layout.some((row) => row.some((c) => slicer.id in c)), "placed as a full-width row");
+  assert.equal(on.source.layout.at(-1)[0][slicer.id], 12);
+  const off = setFilterSlicer(on.source, "region", false);
+  assert.equal(slicerOf(off.source, "region"), undefined);
+  assert.equal(off.source.layout.flat().some((c) => slicer.id in c), false, "and out of the layout");
+  assert.equal(setFilterSlicer(SOURCE, "nope", true).problem, "missing");
+  assert.equal(setFilterSlicer({ ...SOURCE, filters: [{ id: "h", dimension: "territories.region", visible: false, default: "x" }] }, "h", true).problem, "hidden");
+});
+
+test("a slicer of a page filter goes on its tab, and the filter follows its slicer to a tab", () => {
+  const src = { ...SOURCE, layout: undefined, tabs: [{ id: "a", title: "A", layout: [[{ kpis: 12 }], [{ trend: 8 }, { top: 4 }]] }, { id: "b", title: "B", layout: [[{ note: 12 }]] }],
+    filters: [{ id: "g", dimension: "products.category", scope: "page", tab: "b" }] };
+  const out = setFilterSlicer(src, "g", true).source;
+  assert.ok(out.tabs[1].layout.flat().some((c) => slicerOf(out, "g").id in c), "tab b, the filter's tab");
+  const flat = { ...src, filters: [{ id: "f", dimension: "products.category" }] };
+  const withSlicer = setFilterSlicer(flat, "f", true, { tab: "b" }).source;
+  assert.ok(withSlicer.tabs[1].layout.flat().some((c) => slicerOf(withSlicer, "f").id in c), "else the tab the person is on");
+  const moved = setFilterScope(withSlicer, CATALOG, "f", "page", "a");
+  assert.equal(moved.source.filters[0].tab, "b", "a page filter stays on the tab its slicer is on");
+});
+
+test("the gallery's slicer uses a filter that has none, or makes one", () => {
+  const some = addSlicer(SOURCE, CATALOG);
+  assert.equal(slicerOf(some.source, "region").id, some.id);
+  assert.equal(some.source.filters.length, 1, "the existing filter is used");
+  const none = addSlicer({ ...SOURCE, filters: undefined }, CATALOG);
+  assert.equal(none.source.filters.length, 1);
+  assert.equal(slicerOf(none.source, none.source.filters[0].id).type, "slicer");
+  const twice = addSlicer(some.source, CATALOG);
+  assert.equal(twice.source.filters.length, 2, "every filter has a slicer: a new filter is made");
+  assert.equal(addSlicer({ ...SOURCE, filters: undefined }, [{ cube: "x", joins: [], measures: [], dimensions: [] }]).problem, "dimension");
+});
+
+test("removing a filter takes its slicer, hiding one that has a slicer is refused, a slicer is not duplicated, a type that has no list drops the display", () => {
+  const withSlicer = setFilterSlicer(SOURCE, "region", true).source;
+  const gone = removeFilter(withSlicer, "region");
+  assert.equal(gone.source.panels.some((p) => p.type === "slicer"), false);
+  assert.ok(gone.notes.includes("slicerRemoved"));
+  assert.equal(setFilterVisible({ ...withSlicer, filters: [{ ...withSlicer.filters[0], default: "x" }] }, "region", false).problem, "hasSlicer");
+  assert.equal(duplicatePanel(withSlicer, slicerOf(withSlicer, "region").id).problem, "slicer");
+  const listed = { ...withSlicer, panels: withSlicer.panels.map((p) => (p.type === "slicer" ? { ...p, display: "chips" } : p)) };
+  const text = setFilterType(listed, CATALOG, "region", "text");
+  assert.equal("display" in slicerOf(text.source, "region"), false);
+  assert.ok(text.notes.includes("displayDropped"));
+});
