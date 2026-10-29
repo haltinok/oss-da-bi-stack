@@ -178,6 +178,9 @@ export function reachableCubes(catalog, fromCubes) {
 }
 
 /** Measure choices for a panel: every measure the role may read, as { value, label, cube, description }. */
+/** A member's description for a tooltip, with what it sorts by when the model says so. */
+export const noted = (d) => (d.sort_by ? `${d.description || ""} Sorted by ${d.sort_by}.`.trim() : d.description);
+
 export const measureOptions = (catalog) => catalog.flatMap((c) => c.measures.map((m) => ({ value: m.member, label: m.member, cube: c.cube, description: m.description })));
 
 /**
@@ -187,9 +190,9 @@ export const measureOptions = (catalog) => catalog.flatMap((c) => c.measures.map
 export function dimensionOptions(catalog, panel, current = "") {
   const measureCubes = new Set([...membersIn(panel)].filter((m) => catalog.some((c) => c.measures.some((x) => x.member === m))).map(cubeOf));
   const allowed = measureCubes.size ? reachableCubes(catalog, [...measureCubes]) : null;
-  return catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: d.description })))
+  return catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: noted(d) })))
     .filter((o) => !allowed || allowed.has(o.cube) || o.value === current);
 }
 
 /** Table columns may be either kind. */
-export const anyMemberOptions = (catalog) => [...measureOptions(catalog), ...catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: d.description })))];
+export const anyMemberOptions = (catalog) => [...measureOptions(catalog), ...catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: noted(d) })))];

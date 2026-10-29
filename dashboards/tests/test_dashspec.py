@@ -1337,3 +1337,28 @@ def test_python_and_renderer_queries_agree_where_a_field_sorts_by_another(tmp_pa
     assert first["bm"][0]["query"]["order"] == {"dates.month_of_year": "desc"} and first["bm"][0]["query"]["dimensions"] == ["dates.month_name", "dates.month_of_year"]
     assert first["pv"][0]["query"]["order"]["dates.month_of_year"] == "asc", "a pivot's rows ordered by label are in month order"
     assert first["sl"][0]["query"]["dimensions"] == ["dates.month_name", "dates.month_of_year"], "a filter's list asks for the number too"
+
+
+# ---- sort_by in the semantic model: one standard, checked
+def test_every_sort_by_in_the_model_points_to_a_number_or_time_dimension_of_its_own_cube():
+    assert cat.sort_by_problems(CATALOG) == []
+    assert {m for m in ("dates.month_name", "dates.year_month", "dates.quarter_name", "dates.year_quarter", "dates.fiscal_quarter_name", "dates.day_name") if CATALOG.sort_by(m)} == {
+        "dates.month_name", "dates.year_month", "dates.quarter_name", "dates.year_quarter", "dates.fiscal_quarter_name", "dates.day_name"}
+    assert CATALOG.sort_by("dates.year_month") == "dates.year_month_number" and CATALOG.sort_by("dates.quarter_name") == "dates.calendar_quarter"
+
+
+def test_a_sort_by_that_is_not_a_proper_sort_field_is_reported():
+    def model(**sort_by):
+        return cat.Catalog({"c": {"measures": {}, "dimensions": {"name": "string", "num": "number", "txt": "string", "other": "string", "t": "time"}, "joins": set(), "sort_by": sort_by, "docs": {}}})
+    assert cat.sort_by_problems(model(name="num", other="t")) == []
+    assert any("the field itself" in p for p in cat.sort_by_problems(model(name="name")))
+    assert any("not a dimension of the cube" in p for p in cat.sort_by_problems(model(name="missing")))
+    assert any("must be a number or a time" in p for p in cat.sort_by_problems(model(name="txt")))
+    assert any("no chains" in p for p in cat.sort_by_problems(model(name="num", num="t")))
+
+
+def test_the_semantic_layer_shows_what_a_field_sorts_by():
+    from dashspec.semantic import catalog_json, generate
+    dims = {d["member"]: d for c in catalog_json(CATALOG) if c["cube"] == "dates" for d in c["dimensions"]}
+    assert dims["dates.month_name"]["sort_by"] == "dates.month_of_year" and "sort_by" not in dims["dates.month_of_year"]
+    assert "Sorted by `dates.year_month_number`." in generate(CATALOG)

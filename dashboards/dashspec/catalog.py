@@ -54,6 +54,24 @@ class Catalog:
         return f"{cube} has: {', '.join(sorted([*c['measures'], *c['dimensions']]))}"
 
 
+def sort_by_problems(catalog):
+    """What is wrong with the `meta.sort_by` declarations of a model: the sort field must be another dimension of the same cube, a number or a time (something that orders),
+    and must not itself sort by another field (no chains). Returns [message]."""
+    out = []
+    for cube, c in sorted(catalog.cubes.items()):
+        for name, key in sorted(c.get("sort_by", {}).items()):
+            where = f"{cube}.{name}: sort_by '{key}'"
+            if key == name:
+                out.append(f"{where} is the field itself")
+            elif key not in c["dimensions"]:
+                out.append(f"{where} is not a dimension of the cube {cube}")
+            elif c["dimensions"][key] not in ("number", "time"):
+                out.append(f"{where} is a {c['dimensions'][key]} dimension; it must be a number or a time to order by")
+            elif key in c["sort_by"]:
+                out.append(f"{where} itself sorts by '{c['sort_by'][key]}': no chains")
+    return out
+
+
 def from_model(model_dir):
     """Read every cube in a Cube model directory (cube/model). Only names, types and joins are needed, so the SQL is ignored."""
     cubes = {}

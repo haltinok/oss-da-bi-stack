@@ -3,7 +3,7 @@
 // change, and an accepted change is stored in the draft and the page is drawn again (the picked panel and the scroll position come back from sessionStorage).
 // The logic is in lib/designer-model.js (a panel's fields) and lib/designer-structure.js (new panels, removing, filters, the page's fields).
 import { $, el, esc } from "../lib/dom.js";
-import { anyMemberOptions, dimensionOptions, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
+import { anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl, createSlicer } from "./filter-controls.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
@@ -124,7 +124,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       list.append(card);
     }
     const pick = drawer.querySelector("#dz-newfilter");
-    for (const o of dimensionList()) pick.append(el("option", { value: o.value }, esc(o.label)));
+    for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
   }
 
   function drawPanel(panel) {
@@ -444,7 +444,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   /** The dimensions a filter may be on: any the role may read. */
-  const dimensionList = () => catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: d.description })));
+  const dimensionList = () => catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: noted(d) })));
 
   /** A label and its control, for a field of `holder` (the dashboard, a filter). */
   function field(fd, holder, onSet) {
