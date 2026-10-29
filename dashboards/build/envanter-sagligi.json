@@ -33,69 +33,6 @@
       "label": "Vendor name",
       "implicit": true,
       "source": "tedarikci"
-    },
-    {
-      "id": "xf_siparis_1",
-      "dimension": "inventory_health.product_name",
-      "label": "Product name",
-      "implicit": true,
-      "source": "siparis"
-    },
-    {
-      "id": "xf_siparis_3",
-      "dimension": "inventory_health.on_hand",
-      "label": "On hand",
-      "implicit": true,
-      "source": "siparis"
-    },
-    {
-      "id": "xf_siparis_4",
-      "dimension": "inventory_health.on_order",
-      "label": "On order",
-      "implicit": true,
-      "source": "siparis"
-    },
-    {
-      "id": "xf_siparis_5",
-      "dimension": "inventory_health.days_of_cover",
-      "label": "Days of cover",
-      "implicit": true,
-      "source": "siparis"
-    },
-    {
-      "id": "xf_siparis_6",
-      "dimension": "inventory_health.suggested_order_qty",
-      "label": "Suggested order qty",
-      "implicit": true,
-      "source": "siparis"
-    },
-    {
-      "id": "xf_siparis_7",
-      "dimension": "inventory_health.suggested_order_value",
-      "label": "Suggested order value",
-      "implicit": true,
-      "source": "siparis"
-    },
-    {
-      "id": "xf_fazla_4",
-      "dimension": "inventory_health.excess_units",
-      "label": "Excess units",
-      "implicit": true,
-      "source": "fazla"
-    },
-    {
-      "id": "xf_fazla_5",
-      "dimension": "inventory_health.excess_value",
-      "label": "Excess value",
-      "implicit": true,
-      "source": "fazla"
-    },
-    {
-      "id": "xf_fazla_6",
-      "dimension": "inventory_health.suggested_discount_pct",
-      "label": "Suggested discount pct",
-      "implicit": true,
-      "source": "fazla"
     }
   ],
   "panels": [
@@ -209,19 +146,7 @@
       "order": {
         "inventory_health.suggested_order_value": "desc"
       },
-      "limit": 25,
-      "on_click": {
-        "set_filter": [
-          "xf_siparis_1",
-          "durum",
-          "xf_siparis_3",
-          "xf_siparis_4",
-          "xf_siparis_5",
-          "xf_siparis_6",
-          "xf_siparis_7",
-          "xf_tedarikci_1"
-        ]
-      }
+      "limit": 25
     },
     {
       "id": "fazla",
@@ -260,17 +185,7 @@
       "order": {
         "inventory_health.excess_value": "desc"
       },
-      "limit": 25,
-      "on_click": {
-        "set_filter": [
-          "xf_siparis_1",
-          "durum",
-          "xf_siparis_3",
-          "xf_fazla_4",
-          "xf_fazla_5",
-          "xf_fazla_6"
-        ]
-      }
+      "limit": 25
     },
     {
       "id": "not",

@@ -314,6 +314,20 @@ test("clicking a panel filters the page by default; it can be widened to every t
   assert.equal(top(SOURCE).cross_filter, undefined, "the argument is not touched");
 });
 
+test("a table does not filter the others by default; turning it on writes the key (true without tabs, page with them)", () => {
+  const table = { id: "tbl", type: "table", columns: ["products.name", "internet_sales.revenue"] };
+  const flat = { ...SOURCE, panels: [...SOURCE.panels, table] };
+  delete flat.tabs;
+  const get = (src) => src.panels.find((p) => p.id === "tbl");
+  assert.equal(crossModeOf(table), "off", "a table that says nothing: off");
+  const on = setCrossFilter(flat, "tbl", "page");
+  assert.equal(get(on.source).cross_filter, true, "no tabs: page is the whole dashboard, written as true");
+  assert.equal(crossModeOf(get(on.source), false), "page");
+  const tabbed = setCrossFilter({ ...flat, tabs: [{ id: "a" }] }, "tbl", "page");
+  assert.equal(get(tabbed.source).cross_filter, "page");
+  assert.equal("cross_filter" in get(setCrossFilter(on.source, "tbl", "off").source), false, "off is the default for a table: nothing written");
+});
+
 test("a click rule written by hand is its own mode; choosing another replaces it and says so", () => {
   const withRule = { ...SOURCE, panels: SOURCE.panels.map((p) => (p.id === "top" ? { ...p, on_click: { set_filter: "region" } } : p)) };
   const top = (src) => src.panels.find((p) => p.id === "top");

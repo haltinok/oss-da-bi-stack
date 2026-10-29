@@ -178,7 +178,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const tabs = tabsOf(source).length > 0;
     const modes = [...(panel.on_click && panel.cross_filter === undefined ? ["rule"] : []), "page", ...(tabs ? ["all"] : []), "off"];
     for (const m of modes) pick.append(el("option", { value: m }, esc(dz.v[`cross_${m}${m === "page" && !tabs ? "_whole" : ""}`])));
-    pick.value = crossModeOf(panel);
+    pick.value = crossModeOf(panel, tabs);
     pick.addEventListener("change", () => commit(setCrossFilter(source, selected, pick.value), { message: dz.changed(panel.title || selected) }));
     wrap.append(pick);
     return wrap;
