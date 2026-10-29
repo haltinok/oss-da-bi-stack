@@ -8,7 +8,7 @@ import { describeValue } from "../lib/filters.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, PERIOD, pick, pickTab, queriesPerCube, runAll, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
+import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, sortKeyOf, withSortKeys, PERIOD, pick, pickTab, queriesPerCube, runAll, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
 import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
@@ -270,7 +270,7 @@ async function showDashboard() {
   function fillOptions(f) {
     const sel = selects.get(f.id);
     const pf = parentFilter(f);
-    const opts = optionsOf(optionRows.get(f.id) || [], f, pf ? values[pf.id] : "");
+    const opts = optionsOf(optionRows.get(f.id) || [], f, pf ? values[pf.id] : "", sortKeyOf(spec, f.dimension));
     if (controls.get(f.id)?.setOptions && (f.type === "multiselect" || slicerOf.has(f.id))) { controls.get(f.id).setOptions(opts); return; }       // its chosen values stay, even ones the options do not hold now
     if (!sel) return;                                                                      // text, number and date filters have no options
     if (values[f.id] && !opts.some((o) => o.value === values[f.id])) values[f.id] = "";
@@ -290,7 +290,7 @@ async function showDashboard() {
     await Promise.all(visibleFilters().filter((f) => !f.implicit && (!f.type || f.type === "select" || f.type === "multiselect")).map(async (f) => {
       if (slicerOf.has(f.id)) { optionRows.set(f.id, await runAll(ctx.run, slicerQueries(spec, slicerOf.get(f.id), values), signal)); return; }          // narrowed by the other filters
       const measures = optionMeasures(spec, f);
-      const dims = [...(f.parent ? [f.parent] : []), f.dimension];
+      const dims = withSortKeys(spec, [...(f.parent ? [f.parent] : []), f.dimension]);
       optionRows.set(f.id, measures.length ? await runAll(ctx.run, queriesPerCube(measures, { dimensions: dims }), signal) : []);
     }));
     for (const f of visibleFilters()) fillOptions(f);
@@ -508,7 +508,7 @@ async function showDashboard() {
     return true;
   }
   /** The values a select or multiselect filter offers (for the designer's default-value picker); [] until its options have loaded. */
-  const filterOptions = (id) => { const f = (spec.filters || []).find((x) => x.id === id); return f ? optionsOf(optionRows.get(id) || [], f, "").map((o) => o.value) : []; };
+  const filterOptions = (id) => { const f = (spec.filters || []).find((x) => x.id === id); return f ? optionsOf(optionRows.get(id) || [], f, "", sortKeyOf(spec, f.dimension)).map((o) => o.value) : []; };
   window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null };
 
   $("#export-all").hidden = false;

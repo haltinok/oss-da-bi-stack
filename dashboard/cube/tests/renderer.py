@@ -1103,6 +1103,45 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # a text field that sorts by another (a month's name by its number): January before March before July, not alphabetical
+    def compiled_with_months(columns, **extra):
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-overview.yml").read_text())
+        src["panels"].append({"id": "by_month", "type": "table", "title": "By month", "columns": columns, **extra})
+        src["layout"].append([{"by_month": 12}])
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        return _compile(src, used, catalog)
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_months(["dates.month_name", "internet_sales.revenue"])))])
+    settled(page)
+    asked = [q for q in sent(page) if q.get("dimensions") and "dates.month_name" in q["dimensions"] and "dates.month_of_year" in q["dimensions"]]
+    check(len(asked) == 1 and asked[0]["order"] == {"dates.month_of_year": "asc"}, "the table asks for the month's number and orders by it, not by the name (January first when ascending)")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_months(["dates.month_name", "internet_sales.revenue"], order={"dates.month_name": "desc"})))])
+    settled(page)
+    asked = [q for q in sent(page) if q.get("dimensions") and "dates.month_of_year" in q["dimensions"]]
+    check(len(asked) == 1 and asked[0]["order"] == {"dates.month_of_year": "desc"}, "descending is December first")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_months(["dates.month_name", "internet_sales.revenue", "reseller_sales.revenue"])))])
+    settled(page)
+    names = lambda: [x.strip() for x in page.locator('[data-panel="by_month"] tbody tr td:nth-child(1)').all_inner_texts()]
+    check(names() == ["January", "March", "July", "September"], f"merged from two cubes, the page orders the months chronologically ({names()})")
+    page.locator('[data-panel="by_month"] th.sortable', has_text="Month name").click()
+    settled(page)
+    check(names() == ["January", "March", "July", "September"] or names() == ["September", "July", "March", "January"], f"a click on the title sorts by month number ({names()})")
+    page.locator('[data-panel="by_month"] th.sortable', has_text="Month name").click()
+    settled(page)
+    check(names() == ["September", "July", "March", "January"], f"and the other direction is December first ({names()})")
+    ctx.close()
+    with_filter = compiled_with_months(["dates.month_name", "internet_sales.revenue"])
+    with_filter["filters"].append({"id": "mo", "dimension": "dates.month_name", "label": "Month"})
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(with_filter))])
+    settled(page)
+    texts = page.locator('#filters label.field:has-text("Month") select option').all_inner_texts()
+    check(texts == ["All", "January", "March", "July", "September"], f"a filter on the month's name lists the months in calendar order ({texts})")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())

@@ -25,6 +25,12 @@ class Catalog:
             return "dimension", c["dimensions"][name]
         return None
 
+    def sort_by(self, member):
+        """The dimension (as 'cube.name') a text dimension is sorted by, from its `meta.sort_by` in the Cube model; None for most."""
+        cube, _, name = member.partition(".")
+        key = self.cubes.get(cube, {}).get("sort_by", {}).get(name)
+        return f"{cube}.{key}" if key else None
+
     def reachable(self, src, dst):
         """Can a query on cube `src` use dimensions of cube `dst`? Cube follows join paths, so this is graph reachability."""
         if src == dst or self.cubes.get(src, {}).get("joins") is None:
@@ -59,6 +65,7 @@ def from_model(model_dir):
                 "dimensions": {d["name"]: d["type"] for d in cube.get("dimensions", [])},
                 "joins": {j["name"] for j in cube.get("joins", [])},
                 "primary_key": next((d["name"] for d in cube.get("dimensions", []) if d.get("primary_key")), None),         # what tells one row of the cube from another
+                "sort_by": {d["name"]: d["meta"]["sort_by"] for d in cube.get("dimensions", []) if (d.get("meta") or {}).get("sort_by")},          # a text dimension that sorts by another (month name by month number)
                 "description": cube.get("description", ""),
                 "docs": {m["name"]: m["description"] for m in members if m.get("description")},
             }
@@ -80,6 +87,7 @@ def from_cube(url, token):
             "dimensions": {short(d): d["type"] for d in c["dimensions"]},
             "joins": None,
             "primary_key": next((short(d) for d in c["dimensions"] if d.get("primaryKey")), None),
+            "sort_by": {short(d): d["meta"]["sort_by"] for d in c["dimensions"] if (d.get("meta") or {}).get("sort_by")},
             "description": c.get("description", ""),
             "docs": {short(m): m["description"] for m in [*c["measures"], *c["dimensions"]] if m.get("description")},
         }

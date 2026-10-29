@@ -14,6 +14,13 @@ export const humanize = (member) => {
   return name.charAt(0).toUpperCase() + name.slice(1);
 };
 
+/** The dimension a text dimension sorts by (a month's name by its number), from the Cube model's `meta.sort_by` as the compiled `members` carry it; null for most. */
+export const sortKeyOf = (spec, member) => spec.members?.[member]?.sort_by || null;
+/** `dims` plus the sort keys of the ones that have one, after them, each once (a query that orders by a field has to ask for it). */
+export const withSortKeys = (spec, dims) => [...new Set([...dims, ...dims.map((d) => sortKeyOf(spec, d)).filter(Boolean)])];
+/** An order by dimensions, with the sort key standing in for the dimension that has one: January before February, not April before August. */
+export const sortedBy = (spec, order) => Object.fromEntries(Object.entries(order).map(([k, v]) => [sortKeyOf(spec, k) || k, v]));
+
 /** The filter ids a click on this panel sets (its `on_click.set_filter`, one id or a list). */
 export const ownFilterIds = (def) => {
   const f = def.on_click?.set_filter;
@@ -139,7 +146,7 @@ export const day = (bucket) => String(bucket).slice(0, 10);
  * Filter options for the page's filter bar: rows [{ value, parent }] from per-cube queries of [parent?, dimension], de-duplicated and
  * sorted (numbers numerically). `parentValue` (the chosen value of the parent filter, if the dashboard has one) narrows them.
  */
-export function optionsOf(results, filter, parentValue = "") {
+export function optionsOf(results, filter, parentValue = "", sortKey = null) {
   const seen = new Map();
   for (const { rows } of results) {
     for (const r of rows) {
@@ -147,13 +154,15 @@ export function optionsOf(results, filter, parentValue = "") {
       const parent = filter.parent ? r[filter.parent] : undefined;
       if (value == null || value === "") continue;
       if (parentValue !== "" && String(parent) !== String(parentValue)) continue;
-      seen.set(`${parent}\u0000${value}`, { value: String(value), parent: parent == null ? undefined : String(parent) });
+      seen.set(`${parent}\u0000${value}`, { value: String(value), parent: parent == null ? undefined : String(parent), ...(sortKey && r[sortKey] != null ? { rank: Number(r[sortKey]) } : {}) });
     }
   }
   const all = [...seen.values()];
   const numeric = all.every((o) => o.value !== "" && !isNaN(Number(o.value)));
   const cmp = (a, b) => (numeric ? Number(a) - Number(b) : String(a).localeCompare(String(b)));
-  return all.sort((a, b) => (a.parent !== undefined && b.parent !== undefined && a.parent !== b.parent ? cmp(a.parent, b.parent) : cmp(a.value, b.value)));
+  const ranked = sortKey && all.every((o) => Number.isFinite(o.rank));                       // a field that sorts by another (a month's name by its number) is listed in that order
+  const own = (a, b) => (ranked ? a.rank - b.rank : cmp(a.value, b.value));
+  return all.sort((a, b) => (a.parent !== undefined && b.parent !== undefined && a.parent !== b.parent ? cmp(a.parent, b.parent) : own(a, b)));
 }
 
 /** The measures a filter's option query can use: one measure per cube of the panels that apply that filter. */
@@ -361,13 +370,13 @@ export function tableQueries(spec, def, values, sort) {
   const order = tableOrder(def, dimensions, sort);
   const filters = activeFilters(spec, values, def);
   const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1 && !agg.length;           // with aggregated fields the rows are merged and ordered in the page, not in Cube
-  const base = { dimensions, filters, ...(single ? { order, limit: def.limit || 100 } : {}) };
+  const base = { dimensions: withSortKeys(spec, dimensions), filters, ...(single ? { order: sortedBy(spec, order), limit: def.limit || 100 } : {}) };
   const out = [];
   if (measures.length) out.push(...followPeriod(spec, def, values, queriesPerCube(measures, base)));
-  else if (!agg.length) return [{ cube: "", query: { ...base, order, limit: def.limit || 100 } }];
+  else if (!agg.length) return [{ cube: "", query: { ...base, order: sortedBy(spec, order), limit: def.limit || 100 } }];
   if (agg.length) {                                                                              // the rows the value fields are aggregated over: one per row of their cube, tagged `agg:<cube>`
     const cube = cubeOf(agg[0].member), key = spec.rowKeys[cube];
-    out.push({ cube: `agg:${cube}`, query: { dimensions: [...dimensions, key, ...new Set(agg.map((a) => a.member))], filters, order: { [key]: "asc" }, limit: AGGREGATE_LIMIT } });
+    out.push({ cube: `agg:${cube}`, query: { dimensions: [...withSortKeys(spec, dimensions), key, ...new Set(agg.map((a) => a.member))], filters, order: { [key]: "asc" }, limit: AGGREGATE_LIMIT } });
   }
   return out;
 }
@@ -432,10 +441,12 @@ export function pivotQueries(spec, def, values, keys = null) {
   const follow = (qs) => followPeriod(spec, def, values, qs);
   const leadQuery = (query) => follow([{ cube: cubeOf(lead), query: { measures: [lead], filters: base, ...query } }]);
   const dimsAsc = Object.fromEntries(def.rows.map((d) => [d, "asc"]));
+  // An axis is read in the order of its labels: a field that sorts by another (a month's name by its number) asks for that one and orders by it.
+  const axis = (sh, order, limit) => ({ ...(sh.dimensions ? { ...sh, dimensions: withSortKeys(spec, sh.dimensions) } : sh), order: sortedBy(spec, order), limit });
   const axes = {
-    rows: leadQuery({ ...shape(def.rows, false), order: by === "total" ? { [lead]: dir, ...dimsAsc } : Object.fromEntries(def.rows.map((d) => [d, dir])), limit: lim.rows + 1 }),
-    groups: r1 ? leadQuery({ ...shape([r0], false), order: by === "total" ? { [lead]: dir, [r0]: "asc" } : { [r0]: dir }, limit: PIVOT_MAX_ROWS }) : [],
-    cols: leadQuery({ ...shape([], true), order: { [col]: "asc" }, limit: lim.columns + 1 }),
+    rows: leadQuery(axis(shape(def.rows, false), by === "total" ? { [lead]: dir, ...dimsAsc } : Object.fromEntries(def.rows.map((d) => [d, dir])), lim.rows + 1)),
+    groups: r1 ? leadQuery(axis(shape([r0], false), by === "total" ? { [lead]: dir, [r0]: "asc" } : { [r0]: dir }, PIVOT_MAX_ROWS)) : [],
+    cols: leadQuery(axis(shape([], true), { [col]: "asc" }, lim.columns + 1)),
   };
   const rowF = !keys ? [] : [keyFilter(r0, [...new Set(keys.rows.map((k) => k[0]))]), ...(r1 ? [keyFilter(r1, [...new Set(keys.rows.map((k) => k[1]))])] : [])];
   const groupF = !keys ? [] : [rowF[0]];
@@ -545,7 +556,7 @@ export function slicerQueries(spec, def, values) {
   if (!f) return [];
   const measures = optionMeasures(spec, f);
   const own = { ...def, ignore_filters: [...(def.ignore_filters || []), f.id], optionMeasures: measures };
-  const dims = [...(f.parent ? [f.parent] : []), f.dimension];
+  const dims = withSortKeys(spec, [...(f.parent ? [f.parent] : []), f.dimension]);
   return followPeriod(spec, own, values, queriesPerCube(measures, { dimensions: dims, filters: activeFilters(spec, values, own) }));
 }
 

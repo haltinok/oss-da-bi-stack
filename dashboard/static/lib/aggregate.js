@@ -36,17 +36,17 @@ export function aggregateValues(kind, values) {
 
 /**
  * Groups the rows by `keyDims` (their values, joined the way plan.js byDims does) and aggregates each value column over a group's rows: Map(key -> { dims, aggs: Map(member -> value) }),
- * in the order the groups first appear. `valueCols` is [{ member, aggregate }].
+ * in the order the groups first appear. `valueCols` is [{ member, aggregate }]; `carry` names other columns to keep (the first row's value) for each group, such as a sort key.
  */
-export function groupAggregates(rows, keyDims, valueCols) {
+export function groupAggregates(rows, keyDims, valueCols, carry = []) {
   const groups = new Map();
   for (const r of rows) {
     const key = keyDims.map((d) => r[d]).join("\u0000");
-    if (!groups.has(key)) groups.set(key, { key, dims: Object.fromEntries(keyDims.map((d) => [d, r[d]])), rows: [] });
+    if (!groups.has(key)) groups.set(key, { key, dims: Object.fromEntries(keyDims.map((d) => [d, r[d]])), carried: Object.fromEntries(carry.map((c) => [c, r[c]])), rows: [] });
     groups.get(key).rows.push(r);
   }
   const out = new Map();
-  for (const [key, g] of groups) out.set(key, { key, dims: g.dims, aggs: new Map(valueCols.map((c) => [c.member, aggregateValues(c.aggregate, g.rows.map((r) => r[c.member]))])) });
+  for (const [key, g] of groups) out.set(key, { key, dims: g.dims, carried: g.carried, aggs: new Map(valueCols.map((c) => [c.member, aggregateValues(c.aggregate, g.rows.map((r) => r[c.member]))])) });
   return out;
 }
 

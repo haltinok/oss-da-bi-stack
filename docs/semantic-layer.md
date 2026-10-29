@@ -57,7 +57,8 @@ Readable by: `admin`, `manager`, `rep`.
 | `dates.fiscal_year` | number | Fiscal year, named after the year it ends in (the year starts in July: July 2020 is FY2021). | `purchasing`, `marketing` |
 | `dates.full_date` | time | Calendar date (a time dimension). | `purchasing`, `marketing` |
 | `dates.key` | number | Date key. | `purchasing`, `marketing` |
-| `dates.month_name` | string | Month name. | `purchasing`, `marketing` |
+| `dates.month_name` | string | Month name. Sorted by the month's number (January first), not alphabetically. | `purchasing`, `marketing` |
+| `dates.month_of_year` | number | Month number, 1 (January) to 12 (December). | `purchasing`, `marketing` |
 
 ## `internet_sales` (fact)
 

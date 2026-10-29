@@ -162,6 +162,9 @@ Asked for while testing: a table takes any number of fields, each with an aggreg
 ### Audit of the panel types' own fields (2026-10-28, after the pie's measure was found missing)
 Compared every panel type's schema properties with what the drawer offers. Added: kpi `sparkline` (on or off); time chart `granularities` and `drill` (presets, a drill replaces the switch and a click rule); bar measure-or-stack switch with add/remove, `split`, `by_label`; pie `by_label`; treemap `label` and `group_labels`; table `order` (one field, either direction); pivot's column step for a time field; every panel's `ignore_filters`. Still YAML only: a time chart's hand-written `on_click`, a drill path that is not one of the presets (it is shown, not edited), and a pie's and bar's `format` per item.
 
+### Fields that sort by another field (2026-10-29)
+Found while testing: a table sorted by `dates.month_name` ran September, October, November, May...: the field is text, so Cube sorts it as text (it does not know it is a month). Fix in the model, not per dashboard: `meta: { sort_by: month_of_year }` on a dimension (`dates.month_name`; `dates.month_of_year` is new). The catalog reads it (`sort_by`), the compiled `members` carry it, and a table (order, header click, aggregated tables), a pivot's row/group/column axes, a filter's list and a slicer ask for the sort field too and order by it (`sortKeyOf`, `withSortKeys`, `sortedBy` in plan.js; mirrored in queries.py and compared). Not covered: a bar, pie or treemap ordered by name (they order by their measure), and other text fields with a natural order (stock status, weekday names): they need the same `meta` and a number column behind them.
+
 ## Open decisions
 - Phase 10's open questions are listed in its section.
 - Whether phase 2's gallery should offer "start from a template" (a finished panel) as well as an empty type. Leaning yes, but it is a content job.

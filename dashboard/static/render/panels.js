@@ -8,7 +8,7 @@ import { toneCue, toneOf, toneWord } from "../lib/rules.js";
 import { AGGREGATE_LIMIT, grandAggregates, groupAggregates } from "../lib/aggregate.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
-  PERIOD, heatScale, nextSort, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
+  PERIOD, heatScale, nextSort, sortKeyOf, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
 const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
@@ -621,13 +621,14 @@ function tablePanel(def, ctx) {
     let aggTotals = null;
     const truncated = valueCols.length > 0 && aggRows.length >= AGGREGATE_LIMIT;
     if (valueCols.length) {
-      const groups = groupAggregates(aggRows, dimensions, valueCols);
+      const sortKeys = dimensions.map((d) => sortKeyOf(ctx.spec, d)).filter(Boolean);
+      const groups = groupAggregates(aggRows, dimensions, valueCols, sortKeys);
       if (measures.length) for (const r of rows) r.aggs = groups.get(r.key)?.aggs ?? null;
-      else rows = [...groups.values()].map((g) => ({ key: g.key, dims: g.dims, values: new Map(), aggs: g.aggs }));
+      else rows = [...groups.values()].map((g) => ({ key: g.key, dims: g.dims, values: new Map(Object.entries(g.carried).map(([k, v]) => [k, num(v)])), aggs: g.aggs }));
       aggTotals = grandAggregates(aggRows, valueCols);
     }
     if (!single) {                                    // several measure cubes (or aggregated fields) were merged here: order and limit apply after the merge
-      const get = (r, m) => (aggOf.has(m) ? r.aggs?.get(m) : kindOf(m).kind === "measure" ? r.values.get(m) : r.dims[m]);
+      const get = (r, m) => (aggOf.has(m) ? r.aggs?.get(m) : kindOf(m).kind === "measure" ? r.values.get(m) : sortKeyOf(ctx.spec, m) ? r.values.get(sortKeyOf(ctx.spec, m)) : r.dims[m]);          // a month's name sorts by its number
       const cmp = (x, y) => (x == null) - (y == null) || (x !== "" && y !== "" && isFinite(x) && isFinite(y) ? x - y : x > y ? 1 : x < y ? -1 : 0);
       for (const [m, dir] of [...order].reverse()) rows.sort((a, b) => cmp(get(a, m), get(b, m)) * (dir === "desc" ? -1 : 1));
       rows = rows.slice(0, def.limit || 100);
