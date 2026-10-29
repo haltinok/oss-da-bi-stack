@@ -87,7 +87,7 @@
     "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
     "hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
     "member": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" },
-    "format": { "enum": ["money", "int", "decimal", "pct", "number"] },
+    "format": { "enum": ["money", "int", "decimal", "pct", "number", "year"] },
     "cross_filter": { "enum": [true, "page", false] },
     "aggregate": { "enum": ["sum", "max", "min", "avg", "count", "count_distinct", "first", "last"] },
     "rules": {

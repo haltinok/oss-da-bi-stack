@@ -1156,7 +1156,7 @@ def test_cross_filter_validates_and_the_compiler_writes_the_filters_and_the_clic
     assert errors == []
     assert "cross_filter" not in json.dumps(compile_spec(spec, used, CATALOG)["panels"]), "the renderer never sees it"
     out = compile_spec(spec, used, CATALOG)
-    made = [f for f in out["filters"] if f.get("implicit")]
+    made = [f for f in out["filters"] if f.get("implicit") and f["source"] == "top"]
     assert [(f["id"], f["dimension"], f["source"]) for f in made] == [("xf_top_1", "products.name", "top")]
     assert panel(out, "top")["on_click"] == {"set_filter": ["xf_top_1"]}
     assert not any(f["id"].startswith("xf_") for f in spec["filters"]) and "on_click" not in panel(spec, "top"), "the source is not touched"
@@ -1205,8 +1205,7 @@ def test_panels_that_cannot_join_to_the_made_filter_ignore_it():
     (lambda s: panel(s, "trend").update(cross_filter=True), "cross_filter"),
     (lambda s: panel(s, "kpis").update(cross_filter=True), "cross_filter"),
     (lambda s: s["filters"].append({"id": "xf_mine", "dimension": "products.name"}), "made by cross_filter"),
-    (lambda s: (panel(s, "lines").update(cross_filter=True, columns=["internet_sales.order_number", "territories.country", "products.name", "internet_sales.revenue"])), "at most 2 dimension columns"),
-], ids=["with-on-click", "page-without-tabs", "bad-value", "time-chart", "kpi", "reserved-id", "table-three-dims"])
+], ids=["with-on-click", "page-without-tabs", "bad-value", "time-chart", "kpi", "reserved-id"])
 def test_a_cross_filter_that_does_not_make_sense_is_refused(mutate, needle):
     errors = run(mutate)
     assert errors and any(needle in e for e in errors), errors
@@ -1490,19 +1489,28 @@ def test_cross_filter_false_turns_it_off_and_an_on_click_wins_over_the_default()
     assert "on_click" not in panel(out, "top") and not _made(out, "top") and "cross_filter" not in panel(out, "top")
 
 
-def test_the_default_leaves_out_what_a_click_cannot_sensibly_carry():
+def test_a_click_carries_all_the_dimension_values_of_the_mark_and_only_a_drilling_chart_is_left_out():
     spec = copy.deepcopy(GOOD)
+    spec["filters"] = []
+    for p in spec["panels"]:
+        p.pop("on_click", None)
     spec["panels"] += [
         {"id": "three", "type": "table", "columns": ["territories.region", "territories.country", "products.name", "internet_sales.revenue"]},          # three group columns
         {"id": "bymonth", "type": "bar", "measure": "internet_sales.revenue", "by": "dates.full_date"},                                                  # a time field
+        {"id": "withdate", "type": "table", "columns": ["internet_sales.order_number", "internet_sales.order_date", "territories.country", "internet_sales.revenue"]},
         {"id": "drilly", "type": "timeseries", "series": [{"member": "internet_sales.revenue", "label": "R"}], "granularity": "year", "drill": ["year", "month"]},
     ]
-    spec["layout"] += [[{"three": 4}, {"bymonth": 4}, {"drilly": 4}]]
+    spec["layout"] += [[{"three": 3}, {"bymonth": 3}, {"withdate": 3}, {"drilly": 3}]]
     errors, used = validate(spec, CATALOG)
     assert errors == [], errors
     out = compile_spec(spec, used, CATALOG)
-    for pid in ("three", "bymonth", "drilly"):
-        assert "on_click" not in panel(out, pid) and not _made(out, pid), pid
+    by_id = {f["id"]: f["dimension"] for f in out["filters"]}
+    carried_by = lambda pid: [by_id[i] for i in panel(out, pid)["on_click"]["set_filter"]]
+    assert carried_by("three") == ["territories.region", "territories.country", "products.name"], "no limit of two: every group column of the row"
+    assert carried_by("withdate") == ["internet_sales.order_number", "internet_sales.order_date", "territories.country"], "the order number and the date are part of the row's values too"
+    assert carried_by("bymonth") == ["dates.full_date"]
+    assert panel(out, "three")["on_click"]["set_filter"][1] == panel(out, "withdate")["on_click"]["set_filter"][2], "two panels that carry the same field share one filter: a click on either shows in both"
+    assert "on_click" not in panel(out, "drilly") and not _made(out, "drilly"), "a time chart that drills down keeps its drill-down"
 
 
 def test_a_pivot_and_a_time_chart_cross_filter_by_default_too():

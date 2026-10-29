@@ -2,7 +2,7 @@
 // Pure functions, no DOM. The designer never judges a spec itself: it edits the source (the YAML as an object) and the builder service's validator, the same one that
 // checks a model's answer, accepts or refuses the result.
 
-export const FORMATS = ["money", "int", "pct", "decimal", "number"];
+export const FORMATS = ["money", "int", "pct", "decimal", "number", "year"];
 export const GRANULARITIES = ["hour", "day", "week", "month", "quarter", "year"];
 const DIRECTIONS = ["asc", "desc"];
 export const RULE_WHEN = ["below", "above", "at_most", "at_least"];

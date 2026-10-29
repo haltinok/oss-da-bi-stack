@@ -87,7 +87,7 @@ Exactly one of `member`, `sum` (with `label`) or `ratio` (with `label`). `ratio`
 | `sum` | list of member (`cube.name`) (2+) |  | Two or more measures added together, typically the same measure of two fact cubes (Cube cannot join two fact cubes in one query, so each is queried separately and the results added). Needs a `label`. |
 | `ratio` | object |  | The sum of the `num` measures divided by the sum of the `den` measures (a margin over both channels: gross profit over revenue). Needs a `label`. Format it as `pct`. |
 | `label` | string |  | The tile's or series' name. Default for a `member`: the measure's name, capitalised. |
-| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How the value is shown. Default `number`. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How the value is shown. Default `number`. |
 | `rules` | list of rules (1-4) |  | Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal. |
 
 ### A time-chart series (`timeseries.series[]`)
@@ -101,7 +101,7 @@ Like a KPI measure (`member`, `sum` or `ratio`), plus a colour.
 | `ratio` | ratio |  | A ratio of sums, as for a KPI (needs a `label`). |
 | `label` | string |  | The series' name in the legend and tooltip. |
 | `color` | string |  | A theme token (`internet`, `reseller`, ...), a `#rrggbb` colour or nothing (a palette is used in order). |
-| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown on the axis, in the tooltip and in the Table view. Default `number`. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How values are shown on the axis, in the tooltip and in the Table view. Default `number`. |
 
 ### A table column (`table.columns[]`)
 
@@ -111,7 +111,7 @@ Either a member string, or an object with these fields.
 |---|---|---|---|
 | `member` | member (`cube.name`) | yes | A Cube measure or dimension. |
 | `label` | string |  | The column heading. Default: the member's name, capitalised. |
-| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How the value is shown. A measure defaults to `number`; a dimension is shown as text unless it has a format (a numeric dimension, `int`) or is a time dimension (shown as a date and time). |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How the value is shown. A measure defaults to `number`; a dimension is shown as text unless it has a format (a numeric dimension: `int`, or `year` for a year, which is shown without a thousands separator: 2024, not 2,024) or is a time dimension (shown as a date and time). |
 | `aggregate` | aggregate |  | Makes a dimension column a **value** summarised over the rows of each group, as Power BI does: `sum` and `avg` (number fields only), `max`, `min`, `count` (rows with a value), `count_distinct`, `first` and `last` (in the order of the cube's primary key). Dimension columns without it are the groups. A measure has its aggregation built in and cannot have this; all aggregated fields come from one cube, which needs a primary key; the page fetches up to 20,000 rows to aggregate and says when it reaches that. The default label is e.g. `Sum Unit cost`. |
 | `rules` | list of rules (1-4) |  | On a measure column of a table (not on a total row). Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal. |
 
@@ -169,7 +169,7 @@ Exactly one of `measure` or `stack`.
 | `sort` | `asc` \| `desc` |  | `desc` (default) or `asc`. |
 | `limit` | integer 1-1000 |  | How many bars. Default 10. |
 | `orientation` | `horizontal` \| `vertical` |  | `horizontal` (ranked rows, default) or `vertical` (columns, for a few categories). |
-| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How values are shown. Default `number`. |
 | `on_click` | on_click |  | A click on a bar sets one filter, on the dimension in `by`. |
 
 ### `pie`
@@ -184,7 +184,7 @@ Exactly one of `measure` or `stack`.
 | `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
 | `limit` | integer 2-30 |  | How many slices before the rest is grouped as one "Other" slice (2-30). Default 8. |
 | `style` | `pie` \| `donut` |  | `pie` or `donut` (a ring with the total in the middle). Default `donut`. |
-| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How values are shown. Default `number`. |
 | `on_click` | on_click |  | A click on a slice sets one filter, on the dimension in `by`; click again to undo. |
 
 ### `treemap`
@@ -196,7 +196,7 @@ Exactly one of `measure` or `stack`.
 | `label` | string |  | The measure's name in tooltips, the Table view and Excel. Default: the measure's name, capitalised (English). |
 | `group` | list of member (`cube.name`) (1+) | yes | One dimension (tiles) or two (tiles grouped under headings, as category and subcategory). |
 | `group_labels` | list of string (1+) |  | The names of the `group` dimensions (one per dimension) in the Table view and Excel. |
-| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` |  | How values are shown. Default `number`. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How values are shown. Default `number`. |
 | `on_click` | on_click |  | A click on a tile sets the filters in `group` order (a heading sets only the first). Name the filters in the order of the group. |
 
 ### `table`

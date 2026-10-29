@@ -13,7 +13,7 @@ DEFAULT = "page"                     # a panel that says nothing cross-filters t
 
 def carried(panel, used, catalog=None, time_dim=None):
     """The dimensions a click on this panel carries, in the order the clicked mark names them (what `on_click.set_filter` follows): a bar's or pie's `by`, a treemap's groups, a table row's
-    group columns, a pivot's first rows and plain column, a time chart's year (needs the catalog and the dashboard's time field)."""
+    group columns, a pivot's rows and plain column, a time chart's year (needs the catalog and the dashboard's time field)."""
     kind = panel["type"]
     if kind in ("bar", "pie"):
         return [panel["by"]]
@@ -23,7 +23,7 @@ def carried(panel, used, catalog=None, time_dim=None):
         cols = [c if isinstance(c, dict) else {"member": c} for c in panel["columns"]]
         return [c["member"] for c in cols if used.get(c["member"], {}).get("kind") != "measure" and "aggregate" not in c]          # an aggregated field is a value, not a key
     if kind == "pivot":
-        return [*panel["rows"], *([panel["columns"]] if isinstance(panel["columns"], str) else [])][:2]
+        return [*panel["rows"], *([panel["columns"]] if isinstance(panel["columns"], str) else [])]
     if kind == "timeseries" and catalog is not None and time_dim:
         cube = cube_of(panel.get("time_dimension") or time_dim)
         return [f"{cube}.fiscal_year"] if "fiscal_year" in catalog.cubes.get(cube, {}).get("dimensions", {}) else []
@@ -31,14 +31,11 @@ def carried(panel, used, catalog=None, time_dim=None):
 
 
 def _default_dims(panel, used, catalog, time_dim):
-    """What a panel that did not say anything cross-filters by: the same dimensions, but only where a click makes sense, quietly otherwise (no more than two, none of them a time,
-    not a time chart that drills down: its click opens the next level)."""
+    """What a panel that did not say anything cross-filters by: all the dimension values of the clicked mark (every group column of a table, every row and the plain column of a pivot),
+    but not for a time chart that drills down: its click opens the next level."""
     if panel["type"] == "timeseries" and "drill" in panel:
         return []
-    dims = carried(panel, used, catalog, time_dim)
-    if not dims or len(dims) > 2 or any(used.get(d, {}).get("type") == "time" for d in dims):
-        return []
-    return dims
+    return carried(panel, used, catalog, time_dim)
 
 
 def _label(dimension):
