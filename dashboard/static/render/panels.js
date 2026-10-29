@@ -11,7 +11,7 @@ import {
   PERIOD, periodKey, timeDimOf, heatScale, nextSort, sortKeyOf, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
-const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
+const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number", year: "text" };
 
 /** Why a query failed, in words a reader can act on (Cube answers `{ error }`; the client puts it in the message). */
 export function readable(e) {
@@ -598,6 +598,9 @@ function tablePanel(def, ctx) {
     }
     if (kind.kind === "measure") return { ...colOf(label, XLSX_TYPE[c.format || "number"] || "number", (r) => r.values.get(m) ?? null, ctx.formatter(c.format, true)), ...(c.rules ? { tone: (v) => toneOf(c.rules, v) } : {}) };
     if (kind.type === "time") return colOf(label, "date", (r) => r.dims[m] && String(r.dims[m]).replace(/\.\d+$/, ""), (v) => (v ? ctx.dateTime(v) : ""));
+    // A year is not a quantity: `year`, or an `int` format on a field named ..._year, is shown as the digits (2024, not 2,024).
+    const yearLike = c.format === "year" || (c.format === "int" && /(^|_)year$/.test(m.split(".")[1]));
+    if (yearLike) return colOf(label, "text", (r) => (r.dims[m] == null || r.dims[m] === "" ? "" : String(Math.round(Number(r.dims[m])))), (v) => v);
     if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format, true));
     return colOf(label, "text", (r) => (r.dims[m] == null ? "" : String(r.dims[m])), (v) => v);
   };

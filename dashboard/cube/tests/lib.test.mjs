@@ -290,3 +290,11 @@ test("a field of a role-playing cube is named with its role in front, and the ot
   setMemberLabels({ "ship_dates.day_name": "Ship day name" });
   assert.equal(planHumanize("ship_dates.month_name"), "Ship month name", "setting more labels keeps the ones there");
 });
+
+test("a year is the digits, not a quantity", () => {
+  const f = createFormat({ locale: "en-US", currency: "USD" });
+  assert.equal(f.year(2024), "2024");
+  assert.equal(f.int(2024), "2,024", "an int has its separator");
+  assert.equal(f.year(null), "—");
+  assert.equal(f.year("2021"), "2021");
+});

@@ -997,9 +997,12 @@ with sync_playwright() as p:
     page.locator("#selection-bar .chip-x").first.click()
     settled(page)
     first_row = page.locator('[data-panel="lines"] tbody tr').first
+    cells = [c.strip() for c in first_row.locator("td").all_inner_texts()]
     first_row.click()
-    page.wait_for_timeout(500)
-    check(page.locator("#selection-bar").is_hidden(), "a table with a time column and three group columns is left out: its click does nothing")
+    settled(page)
+    chips = page.locator("#selection-bar .chip").all_inner_texts()
+    check(len(chips) == 3 and any(cells[0] in c for c in chips) and any(cells[2] in c for c in chips), f"a click on a row of the orders table (three group columns, one of them a date) filters by all of its values ({chips})")
+    check(not any("T" in c.split(": ", 1)[1] and ".000" in c for c in chips), f"and a date reads as a date, not as the database writes it ({chips})")
     ctx.close()
 
     # cross_filter: a click filters the other panels with no filter written; the choices are chips in a selection bar (the compiler made the filters)
@@ -1154,6 +1157,11 @@ with sync_playwright() as p:
     page.locator('[data-panel="by_month"] th.sortable', has_text="Month name").click()
     settled(page)
     check(names() == ["September", "July", "March", "January"], f"and the other direction is December first ({names()})")
+    ctx.close()
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_months([{"member": "dates.fiscal_year", "format": "int"}, {"member": "dates.calendar_year", "format": "year"}, "internet_sales.revenue"])))])
+    settled(page)
+    years = [c.strip() for c in page.locator('[data-panel="by_month"] tbody tr').first.locator("td").all_inner_texts()]
+    check(len(years[0]) == 4 and len(years[1]) == 4 and "," not in years[0] + years[1], f"a year is shown as its digits, with format int on a year field or with format year ({years[:2]})")
     ctx.close()
     with_filter = compiled_with_months(["dates.month_name", "internet_sales.revenue"])
     with_filter["filters"].append({"id": "mo", "dimension": "dates.month_name", "label": "Month"})

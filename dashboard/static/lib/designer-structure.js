@@ -14,6 +14,7 @@ const PREFERRED_DIMENSIONS = ["category", "region", "country", "name", "status",
 /** How a measure is shown when nothing says: money for amounts, whole numbers for counts, percent for rates. */
 export const guessFormat = (member) => {
   const n = String(member).split(".").pop();
+  if (/(^|_)year$/.test(n)) return "year";
   if (/margin|pct|percent|rate|ratio|share/.test(n)) return "pct";
   if (/revenue|profit|cost|amount|price|value|sales|total/.test(n)) return "money";
   if (/orders|units|count|qty|quantity|stock|number/.test(n)) return "int";

@@ -45,6 +45,27 @@
       "label": "Name",
       "implicit": true,
       "source": "top"
+    },
+    {
+      "id": "xf_lines_1",
+      "dimension": "internet_sales.order_number",
+      "label": "Order number",
+      "implicit": true,
+      "source": "lines"
+    },
+    {
+      "id": "xf_lines_2",
+      "dimension": "internet_sales.order_date",
+      "label": "Order date",
+      "implicit": true,
+      "source": "lines"
+    },
+    {
+      "id": "xf_lines_3",
+      "dimension": "territories.country",
+      "label": "Country",
+      "implicit": true,
+      "source": "lines"
     }
   ],
   "panels": [
@@ -115,7 +136,11 @@
       ],
       "sparkline": {
         "granularity": "month"
-      }
+      },
+      "ignore_filters": [
+        "xf_lines_1",
+        "xf_lines_2"
+      ]
     },
     {
       "id": "trend",
@@ -144,7 +169,11 @@
       "style": "stacked-bar",
       "on_click": {
         "set_filter": "fy"
-      }
+      },
+      "ignore_filters": [
+        "xf_lines_1",
+        "xf_lines_2"
+      ]
     },
     {
       "id": "margin",
@@ -173,7 +202,11 @@
         "set_filter": [
           "fy"
         ]
-      }
+      },
+      "ignore_filters": [
+        "xf_lines_1",
+        "xf_lines_2"
+      ]
     },
     {
       "id": "mix",
@@ -216,7 +249,11 @@
         "set_filter": [
           "xf_top_1"
         ]
-      }
+      },
+      "ignore_filters": [
+        "xf_lines_1",
+        "xf_lines_2"
+      ]
     },
     {
       "id": "territories",
@@ -240,7 +277,11 @@
       "format": "money",
       "on_click": {
         "set_filter": "region"
-      }
+      },
+      "ignore_filters": [
+        "xf_lines_1",
+        "xf_lines_2"
+      ]
     },
     {
       "id": "lines",
@@ -268,7 +309,14 @@
       "order": {
         "internet_sales.order_date": "desc"
       },
-      "limit": 50
+      "limit": 50,
+      "on_click": {
+        "set_filter": [
+          "xf_lines_1",
+          "xf_lines_2",
+          "xf_lines_3"
+        ]
+      }
     }
   ],
   "layout": [

@@ -255,7 +255,8 @@ async function showDashboard() {
     const shown = (spec.filters || []).filter((f) => f.implicit && values[f.id] && (!f.tab || f.tab === activeTab));          // a tab's own filters show on that tab
     selectionBar.hidden = !shown.length;
     selectionBar.replaceChildren(...shown.flatMap((f) => {
-      const text = `${f.label || f.id}: ${values[f.id]}`;
+      const raw = values[f.id], isTime = spec.members?.[f.dimension]?.type === "time" && !Number.isNaN(Date.parse(raw));          // a time value reads as a date and time, not as the database writes it
+      const text = `${f.label || f.id}: ${isTime ? dateTimeFmt.format(new Date(raw)) : raw}`;
       const chip = el("span", { class: "chip on" }, esc(text));
       const x = el("button", { type: "button", class: "chip-x", "aria-label": t.removeSelection(text), title: t.removeSelection(text) }, "✕");
       x.addEventListener("click", () => changeFilter(f, ""));

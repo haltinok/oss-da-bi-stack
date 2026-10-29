@@ -21,6 +21,8 @@ export function createFormat({ locale = "en-US", currency = "USD" } = {}) {
     /** A plain number, up to two decimals, grouped: 1,234.57 */
     number: (v) => (v == null || !isFinite(v) ? "—" : twoDecimals.format(v)),
     int: (v) => (v == null ? "—" : integer.format(Math.round(v))),
+    /** A year: the digits, no thousands separator (2024, not 2,024). */
+    year: (v) => (v == null || !isFinite(v) ? "—" : String(Math.round(v))),
     /** A fraction as a percentage: 0.153 -> 15.3%; never "−0%" for a tiny negative. */
     pct: (v, d = 1) => {
       if (v == null || !isFinite(v)) return "—";

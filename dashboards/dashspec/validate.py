@@ -305,8 +305,6 @@ def _cross_filter_errors(w, p, spec, used, catalog):
     dims = crossfilter.carried(p, used, catalog, spec["time"]["dimension"])
     if not dims:
         errs.append(f"{w}: cross_filter: this panel has nothing a click can filter by (a table needs a group column; a time chart needs a fiscal_year field on its date)")
-    elif len(dims) > 2 or (p["type"] == "table" and len(dims) > 2):
-        errs.append(f"{w}: cross_filter: a click carries at most 2 dimension columns, this table shows {len(dims)}; use on_click to name the filters of two of them")
     return errs
 
 
