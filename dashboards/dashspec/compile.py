@@ -35,7 +35,7 @@ def compile_spec(spec, used, catalog=None):
             out["rowKeys"] = keys
     if catalog is not None:
         # which cubes each cube joins to: the renderer applies a drill-down's period only to panels that can reach the time dimension
-        cubes = {m.partition(".")[0] for m in used} | {spec["time"]["dimension"].partition(".")[0]}
+        cubes = {m.partition(".")[0] for m in used} | {spec["time"]["dimension"].partition(".")[0]} | {p["time_dimension"].partition(".")[0] for p in spec["panels"] if "time_dimension" in p}
         out["cubes"] = {c: {"joins": sorted(catalog.cubes[c]["joins"])} for c in sorted(cubes)
                         if c in catalog.cubes and catalog.cubes[c]["joins"] is not None}
     return out

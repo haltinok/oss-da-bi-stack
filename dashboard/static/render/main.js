@@ -9,7 +9,7 @@ import { setMemberLabels } from "../lib/labels.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { formatPeriod, normalizeTabs, optionMeasures, optionsOf, parsePeriod, sortKeyOf, withSortKeys, PERIOD, pick, pickTab, queriesPerCube, runAll, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
+import { formatPeriod, humanize, normalizeTabs, optionMeasures, optionsOf, parsePeriod, sortKeyOf, withSortKeys, PERIOD, pick, pickTab, queriesPerCube, runAll, periodDims, periodKey, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
 import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
@@ -168,7 +168,10 @@ async function showDashboard() {
   // A hidden filter always holds its default, whatever the address says.
   const values = Object.fromEntries((spec.filters || []).map((f) => [f.id, f.visible !== false && qs.has(f.id) ? qs.get(f.id) : f.default || ""]));
   const visibleFilters = () => (spec.filters || []).filter((f) => f.visible !== false);
-  values[PERIOD] = parsePeriod(qs.get("period")) ? qs.get("period") : "";             // the date range a drill-down sets (other panels follow it)
+  // The date range a drill-down sets (the other panels on the same date field follow it): `period` for the dashboard's own date, `period_<field>` for another date role.
+  const periodParam = (dim) => (dim === spec.time.dimension ? "period" : `period_${dim}`);
+  for (const dim of periodDims(spec)) values[periodKey(spec, dim)] = parsePeriod(qs.get(periodParam(dim))) ? qs.get(periodParam(dim)) : "";
+  const anyPeriod = () => periodDims(spec).some((dim) => values[periodKey(spec, dim)]);
   const drills = Object.fromEntries(spec.panels.filter((p) => p.drill).map((p) => [p.id, (qs.get(`drill_${p.id}`) || "").split(",").filter((b) => /^\d{4}-\d{2}-\d{2}/.test(b))]));
   const clearedHooks = [];
   const tabs = normalizeTabs(spec);
@@ -201,11 +204,11 @@ async function showDashboard() {
     },
     exportSheets: (sheets, name) => downloadXlsx(sheets.filter(Boolean), { prefix: spec.id, slug: slugify(name), symbol: fmt.symbol }),
     // A drill-down: where each time chart is (kept in the URL) and the period it hands to the other panels.
-    period: () => parsePeriod(values[PERIOD]),
-    setPeriod(range) { values[PERIOD] = range ? formatPeriod(range[0], range[1]) : ""; if (!range) clearedHooks.forEach((h) => h()); renderPeriod(); writeUrl(); loadAll(); },
+    period: (dim = spec.time.dimension) => parsePeriod(values[periodKey(spec, dim)]),
+    setPeriod(range, dim = spec.time.dimension) { values[periodKey(spec, dim)] = range ? formatPeriod(range[0], range[1]) : ""; if (!range) clearedHooks.filter((h) => h.dim === dim).forEach((h) => h.fn()); renderPeriod(); writeUrl(); loadAll(); },
     drillPath: (id) => drills[id] || [],
     setDrill(id, path) { drills[id] = path; },
-    onPeriodCleared: (fn) => clearedHooks.push(fn),
+    onPeriodCleared: (fn, dim = spec.time.dimension) => clearedHooks.push({ fn, dim }),
     bodyWidth: (id) => panels.get(id)?.root.querySelector(".panel-body")?.clientWidth || 640,
     // A click on a panel sets filters (see plan.js `pick`): the page applies them like a change in the filter bar.
     pick: (ids, vals) => apply(pick(values, ids, vals, saved)),
@@ -215,14 +218,18 @@ async function showDashboard() {
   const panels = new Map(spec.panels.map((p) => [p.id, createPanel(p, ctx)]));
   const periodBar = el("div", { id: "period-bar", class: "period-bar", hidden: "" });
   function renderPeriod() {
-    const range = parsePeriod(values[PERIOD]);
-    periodBar.hidden = !range;
-    if (!range) return;
     const show = (d) => dateFmt.format(new Date(`${d}T00:00:00Z`));
-    periodBar.innerHTML = `<span class="chip on">${esc(t.periodLabel)}: ${esc(range[0] === range[1] ? show(range[0]) : `${show(range[0])} – ${show(range[1])}`)}</span>`;
-    const x = el("button", { type: "button", class: "chip-x", "aria-label": t.clearPeriod, title: t.clearPeriod }, "✕");
-    x.addEventListener("click", () => ctx.setPeriod(null));
-    periodBar.append(x);
+    const chips = periodDims(spec).flatMap((dim) => {
+      const range = parsePeriod(values[periodKey(spec, dim)]);
+      if (!range) return [];
+      const label = dim === spec.time.dimension ? t.periodLabel : `${t.periodLabel} (${humanize(dim)})`;          // another date role names its field
+      const chip = el("span", { class: "chip on" }, `${esc(label)}: ${esc(range[0] === range[1] ? show(range[0]) : `${show(range[0])} – ${show(range[1])}`)}`);
+      const x = el("button", { type: "button", class: "chip-x", "aria-label": `${t.clearPeriod}: ${label}`, title: t.clearPeriod }, "✕");
+      x.addEventListener("click", () => ctx.setPeriod(null, dim));
+      return [chip, x];
+    });
+    periodBar.hidden = !chips.length;
+    periodBar.replaceChildren(...chips);
   }
   // One grid per tab, all in the page; the open one is shown and only its panels are loaded (a panel's `load` is cached by filters and period).
   const tabBar = tabbed ? el("div", { class: "rtabs", role: "tablist", "aria-label": t.tabsLabel }) : null;
@@ -371,8 +378,8 @@ async function showDashboard() {
     reset.addEventListener("click", () => {
       for (const k of Object.keys(saved)) delete saved[k];
       for (const f of visibleFilters()) values[f.id] = f.default || "";                     // Reset goes back to where the page opened (a hidden filter never moved)
-      values[PERIOD] = "";
-      clearedHooks.forEach((h) => h());
+      for (const dim of periodDims(spec)) values[periodKey(spec, dim)] = "";
+      clearedHooks.forEach((h) => h.fn());
       renderPeriod();
       for (const f of visibleFilters()) { fillOptions(f); showValue(f); }
       writeUrl();
@@ -382,7 +389,7 @@ async function showDashboard() {
     const dashboardBar = visibleFilters().some((f) => (!f.scope || f.scope === "dashboard") && !slicerOf.has(f.id) && !f.implicit);
     bar.hidden = !dashboardBar;                                                              // with only page and pane filters the header bar shows when Reset is needed
     ctx.syncReset = () => {
-      const needed = visibleFilters().some((f) => (values[f.id] || "") !== (f.default || "")) || !!values[PERIOD];
+      const needed = visibleFilters().some((f) => (values[f.id] || "") !== (f.default || "")) || anyPeriod();
       reset.hidden = !needed;
       bar.hidden = !(dashboardBar || needed);
     };
@@ -415,7 +422,7 @@ async function showDashboard() {
     const q = new URLSearchParams(location.search);
     // Only what differs from the default is written; a filter cleared while it has a default is written as `?id=` (so a reload does not bring the default back).
     for (const f of spec.filters || []) { const v = values[f.id] || ""; if (f.visible === false || v === (f.default || "")) q.delete(f.id); else q.set(f.id, v); }
-    if (values[PERIOD]) q.set("period", values[PERIOD]); else q.delete("period");
+    for (const dim of periodDims(spec)) { const v = values[periodKey(spec, dim)]; if (v) q.set(periodParam(dim), v); else q.delete(periodParam(dim)); }
     for (const [id, path] of Object.entries(drills)) { if (path.length) q.set(`drill_${id}`, path.join(",")); else q.delete(`drill_${id}`); }
     if (tabbed && activeTab !== tabs[0].id) q.set("tab", activeTab); else q.delete("tab");
     history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);

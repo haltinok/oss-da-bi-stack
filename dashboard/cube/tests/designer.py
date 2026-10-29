@@ -1084,6 +1084,28 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- a time chart on its own date field (the ship date), while the dashboard follows the order date
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    trend = panel_of(page, "timeseries")
+    page.click(f'[data-panel="{trend}"] h2')
+    opts = page.locator('#designer [data-path="time_dimension"] option').evaluate_all("os => os.map((o) => o.value)")
+    check("ship_dates.full_date" in opts and "due_dates.full_date" in opts and "" in opts, f"a time chart can pick its own date field, including the ship and due date ({opts})")
+    with changes(page):
+        page.select_option('#designer [data-path="time_dimension"]', "ship_dates.full_date")
+    settled(page)
+    check(next(x for x in yaml_of(page)["panels"] if x["id"] == trend).get("time_dimension") == "ship_dates.full_date", "choosing the ship date writes time_dimension on that panel only")
+    check(yaml_of(page)["time"]["dimension"] != "ship_dates.full_date", "the dashboard's own time field is unchanged")
+    page.wait_for_selector(f'[data-panel="{trend}"] svg', timeout=15000)
+    with changes(page):
+        page.select_option('#designer [data-path="time_dimension"]', "")
+    settled(page)
+    check("time_dimension" not in next(x for x in yaml_of(page)["panels"] if x["id"] == trend), "and an empty choice goes back to the dashboard's")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

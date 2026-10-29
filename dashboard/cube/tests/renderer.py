@@ -1160,6 +1160,41 @@ with sync_playwright() as p:
     check(len(asked) == 1 and "ship_dates.month_of_year" in asked[0]["dimensions"] and "dates.month_of_year" in asked[0]["dimensions"], "and each sorts by its own month number")
     ctx.close()
 
+    # a time axis of the panel's own: the drill-down chart and the key figures' sparkline follow the SHIP date; a drill-down sets the period of the ship date only
+    def compiled_on_ship_date():
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-drilldown.yml").read_text())
+        next(p for p in src["panels"] if p["id"] == "trend")["time_dimension"] = "ship_dates.full_date"
+        kp = next(p for p in src["panels"] if p["type"] == "kpi")
+        kp["time_dimension"] = "ship_dates.full_date"
+        kp["sparkline"] = {"granularity": "month"}
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        return _compile(src, used, catalog)
+
+    ctx, page = open_page(browser, "/d/sales-drilldown", routes=[("**/dashboards/sales-drilldown.json", serve(compiled_on_ship_date()))])
+    settled(page)
+    td = lambda qs, dim: [q for q in qs if any(t.get("dimension") == dim for t in q.get("timeDimensions", []))]
+    ship_axis = [q for q in sent(page) if any(t.get("dimension") == "ship_dates.full_date" and t.get("granularity") for t in q.get("timeDimensions", []))]
+    check(len(ship_axis) >= 2, f"the chart and the sparkline ask for their time axis on the ship date ({len(ship_axis)} queries)")
+    check(not [q for q in sent(page) if any(t.get("dimension") == "dates.full_date" and t.get("granularity") for t in q.get("timeDimensions", []))], "and nothing groups by the order date")
+    page.queries.clear()
+    page.locator('[data-panel="trend"] .hit').nth(1).click()
+    settled(page)
+    url = here(page)
+    check("period_ship_dates.full_date=2020-01-01" in url and "&period=" not in url and "?period=" not in url, f"the period is kept for the ship date, not the dashboard's ({url})")
+    chip = page.locator("#period-bar .chip").inner_text()
+    check("Ship full date" in chip and "2020" in chip, f"and its chip names the date field ({chip})")
+    after = sent(page)
+    check(any(any(t.get("dimension") == "ship_dates.full_date" and t.get("dateRange") for t in q.get("timeDimensions", [])) for q in after if q.get("measures") and not q.get("dimensions")), "the key figures (on the ship date) are narrowed by it")
+    check(not any(any(t.get("dimension") == "dates.full_date" and t.get("dateRange") for t in q.get("timeDimensions", [])) for q in after), "and no query is narrowed on the order date")
+    donut = [q for q in after if q.get("dimensions") == ["products.subcategory"]]
+    check(donut == [] or not any(q.get("timeDimensions") for q in donut), "the panels on the order date are not touched")
+    page.locator("#period-bar .chip-x").click()
+    settled(page)
+    check(page.locator("#period-bar").is_hidden() and "period_" not in here(page), "the chip's x clears it")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())
