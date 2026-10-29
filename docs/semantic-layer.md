@@ -72,11 +72,41 @@ Readable by: `admin`, `manager`, `rep`.
 | `dates.year_quarter` | string | Year and quarter as text, e.g. 2012 Q1. Sorted by `dates.year_quarter_number`. | `purchasing`, `marketing` |
 | `dates.year_quarter_number` | number | Year and quarter as a number that sorts in time order: 20121 is the first quarter of 2012. | `purchasing`, `marketing` |
 
+## `due_dates`
+
+The calendar in the role of the due date: the date an order line was due to be delivered. Same fields as `dates`, shown with the prefix Due.
+
+A role of `dates`: the same calendar table and fields, joined by its own key; the fields are named "Due ..." in reports (e.g. "Due month name").
+
+Readable by: `admin`, `manager`, `rep`.
+
+### Dimensions
+
+| Member | Type | Meaning | Hidden from |
+|---|---|---|---|
+| `due_dates.calendar_quarter` | number | Calendar quarter number, 1 to 4. | `purchasing`, `marketing` |
+| `due_dates.calendar_year` | number | Calendar year. | `purchasing`, `marketing` |
+| `due_dates.day_name` | string | Day of the week as text (Sunday ... Saturday). Sorted by `due_dates.day_of_week`. | `purchasing`, `marketing` |
+| `due_dates.day_of_week` | number | Day of the week as a number: 1 is Sunday, 7 is Saturday. | `purchasing`, `marketing` |
+| `due_dates.fiscal_quarter` | number | Fiscal quarter number, 1 to 4 (the fiscal year starts in July: July to September is 1). | `purchasing`, `marketing` |
+| `due_dates.fiscal_quarter_name` | string | Fiscal quarter as text: FQ1 to FQ4. Sorted by `due_dates.fiscal_quarter`. | `purchasing`, `marketing` |
+| `due_dates.fiscal_year` | number | Fiscal year, named after the year it ends in (the year starts in July: July 2020 is FY2021). | `purchasing`, `marketing` |
+| `due_dates.full_date` | time | Calendar date (a time dimension). | `purchasing`, `marketing` |
+| `due_dates.key` | number | Date key. | `purchasing`, `marketing` |
+| `due_dates.month_name` | string | Month name (January ... December). Sorted by `due_dates.month_of_year`. | `purchasing`, `marketing` |
+| `due_dates.month_of_year` | number | Month number, 1 (January) to 12 (December). | `purchasing`, `marketing` |
+| `due_dates.quarter_name` | string | Calendar quarter as text: Q1 to Q4. Sorted by `due_dates.calendar_quarter`. | `purchasing`, `marketing` |
+| `due_dates.week_of_year` | number | ISO week number of the year, 1 to 53. | `purchasing`, `marketing` |
+| `due_dates.year_month` | string | Month and year as text, e.g. Jan 2012. Sorted by `due_dates.year_month_number`. | `purchasing`, `marketing` |
+| `due_dates.year_month_number` | number | Year and month as a number that sorts in time order: 201201 is January 2012. | `purchasing`, `marketing` |
+| `due_dates.year_quarter` | string | Year and quarter as text, e.g. 2012 Q1. Sorted by `due_dates.year_quarter_number`. | `purchasing`, `marketing` |
+| `due_dates.year_quarter_number` | number | Year and quarter as a number that sorts in time order: 20121 is the first quarter of 2012. | `purchasing`, `marketing` |
+
 ## `internet_sales` (fact)
 
 Internet (online) channel order lines of the sales fact: one row per product on an order. Rejected and cancelled orders are left out. Row-level security limits reps and managers to their own territories.
 
-Joins: `customers`, `dates`, `products`, `territories`.
+Joins: `customers`, `dates`, `due_dates`, `products`, `ship_dates`, `territories`.
 
 Readable by: `admin`, `manager`, `rep`.
 
@@ -203,7 +233,7 @@ Readable by: `admin`, `manager`, `rep`, `purchasing`, `marketing`.
 
 Reseller channel order lines of the sales fact: one row per product on an order. Rejected and cancelled orders are left out. Row-level security limits reps and managers to their own territories.
 
-Joins: `dates`, `products`, `territories`.
+Joins: `dates`, `due_dates`, `products`, `ship_dates`, `territories`.
 
 Readable by: `admin`, `manager`, `rep`.
 
@@ -230,6 +260,36 @@ Readable by: `admin`, `manager`, `rep`.
 | `reseller_sales.order_line_id` | string | Key of the order line (order number and line number). | `purchasing`, `marketing` |
 | `reseller_sales.order_number` | string | The sales order number. | `purchasing`, `marketing` |
 | `reseller_sales.order_status` | number | Order status code: 1 in process, 2 approved, 3 backordered, 5 shipped (4 rejected and 6 cancelled are not in this cube). | `purchasing`, `marketing` |
+
+## `ship_dates`
+
+The calendar in the role of the ship date: the date an order line shipped. Same fields as `dates` (month, quarter, fiscal year ...), shown with the prefix Ship.
+
+A role of `dates`: the same calendar table and fields, joined by its own key; the fields are named "Ship ..." in reports (e.g. "Ship month name").
+
+Readable by: `admin`, `manager`, `rep`.
+
+### Dimensions
+
+| Member | Type | Meaning | Hidden from |
+|---|---|---|---|
+| `ship_dates.calendar_quarter` | number | Calendar quarter number, 1 to 4. | `purchasing`, `marketing` |
+| `ship_dates.calendar_year` | number | Calendar year. | `purchasing`, `marketing` |
+| `ship_dates.day_name` | string | Day of the week as text (Sunday ... Saturday). Sorted by `ship_dates.day_of_week`. | `purchasing`, `marketing` |
+| `ship_dates.day_of_week` | number | Day of the week as a number: 1 is Sunday, 7 is Saturday. | `purchasing`, `marketing` |
+| `ship_dates.fiscal_quarter` | number | Fiscal quarter number, 1 to 4 (the fiscal year starts in July: July to September is 1). | `purchasing`, `marketing` |
+| `ship_dates.fiscal_quarter_name` | string | Fiscal quarter as text: FQ1 to FQ4. Sorted by `ship_dates.fiscal_quarter`. | `purchasing`, `marketing` |
+| `ship_dates.fiscal_year` | number | Fiscal year, named after the year it ends in (the year starts in July: July 2020 is FY2021). | `purchasing`, `marketing` |
+| `ship_dates.full_date` | time | Calendar date (a time dimension). | `purchasing`, `marketing` |
+| `ship_dates.key` | number | Date key. | `purchasing`, `marketing` |
+| `ship_dates.month_name` | string | Month name (January ... December). Sorted by `ship_dates.month_of_year`. | `purchasing`, `marketing` |
+| `ship_dates.month_of_year` | number | Month number, 1 (January) to 12 (December). | `purchasing`, `marketing` |
+| `ship_dates.quarter_name` | string | Calendar quarter as text: Q1 to Q4. Sorted by `ship_dates.calendar_quarter`. | `purchasing`, `marketing` |
+| `ship_dates.week_of_year` | number | ISO week number of the year, 1 to 53. | `purchasing`, `marketing` |
+| `ship_dates.year_month` | string | Month and year as text, e.g. Jan 2012. Sorted by `ship_dates.year_month_number`. | `purchasing`, `marketing` |
+| `ship_dates.year_month_number` | number | Year and month as a number that sorts in time order: 201201 is January 2012. | `purchasing`, `marketing` |
+| `ship_dates.year_quarter` | string | Year and quarter as text, e.g. 2012 Q1. Sorted by `ship_dates.year_quarter_number`. | `purchasing`, `marketing` |
+| `ship_dates.year_quarter_number` | number | Year and quarter as a number that sorts in time order: 20121 is the first quarter of 2012. | `purchasing`, `marketing` |
 
 ## `territories`
 

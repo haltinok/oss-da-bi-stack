@@ -86,3 +86,18 @@ cubes:
         type: string
         meta:
           sort_by: day_of_week
+
+  # The same calendar in two more roles (role-playing dimensions): one physical table, `mart.dim_date`, joined by the fact's own key. A member reads
+  # `ship_dates.month_name` (the month the order shipped), `dates.month_name` stays the order date. Every field and its `sort_by` is inherited; the `label_prefix`
+  # puts the role in the name a report shows ("Ship month name") so nothing has to be relabelled by hand.
+  - name: ship_dates
+    extends: dates
+    description: "The calendar in the role of the ship date: the date an order line shipped. Same fields as `dates` (month, quarter, fiscal year ...), shown with the prefix Ship."
+    meta:
+      label_prefix: Ship
+
+  - name: due_dates
+    extends: dates
+    description: "The calendar in the role of the due date: the date an order line was due to be delivered. Same fields as `dates`, shown with the prefix Due."
+    meta:
+      label_prefix: Due

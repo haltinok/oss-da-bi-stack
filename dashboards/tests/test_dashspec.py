@@ -492,7 +492,7 @@ def test_catalog_json_hides_what_a_role_cannot_read():
     admin = {c["cube"]: c for c in catalog_json(CATALOG)}
     gp = next(m for m in admin["internet_sales"]["measures"] if m["name"] == "gross_profit")
     assert gp["hidden_from"] == ["rep", "purchasing", "marketing"] and gp["description"]
-    assert admin["internet_sales"]["joins"] == ["customers", "dates", "products", "territories"] and admin["internet_sales"]["fact"]
+    assert admin["internet_sales"]["joins"] == ["customers", "dates", "due_dates", "products", "ship_dates", "territories"] and admin["internet_sales"]["fact"]
 
 
 def test_a_drill_down_a_pie_and_the_new_styles_are_valid_and_compile_with_cube_joins():
@@ -508,7 +508,7 @@ def test_a_drill_down_a_pie_and_the_new_styles_are_valid_and_compile_with_cube_j
     errors, used = validate(spec, CATALOG)
     assert errors == []
     out = compile_spec(spec, used, CATALOG)
-    assert out["cubes"]["internet_sales"]["joins"] == ["customers", "dates", "products", "territories"] and out["cubes"]["dates"]["joins"] == []
+    assert out["cubes"]["internet_sales"]["joins"] == ["customers", "dates", "due_dates", "products", "ship_dates", "territories"] and out["cubes"]["dates"]["joins"] == []
     assert next(p for p in out["panels"] if p["id"] == "trend")["drill"] == ["year", "month", "day"]
 
 
@@ -1362,3 +1362,34 @@ def test_the_semantic_layer_shows_what_a_field_sorts_by():
     dims = {d["member"]: d for c in catalog_json(CATALOG) if c["cube"] == "dates" for d in c["dimensions"]}
     assert dims["dates.month_name"]["sort_by"] == "dates.month_of_year" and "sort_by" not in dims["dates.month_of_year"]
     assert "Sorted by `dates.year_month_number`." in generate(CATALOG)
+
+
+# ---- role-playing dates: ship_dates and due_dates are the calendar again, joined by the fact's own key
+def test_the_date_roles_have_the_calendars_fields_sorting_and_a_label_with_the_role_in_front():
+    for role, prefix in (("ship_dates", "Ship"), ("due_dates", "Due")):
+        assert CATALOG.cubes[role]["dimensions"] == CATALOG.cubes["dates"]["dimensions"] and CATALOG.cubes[role]["extends"] == "dates"
+        assert CATALOG.cubes[role]["primary_key"] == "key" and CATALOG.reachable("internet_sales", role) and CATALOG.reachable("reseller_sales", role)
+        assert CATALOG.sort_by(f"{role}.year_month") == f"{role}.year_month_number", "a role sorts by its own sort field"
+        assert CATALOG.label(f"{role}.month_name") == f"{prefix} month name" and CATALOG.label(f"{role}.fiscal_year") == f"{prefix} fiscal year"
+    assert CATALOG.label("dates.month_name") is None, "the order date keeps its plain names"
+    assert "ship_dates" not in CATALOG.cubes["dates"]["joins"] and cat.sort_by_problems(CATALOG) == []
+
+
+def test_a_dashboard_can_run_on_the_ship_date_and_its_fields_carry_the_role_in_their_label():
+    spec = copy.deepcopy(GOOD)
+    spec["time"]["dimension"] = "ship_dates.full_date"
+    spec["panels"].append({"id": "by_ship_month", "type": "table", "columns": ["ship_dates.month_name", "dates.month_name", "internet_sales.revenue"]})
+    spec["layout"].append([{"by_ship_month": 12}])
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert out["members"]["ship_dates.month_name"] == {"kind": "dimension", "type": "string", "sort_by": "ship_dates.month_of_year", "label": "Ship month name"}
+    assert out["members"]["dates.month_name"] == {"kind": "dimension", "type": "string", "sort_by": "dates.month_of_year"}
+    assert out["cubes"]["internet_sales"]["joins"].count("ship_dates") == 1
+
+
+def test_the_semantic_layer_says_what_a_date_role_is():
+    from dashspec.semantic import catalog_json, generate
+    ship = next(c for c in catalog_json(CATALOG) if c["cube"] == "ship_dates")
+    assert ship["extends"] == "dates" and ship["label_prefix"] == "Ship" and next(d for d in ship["dimensions"] if d["name"] == "month_name")["label"] == "Ship month name"
+    assert 'A role of `dates`' in generate(CATALOG)

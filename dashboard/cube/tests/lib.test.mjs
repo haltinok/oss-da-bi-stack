@@ -275,3 +275,18 @@ test("chipsHtml makes escaped buttons that say whether they are pressed and carr
   assert.match(html, /data-tag="&#60;b&#62;" aria-pressed="false" aria-label="Filter by &#60;b&#62;">&#60;b&#62;<\/button>/);
   assert.equal(chipsHtml([], [], (t) => t), "");
 });
+
+// ---- the role in the name of a role-playing date field (dashboard/static/lib/labels.js)
+import { memberLabel, setMemberLabels } from "../../static/lib/labels.js";
+import { humanize as planHumanize } from "../../static/render/plan.js";
+
+test("a field of a role-playing cube is named with its role in front, and the others as before", () => {
+  assert.equal(planHumanize("ship_dates.month_name"), "Month name", "before the page has loaded any label");
+  setMemberLabels({ "ship_dates.month_name": "Ship month name", "due_dates.fiscal_year": "due fiscal year" });
+  assert.equal(planHumanize("ship_dates.month_name"), "Ship month name");
+  assert.equal(planHumanize("due_dates.fiscal_year"), "Due fiscal year", "capitalised");
+  assert.equal(planHumanize("dates.month_name"), "Month name", "the order date keeps its plain name");
+  assert.equal(memberLabel("dates.month_name"), undefined);
+  setMemberLabels({ "ship_dates.day_name": "Ship day name" });
+  assert.equal(planHumanize("ship_dates.month_name"), "Ship month name", "setting more labels keeps the ones there");
+});

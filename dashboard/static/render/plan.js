@@ -4,12 +4,15 @@
 
 import { defaultEnv, toCube } from "../lib/filters.js";
 import { AGGREGATE_LIMIT } from "../lib/aggregate.js";
+import { memberLabel } from "../lib/labels.js";
 
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
 
 /** "internet_sales.order_number" -> "Order number" (the label of a column that has none). */
 export const humanize = (member) => {
+  const role = memberLabel(member);                      // a field of a role-playing cube: "Ship month name"
+  if (role) return role;
   const name = member.split(".")[1].replace(/_/g, " ");
   return name.charAt(0).toUpperCase() + name.slice(1);
 };

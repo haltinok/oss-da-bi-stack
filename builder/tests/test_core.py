@@ -146,7 +146,7 @@ def test_the_model_is_shown_only_what_the_role_may_read_with_descriptions():
 
 def test_the_visible_catalog_drops_joins_to_cubes_a_role_cannot_see():
     rep = core.visible_catalog(CATALOG, "rep")
-    assert "customers" not in rep.cubes["internet_sales"]["joins"] and rep.cubes["internet_sales"]["joins"] == {"dates", "products", "territories"}
+    assert "customers" not in rep.cubes["internet_sales"]["joins"] and rep.cubes["internet_sales"]["joins"] == {"dates", "due_dates", "products", "ship_dates", "territories"}
     assert set(core.visible_catalog(CATALOG, "purchasing").cubes) == {"inventory_health", "products"}
 
 

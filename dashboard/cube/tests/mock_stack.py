@@ -70,9 +70,11 @@ def fake_rows(query):
     rows = [{}]
     for key, values in axes:
         rows = [{**r, key: v} for r in rows for v in values][:80]
-    for r in rows:                                    # a month's number follows its name, as in the calendar
-        if "dates.month_name" in r and "dates.month_of_year" in r:
-            r["dates.month_of_year"] = MONTH_NUMBER[r["dates.month_name"]]
+    for r in rows:                                    # a month's number follows its name, as in the calendar (in every role of the date)
+        for key in [k for k in r if k.endswith(".month_name")]:
+            number = key.replace("month_name", "month_of_year")
+            if number in r:
+                r[number] = MONTH_NUMBER[r[key]]
     for i, r in enumerate(rows):
         for m in query.get("measures", []):
             h = (sum(map(ord, m)) * 31 + i * 17) % 997
