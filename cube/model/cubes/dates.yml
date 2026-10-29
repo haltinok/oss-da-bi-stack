@@ -27,8 +27,62 @@ cubes:
         sql: month_of_year
         type: number
       - name: month_name
-        description: "Month name. Sorted by the month's number (January first), not alphabetically."
+        description: "Month name (January ... December)."
         sql: month_name
         type: string
         meta:
-          sort_by: month_of_year        # a table, a pivot or a filter list that orders by this field asks for dates.month_of_year and orders by that
+          sort_by: month_of_year        # sorts January, February, ... not alphabetically (see docs/dashboards.md, "Fields that sort by another field")
+      - name: year_month_number
+        description: "Year and month as a number that sorts in time order: 201201 is January 2012."
+        sql: "calendar_year * 100 + month_of_year"
+        type: number
+      - name: year_month
+        description: "Month and year as text, e.g. Jan 2012."
+        sql: "CONCAT(SUBSTR(month_name, 1, 3), ' ', CAST(calendar_year AS VARCHAR))"
+        type: string
+        meta:
+          sort_by: year_month_number
+      - name: calendar_quarter
+        description: "Calendar quarter number, 1 to 4."
+        sql: calendar_quarter
+        type: number
+      - name: quarter_name
+        description: "Calendar quarter as text: Q1 to Q4."
+        sql: "CONCAT('Q', CAST(calendar_quarter AS VARCHAR))"
+        type: string
+        meta:
+          sort_by: calendar_quarter
+      - name: year_quarter_number
+        description: "Year and quarter as a number that sorts in time order: 20121 is the first quarter of 2012."
+        sql: "calendar_year * 10 + calendar_quarter"
+        type: number
+      - name: year_quarter
+        description: "Year and quarter as text, e.g. 2012 Q1."
+        sql: "CONCAT(CAST(calendar_year AS VARCHAR), ' Q', CAST(calendar_quarter AS VARCHAR))"
+        type: string
+        meta:
+          sort_by: year_quarter_number
+      - name: fiscal_quarter
+        description: "Fiscal quarter number, 1 to 4 (the fiscal year starts in July: July to September is 1)."
+        sql: fiscal_quarter
+        type: number
+      - name: fiscal_quarter_name
+        description: "Fiscal quarter as text: FQ1 to FQ4."
+        sql: "CONCAT('FQ', CAST(fiscal_quarter AS VARCHAR))"
+        type: string
+        meta:
+          sort_by: fiscal_quarter
+      - name: week_of_year
+        description: "ISO week number of the year, 1 to 53."
+        sql: week_of_year
+        type: number
+      - name: day_of_week
+        description: "Day of the week as a number: 1 is Sunday, 7 is Saturday."
+        sql: day_of_week
+        type: number
+      - name: day_name
+        description: "Day of the week as text (Sunday ... Saturday)."
+        sql: day_name
+        type: string
+        meta:
+          sort_by: day_of_week

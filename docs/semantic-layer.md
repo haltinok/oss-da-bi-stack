@@ -10,6 +10,7 @@ Generated from `cube/model/cubes/*.yml` by `scripts/dashspec semantic` (descript
 - Cube cannot join two fact cubes in one query. To show both sales channels together, use `sum: [internet_sales.revenue, reseller_sales.revenue]`, a `ratio` of two sums (a margin over both channels) or a stacked bar; there is no other arithmetic in a spec.
 - `orders` is the exact count of distinct orders (right under every filter, slower at scale); `orders_placed` counts each order once on its first line (fast, right for date, territory and channel, wrong for product filters).
 - `margin_pct` is in percentage points (0-100). For a percentage in a spec use a `ratio` of `gross_profit` over `revenue` with `format: pct`.
+- A text dimension with a natural order (a month's name, a quarter's, a weekday's) **sorts by another dimension** of its cube, declared in the model as `meta: { sort_by: <number field> }` and shown below as "Sorted by": tables, pivots, filter lists and slicers order by that field, so months run January to December, not alphabetically.
 - Row-level security: reps and managers only get the territories assigned to them, whatever the dashboard asks for.
 
 ## Who can read what
@@ -53,12 +54,23 @@ Readable by: `admin`, `manager`, `rep`.
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
+| `dates.calendar_quarter` | number | Calendar quarter number, 1 to 4. | `purchasing`, `marketing` |
 | `dates.calendar_year` | number | Calendar year. | `purchasing`, `marketing` |
+| `dates.day_name` | string | Day of the week as text (Sunday ... Saturday). Sorted by `dates.day_of_week`. | `purchasing`, `marketing` |
+| `dates.day_of_week` | number | Day of the week as a number: 1 is Sunday, 7 is Saturday. | `purchasing`, `marketing` |
+| `dates.fiscal_quarter` | number | Fiscal quarter number, 1 to 4 (the fiscal year starts in July: July to September is 1). | `purchasing`, `marketing` |
+| `dates.fiscal_quarter_name` | string | Fiscal quarter as text: FQ1 to FQ4. Sorted by `dates.fiscal_quarter`. | `purchasing`, `marketing` |
 | `dates.fiscal_year` | number | Fiscal year, named after the year it ends in (the year starts in July: July 2020 is FY2021). | `purchasing`, `marketing` |
 | `dates.full_date` | time | Calendar date (a time dimension). | `purchasing`, `marketing` |
 | `dates.key` | number | Date key. | `purchasing`, `marketing` |
-| `dates.month_name` | string | Month name. Sorted by the month's number (January first), not alphabetically. | `purchasing`, `marketing` |
+| `dates.month_name` | string | Month name (January ... December). Sorted by `dates.month_of_year`. | `purchasing`, `marketing` |
 | `dates.month_of_year` | number | Month number, 1 (January) to 12 (December). | `purchasing`, `marketing` |
+| `dates.quarter_name` | string | Calendar quarter as text: Q1 to Q4. Sorted by `dates.calendar_quarter`. | `purchasing`, `marketing` |
+| `dates.week_of_year` | number | ISO week number of the year, 1 to 53. | `purchasing`, `marketing` |
+| `dates.year_month` | string | Month and year as text, e.g. Jan 2012. Sorted by `dates.year_month_number`. | `purchasing`, `marketing` |
+| `dates.year_month_number` | number | Year and month as a number that sorts in time order: 201201 is January 2012. | `purchasing`, `marketing` |
+| `dates.year_quarter` | string | Year and quarter as text, e.g. 2012 Q1. Sorted by `dates.year_quarter_number`. | `purchasing`, `marketing` |
+| `dates.year_quarter_number` | number | Year and quarter as a number that sorts in time order: 20121 is the first quarter of 2012. | `purchasing`, `marketing` |
 
 ## `internet_sales` (fact)
 

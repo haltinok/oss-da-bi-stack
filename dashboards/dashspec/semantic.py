@@ -12,7 +12,8 @@ def _members(name, c, kind, role):
         hidden = [r for r in ROLES if denied(r, f"{name}.{m}")]
         if role and role in hidden:
             continue
-        rows.append({"name": m, "member": f"{name}.{m}", "type": t, "description": c.get("docs", {}).get(m, ""), "hidden_from": hidden})
+        key = c.get("sort_by", {}).get(m) if kind == "dimensions" else None
+        rows.append({"name": m, "member": f"{name}.{m}", "type": t, "description": c.get("docs", {}).get(m, ""), "hidden_from": hidden, **({"sort_by": f"{name}.{key}"} if key else {})})
     return rows
 
 
@@ -45,6 +46,7 @@ def generate(catalog):
            "- `orders` is the exact count of distinct orders (right under every filter, slower at scale); `orders_placed` counts each order once on its first line "
            "(fast, right for date, territory and channel, wrong for product filters).",
            "- `margin_pct` is in percentage points (0-100). For a percentage in a spec use a `ratio` of `gross_profit` over `revenue` with `format: pct`.",
+           "- A text dimension with a natural order (a month's name, a quarter's, a weekday's) **sorts by another dimension** of its cube, declared in the model as `meta: { sort_by: <number field> }` and shown below as \"Sorted by\": tables, pivots, filter lists and slicers order by that field, so months run January to December, not alphabetically.",
            "- Row-level security: reps and managers only get the territories assigned to them, whatever the dashboard asks for.", "",
            "## Who can read what", "",
            "| Role | Can read |", "|---|---|",
@@ -65,7 +67,8 @@ def generate(catalog):
             out += [f"### {title}", "", "| Member | Type | Meaning | Hidden from |", "|---|---|---|---|"]
             for m in c[key]:
                 hidden = ", ".join(f"`{r}`" for r in m["hidden_from"]) or ""
-                out.append(f"| `{m['member']}` | {m['type']} | {m['description']} | {hidden} |")
+                meaning = m["description"] + (f" Sorted by `{m['sort_by']}`." if m.get("sort_by") else "")
+                out.append(f"| `{m['member']}` | {m['type']} | {meaning} | {hidden} |")
             out.append("")
     return "\n".join(out).rstrip() + "\n"
 

@@ -907,6 +907,8 @@ with sync_playwright() as p:
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
     settled(page)
     page.click("#bd-design")
+    month_opt = page.locator('#dz-newfilter option[value="dates.month_name"]')
+    check("Sorted by dates.month_of_year" in (month_opt.get_attribute("title") or "") and "Sorted by" not in (page.locator('#dz-newfilter option[value="products.category"]').get_attribute("title") or ""), "a field that sorts by another says so in the designer's field list (a tooltip)")
     page.select_option("#dz-newfilter", "products.category")
     with changes(page):
         page.click("#dz-addfilter")
