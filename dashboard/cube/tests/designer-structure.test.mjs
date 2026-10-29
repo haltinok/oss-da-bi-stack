@@ -328,3 +328,33 @@ test("a new filter starts as several values, or a date range for a time field", 
   assert.equal(addFilter(SOURCE, CATALOG, "products.category").source.filters.at(-1).type, "multiselect");
   assert.equal(addFilter(SOURCE, CATALOG, "dates.full_date").source.filters.at(-1).type, "date");
 });
+
+// ---- a measure to add that fits the panel
+import { neededDimensions, spareMeasure } from "../../static/lib/designer-structure.js";
+
+const WITH_CUSTOMERS = [
+  ...CATALOG,
+  { cube: "customers", joins: [], measures: [m("customers", "count")], dimensions: [m("customers", "key")] },        // joins to nothing the sales dashboards use
+];
+
+test("what a panel's measures must be able to join to: its groupings, its time axis and the filters that apply to it", () => {
+  const src = { ...SOURCE, filters: [{ id: "cat", dimension: "products.category" }, { id: "only", dimension: "territories.region", scope: "panel", panel: "someone_else" }, { id: "skipped", dimension: "dates.year" }] };
+  const kpi = { id: "kpis", type: "kpi", sparkline: { granularity: "month" }, measures: [{ member: "internet_sales.revenue" }], ignore_filters: ["skipped"] };
+  assert.deepEqual(neededDimensions(WITH_CUSTOMERS, src, kpi).sort(), ["dates.full_date", "products.category"], "the time axis and the filter that applies; not another panel's filter, not an ignored one");
+  assert.deepEqual(neededDimensions(WITH_CUSTOMERS, src, { id: "b", type: "bar", measure: "internet_sales.revenue", by: "products.name" }).sort(), ["dates.year", "products.category", "products.name"]);
+});
+
+test("a measure to add is one the panel can join to: customers.count is not offered to a sales key-figures row", () => {
+  const kpi = { id: "kpis", type: "kpi", sparkline: { granularity: "month" }, measures: [{ member: "internet_sales.revenue" }] };
+  const src = { ...SOURCE, filters: [{ id: "cat", dimension: "products.category" }] };
+  assert.equal(spareMeasure(WITH_CUSTOMERS, src, kpi, ["internet_sales.revenue"]), "reseller_sales.revenue", "a usual measure first (revenue, orders, units, stock), never customers.count");
+  const taken = ["internet_sales.revenue", "reseller_sales.revenue"];
+  assert.equal(spareMeasure(WITH_CUSTOMERS, src, kpi, taken), "internet_sales.orders", "then the next usual one");
+  assert.notEqual(spareMeasure(WITH_CUSTOMERS, src, kpi, [...taken, "internet_sales.orders", "internet_sales.margin_pct"]), "customers.count");
+  const free = spareMeasure(WITH_CUSTOMERS, { ...SOURCE, filters: [] }, { id: "c", type: "kpi", measures: [{ member: "customers.count" }] }, ["customers.count"]);
+  assert.notEqual(free, undefined, "a panel with no time axis and no filters may take any measure");
+  assert.equal(spareMeasure([{ cube: "customers", joins: [], measures: [m("customers", "count")], dimensions: [] }, ...CATALOG.filter((c) => c.cube === "dates")], src, kpi, []), undefined, "when nothing fits, nothing is offered");
+  const one = CATALOG.filter((c) => ["internet_sales", "products", "dates"].includes(c.cube));
+  const all = one.flatMap((c) => c.measures.map((x) => x.member));
+  assert.ok(all.includes(spareMeasure(one, src, kpi, all)), "every fitting measure taken: a repeat is allowed");
+});

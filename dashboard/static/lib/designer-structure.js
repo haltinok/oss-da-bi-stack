@@ -44,6 +44,37 @@ export function pickMeasure(catalog, source, { time = false } = {}) {
   return PREFERRED_MEASURES.map((n) => usable.find((m) => m.endsWith(`.${n}`))).find(Boolean) || usable[0] || null;
 }
 
+/**
+ * The dimensions a panel's measures must be able to join to: what it groups or lists by, its time axis (a time chart, or a sparkline), and the field of every filter that applies to it
+ * (its `ignore_filters` aside). A measure of a cube without a join to one of them would be refused ("cannot be combined with ...").
+ */
+export function neededDimensions(catalog, source, panel) {
+  const dimensions = new Set(catalog.flatMap((c) => c.dimensions.map((d) => d.member)));
+  const out = new Set([...membersIn(panel)].filter((m) => dimensions.has(m)));
+  if (panel.type === "timeseries" || (panel.type === "kpi" && panel.sparkline)) out.add(panel.time_dimension || source.time?.dimension);
+  const ignored = new Set(panel.ignore_filters || []);
+  for (const f of source.filters || []) {
+    const scope = f.scope || "dashboard";
+    const applies = scope === "dashboard" || (scope === "panel" && f.panel === panel.id) || (scope === "page" && f.tab === tabOfPanel(source, panel.id));
+    if (applies && !ignored.has(f.id)) out.add(f.dimension);
+  }
+  out.delete(undefined);
+  return [...out];
+}
+
+/**
+ * A measure to add to `panel` that fits it: not one in `taken`, and of a cube that can join to everything the panel needs (`neededDimensions`), the usual ones first (revenue, orders,
+ * units, stock). When every fitting measure is taken, one of those is returned (a repeat is allowed), and undefined when nothing fits.
+ */
+export function spareMeasure(catalog, source, panel, taken = []) {
+  const needed = neededDimensions(catalog, source, panel);
+  const fits = (m) => { const reach = reachableCubes(catalog, [cubeOf(m)]); return !reach || needed.every((d) => reach.has(cubeOf(d))); };
+  const all = catalog.flatMap((c) => c.measures.map((m) => m.member)).filter(fits);
+  const rank = (m) => { const i = PREFERRED_MEASURES.findIndex((n) => m.endsWith(`.${n}`)); return i < 0 ? PREFERRED_MEASURES.length : i; };
+  const ordered = [...all].sort((a, b) => rank(a) - rank(b));                       // stable: the catalog's order within a rank
+  return ordered.find((m) => !taken.includes(m)) ?? ordered[0];
+}
+
 /** A dimension to group `measure` by that its cube can join to (not a key, not a time dimension), skipping `not`; null when there is none. */
 export function pickDimension(catalog, measure, not = []) {
   const reach = reachableCubes(catalog, [cubeOf(measure)]);
