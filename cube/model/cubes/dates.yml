@@ -22,7 +22,13 @@ cubes:
         description: "Calendar year."
         sql: calendar_year
         type: number
+      - name: month_of_year
+        description: "Month number, 1 (January) to 12 (December)."
+        sql: month_of_year
+        type: number
       - name: month_name
-        description: "Month name."
+        description: "Month name. Sorted by the month's number (January first), not alphabetically."
         sql: month_name
         type: string
+        meta:
+          sort_by: month_of_year        # a table, a pivot or a filter list that orders by this field asks for dates.month_of_year and orders by that

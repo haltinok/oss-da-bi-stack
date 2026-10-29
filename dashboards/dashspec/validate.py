@@ -323,6 +323,9 @@ def semantic_errors(spec, catalog):
             errs.append(f"{where}: {field}: '{member}' is a {typ} dimension, a time dimension is needed")
             return None
         used[member] = {"kind": kind, "type": typ}
+        key = catalog.sort_by(member) if kind == "dimension" else None
+        if key:
+            used[member]["sort_by"] = key                  # the renderer orders this field by that one (a month's name by its number)
         return kind
 
     check("dashboard", "time.dimension", spec["time"]["dimension"], "dimension", time=True)

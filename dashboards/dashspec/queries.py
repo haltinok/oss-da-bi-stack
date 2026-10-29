@@ -41,6 +41,21 @@ def per_cube(measures, base=None):
     return [{"cube": c, "query": {**(base or {}), "measures": ms}} for c, ms in groups.items()]
 
 
+def sort_key_of(spec, member):
+    """The dimension a text dimension sorts by (a month's name by its number), from the compiled `members`; None for most."""
+    return spec.get("members", {}).get(member, {}).get("sort_by")
+
+
+def with_sort_keys(spec, dims):
+    """`dims` plus the sort keys of the ones that have one, after them, each once (a query that orders by a field must ask for it)."""
+    return list(dict.fromkeys([*dims, *[k for d in dims if (k := sort_key_of(spec, d))]]))
+
+
+def sorted_by(spec, order):
+    """An order by dimensions, with the sort key standing in for the dimension that has one."""
+    return {sort_key_of(spec, k) or k: v for k, v in order.items()}
+
+
 AGGREGATE_LIMIT = 20000            # rows fetched to aggregate a table's value fields client-side; the page says so when it hit this
 
 
@@ -89,7 +104,7 @@ def slicer_queries(spec, panel, values):
         return []
     measures = option_measures(spec, flt)
     own = {**panel, "ignore_filters": [*panel.get("ignore_filters", []), flt["id"]], "optionMeasures": measures}
-    dims = [*([flt["parent"]] if "parent" in flt else []), flt["dimension"]]
+    dims = with_sort_keys(spec, [*([flt["parent"]] if "parent" in flt else []), flt["dimension"]])
     return follow_period(spec, own, values, per_cube(measures, {"dimensions": dims, "filters": active_filters(spec, values, own)}))
 
 
@@ -183,10 +198,15 @@ def pivot_queries(spec, panel, values):
         return out
 
     dims_asc = {d: "asc" for d in rows}
-    out = lead_query({**shape(rows, False), "order": {lead: direction, **dims_asc} if by == "total" else {d: direction for d in rows}, "limit": lim["rows"] + 1})
+
+    def axis(sh, order, limit):
+        """An axis is read in the order of its labels: a field that sorts by another (a month's name by its number) asks for that one and orders by it."""
+        return {**({**sh, "dimensions": with_sort_keys(spec, sh["dimensions"])} if "dimensions" in sh else sh), "order": sorted_by(spec, order), "limit": limit}
+
+    out = lead_query(axis(shape(rows, False), {lead: direction, **dims_asc} if by == "total" else {d: direction for d in rows}, lim["rows"] + 1))
     if len(rows) > 1:
-        out += lead_query({**shape([rows[0]], False), "order": {lead: direction, rows[0]: "asc"} if by == "total" else {rows[0]: direction}, "limit": PIVOT_MAX_ROWS})
-    out += lead_query({**shape([], True), "order": {col: "asc"}, "limit": lim["columns"] + 1})
+        out += lead_query(axis(shape([rows[0]], False), {lead: direction, rows[0]: "asc"} if by == "total" else {rows[0]: direction}, PIVOT_MAX_ROWS))
+    out += lead_query(axis(shape([], True), {col: "asc"}, lim["columns"] + 1))
 
     def per(row_dims, with_col):
         grouping = shape(row_dims, with_col)
@@ -238,7 +258,8 @@ def panel_queries(spec, panel, values):
         agg = table_values(panel)
         order = dict(panel.get("order") or {}) or {d: "asc" for d in dims}   # the author's order, else every dimension ascending
         limit = panel.get("limit", DEFAULT_LIMIT["table"])
-        base = {"dimensions": dims, "filters": filters}
+        order = sorted_by(spec, order)
+        base = {"dimensions": with_sort_keys(spec, dims), "filters": filters}
         out = []
         if measures:
             single = len({cube_of(m) for m in measures}) <= 1 and not agg           # with aggregated fields the rows are merged and ordered here, not in Cube
@@ -249,7 +270,7 @@ def panel_queries(spec, panel, values):
             cube = cube_of(agg[0][0])
             key = spec["rowKeys"][cube]
             fields = list(dict.fromkeys(m for m, _ in agg))
-            out.append({"cube": f"agg:{cube}", "query": {"dimensions": [*dims, key, *fields], "filters": filters, "order": {key: "asc"}, "limit": AGGREGATE_LIMIT}})
+            out.append({"cube": f"agg:{cube}", "query": {"dimensions": [*with_sort_keys(spec, dims), key, *fields], "filters": filters, "order": {key: "asc"}, "limit": AGGREGATE_LIMIT}})
         if panel.get("totals") and measures:
             out += follow_period(spec, panel, values, per_cube(measures, {"filters": filters}))
         return out

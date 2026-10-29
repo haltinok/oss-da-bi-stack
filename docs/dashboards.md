@@ -227,6 +227,9 @@ It takes part in everything the other filters do:
 - **Cross-filtering**: a click on a chart that sets the filter (`on_click.set_filter`) shows in the slicer, and picking in the slicer narrows the chart, like the header filter does.
 - **Drill-down**: the period a drill-down opens narrows the options too.
 
+## Fields that sort by another field
+A text field can say which field it sorts by, in the Cube model: `meta: { sort_by: month_of_year }` on `dates.month_name`. A table, a pivot's rows and columns, a filter's list and a slicer then ask Cube for the sort field as well and order by it, so months run January, February, March (and December, November, October when descending) instead of April, August, December. The sort field has to be a dimension of the same cube; nothing in a dashboard file changes. (Cube itself does not know that a month's name is a date: it is text, so it sorts it as text unless the model says otherwise.)
+
 ## Themes
 The round half-moon button in every header opens a menu of themes: **Light**, **Black** (the original dark one), **Slate** (dark blue-grey), **Navy** (deep blue),
 **Sand** (warm light), **Mint** (cool light with a green accent) and **High contrast** (black and white with a yellow focus ring), or **System**, which follows the

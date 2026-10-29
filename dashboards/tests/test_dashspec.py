@@ -1298,3 +1298,42 @@ def test_python_and_renderer_queries_agree_on_a_table_with_aggregated_fields(tmp
             assert panel_queries(out, panel(out, pid), state["values"]) == state["panels"][pid], f"{pid} under {state['values']}"
     only_values = dumped[0]["panels"]["inv2"]
     assert len(only_values) == 1 and only_values[0]["query"]["dimensions"] == ["inventory_health.key", "inventory_health.on_hand", "inventory_health.status"], "no group column: one query, the cube's key and the fields"
+
+
+# ---- a text field that sorts by another (a month's name by its number): `meta.sort_by` in the Cube model
+def test_the_model_says_a_months_name_sorts_by_its_number_and_the_compiled_file_carries_it():
+    assert CATALOG.sort_by("dates.month_name") == "dates.month_of_year" and CATALOG.sort_by("dates.fiscal_year") is None and CATALOG.sort_by("nope.x") is None
+    spec = copy.deepcopy(GOOD)
+    spec["panels"].append({"id": "bm", "type": "table", "columns": ["dates.month_name", "internet_sales.revenue"]})
+    spec["layout"].append([{"bm": 12}])
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    assert out["members"]["dates.month_name"] == {"kind": "dimension", "type": "string", "sort_by": "dates.month_of_year"}
+    assert "sort_by" not in out["members"]["internet_sales.revenue"]
+
+
+def test_python_and_renderer_queries_agree_where_a_field_sorts_by_another(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    spec["filters"].append({"id": "mo", "dimension": "dates.month_name", "label": "Month"})
+    spec["panels"] += [
+        {"id": "bm", "type": "table", "columns": ["dates.month_name", "internet_sales.revenue"], "order": {"dates.month_name": "desc"}},
+        {"id": "bm2", "type": "table", "columns": ["dates.month_name", "internet_sales.revenue", "reseller_sales.revenue"]},
+        {"id": "pv", "type": "pivot", "rows": ["dates.month_name"], "columns": "territories.region", "measures": ["internet_sales.revenue"], "order": {"by": "label"}},
+        {"id": "pv2", "type": "pivot", "rows": ["products.category"], "columns": "dates.month_name", "measures": ["internet_sales.revenue"]},
+        {"id": "sl", "type": "slicer", "filter": "mo"},
+    ]
+    spec["layout"] += [[{"bm": 6}, {"bm2": 6}], [{"pv": 6}, {"pv2": 6}], [{"sl": 12}]]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "m.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        for pid in ("bm", "bm2", "pv", "pv2", "sl"):
+            assert panel_queries(out, panel(out, pid), state["values"]) == state["panels"][pid], f"{pid} under {state['values']}"
+    first = dumped[0]["panels"]
+    assert first["bm"][0]["query"]["order"] == {"dates.month_of_year": "desc"} and first["bm"][0]["query"]["dimensions"] == ["dates.month_name", "dates.month_of_year"]
+    assert first["pv"][0]["query"]["order"]["dates.month_of_year"] == "asc", "a pivot's rows ordered by label are in month order"
+    assert first["sl"][0]["query"]["dimensions"] == ["dates.month_name", "dates.month_of_year"], "a filter's list asks for the number too"

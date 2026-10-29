@@ -21,7 +21,7 @@ BUILDER = {"limit": False, "saving": True}   # True: /builder/build answers 429,
 FAKE = {"on": False}      # True: the Cube mocks answer every query with generated rows instead of none (see fake_rows)
 
 POOLS = {
-    "fiscal_year": [2020, 2021], "calendar_year": [2020, 2021], "month_name": ["June", "July"],
+    "fiscal_year": [2020, 2021], "calendar_year": [2020, 2021], "month_name": ["September", "January", "July", "March"], "month_of_year": [1],
     "category": ["Bikes", "Components", "Clothing", "Accessories"],
     "subcategory": ["Road Bikes", "Mountain Bikes", "Helmets", "Jerseys"],
     "name": ["Road-150 Red", "Mountain-200 Black", "Sport-100 Helmet", "Long-Sleeve Logo Jersey", "HL Road Frame"],
@@ -30,6 +30,7 @@ POOLS = {
     "suggested_order_value": [4200, 900], "excess_units": [30, 0], "excess_value": [1500, 80], "suggested_discount_pct": [10, 30],
     "order_date": ["2021-06-30T10:00:00.000", "2021-06-29T09:30:00.000"], "order_number": ["SO1", "SO2", "SO3", "SO4"], "order_status": [5], "status": ["stockout", "reorder_now", "overstock"],
 }
+MONTH_NUMBER = {"January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6, "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12}
 MONTHS = [f"{2020 + (6 + i) // 12}-{(6 + i) % 12 + 1:02d}-01T00:00:00.000" for i in range(12)]     # Jul 2020 .. Jun 2021 (kept for older tests)
 
 
@@ -69,6 +70,9 @@ def fake_rows(query):
     rows = [{}]
     for key, values in axes:
         rows = [{**r, key: v} for r in rows for v in values][:80]
+    for r in rows:                                    # a month's number follows its name, as in the calendar
+        if "dates.month_name" in r and "dates.month_of_year" in r:
+            r["dates.month_of_year"] = MONTH_NUMBER[r["dates.month_name"]]
     for i, r in enumerate(rows):
         for m in query.get("measures", []):
             h = (sum(map(ord, m)) * 31 + i * 17) % 997
