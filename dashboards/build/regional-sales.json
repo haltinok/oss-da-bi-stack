@@ -22,6 +22,20 @@
       "id": "fy",
       "dimension": "dates.fiscal_year",
       "label": "Fiscal year"
+    },
+    {
+      "id": "xf_countries_1",
+      "dimension": "territories.country",
+      "label": "Country",
+      "implicit": true,
+      "source": "countries"
+    },
+    {
+      "id": "xf_products_1",
+      "dimension": "products.name",
+      "label": "Name",
+      "implicit": true,
+      "source": "products"
     }
   ],
   "panels": [
@@ -115,7 +129,12 @@
       "by": "territories.country",
       "sort": "desc",
       "limit": 15,
-      "format": "money"
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_countries_1"
+        ]
+      }
     },
     {
       "id": "products",
@@ -136,7 +155,12 @@
       "by": "products.name",
       "sort": "desc",
       "limit": 10,
-      "format": "money"
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_products_1"
+        ]
+      }
     }
   ],
   "layout": [

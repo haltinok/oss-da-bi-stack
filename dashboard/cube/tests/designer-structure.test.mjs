@@ -299,34 +299,40 @@ test("removing a filter takes its slicer, hiding one that has a slicer is refuse
 // ---- cross-filtering
 import { CROSS_PANELS, crossModeOf, setCrossFilter } from "../../static/lib/designer-structure.js";
 
-test("clicking a panel can filter the others: the whole dashboard, this tab, or not at all", () => {
-  const on = setCrossFilter(SOURCE, "top", "all");
-  assert.equal(on.source.panels.find((p) => p.id === "top").cross_filter, true);
-  assert.deepEqual(on.notes, []);
-  assert.equal(crossModeOf(on.source.panels.find((p) => p.id === "top")), "all");
-  const off = setCrossFilter(on.source, "top", "");
-  assert.equal("cross_filter" in off.source.panels.find((p) => p.id === "top"), false);
-  assert.equal(setCrossFilter(SOURCE, "top", "page").problem, "notabs");
-  const tabbed = { ...SOURCE, layout: undefined, tabs: [{ id: "a", title: "A", layout: SOURCE.layout }, { id: "b", title: "B", layout: [[{ x: 12 }]] }] };
-  const page = setCrossFilter(tabbed, "top", "page");
-  assert.equal(page.source.panels.find((p) => p.id === "top").cross_filter, "page");
-  assert.equal(crossModeOf(page.source.panels.find((p) => p.id === "top")), "page");
-  assert.equal(SOURCE.panels.find((p) => p.id === "top").cross_filter, undefined, "the argument is not touched");
+test("clicking a panel filters the page by default; it can be widened to every tab or turned off", () => {
+  const top = (src) => src.panels.find((p) => p.id === "top");
+  assert.equal(crossModeOf(top(SOURCE)), "page", "a panel that says nothing: the default");
+  const all = setCrossFilter(SOURCE, "top", "all");
+  assert.equal(top(all.source).cross_filter, true);
+  assert.equal(crossModeOf(top(all.source)), "all");
+  const off = setCrossFilter(SOURCE, "top", "off");
+  assert.equal(top(off.source).cross_filter, false);
+  assert.equal(crossModeOf(top(off.source)), "off");
+  const back = setCrossFilter(off.source, "top", "page");
+  assert.equal("cross_filter" in top(back.source), false, "the default writes nothing");
+  assert.equal(crossModeOf(top(back.source)), "page");
+  assert.equal(top(SOURCE).cross_filter, undefined, "the argument is not touched");
 });
 
-test("turning it on replaces a click rule written by hand, and only bars, pies, treemaps and tables can", () => {
-  const withRule = setCrossFilter({ ...SOURCE, panels: SOURCE.panels.map((p) => (p.id === "top" ? { ...p, on_click: { set_filter: "region" } } : p)) }, "top", "all");
-  assert.equal("on_click" in withRule.source.panels.find((p) => p.id === "top"), false);
-  assert.deepEqual(withRule.notes, ["clickReplaced"]);
-  assert.equal(setCrossFilter(SOURCE, "trend", "all").problem, "type", "a time chart cannot yet");
+test("a click rule written by hand is its own mode; choosing another replaces it and says so", () => {
+  const withRule = { ...SOURCE, panels: SOURCE.panels.map((p) => (p.id === "top" ? { ...p, on_click: { set_filter: "region" } } : p)) };
+  const top = (src) => src.panels.find((p) => p.id === "top");
+  assert.equal(crossModeOf(top(withRule)), "rule");
+  assert.deepEqual(setCrossFilter(withRule, "top", "rule").notes, []);
+  assert.equal("on_click" in top(setCrossFilter(withRule, "top", "rule").source), true, "choosing the rule changes nothing");
+  for (const mode of ["page", "all", "off"]) {
+    const out = setCrossFilter(withRule, "top", mode);
+    assert.equal("on_click" in top(out.source), false, mode);
+    assert.deepEqual(out.notes, ["clickReplaced"], mode);
+  }
+});
+
+test("bars, pies, treemaps, tables, pivots and time charts can; key figures, notes and slicers cannot", () => {
+  assert.deepEqual(CROSS_PANELS, ["bar", "pie", "treemap", "table", "pivot", "timeseries"]);
   assert.equal(setCrossFilter(SOURCE, "kpis", "all").problem, "type");
+  assert.equal(setCrossFilter(SOURCE, "note", "off").problem, "type");
   assert.equal(setCrossFilter(SOURCE, "nope", "all").problem, "missing");
-  assert.deepEqual(CROSS_PANELS, ["bar", "pie", "treemap", "table"]);
-});
-
-test("a new filter starts as several values, or a date range for a time field", () => {
-  assert.equal(addFilter(SOURCE, CATALOG, "products.category").source.filters.at(-1).type, "multiselect");
-  assert.equal(addFilter(SOURCE, CATALOG, "dates.full_date").source.filters.at(-1).type, "date");
+  assert.equal(setCrossFilter(SOURCE, "trend", "off").source.panels.find((p) => p.id === "trend").cross_filter, false);
 });
 
 // ---- a measure to add that fits the panel

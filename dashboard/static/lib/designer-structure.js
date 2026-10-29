@@ -124,14 +124,18 @@ export function addPanel(source, type, catalog, { tab = null, title } = {}) {
 }
 
 // ------------------------------------------------------------------------------------------------------------------ cross-filtering
-export const CROSS_PANELS = ["bar", "pie", "treemap", "table"];
-
-/** What a panel's click does: "" (nothing, or a click rule written in the YAML), "all" (`cross_filter: true`) or "page" (`cross_filter: page`). */
-export const crossModeOf = (panel) => (panel.cross_filter === "page" ? "page" : panel.cross_filter ? "all" : "");
+export const CROSS_PANELS = ["bar", "pie", "treemap", "table", "pivot", "timeseries"];
 
 /**
- * Turns "clicking this panel filters the other panels" on (`all`: the whole dashboard; `page`: this panel's tab, needs tabs) or off. Turning it on replaces a click rule written by hand
- * (the file may not have both) and says so. Returns { source, notes } or { problem: "notabs" | "type" | "missing" }.
+ * What a panel's click does: "page" (the default: it filters the panels of its tab, or of the page), "all" (`cross_filter: true`, every tab), "off" (`cross_filter: false`) or "rule"
+ * (a click rule written by hand in the YAML, which the default leaves alone).
+ */
+export const crossModeOf = (panel) => (panel.cross_filter === false ? "off" : panel.cross_filter === true ? "all" : panel.cross_filter === "page" ? "page" : panel.on_click ? "rule" : "page");
+
+/**
+ * Sets what clicking a panel does (see crossModeOf). "page" is the default and writes nothing; "all" writes `cross_filter: true` (needs a dashboard with tabs to differ from "page", but is
+ * always allowed); "off" writes `cross_filter: false`. Choosing any of them replaces a click rule written by hand (the file may not have both) and says so.
+ * Returns { source, notes } or { problem: "type" | "missing" }.
  */
 export function setCrossFilter(source, panelId, mode) {
   const next = clone(source);
@@ -139,10 +143,11 @@ export function setCrossFilter(source, panelId, mode) {
   if (!panel) return { problem: "missing" };
   if (!CROSS_PANELS.includes(panel.type)) return { problem: "type" };
   const notes = [];
-  if (!mode) { delete panel.cross_filter; return { source: next, notes }; }
-  if (mode === "page" && !next.tabs?.length) return { problem: "notabs" };
+  if (mode === "rule") return { source: next, notes };
   if (panel.on_click) { delete panel.on_click; notes.push("clickReplaced"); }
-  panel.cross_filter = mode === "page" ? "page" : true;
+  if (mode === "off") panel.cross_filter = false;
+  else if (mode === "all") panel.cross_filter = true;
+  else delete panel.cross_filter;
   return { source: next, notes };
 }
 

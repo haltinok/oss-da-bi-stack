@@ -213,7 +213,13 @@
         "internet_sales.revenue": "desc"
       },
       "limit": 50,
-      "totals": "footer"
+      "totals": "footer",
+      "on_click": {
+        "set_filter": [
+          "category",
+          "subcategory"
+        ]
+      }
     }
   ],
   "layout": [

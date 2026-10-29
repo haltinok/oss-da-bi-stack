@@ -172,37 +172,22 @@ filters:
 Rules the validator enforces: a page filter names a tab that exists, a pane filter a panel that exists (not a text panel), a click rule cannot set a hidden filter or another panel's pane filter, a hidden filter has no `parent`, and a filter is only checked against the panels it applies to (a pane filter on inventory data on a sales panel is refused; on a panel that can join to it, fine).
 In the designer, a filter card has **Applies to** (the whole dashboard, one tab, one panel), the tab or panel, and a checkbox for whether the reader can see it; a hidden filter shows a "hidden" badge and needs a default first. Removing a panel takes its pane filters with it, removing a tab hands its page filters to the tab that receives its panels, and putting the tabs back on one page makes page filters dashboard filters (each says so).
 
-### Click to filter, with no filter to write
-`cross_filter: true` on a `bar`, `pie`, `treemap` or `table` makes a click on it filter the other panels, without defining a filter or writing `on_click`:
+### Click to filter: on by default
+A click on a mark filters the other panels **without any setting**, and without defining a filter or writing `on_click`: the page adds the filters when the file is compiled. This holds for a bar, a pie, a treemap, a table, a pivot and a time chart; key figures, notes and slicers have no mark to click.
+What a click carries: a bar's or pie's `by`, a treemap's groups in order, a table row's group columns, a pivot cell's row and plain column, a time chart's fiscal year (never more than two fields, and no time field: a table with a time column and three group columns, or a bar by date, is left out, quietly).
+
+The default scope is **the panel's page**: the panels of its tab, or the whole dashboard when there are no tabs. A panel can say otherwise:
 
 ```yaml
 panels:
-  - { id: by_region, type: bar, measure: internet_sales.revenue, by: territories.region, cross_filter: true }
+  - { id: by_region, type: bar, measure: internet_sales.revenue, by: territories.region }                    # the default: filters its page
+  - { id: by_cat, type: bar, measure: internet_sales.revenue, by: products.category, cross_filter: true }     # every tab
+  - { id: detail, type: table, columns: [...], cross_filter: false }                                          # does not filter the others
 ```
 
-The page adds a filter for each field the mark carries (a bar's or pie's `by`, a treemap's group in order, a table row's dimension columns, at most two) and the panel's own click rule; the clicked panel keeps showing every mark, as with `on_click`. If the dashboard already has a visible `select` filter on that field, the click sets that one instead, so the header select and the click stay in step.
-`cross_filter: page` (needs `tabs`) filters only the panels of the clicked panel's tab. A panel that cannot join to the field is skipped, with no `ignore_filters` to write. It cannot be written together with `on_click` (use `on_click` when you want to choose the filters yourself), filter ids may not start with `xf_` (those are made here), and time charts and pivots do not have it yet.
-In the designer, a bar, pie, treemap or table has **Clicking it filters the other panels** (No, the whole dashboard, or this tab only when there are tabs); choosing Yes replaces a click rule written by hand and says so. Changing what the panel groups by no longer drops anything: the filters follow the new field.
-The source file keeps only `cross_filter`: the filters are added when the file is compiled. What a click chose shows as chips in a **selection bar** above the panels ("Name: Road-150 ✕"), each with a button that removes it; a click on the chosen mark again undoes it, **Reset** clears them, and they are in the address (`?xf_by_region_1=France`), so a link carries the selection. With `page` the chips show only on the tab they filter.
-
-### Table fields with an aggregate
-In the designer a table has **Add a field** (any member the role may read, any number of them), earlier/later buttons, Remove, and an **Aggregation** choice on every dimension field: *Group by (no aggregation)*, Sum, Max, Min, Avg, Count, Count distinct, First, Last (Sum and Avg only for number fields). A number field starts as a Sum, as in Power BI; a key or a text field starts as a group; a measure shows the aggregation it already has and cannot be changed.
-
-A `table` column that is a **dimension** can carry `aggregate`, which makes it a *value* summarised over the rows of each group, as in Power BI: `sum` and `avg` (number fields only), `max`, `min`, `count` (rows with a value), `count_distinct`, `first` and `last`. Dimension columns without `aggregate` are the groups (the rows of the table); measures keep the aggregation built into them in Cube.
-
-```yaml
-- id: stock
-  type: table
-  totals: footer
-  columns:
-    - inventory_health.status                                              # the groups
-    - { member: inventory_health.on_hand, aggregate: sum }                 # "Sum On hand"
-    - { member: inventory_health.unit_cost, aggregate: avg, label: Average cost }
-    - { member: inventory_health.vendor_name, aggregate: count_distinct }
-    - inventory_health.stockout_items                                      # a measure, as before
-```
-
-Rules: all aggregated fields come from one cube, which needs a primary key (the page asks Cube for one row per key and aggregates in the browser, up to 20,000 rows, and says when it reaches that); the group columns must be reachable from that cube; a field has one aggregate per table; sum and avg need a number field; a click on a row is carried by the group columns only. The total row aggregates over all the rows. `first` and `last` follow the order of the cube's primary key. The default title of an aggregated column is, for example, `Sum On hand`; `label` renames it. Clicking its title sorts by it.
+If the dashboard already has a visible `select` filter on that field (a `region` filter and a click on a region bar), the click sets that filter, so the header select and the click stay in step. A panel with an `on_click` of its own keeps it (nothing is added; `cross_filter` cannot be combined with it), and a time chart that drills down keeps its drill-down. A panel that cannot join to the field is skipped, with no `ignore_filters` to write. Filter ids may not start with `xf_` (those are made here).
+What a click chose shows as chips in a **selection bar** above the panels ("Name: Road-150 ✕"), each with a button that removes it; a click on the chosen mark again undoes it, **Reset** clears them, and they are in the address (`?xf_by_region_1=France`), so a link carries the selection. With the default scope the chips show only on the tab they filter.
+In the designer, every such panel has **Clicking it filters the other panels**: Yes (the default), Yes for every tab (with tabs), No, or its own click rule written in the YAML. The source file keeps only what was chosen: nothing for the default.
 
 ### The slicer
 In the designer: the gallery's **Slicer** adds one for a filter that has none (or makes a filter first), a filter card has a **Show it as a slicer in the layout** box, and picking a slicer shows its Filter and *Shown as* (list, buttons, dropdown). Removing a filter removes its slicer; a filter has one slicer, so a slicer cannot be duplicated, and a filter that has one cannot be hidden.
