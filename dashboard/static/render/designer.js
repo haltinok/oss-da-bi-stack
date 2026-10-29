@@ -7,7 +7,7 @@ import { anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, measureOpt
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -243,7 +243,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       pick.value = panel.stack ? "stack" : "member";
       pick.addEventListener("change", () => {
         const used = new Set(panel.stack ? panel.stack.map((x) => x.member) : [panel.measure]);
-        run(setBarKind(source, selected, pick.value, measureOptions(catalog).find((o) => !used.has(o.value))?.value));
+        run(setBarKind(source, selected, pick.value, spareMeasure(catalog, source, panel, [...used])));
       });
       return pick;
     }
@@ -261,7 +261,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const kinds = el("select", { "data-path": "~kind", "aria-label": dz.f.formula });
     for (const k of ["member", "sum"]) kinds.append(el("option", { value: k }, esc(dz.kind[k])));
     kinds.value = pieKind(panel);
-    const spare = () => measureOptions(catalog).find((o) => !(panel.sum || [panel.measure]).includes(o.value))?.value;
+    const spare = () => spareMeasure(catalog, source, panel, panel.sum || [panel.measure]);
     kinds.addEventListener("change", () => commit(setPieKind(source, selected, kinds.value, spare()), { message: named() }));
     wrap.append(kinds);
     if (!panel.sum) {
@@ -324,10 +324,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   /** A measure no part of `item` uses yet (what "add a measure" and a change to a sum or ratio start with); undefined when the role may read no other. */
-  const spareFor = (item) => {
-    const used = new Set(membersOfItem(item));
-    return measureOptions(catalog).find((o) => !used.has(o.value))?.value;
-  };
+  const spareFor = (item) => spareMeasure(catalog, source, panelDef(), membersOfItem(item));
   const membersOfItem = (item) => (typeof item === "string" ? [item] : item?.member ? [item.member] : item?.sum || [...(item?.ratio?.num || []), ...(item?.ratio?.den || [])]);
 
   /** The control for a measure, a sum or a ratio (a KPI's measure, a time chart's series): which of the three, then its members, and the formula in words. */
@@ -583,8 +580,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const addItemBtn = e.target.closest("[data-additem]");
     if (addItemBtn) {
       const name = addItemBtn.dataset.additem, list = panelDef()?.[name] || [];
-      const used = new Set(list.flatMap(membersOfItem));
-      const spare = measureOptions(catalog).find((o) => !used.has(o.value))?.value || measureOptions(catalog)[0]?.value;       // one already on the panel is fine when the role reads no other
+      const spare = spareMeasure(catalog, source, panelDef(), list.flatMap(membersOfItem));           // one the panel's time axis, groupings and filters can join to
       commit(addItem(source, selected, name, spare), { message: dz.changed(panelDef()?.title || selected) });
       return;
     }

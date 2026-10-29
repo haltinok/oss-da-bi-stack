@@ -1106,6 +1106,31 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
+    # ---- "Add a measure" offers one the panel can join to (an admin can read customers.count, which has no join to dates or products)
+    ms.ROLE["role"] = "admin"
+    ctx, page = open_page(browser, "/d/")
+    page.wait_for_selector("#bb-prompt", timeout=20000)
+    page.fill("#bb-prompt", "monthly revenue by channel, top 5 products, a table of the latest orders")
+    page.click("#bb-go")
+    page.wait_for_url("**/d/draft", timeout=20000)
+    settled(page)
+    page.wait_for_function("!document.querySelector('#bd-design').disabled", timeout=20000)
+    page.click("#bd-design")
+    check(page.locator("#dz-newfield, #dz-newfilter").count() >= 1 and any(o.startswith("customers.") for o in page.locator("#dz-newfilter option").evaluate_all("os => os.map((o) => o.value)")), "as admin the field lists include the customers cube")
+    kp = panel_of(page, "kpi")
+    page.click(f'[data-panel="{kp}"] .card', position={"x": 6, "y": 6})
+    n0 = len(next(x for x in yaml_of(page)["panels"] if x["id"] == kp)["measures"])
+    for _ in range(3):
+        with changes(page):
+            page.click('#designer [data-additem="measures"]')
+        settled(page)
+    measures = next(x for x in yaml_of(page)["panels"] if x["id"] == kp)["measures"]
+    members = [m.get("member") or m for m in measures]
+    check(len(measures) == n0 + 3 and not page.locator("#dz-msg:not([hidden])").count(), f"Add a measure works three times in a row, with no refusal ({n0} became {len(measures)})")
+    check(not any("customers." in str(m) for m in measures[n0:]), f"and none of the new ones is a customers measure ({[list(m.values())[0] if isinstance(m, dict) else m for m in measures[n0:]]})")
+    ctx.close()
+    ms.ROLE["role"] = "manager"
+
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

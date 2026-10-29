@@ -89,7 +89,7 @@ once. With tabs, the page view lists them: rename a tab or move it earlier or la
 **A pie's measure** is one measure or the sum of several (Internet plus Reseller): the drawer shows the members, Add a measure, remove (two stay) and the label, like a key figure's sum.
 
 **Measures, formulas and pivots.** A key figure and a time chart's series are each a measure, a **sum** of measures or a **ratio** of two sums: pick which, then the members, and the drawer tells the formula in words ("(Gross profit + Tax) ÷ Revenue").
-**Add a measure** / **Add a series** and **Remove this one** change how many there are (a key-figures row holds up to eight, a pivot three, and one always stays). A pivot also offers its time step for the columns, which of its measures
+**Add a measure** / **Add a series** (the one added is a measure the panel can join to: its time axis, its groupings and the filters that apply to it decide, and the usual ones come first) and **Remove this one** change how many there are (a key-figures row holds up to eight, a pivot three, and one always stays). A pivot also offers its time step for the columns, which of its measures
 carries the **heat map**, how rows are ordered, and a row and column limit.
 
 **The look.** With nothing picked, the drawer's Look section has the organisation's name (the small label above the title) and **Upload a logo**. The picture (PNG, JPEG or WebP; SVG is refused because it can carry script) is shrunk
