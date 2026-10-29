@@ -3,4 +3,4 @@
 dbt-core==1.12.6
 dbt-starrocks==1.12.2
 # Newer releases break the adapter ("property 'server_version' ... has no setter").
-mysql-connector-python==8.4.0
+mysql-connector-python==26.7.0
