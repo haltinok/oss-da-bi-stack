@@ -298,7 +298,7 @@ def _cross_filter_errors(w, p, spec, used, catalog):
     if "on_click" in p:
         errs.append(f"{w}: cross_filter: not together with on_click (cross_filter writes the click rule; remove one of them)")
     if p["cross_filter"] == "page" and "tabs" not in spec:
-        errs.append(f"{w}: cross_filter: 'page' filters the panels of a tab, and this dashboard has no tabs (use true, or leave it out: the default is the page)")
+        errs.append(f"{w}: cross_filter: 'page' filters the panels of a tab, and this dashboard has no tabs (use true)")
     if p["type"] == "timeseries" and "drill" in p:
         errs.append(f"{w}: cross_filter: a time chart with a drill-down opens the next level when it is clicked; it filters the other panels by the period it opens")
         return errs

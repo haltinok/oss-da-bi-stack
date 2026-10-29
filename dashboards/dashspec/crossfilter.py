@@ -8,6 +8,7 @@ from .queries import cube_of, panel_measures
 
 PREFIX = "xf_"                       # the filter ids made here; a file's own filters may not start with it (the validator says so)
 CARRIERS = ("bar", "pie", "treemap", "table", "pivot", "timeseries")
+DEFAULT_OFF = ("table",)             # a table does not filter the others unless it says so (its rows are details to read; a click can carry order numbers no other panel can join to)
 DEFAULT = "page"                     # a panel that says nothing cross-filters the panels of its page (its tab; the whole dashboard when there are no tabs)
 
 
@@ -53,7 +54,7 @@ def expand(spec, used, catalog=None):
     for p in out["panels"]:
         explicit = "cross_filter" in p
         mode = p.pop("cross_filter", DEFAULT)
-        if mode is False or "on_click" in p:
+        if mode is False or "on_click" in p or (not explicit and p["type"] in DEFAULT_OFF):
             continue
         dims = carried(p, used, catalog, time_dim) if explicit else _default_dims(p, used, catalog, time_dim)
         ids = []

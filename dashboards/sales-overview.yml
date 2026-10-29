@@ -83,6 +83,7 @@ panels:
   - id: lines
     type: table
     title: Latest orders
+    cross_filter: true                  # a click on a row filters the other panels (off by default for a table)
     columns:
       - { member: internet_sales.order_number, label: Order }
       - { member: internet_sales.order_date, label: Date }

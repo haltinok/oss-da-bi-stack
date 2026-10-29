@@ -266,6 +266,20 @@ async function showDashboard() {
       x.addEventListener("click", () => changeFilter(f, ""));
       return [chip, x];
     }));
+    renderIgnored();
+  }
+  // Under a panel's title: the filters now chosen that this panel does not apply (its data cannot be filtered by them), so a chip above is never taken for more than it does.
+  function renderIgnored() {
+    for (const def of spec.panels) {
+      const root = panels.get(def.id)?.root;
+      if (!root) continue;
+      const skipped = (def.ignore_filters || []).map((id) => (spec.filters || []).find((f) => f.id === id)).filter((f) => f && values[f.id] && (!f.tab || f.tab === activeTab));
+      let note = root.querySelector(":scope > .ignored-note");
+      const head = root.querySelector(".card-h");                // a panel with no title has no head to put it under
+      if (!skipped.length || !head) { note?.remove(); continue; }
+      if (!note) { note = el("div", { class: "hint ignored-note" }, ""); head.after(note); }
+      note.textContent = t.ignoredFilters(skipped.map((f) => f.label || f.id).join(", "));
+    }
   }
   $("#main").replaceChildren(periodBar, selectionBar, ...(tabbed ? [tabBar] : []), ...grids.values());
   renderPeriod();

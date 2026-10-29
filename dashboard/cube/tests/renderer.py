@@ -1003,6 +1003,9 @@ with sync_playwright() as p:
     chips = page.locator("#selection-bar .chip").all_inner_texts()
     check(len(chips) == 3 and any(cells[0] in c for c in chips) and any(cells[2] in c for c in chips), f"a click on a row of the orders table (three group columns, one of them a date) filters by all of its values ({chips})")
     check(not any("T" in c.split(": ", 1)[1] and ".000" in c for c in chips), f"and a date reads as a date, not as the database writes it ({chips})")
+    skipped = page.locator('[data-panel="trend"] .ignored-note').inner_text() if page.locator('[data-panel="trend"] .ignored-note').count() else ""
+    check("Order number" in skipped and "Order date" in skipped and "Country" not in skipped, f"a panel that cannot join to a chosen field says it does not apply it ({skipped})")
+    check(page.locator('[data-panel="lines"] .ignored-note').count() == 0, "and a panel that applies every chosen filter says nothing")
     ctx.close()
 
     # cross_filter: a click filters the other panels with no filter written; the choices are chips in a selection bar (the compiler made the filters)

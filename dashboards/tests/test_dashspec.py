@@ -1455,6 +1455,7 @@ def _made(out, source):
 
 def test_a_panel_that_says_nothing_cross_filters_its_page_by_default():
     spec = copy.deepcopy(GOOD)
+    panel(spec, "lines").pop("cross_filter", None)                       # the sample's orders table opts in; this test is about a panel that says nothing
     errors, used = validate(spec, CATALOG)
     assert errors == []
     out = compile_spec(spec, used, CATALOG)
@@ -1495,9 +1496,9 @@ def test_a_click_carries_all_the_dimension_values_of_the_mark_and_only_a_drillin
     for p in spec["panels"]:
         p.pop("on_click", None)
     spec["panels"] += [
-        {"id": "three", "type": "table", "columns": ["territories.region", "territories.country", "products.name", "internet_sales.revenue"]},          # three group columns
+        {"id": "three", "type": "table", "cross_filter": True, "columns": ["territories.region", "territories.country", "products.name", "internet_sales.revenue"]},          # three group columns
         {"id": "bymonth", "type": "bar", "measure": "internet_sales.revenue", "by": "dates.full_date"},                                                  # a time field
-        {"id": "withdate", "type": "table", "columns": ["internet_sales.order_number", "internet_sales.order_date", "territories.country", "internet_sales.revenue"]},
+        {"id": "withdate", "type": "table", "cross_filter": True, "columns": ["internet_sales.order_number", "internet_sales.order_date", "territories.country", "internet_sales.revenue"]},
         {"id": "drilly", "type": "timeseries", "series": [{"member": "internet_sales.revenue", "label": "R"}], "granularity": "year", "drill": ["year", "month"]},
     ]
     spec["layout"] += [[{"three": 3}, {"bymonth": 3}, {"withdate": 3}, {"drilly": 3}]]
@@ -1511,6 +1512,21 @@ def test_a_click_carries_all_the_dimension_values_of_the_mark_and_only_a_drillin
     assert carried_by("bymonth") == ["dates.full_date"]
     assert panel(out, "three")["on_click"]["set_filter"][1] == panel(out, "withdate")["on_click"]["set_filter"][2], "two panels that carry the same field share one filter: a click on either shows in both"
     assert "on_click" not in panel(out, "drilly") and not _made(out, "drilly"), "a time chart that drills down keeps its drill-down"
+
+
+def test_a_table_does_not_cross_filter_unless_it_says_so():
+    spec = copy.deepcopy(GOOD)
+    spec["filters"] = []
+    for p in spec["panels"]:
+        p.pop("on_click", None)
+    spec["panels"] += [{"id": "plain", "type": "table", "columns": ["territories.country", "internet_sales.revenue"]},
+                       {"id": "chosen", "type": "table", "cross_filter": True, "columns": ["territories.country", "internet_sales.revenue"]}]
+    spec["layout"] += [[{"plain": 6}, {"chosen": 6}]]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert "on_click" not in panel(out, "plain") and not _made(out, "plain"), "a table that says nothing leaves the other panels alone"
+    assert panel(out, "chosen")["on_click"]["set_filter"], "cross_filter: true turns it on"
 
 
 def test_a_pivot_and_a_time_chart_cross_filter_by_default_too():
