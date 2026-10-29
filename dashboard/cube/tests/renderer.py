@@ -981,6 +981,27 @@ with sync_playwright() as p:
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 
+    # cross-filtering is the default: the checked-in dashboard says nothing about it, and a click on a chart without a click rule still filters the page
+    ctx, page = open_page(browser, "/d/sales-overview")
+    settled(page)
+    check(page.locator("#selection-bar").is_hidden(), "nothing is chosen at first")
+    name = page.locator('[data-panel="top"] .rrow').first.locator(".name").inner_text()
+    page.queries.clear()
+    page.locator('[data-panel="top"] .rrow').first.click()
+    settled(page)
+    chip = page.locator("#selection-bar .chip").first
+    check(page.locator("#selection-bar").is_visible() and name in chip.inner_text(), f"a click on the product bar (no click rule in the file) makes a chip: {chip.inner_text()}")
+    qs = sent(page)
+    check(any(has_filter(q, "products.name") for q in qs if q.get("measures") and q.get("dimensions") != ["products.name"]), "and the other panels are narrowed by it")
+    check(not [q for q in qs if q.get("dimensions") == ["products.name"] and has_filter(q, "products.name")], "the clicked chart keeps showing every product")
+    page.locator("#selection-bar .chip-x").first.click()
+    settled(page)
+    first_row = page.locator('[data-panel="lines"] tbody tr').first
+    first_row.click()
+    page.wait_for_timeout(500)
+    check(page.locator("#selection-bar").is_hidden(), "a table with a time column and three group columns is left out: its click does nothing")
+    ctx.close()
+
     # cross_filter: a click filters the other panels with no filter written; the choices are chips in a selection bar (the compiler made the filters)
     sys.path.insert(0, str(ms.ROOT / "dashboards"))
     import yaml as _yaml

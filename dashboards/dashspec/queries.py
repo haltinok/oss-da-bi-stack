@@ -123,7 +123,7 @@ def panel_measures(panel, members):
     if kind == "table":
         return table_parts(panel, members)[0]
     if kind == "pivot":
-        return [m["member"] for m in panel["measures"]]
+        return [m["member"] if isinstance(m, dict) else m for m in panel["measures"]]          # a measure is a member or { member, ... }
     if kind == "slicer":
         return panel.get("optionMeasures", [])                 # set by slicer_queries
     return []

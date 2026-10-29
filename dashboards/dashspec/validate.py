@@ -290,19 +290,23 @@ def _aggregate_errors(w, p, catalog):
     return errs
 
 
-def _cross_filter_errors(w, p, spec, used):
-    """`cross_filter` is a click rule written for you: not together with `on_click`, `page` only where there are tabs, and a table must show one or two dimension columns."""
+def _cross_filter_errors(w, p, spec, used, catalog):
+    """`cross_filter` is a click rule written for you: not together with `on_click`, `page` only where there are tabs, and the panel must have something a click can carry. `false` turns the default off."""
+    if p["cross_filter"] is False:
+        return []
     errs = []
     if "on_click" in p:
         errs.append(f"{w}: cross_filter: not together with on_click (cross_filter writes the click rule; remove one of them)")
     if p["cross_filter"] == "page" and "tabs" not in spec:
-        errs.append(f"{w}: cross_filter: 'page' filters the panels of a tab, and this dashboard has no tabs (use true)")
-    if p["type"] == "table":
-        dims = crossfilter.carried(p, used)
-        if not dims:
-            errs.append(f"{w}: cross_filter: a table with no dimension column has nothing to filter by")
-        elif len(dims) > 2:
-            errs.append(f"{w}: cross_filter: a click carries at most 2 dimension columns, this table shows {len(dims)}; use on_click to name the filters of two of them")
+        errs.append(f"{w}: cross_filter: 'page' filters the panels of a tab, and this dashboard has no tabs (use true, or leave it out: the default is the page)")
+    if p["type"] == "timeseries" and "drill" in p:
+        errs.append(f"{w}: cross_filter: a time chart with a drill-down opens the next level when it is clicked; it filters the other panels by the period it opens")
+        return errs
+    dims = crossfilter.carried(p, used, catalog, spec["time"]["dimension"])
+    if not dims:
+        errs.append(f"{w}: cross_filter: this panel has nothing a click can filter by (a table needs a group column; a time chart needs a fiscal_year field on its date)")
+    elif len(dims) > 2 or (p["type"] == "table" and len(dims) > 2):
+        errs.append(f"{w}: cross_filter: a click carries at most 2 dimension columns, this table shows {len(dims)}; use on_click to name the filters of two of them")
     return errs
 
 
@@ -380,7 +384,7 @@ def semantic_errors(spec, catalog):
         if p["type"] == "slicer":
             errs.extend(_slicer_errors(w, p, spec))
         if "cross_filter" in p:
-            errs.extend(_cross_filter_errors(w, p, spec, used))
+            errs.extend(_cross_filter_errors(w, p, spec, used, catalog))
         if p["type"] == "timeseries" and "drill" in p:
             _drill_errors(p, w, errs)
         if p["type"] == "timeseries" and p.get("granularities") and p["granularity"] not in p["granularities"]:

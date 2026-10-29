@@ -175,14 +175,15 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   function crossControl(panel) {
     const wrap = el("div", { class: "dz-cross" });
     const pick = el("select", { "data-path": "cross_filter", "aria-label": dz.f.crossFilter });
-    const modes = ["", "all", ...(tabsOf(source).length ? ["page"] : [])];
-    for (const m of modes) pick.append(el("option", { value: m }, esc(dz.v[m ? `cross_${m}` : "cross_off"])));
+    const tabs = tabsOf(source).length > 0;
+    const modes = [...(panel.on_click && panel.cross_filter === undefined ? ["rule"] : []), "page", ...(tabs ? ["all"] : []), "off"];
+    for (const m of modes) pick.append(el("option", { value: m }, esc(dz.v[`cross_${m}${m === "page" && !tabs ? "_whole" : ""}`])));
     pick.value = crossModeOf(panel);
     pick.addEventListener("change", () => commit(setCrossFilter(source, selected, pick.value), { message: dz.changed(panel.title || selected) }));
     wrap.append(pick);
-    if (panel.on_click && !panel.cross_filter) wrap.append(el("p", { class: "hint" }, esc(dz.crossByHand)));
     return wrap;
   }
+
 
   /** A set of tick boxes: `options` [{ value, label }], `chosen` values, `onChange(list)`. */
   function checkList(options, chosen, onChange, path) {

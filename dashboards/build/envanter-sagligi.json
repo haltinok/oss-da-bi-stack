@@ -26,6 +26,13 @@
       "id": "kategori",
       "dimension": "products.category",
       "label": "Kategori"
+    },
+    {
+      "id": "xf_tedarikci_1",
+      "dimension": "inventory_health.vendor_name",
+      "label": "Vendor name",
+      "implicit": true,
+      "source": "tedarikci"
     }
   ],
   "panels": [
@@ -86,7 +93,12 @@
       "by": "inventory_health.vendor_name",
       "sort": "desc",
       "limit": 10,
-      "format": "money"
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_tedarikci_1"
+        ]
+      }
     },
     {
       "id": "siparis",

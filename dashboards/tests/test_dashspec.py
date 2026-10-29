@@ -1168,7 +1168,7 @@ def test_an_existing_visible_select_filter_on_the_field_is_used_instead():
     errors, used = validate(spec, CATALOG)
     assert errors == []
     out = compile_spec(spec, used, CATALOG)
-    assert not [f for f in out["filters"] if f.get("implicit")]
+    assert not [f for f in out["filters"] if f.get("implicit") and f["dimension"] == "territories.region"]
     assert panel(out, "territories")["on_click"] == {"set_filter": ["region"]}
 
 
@@ -1180,7 +1180,7 @@ def test_a_treemap_carries_its_groups_in_order_and_page_scope_makes_page_filters
     errors, used = validate(spec, CATALOG)
     assert errors == [], errors
     out = compile_spec(spec, used, CATALOG)
-    made = [f for f in out["filters"] if f.get("implicit")]
+    made = [f for f in out["filters"] if f.get("implicit") and f["source"] == "mix"]
     assert [f["dimension"] for f in made] == ["products.category", "products.subcategory"]
     assert all(f["scope"] == "page" and f["tab"] == "b" for f in made), "the tab of the treemap"
     assert panel(out, "mix")["on_click"] == {"set_filter": ["xf_mix_1", "xf_mix_2"]}
@@ -1264,7 +1264,7 @@ def test_an_aggregated_field_is_not_a_key_for_clicks():
     errors, used = validate(spec, CATALOG)
     assert errors == [], errors
     out = compile_spec(spec, used, CATALOG)
-    made = [f for f in out["filters"] if f.get("implicit")]
+    made = [f for f in out["filters"] if f.get("implicit") and f["source"] == "inv"]
     assert [f["dimension"] for f in made] == ["inventory_health.status"], "only the group column is carried by a click"
 
 
@@ -1447,3 +1447,84 @@ def test_a_period_belongs_to_a_date_field_and_python_and_the_renderer_agree(tmp_
     in_range = lambda queries, dim: any(t.get("dimension") == dim and t.get("dateRange") for q in queries for t in q["query"].get("timeDimensions", []))
     assert in_range(order["panels"]["top"], "dates.full_date") and not in_range(order["panels"]["ship_trend"], "ship_dates.full_date"), "the order-date period narrows panels on the order date, not the ship-date chart"
     assert in_range(ship["panels"]["ship_trend"], "ship_dates.full_date") and not in_range(ship["panels"]["top"], "dates.full_date"), "a ship-date period narrows the ship-date chart and not the order-date panels"
+
+
+# ---- cross-filtering is the default: every panel that can carry a click does, on its page
+def _made(out, source):
+    return [f for f in out["filters"] if f.get("implicit") and f["source"] == source]
+
+
+def test_a_panel_that_says_nothing_cross_filters_its_page_by_default():
+    spec = copy.deepcopy(GOOD)
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    top = panel(out, "top")                                              # a bar by products.name, no on_click in the file
+    assert "on_click" not in panel(spec, "top") and top["on_click"] == {"set_filter": ["xf_top_1"]}, "the click rule is made at compile time; the file is not touched"
+    assert [(f["dimension"], f.get("scope")) for f in _made(out, "top")] == [("products.name", None)], "no tabs: the whole page is the whole dashboard, no scope"
+    assert "cross_filter" not in json.dumps(out["panels"]) and "cross_filter" not in json.dumps(spec["panels"])
+    assert "on_click" not in panel(out, "kpis") and not _made(out, "kpis"), "key figures have no mark to click"
+    assert panel(out, "territories")["on_click"] == {"set_filter": "region"}, "a click rule written in the file is left alone"
+    assert panel(out, "trend")["on_click"] == {"set_filter": "fy"}, "and so is the time chart's, which already sets the fiscal year"
+
+
+def test_on_a_tabbed_dashboard_the_default_is_the_panels_own_tab_and_true_is_every_tab():
+    spec = copy.deepcopy(GOOD)
+    _tabbed(spec)
+    panel(spec, "top")["cross_filter"] = True
+    spec["panels"].append({"id": "cats", "type": "bar", "measure": "internet_sales.revenue", "by": "products.color"})
+    spec["tabs"][0]["layout"].append([{"cats": 12}])                      # tab a
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert [(f["scope"], f["tab"]) for f in _made(out, "cats")] == [("page", "a")], "a panel that says nothing: its tab (cats is on tab a)"
+    assert [f.get("scope") for f in _made(out, "top")] == [None], "cross_filter: true: every tab"
+
+
+def test_cross_filter_false_turns_it_off_and_an_on_click_wins_over_the_default():
+    spec = copy.deepcopy(GOOD)
+    panel(spec, "top")["cross_filter"] = False
+    errors, used = validate(spec, CATALOG)
+    assert errors == []
+    out = compile_spec(spec, used, CATALOG)
+    assert "on_click" not in panel(out, "top") and not _made(out, "top") and "cross_filter" not in panel(out, "top")
+
+
+def test_the_default_leaves_out_what_a_click_cannot_sensibly_carry():
+    spec = copy.deepcopy(GOOD)
+    spec["panels"] += [
+        {"id": "three", "type": "table", "columns": ["territories.region", "territories.country", "products.name", "internet_sales.revenue"]},          # three group columns
+        {"id": "bymonth", "type": "bar", "measure": "internet_sales.revenue", "by": "dates.full_date"},                                                  # a time field
+        {"id": "drilly", "type": "timeseries", "series": [{"member": "internet_sales.revenue", "label": "R"}], "granularity": "year", "drill": ["year", "month"]},
+    ]
+    spec["layout"] += [[{"three": 4}, {"bymonth": 4}, {"drilly": 4}]]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    for pid in ("three", "bymonth", "drilly"):
+        assert "on_click" not in panel(out, pid) and not _made(out, pid), pid
+
+
+def test_a_pivot_and_a_time_chart_cross_filter_by_default_too():
+    spec = copy.deepcopy(GOOD)
+    spec["filters"] = [f for f in spec["filters"] if f["id"] != "fy"]
+    panel(spec, "trend").pop("on_click")
+    spec["panels"].append({"id": "pv", "type": "pivot", "rows": ["products.category"], "columns": "territories.region", "measures": ["internet_sales.revenue"]})
+    spec["layout"].append([{"pv": 12}])
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert panel(out, "pv")["on_click"] == {"set_filter": ["category", "region"]}, "a pivot cell carries its row and its column (the dashboard's own filters on those fields are used)"
+    assert [f["dimension"] for f in _made(out, "trend")] == ["dates.fiscal_year"], "a time chart sets the fiscal year of its date field"
+
+
+def test_explicit_cross_filter_on_a_panel_that_cannot_carry_a_click_is_refused():
+    def drilling(spec):
+        t = panel(spec, "trend")
+        t.pop("on_click")
+        t.update(cross_filter=True, drill=["year", "month"], granularity="year")
+        t.pop("granularities", None)
+    errors = run(drilling)
+    assert any("opens the next level" in e for e in errors), errors
+    errors = run(lambda s: panel(s, "kpis").update(cross_filter=True))
+    assert errors and any("cross_filter" in e for e in errors), errors

@@ -38,6 +38,13 @@
       "dimension": "products.subcategory",
       "label": "Subcategory",
       "parent": "products.category"
+    },
+    {
+      "id": "xf_top_1",
+      "dimension": "products.name",
+      "label": "Name",
+      "implicit": true,
+      "source": "top"
     }
   ],
   "panels": [
@@ -161,7 +168,12 @@
         }
       ],
       "granularity": "month",
-      "style": "line"
+      "style": "line",
+      "on_click": {
+        "set_filter": [
+          "fy"
+        ]
+      }
     },
     {
       "id": "mix",
@@ -199,7 +211,12 @@
       "by": "products.name",
       "sort": "desc",
       "limit": 10,
-      "format": "money"
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_top_1"
+        ]
+      }
     },
     {
       "id": "territories",

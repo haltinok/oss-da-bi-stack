@@ -88,7 +88,7 @@
     "hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
     "member": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" },
     "format": { "enum": ["money", "int", "decimal", "pct", "number"] },
-    "cross_filter": { "enum": [true, "page"] },
+    "cross_filter": { "enum": [true, "page", false] },
     "aggregate": { "enum": ["sum", "max", "min", "avg", "count", "count_distinct", "first", "last"] },
     "rules": {
       "type": "array",
@@ -220,6 +220,7 @@
           "then": {
             "required": ["series", "granularity"],
             "properties": {
+              "cross_filter": { "$ref": "#/$defs/cross_filter" },
               "time_dimension": { "$ref": "#/$defs/member" },
               "series": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/series" } },
               "granularity": { "$ref": "#/$defs/granularity" },
@@ -313,6 +314,7 @@
           "then": {
             "required": ["rows", "columns", "measures"],
             "properties": {
+              "cross_filter": { "$ref": "#/$defs/cross_filter" },
               "rows": { "type": "array", "items": { "$ref": "#/$defs/member" }, "minItems": 1, "maxItems": 2, "uniqueItems": true },
               "columns": {
                 "oneOf": [
