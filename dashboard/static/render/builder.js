@@ -21,6 +21,8 @@ const shot = (d) => ({ yaml: d.yaml, spec: d.spec, message: d.message || "" }); 
 export const drafts = {
   current: () => read(KEY.current, null),
   setCurrent(d) { write(KEY.history, noHistory()); return write(KEY.current, d); },
+  /** The compiled page of the draft in hand, compiled again (the compiler moves on; a draft stored a while ago keeps the page of its day). No history step. */
+  recompiled(spec) { const cur = read(KEY.current, null); if (!cur) return null; const next = { ...cur, spec }; write(KEY.current, next); return next; },
   edit(d) {
     const cur = read(KEY.current, null), h = read(KEY.history, noHistory());
     if (cur?.yaml && cur.yaml !== d.yaml) { h.undo = [...h.undo, shot(cur)].slice(-MAX_HISTORY); h.redo = []; write(KEY.history, h); }
