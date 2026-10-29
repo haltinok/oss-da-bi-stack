@@ -5,6 +5,7 @@ import { createCubeClient } from "/cube/cube-client.mjs";
 import { $, el, esc } from "../lib/dom.js";
 import { createFormat } from "../lib/format.js";
 import { describeValue } from "../lib/filters.js";
+import { setMemberLabels } from "../lib/labels.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
@@ -161,6 +162,7 @@ async function showDashboard() {
   const dateTimeFmt = new Intl.DateTimeFormat(fmt.locale, { dateStyle: "medium", timeStyle: "short" });
   const asDate = (b) => new Date(`${String(b).slice(0, 19)}Z`);
 
+  setMemberLabels(Object.fromEntries(Object.entries(spec.members || {}).filter(([, m]) => m.label).map(([k, m]) => [k, m.label])));          // "Ship month name" for the fields of a role-playing cube
   const qs = new URLSearchParams(location.search);
   // A filter opens at its `default` unless the address says otherwise (an address with `?id=` and nothing after it means "cleared", see writeUrl).
   // A hidden filter always holds its default, whatever the address says.

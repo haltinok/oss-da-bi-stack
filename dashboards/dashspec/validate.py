@@ -326,6 +326,8 @@ def semantic_errors(spec, catalog):
         key = catalog.sort_by(member) if kind == "dimension" else None
         if key:
             used[member]["sort_by"] = key                  # the renderer orders this field by that one (a month's name by its number)
+        if catalog.label(member):
+            used[member]["label"] = catalog.label(member)  # the role in the name ("Ship month name"), for a default label
         return kind
 
     check("dashboard", "time.dimension", spec["time"]["dimension"], "dimension", time=True)

@@ -5,6 +5,7 @@
 import { $, el, esc } from "../lib/dom.js";
 import { anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl, createSlicer } from "./filter-controls.js";
+import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
@@ -663,6 +664,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (!r.source) throw new Error(dz.oldBuilder);                              // a builder service built before the designer existed does not send the source back
     source = r.source;
     catalog = cat;
+    setMemberLabels(Object.fromEntries(cat.flatMap((c) => [...c.measures, ...c.dimensions]).filter((m) => m.label).map((m) => [m.member, m.label])));          // the role's name in front: "Ship month name"
     button.disabled = false;
     document.body.append(el("datalist", { id: "dz-colors" }, '<option value="internet"><option value="reseller">'));
   } catch (e) {

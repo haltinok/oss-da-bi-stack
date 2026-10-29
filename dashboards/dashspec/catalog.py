@@ -25,6 +25,12 @@ class Catalog:
             return "dimension", c["dimensions"][name]
         return None
 
+    def label(self, member):
+        """The name a report shows for a field of a role-playing cube ("Ship month name": the role in front); None when the cube has no role prefix, and the page makes the name itself."""
+        cube, _, name = member.partition(".")
+        prefix = self.cubes.get(cube, {}).get("label_prefix")
+        return f"{prefix} {name.replace('_', ' ')}" if prefix and name else None
+
     def sort_by(self, member):
         """The dimension (as 'cube.name') a text dimension is sorted by, from its `meta.sort_by` in the Cube model; None for most."""
         cube, _, name = member.partition(".")
@@ -72,21 +78,37 @@ def sort_by_problems(catalog):
     return out
 
 
+def _by_name(base, own):
+    """Members of a cube that `extends` another: the base's, then its own, an own member replacing the base's of the same name."""
+    merged = {m["name"]: m for m in base}
+    merged.update({m["name"]: m for m in own})
+    return list(merged.values())
+
+
 def from_model(model_dir):
-    """Read every cube in a Cube model directory (cube/model). Only names, types and joins are needed, so the SQL is ignored."""
-    cubes = {}
+    """Read every cube in a Cube model directory (cube/model). Only names, types and joins are needed, so the SQL is ignored.
+    A cube that `extends` another (a role of the date dimension: `ship_dates` extends `dates`) has the base's members, joins and key as well as its own."""
+    raw = {}
     for path in sorted(pathlib.Path(model_dir).rglob("*.y*ml")):
         for cube in (yaml.safe_load(path.read_text()) or {}).get("cubes", []):
-            members = [*cube.get("measures", []), *cube.get("dimensions", [])]
-            cubes[cube["name"]] = {
-                "measures": {m["name"]: m["type"] for m in cube.get("measures", [])},
-                "dimensions": {d["name"]: d["type"] for d in cube.get("dimensions", [])},
-                "joins": {j["name"] for j in cube.get("joins", [])},
-                "primary_key": next((d["name"] for d in cube.get("dimensions", []) if d.get("primary_key")), None),         # what tells one row of the cube from another
-                "sort_by": {d["name"]: d["meta"]["sort_by"] for d in cube.get("dimensions", []) if (d.get("meta") or {}).get("sort_by")},          # a text dimension that sorts by another (month name by month number)
-                "description": cube.get("description", ""),
-                "docs": {m["name"]: m["description"] for m in members if m.get("description")},
-            }
+            raw[cube["name"]] = cube
+    cubes = {}
+    for name, cube in raw.items():
+        base = raw.get(cube.get("extends"), {})
+        measures = _by_name(base.get("measures", []), cube.get("measures", []))
+        dimensions = _by_name(base.get("dimensions", []), cube.get("dimensions", []))
+        members = [*measures, *dimensions]
+        cubes[name] = {
+            "measures": {m["name"]: m["type"] for m in measures},
+            "dimensions": {d["name"]: d["type"] for d in dimensions},
+            "joins": {j["name"] for j in [*base.get("joins", []), *cube.get("joins", [])]},
+            "primary_key": next((d["name"] for d in dimensions if d.get("primary_key")), None),         # what tells one row of the cube from another
+            "sort_by": {d["name"]: d["meta"]["sort_by"] for d in dimensions if (d.get("meta") or {}).get("sort_by")},          # a text dimension that sorts by another (month name by month number)
+            "label_prefix": (cube.get("meta") or {}).get("label_prefix"),                                                      # the role of a role-playing cube ("Ship"), put in front of its fields' names
+            "extends": cube.get("extends"),
+            "description": cube.get("description", ""),
+            "docs": {m["name"]: m["description"] for m in members if m.get("description")},
+        }
     if not cubes:
         raise SystemExit(f"no cubes found under {model_dir}")
     return Catalog(cubes)
@@ -106,6 +128,8 @@ def from_cube(url, token):
             "joins": None,
             "primary_key": next((short(d) for d in c["dimensions"] if d.get("primaryKey")), None),
             "sort_by": {short(d): d["meta"]["sort_by"] for d in c["dimensions"] if (d.get("meta") or {}).get("sort_by")},
+            "label_prefix": (c.get("meta") or {}).get("label_prefix"),
+            "extends": None,
             "description": c.get("description", ""),
             "docs": {short(m): m["description"] for m in [*c["measures"], *c["dimensions"]] if m.get("description")},
         }

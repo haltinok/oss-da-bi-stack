@@ -1142,6 +1142,24 @@ with sync_playwright() as p:
     check(texts == ["All", "January", "March", "July", "September"], f"a filter on the month's name lists the months in calendar order ({texts})")
     ctx.close()
 
+    # role-playing dates: the ship date and the order date side by side, each named for its role with no label written
+    def compiled_with_roles():
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-overview.yml").read_text())
+        src["panels"].append({"id": "roles", "type": "table", "title": "Order and ship month", "columns": ["dates.month_name", "ship_dates.month_name", "due_dates.fiscal_year", "internet_sales.revenue"]})
+        src["layout"].append([{"roles": 12}])
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        return _compile(src, used, catalog)
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_roles()))])
+    settled(page)
+    heads = [h.replace("↑", "").replace("↓", "").strip() for h in page.locator('[data-panel="roles"] thead th').all_inner_texts()]
+    check(heads == ["Month name", "Ship month name", "Due fiscal year", "Revenue"], f"each date role names its fields ({heads})")
+    asked = [q for q in sent(page) if q.get("dimensions") and "ship_dates.month_name" in q["dimensions"]]
+    check(len(asked) == 1 and "ship_dates.month_of_year" in asked[0]["dimensions"] and "dates.month_of_year" in asked[0]["dimensions"], "and each sorts by its own month number")
+    ctx.close()
+
     # colour rules (patched into the spec): a key figure and a table's measure column take a tone, a symbol and a hidden word
     def with_rules(route):
         spec = json.loads(route.fetch().text())

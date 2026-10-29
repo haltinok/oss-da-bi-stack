@@ -308,7 +308,9 @@
       "joins": [
         "customers",
         "dates",
+        "due_dates",
         "products",
+        "ship_dates",
         "territories"
       ]
     },
@@ -318,7 +320,9 @@
     "reseller_sales": {
       "joins": [
         "dates",
+        "due_dates",
         "products",
+        "ship_dates",
         "territories"
       ]
     },

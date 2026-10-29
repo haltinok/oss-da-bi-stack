@@ -36,7 +36,7 @@ class StarRocksQuery extends MysqlQuery {
 // expired or tampered token is always rejected.
 const SECRET = process.env.CUBEJS_API_SECRET;
 const FACT_CUBES = new Set(['internet_sales', 'reseller_sales']);
-const REFERENCE_CUBES = new Set(['products', 'dates']);       // no territory-scoped data
+const REFERENCE_CUBES = new Set(['products', 'dates', 'ship_dates', 'due_dates']);       // no territory-scoped data (the date roles are the same calendar)
 const PROFIT_MEMBERS = new Set(['gross_profit', 'margin_pct', 'product_cost']);
 // Inventory data is not territory-bound, so it is gated by role instead: purchasing sees the reorder
 // side, marketing sees stock and offers but nothing about suppliers or order sizes; managers and reps see neither.

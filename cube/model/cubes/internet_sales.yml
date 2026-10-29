@@ -14,6 +14,12 @@ cubes:
       - name: dates
         relationship: many_to_one
         sql: "{CUBE}.order_date_key = {dates}.date_key"
+      - name: ship_dates
+        relationship: many_to_one
+        sql: "{CUBE}.ship_date_key = {ship_dates}.date_key"
+      - name: due_dates
+        relationship: many_to_one
+        sql: "{CUBE}.due_date_key = {due_dates}.date_key"
       - name: territories
         relationship: many_to_one
         sql: "{CUBE}.sales_territory_key = {territories}.sales_territory_key"

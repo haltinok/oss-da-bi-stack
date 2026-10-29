@@ -54,7 +54,7 @@ def test_info_says_which_mode_answers():
 def test_catalog_is_what_the_role_may_read():
     rep = {c["cube"]: c for c in client.get("/catalog", headers=token("rep")).json()}
     assert "inventory_health" not in rep and "gross_profit" not in {m["name"] for m in rep["internet_sales"]["measures"]}
-    assert rep["internet_sales"]["measures"][0]["description"] and rep["internet_sales"]["joins"] == ["dates", "products", "territories"]
+    assert rep["internet_sales"]["measures"][0]["description"] and rep["internet_sales"]["joins"] == ["dates", "due_dates", "products", "ship_dates", "territories"]
     assert {c["cube"] for c in client.get("/catalog", headers=token("purchasing")).json()} == {"inventory_health", "products"}
     assert "customers" in {c["cube"] for c in client.get("/catalog", headers=token("admin")).json()}
 

@@ -2,11 +2,12 @@
 // Pure functions on the dashboard's source spec; each returns a copy (the argument is not touched) and what the person should be told. As with field edits, the builder
 // service's validator has the last word: these functions only try to hand it a spec that is already as right as can be known here.
 import { membersIn, cubeOf, reachableCubes } from "./designer-model.js";
+import { memberLabel } from "./labels.js";
 
 export const PANEL_TYPES = ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text", "slicer"];
 
 export const clone = (x) => JSON.parse(JSON.stringify(x));
-export const humanize = (name) => String(name).split(".").pop().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+export const humanize = (name) => memberLabel(name) || String(name).split(".").pop().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const PREFERRED_MEASURES = ["revenue", "orders", "units", "stock"];
 const PREFERRED_DIMENSIONS = ["category", "region", "country", "name", "status", "group_name"];
 
