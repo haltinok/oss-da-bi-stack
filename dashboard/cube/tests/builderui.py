@@ -339,6 +339,10 @@ with sync_playwright() as p:
     page.wait_for_url("**/d/draft")
     settled(page)
     check("gross_profit" not in page.evaluate("localStorage.getItem('builder.draft')") and page.locator("[data-panel] .panel-error").count() == 0, "the rep's draft draws with no profit member and no error")
+    page.evaluate("() => { const d = JSON.parse(localStorage.getItem('builder.draft')); d.spec.filters = (d.spec.filters || []).filter((f) => !f.implicit); d.spec.panels.forEach((p) => { delete p.on_click; }); localStorage.setItem('builder.draft', JSON.stringify(d)); }")
+    page.reload()
+    settled(page)
+    check(page.evaluate("JSON.parse(localStorage.getItem('builder.draft')).spec.panels.some((p) => p.on_click)"), "a draft stored with an old compiled page is compiled again when it opens (cross-filtering included)")
     ctx.close()
     ms.ROLE["role"] = "purchasing"
     ctx, page = open_page(browser, "/d/")

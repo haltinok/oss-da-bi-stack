@@ -127,7 +127,7 @@ async function showDashboard() {
   const t0 = stringsFor(locale0);
   localizeChrome(t0, locale0);
   setHomeLink(t0);                                              // visible from the start, so an error page (no such dashboard, wrong role) still leads back
-  const draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); a saved dashboard (s/<id>) comes from the builder service; every other id is a built file
+  let draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); a saved dashboard (s/<id>) comes from the builder service; every other id is a built file
   let spec, savedDash = null;
   if (id.startsWith("s/")) {
     const api = createBuilderApi({ stack: C, client, t: t0 });
@@ -135,6 +135,10 @@ async function showDashboard() {
     spec = savedDash.spec;
   } else if (id === "draft") {
     if (!draft?.spec) throw new Error(t0.noDraft);
+    const api = createBuilderApi({ stack: C, client, t: t0 });
+    if (api.available && draft.yaml) {                          // the stored page may predate the compiler (cross-filtering, say): compile the file again
+      try { const r = await api.validate(draft.yaml); if (r?.ok && r.spec) draft = drafts.recompiled(r.spec) || draft; } catch { /* keep the stored page */ }
+    }
     spec = draft.spec;
   } else {
     const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
