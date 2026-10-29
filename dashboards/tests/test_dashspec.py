@@ -1378,6 +1378,7 @@ def test_the_date_roles_have_the_calendars_fields_sorting_and_a_label_with_the_r
 def test_a_dashboard_can_run_on_the_ship_date_and_its_fields_carry_the_role_in_their_label():
     spec = copy.deepcopy(GOOD)
     spec["time"]["dimension"] = "ship_dates.full_date"
+    panel(spec, "trend").pop("on_click")                 # it set the order date's fiscal year; a click on a ship-date axis may only set the ship date's
     spec["panels"].append({"id": "by_ship_month", "type": "table", "columns": ["ship_dates.month_name", "dates.month_name", "internet_sales.revenue"]})
     spec["layout"].append([{"by_ship_month": 12}])
     errors, used = validate(spec, CATALOG)
@@ -1393,3 +1394,56 @@ def test_the_semantic_layer_says_what_a_date_role_is():
     ship = next(c for c in catalog_json(CATALOG) if c["cube"] == "ship_dates")
     assert ship["extends"] == "dates" and ship["label_prefix"] == "Ship" and next(d for d in ship["dimensions"] if d["name"] == "month_name")["label"] == "Ship month name"
     assert 'A role of `dates`' in generate(CATALOG)
+
+
+# ---- a time axis of the panel's own (the ship date while the dashboard follows the order date)
+def _ship_chart(spec, **extra):
+    spec["panels"] += [
+        {"id": "ship_trend", "type": "timeseries", "time_dimension": "ship_dates.full_date", "series": [{"member": "internet_sales.revenue", "label": "Revenue"}], "granularity": "month", "style": "line", **extra},
+        {"id": "ship_kpi", "type": "kpi", "time_dimension": "ship_dates.full_date", "measures": [{"member": "internet_sales.revenue", "label": "Revenue"}], "sparkline": {"granularity": "month"}},
+    ]
+    spec["layout"] += [[{"ship_trend": 8}, {"ship_kpi": 4}]]
+
+
+def test_a_chart_and_a_sparkline_can_follow_the_ship_date():
+    spec = copy.deepcopy(GOOD)
+    _ship_chart(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert panel(out, "ship_trend")["time_dimension"] == "ship_dates.full_date" and "ship_dates.full_date" in out["members"] and "ship_dates" in out["cubes"]
+    q = panel_queries(out, panel(out, "ship_trend"), {})[0]["query"]
+    assert q["timeDimensions"] == [{"dimension": "ship_dates.full_date", "granularity": "month"}]
+    k = [x["query"] for x in panel_queries(out, panel(out, "ship_kpi"), {}) if "timeDimensions" in x["query"]][0]
+    assert k["timeDimensions"][0]["dimension"] == "ship_dates.full_date"
+    assert panel_queries(out, panel(out, "trend"), {})[0]["query"]["timeDimensions"][0]["dimension"] == "dates.full_date", "the others keep the dashboard's date"
+
+
+@pytest.mark.parametrize("mutate,needle", [
+    (lambda s: _ship_chart(s, time_dimension="dates.fiscal_year"), "time_dimension"),
+    (lambda s: (_ship_chart(s), panel(s, "ship_trend").update(time_dimension="nope.x")), "not in the Cube model"),
+    (lambda s: (_ship_chart(s), panel(s, "ship_kpi").pop("sparkline")), "only has a time axis with a `sparkline`"),
+    (lambda s: (_ship_chart(s), panel(s, "ship_trend").update(on_click={"set_filter": "fy"})), "same date field"),
+], ids=["not-a-time-field", "unknown", "kpi-without-sparkline", "year-filter-of-another-date"])
+def test_a_panel_time_dimension_that_does_not_make_sense_is_refused(mutate, needle):
+    errors = run(mutate)
+    assert errors and any(needle in e for e in errors), errors
+
+
+def test_a_period_belongs_to_a_date_field_and_python_and_the_renderer_agree(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    _ship_chart(spec)
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        for p in out["panels"]:
+            assert panel_queries(out, p, state["values"]) == state["panels"][p["id"]], f"{p['id']} under {state['values']}"
+    order = next(s for s in dumped if s["values"].get("_period") == "2021-03-01..2021-03-31")
+    ship = next(s for s in dumped if "_period:ship_dates.full_date" in s["values"])
+    in_range = lambda queries, dim: any(t.get("dimension") == dim and t.get("dateRange") for q in queries for t in q["query"].get("timeDimensions", []))
+    assert in_range(order["panels"]["top"], "dates.full_date") and not in_range(order["panels"]["ship_trend"], "ship_dates.full_date"), "the order-date period narrows panels on the order date, not the ship-date chart"
+    assert in_range(ship["panels"]["ship_trend"], "ship_dates.full_date") and not in_range(ship["panels"]["top"], "dates.full_date"), "a ship-date period narrows the ship-date chart and not the order-date panels"

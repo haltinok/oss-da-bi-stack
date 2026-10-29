@@ -144,17 +144,27 @@ def _reaches(spec, src, dst):
     return False
 
 
+def time_dim_of(spec, panel):
+    """The date field a panel's time axis (and the period that narrows it) is on: its own `time_dimension`, else the dashboard's."""
+    return panel.get("time_dimension") or spec["time"]["dimension"]
+
+
+def period_key(spec, dim):
+    """Where the page keeps the period of a date field: `_period` for the dashboard's own, `_period:<field>` for another date role (mirror of periodKey in render/plan.js)."""
+    return PERIOD if dim == spec["time"]["dimension"] else f"{PERIOD}:{dim}"
+
+
 def applies_period(spec, panel):
     """Does the page's period narrow this panel? (mirror of appliesPeriod in render/plan.js)"""
     if panel["type"] == "text" or "drill" in panel or "period" in panel.get("ignore_filters", []):
         return False
     measures = panel_measures(panel, spec["members"])
-    time_cube = cube_of(spec["time"]["dimension"])
+    time_cube = cube_of(time_dim_of(spec, panel))
     return bool(measures) and all(_reaches(spec, cube_of(m), time_cube) for m in measures)
 
 
-def with_range(spec, query, rng):
-    dim = spec["time"]["dimension"]
+def with_range(spec, query, rng, dim=None):
+    dim = dim or spec["time"]["dimension"]
     td = query.get("timeDimensions", [])
     if any(t["dimension"] == dim for t in td):
         td = [{**t, "dateRange": rng} if t["dimension"] == dim else t for t in td]
@@ -164,8 +174,9 @@ def with_range(spec, query, rng):
 
 
 def follow_period(spec, panel, values, queries):
-    rng = parse_period(values.get(PERIOD))
-    return [{**q, "query": with_range(spec, q["query"], rng)} for q in queries] if rng and applies_period(spec, panel) else queries
+    dim = time_dim_of(spec, panel)
+    rng = parse_period(values.get(period_key(spec, dim)))
+    return [{**q, "query": with_range(spec, q["query"], rng, dim)} for q in queries] if rng and applies_period(spec, panel) else queries
 
 
 def pivot_column(panel):
@@ -234,11 +245,11 @@ def panel_queries(spec, panel, values):
             members = term_members(m)
             out += follow_period(spec, panel, values, per_cube(members, {"filters": filters}))
             if "sparkline" in panel:
-                out += follow_period(spec, panel, values, per_cube(members, {"filters": filters, "timeDimensions": [{"dimension": spec["time"]["dimension"], "granularity": panel["sparkline"]["granularity"]}]}))
+                out += follow_period(spec, panel, values, per_cube(members, {"filters": filters, "timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["sparkline"]["granularity"]}]}))
         return out
     if kind == "timeseries":
         members = list(dict.fromkeys(x for s in panel["series"] for x in term_members(s)))
-        return follow_period(spec, panel, values, per_cube(members, {"timeDimensions": [{"dimension": spec["time"]["dimension"], "granularity": panel["granularity"]}], "filters": filters}))
+        return follow_period(spec, panel, values, per_cube(members, {"timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["granularity"]}], "filters": filters}))
     if kind == "bar":
         measures = [s["member"] for s in panel["stack"]] if "stack" in panel else [panel["measure"]]
         single = "stack" not in panel and "split" not in panel

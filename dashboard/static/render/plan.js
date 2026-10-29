@@ -265,6 +265,13 @@ export function parsePeriod(v) {
 }
 export const formatPeriod = (from, to) => `${from}..${to}`;
 
+/** The date field a panel's time axis, and the period that narrows it, is on: its own `time_dimension`, else the dashboard's. */
+export const timeDimOf = (spec, def) => def.time_dimension || spec.time.dimension;
+/** Where the page keeps the period of a date field: `_period` for the dashboard's own, `_period:<field>` for another date role (a drill-down on a ship-date chart narrows the panels on the ship date only). */
+export const periodKey = (spec, dim) => (dim === spec.time.dimension ? PERIOD : `${PERIOD}:${dim}`);
+/** Every date field a dashboard can hold a period for: its own and those its panels name. */
+export const periodDims = (spec) => [...new Set([spec.time.dimension, ...spec.panels.map((p) => p.time_dimension).filter(Boolean)])];
+
 /** The first and last day (ISO dates) of the period a time bucket stands for: "2021-03-01T00:00:00.000" at month -> ["2021-03-01", "2021-03-31"]. */
 export function rangeOf(bucket, granularity) {
   const [y, m, d] = day(bucket).split("-").map(Number);
@@ -295,13 +302,12 @@ function reaches(spec, src, dst) {
 export function appliesPeriod(spec, def) {
   if (def.type === "text" || def.drill || (def.ignore_filters || []).includes("period")) return false;
   const measures = panelMeasures(def, spec.members);
-  const timeCube = cubeOf(spec.time.dimension);
+  const timeCube = cubeOf(timeDimOf(spec, def));
   return measures.length > 0 && measures.every((m) => reaches(spec, cubeOf(m), timeCube));
 }
 
 /** The query with a date range on the dashboard's time dimension (merged into the entry the query already has for it, if any). */
-export function withRange(spec, query, range) {
-  const dim = spec.time.dimension;
+export function withRange(spec, query, range, dim = spec.time.dimension) {
   const td = query.timeDimensions || [];
   const has = td.some((t) => t.dimension === dim);
   return { ...query, timeDimensions: has ? td.map((t) => (t.dimension === dim ? { ...t, dateRange: range } : t)) : [...td, { dimension: dim, dateRange: range }] };
@@ -309,8 +315,8 @@ export function withRange(spec, query, range) {
 
 /** `queries` ([{ cube, query }]) narrowed by the page's period when this panel follows it. */
 export function followPeriod(spec, def, values, queries) {
-  const range = parsePeriod(values[PERIOD]);
-  return range && appliesPeriod(spec, def) ? queries.map((q) => ({ ...q, query: withRange(spec, q.query, range) })) : queries;
+  const dim = timeDimOf(spec, def), range = parsePeriod(values[periodKey(spec, dim)]);
+  return range && appliesPeriod(spec, def) ? queries.map((q) => ({ ...q, query: withRange(spec, q.query, range, dim) })) : queries;
 }
 
 // ------------------------------------------------------------------ the queries of each panel type
@@ -323,14 +329,14 @@ export function kpiQueries(spec, def, t, values) {
   return {
     now: followPeriod(spec, def, values, queriesPerCube(t.members, { filters })),
     series: def.sparkline
-      ? followPeriod(spec, def, values, queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: spec.time.dimension, granularity: def.sparkline.granularity }] })) : null,
+      ? followPeriod(spec, def, values, queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: timeDimOf(spec, def), granularity: def.sparkline.granularity }] })) : null,
   };
 }
 
 /** `range` is the drill-down's own date range (the period of the bucket drilled into); a chart that does not drill follows the page's period instead. */
 export function timeseriesQueries(spec, def, values, granularity, range = null) {
   const members = [...new Set(def.series.flatMap((s) => term(s).members))];
-  const queries = queriesPerCube(members, { timeDimensions: [{ dimension: spec.time.dimension, granularity, ...(range ? { dateRange: range } : {}) }], filters: activeFilters(spec, values, def) });
+  const queries = queriesPerCube(members, { timeDimensions: [{ dimension: timeDimOf(spec, def), granularity, ...(range ? { dateRange: range } : {}) }], filters: activeFilters(spec, values, def) });
   return range ? queries : followPeriod(spec, def, values, queries);
 }
 

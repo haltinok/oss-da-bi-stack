@@ -372,7 +372,11 @@ def semantic_errors(spec, catalog):
             for fid in ids:
                 if fid not in filter_ids:
                     errs.append(f"{w}: on_click.set_filter: no filter with id '{fid}'")
-            _click_errors(p, w, ids, filters, catalog, errs)
+            _click_errors(p, w, ids, filters, catalog, errs, spec["time"]["dimension"])
+        if "time_dimension" in p:
+            if p["type"] == "kpi" and "sparkline" not in p:
+                errs.append(f"{w}: time_dimension: a key-figures row only has a time axis with a `sparkline`")
+            check(w, "time_dimension", p["time_dimension"], "dimension", time=True)
         if p["type"] == "slicer":
             errs.extend(_slicer_errors(w, p, spec))
         if "cross_filter" in p:
@@ -459,7 +463,7 @@ def _drill_errors(p, w, errs):
             errs.append(f"{w}: drill: a week does not fit inside a {a}; drill {a} -> day instead")
 
 
-def _click_errors(p, w, ids, filters, catalog, errs):
+def _click_errors(p, w, ids, filters, catalog, errs, dashboard_time=None):
     """What a click on a panel carries must be something the named filters can take: each filter's dimension is one of the dimensions
     of the clicked mark (the bar's `by`, the treemap's group in order, a table row's dimension columns), or, for a time chart, a year."""
     by_id = {f["id"]: f for f in filters}
@@ -479,6 +483,8 @@ def _click_errors(p, w, ids, filters, catalog, errs):
             dim = by_id[i]["dimension"]
             if dim.partition(".")[2] not in TIME_FILTERS:
                 errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}'; a click on a time chart can set a filter on a fiscal_year or calendar_year dimension")
+            elif dim.partition(".")[0] != (p.get("time_dimension") or dashboard_time).partition(".")[0]:
+                errs.append(f"{w}: on_click.set_filter: filter '{i}' is on '{dim}', but this chart's date is {p.get('time_dimension') or dashboard_time}: a click can only set the year of the same date field")
     elif kind in ("bar", "pie", "treemap", "table", "pivot"):
         carried = {"bar": [p.get("by")], "pie": [p.get("by")], "treemap": p.get("group", []), "pivot": [*p.get("rows", []), *([] if not isinstance(p.get("columns"), str) else [p["columns"]])], "table": [column_member(c) for c in p.get("columns", []) if (catalog.lookup(column_member(c)) or ("",))[0] != "measure" and not (isinstance(c, dict) and "aggregate" in c)]}[kind]
         if kind in ("bar", "pie") and len(ids) > 1:
@@ -500,7 +506,7 @@ def _join_errors(spec, p, w, catalog, errs):
         return
     dims = [(f"field '{f}'", m) for f, m, _ in _panel_members(p) if (catalog.lookup(m) or ("",))[0] == "dimension"]
     if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
-        dims.append(("the time axis (time.dimension)", spec["time"]["dimension"]))
+        dims.append(("the time axis (time.dimension)" if "time_dimension" not in p else "the time axis (time_dimension)", p.get("time_dimension") or spec["time"]["dimension"]))
     ignored = set(p.get("ignore_filters", []))
     dims += [(f"filter '{f['id']}'", f["dimension"]) for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])]
     for meas in sorted(set(measures)):
@@ -581,7 +587,7 @@ def _role_errors(spec, errs):
         ignored = set(p.get("ignore_filters", []))
         members += [f["dimension"] for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])] if members else []
         if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
-            members.append(spec["time"]["dimension"])
+            members.append(p.get("time_dimension") or spec["time"]["dimension"])
         if not members:
             continue
         cubes = {m.partition(".")[0] for m in members}

@@ -8,7 +8,7 @@ import { toneCue, toneOf, toneWord } from "../lib/rules.js";
 import { AGGREGATE_LIMIT, grandAggregates, groupAggregates } from "../lib/aggregate.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
-  PERIOD, heatScale, nextSort, sortKeyOf, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
+  PERIOD, periodKey, timeDimOf, heatScale, nextSort, sortKeyOf, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
 } from "./plan.js";
 
 const XLSX_TYPE = { money: "money", int: "int", pct: "pct", number: "number", decimal: "number" };
@@ -67,7 +67,7 @@ function modelPanel(def, ctx, fetchModel, opts = {}) {
   return {
     root, sheet, redraw,
     async load(signal, { force = false } = {}) {
-      const key = JSON.stringify([opts.cacheKey?.(), activeFilters(ctx.spec, ctx.filterValues(), def), appliesPeriod(ctx.spec, def) ? ctx.filterValues()[PERIOD] : ""]);
+      const key = JSON.stringify([opts.cacheKey?.(), activeFilters(ctx.spec, ctx.filterValues(), def), appliesPeriod(ctx.spec, def) ? ctx.filterValues()[periodKey(ctx.spec, timeDimOf(ctx.spec, def))] : ""]);
       if (model && !force && key === loadedKey) { redraw(); return; }
       root.classList.add("pending");
       try {
@@ -133,7 +133,7 @@ function kpiPanel(def, ctx) {
       tile.querySelector(".delta").textContent = "";
       tile.querySelector("svg.spark")?.remove();
       if (series) {
-        const key = timeKey(ctx.spec.time.dimension, spark.granularity);
+        const key = timeKey(timeDimOf(ctx.spec, def), spark.granularity);
         const buckets = byBucket(series, key);
         const line = buckets.map((b) => evaluate(t, (m) => b.values.get(m) ?? null));
         const full = ctx.formatter(t.format, true);
@@ -162,7 +162,7 @@ function kpiPanel(def, ctx) {
       rows: terms.map((t, i) => [t.label, { v: values[i], t: XLSX_TYPE[t.format] || "number" }]),
     }),
     load(signal, { force = false } = {}) {
-      const key = JSON.stringify([activeFilters(ctx.spec, ctx.filterValues(), def), appliesPeriod(ctx.spec, def) ? ctx.filterValues()[PERIOD] : ""]);
+      const key = JSON.stringify([activeFilters(ctx.spec, ctx.filterValues(), def), appliesPeriod(ctx.spec, def) ? ctx.filterValues()[periodKey(ctx.spec, timeDimOf(ctx.spec, def))] : ""]);
       if (!force && key === loadedKey) return Promise.resolve();
       loadedKey = key;
       return Promise.all(terms.map((t, i) => tileLoad(t, i, signal))).then(() => {}, (e) => { loadedKey = null; throw e; });
@@ -179,20 +179,21 @@ function timeseriesPanel(def, ctx) {
   let gran = levels ? levels[0] : def.granularity;
   let path = levels ? ctx.drillPath(def.id) : [];                    // the buckets drilled into, coarse to fine (kept in the URL)
   const level = () => (levels ? levels[Math.min(path.length, levels.length - 1)] : gran);
+  const dim = timeDimOf(ctx.spec, def);                              // the date field this chart is on (a drill-down sets the period of that field)
   const ownRange = () => (path.length ? rangeOf(path.at(-1), levels[path.length - 1]) : null);
   const same = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
   const switcher = grans.length > 1 && !levels
     ? `<div class="seg" role="group" aria-label="${esc(ctx.t.granularity)}">${grans.map((g) => `<button type="button" data-g="${g}" aria-pressed="${g === gran}">${esc(ctx.t.granularities[g] || g)}</button>`).join("")}</div>` : "";
-  const goTo = (i) => { path = path.slice(0, i + 1); ctx.setDrill(def.id, path); ctx.setPeriod(i >= 0 ? rangeOf(path[i], levels[i]) : null); };
+  const goTo = (i) => { path = path.slice(0, i + 1); ctx.setDrill(def.id, path); ctx.setPeriod(i >= 0 ? rangeOf(path[i], levels[i]) : null, dim); };
   const hooks = levels ? {
     // a click opens the next level for that period and filters the other panels to it; on the last level it picks the day (again: back to the period above)
     onPoint(bucket) {
       const i = path.length, last = i >= levels.length - 1;
-      if (!last) { path = [...path, String(bucket).slice(0, 10)]; ctx.setDrill(def.id, path); ctx.setPeriod(rangeOf(bucket, levels[i])); return; }
+      if (!last) { path = [...path, String(bucket).slice(0, 10)]; ctx.setDrill(def.id, path); ctx.setPeriod(rangeOf(bucket, levels[i]), dim); return; }
       const mine = rangeOf(bucket, levels[i]);
-      ctx.setPeriod(same(ctx.period(), mine) ? ownRange() : mine);
+      ctx.setPeriod(same(ctx.period(dim), mine) ? ownRange() : mine, dim);
     },
-    selected: (bucket) => (path.length >= levels.length - 1 ? same(ctx.period(), rangeOf(bucket, levels[levels.length - 1])) : null),
+    selected: (bucket) => (path.length >= levels.length - 1 ? same(ctx.period(dim), rangeOf(bucket, levels[levels.length - 1])) : null),
     crumbs() {
       const nav = el("nav", { class: "crumbs", "aria-label": ctx.t.drillHint });
       const items = [{ label: ctx.t.all, i: -1 }, ...path.map((b, i) => ({ label: ctx.bucketLabel(b, levels[i]), i }))];
@@ -209,7 +210,7 @@ function timeseriesPanel(def, ctx) {
   const panel = modelPanel(def, ctx, async (signal) => {
     const g = level();
     const res = await runAll(ctx.run, timeseriesQueries(ctx.spec, def, ctx.filterValues(), g, levels ? ownRange() : null), signal);
-    const rows = byBucket(res, timeKey(ctx.spec.time.dimension, g)).map(({ bucket, values }) => ({
+    const rows = byBucket(res, timeKey(dim, g)).map(({ bucket, values }) => ({
       bucket, label: ctx.bucketLabel(bucket, g), v: series.map((s) => evaluate(s, (m) => values.get(m) ?? null)),
     }));
     return {
@@ -225,7 +226,7 @@ function timeseriesPanel(def, ctx) {
       panel.load(new AbortController().signal).catch(() => {});
     });
   }
-  if (levels) ctx.onPeriodCleared(() => { path = []; ctx.setDrill(def.id, []); });     // the chip's x or Reset filters brings the chart back to the top level
+  if (levels) ctx.onPeriodCleared(() => { path = []; ctx.setDrill(def.id, []); }, dim);     // the chip's x or Reset filters brings the chart back to the top level
   return panel;
 }
 

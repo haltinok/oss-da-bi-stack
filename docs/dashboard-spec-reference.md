@@ -136,6 +136,7 @@ Either a member string, or an object with these fields.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
+| `time_dimension` | member (`cube.name`) |  | A time dimension of this panel's own, when it should follow another date than the dashboard's `time.dimension`: the ship date (`ship_dates.full_date`), the due date. The default is the dashboard's. A drill-down on this panel sets a period on **this date field**, which narrows the panels that use the same field and no others; the period's chip names the field. A click rule on the chart can only set a year filter of the same date field (`ship_dates.fiscal_year`). Used by the sparkline. |
 | `measures` | list of measure (1+) | yes | One tile per measure, up to 8. Each tile loads on its own, so a slow measure does not hold back the others. |
 | `sparkline` | object |  | A small trend line under each value, grouped by this granularity. |
 
@@ -143,6 +144,7 @@ Either a member string, or an object with these fields.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
+| `time_dimension` | member (`cube.name`) |  | A time dimension of this panel's own, when it should follow another date than the dashboard's `time.dimension`: the ship date (`ship_dates.full_date`), the due date. The default is the dashboard's. A drill-down on this panel sets a period on **this date field**, which narrows the panels that use the same field and no others; the period's chip names the field. A click rule on the chart can only set a year filter of the same date field (`ship_dates.fiscal_year`). |
 | `series` | list of series (1+) | yes | The measures drawn, one series each; measures of several cubes are queried separately and merged on the time axis. |
 | `granularity` | `hour` \| `day` \| `week` \| `month` \| `quarter` \| `year` | yes | The time grouping: `hour`, `day`, `week`, `month`, `quarter` or `year`. |
 | `granularities` | list of `hour` \| `day` \| `week` \| `month` \| `quarter` \| `year` (2+) |  | Offers a switch between these granularities in the card header (at least two, and it must include `granularity`). Only this panel reloads. |

@@ -41,9 +41,10 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
     case "kpi":
       measureItem("measures", panel.measures, { formula: true, rules: true });
       out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES, optional: true }));
+      if (panel.sparkline) out.push(f("time_dimension", "timedim", { key: "panelTimeDimension", optional: true }));
       break;
     case "timeseries":
-      out.push(f("style", "choice", { key: "style", options: ["line", "area", "stacked-area", "bar", "stacked-bar"] }));
+      out.push(f("style", "choice", { key: "style", options: ["line", "area", "stacked-area", "bar", "stacked-bar"] }), f("time_dimension", "timedim", { key: "panelTimeDimension", optional: true }));
       if (!panel.drill) out.push(f("granularity", "choice", { key: "granularity", options: GRANULARITIES }), { path: "granularities", kind: "multicheck", key: "granularities", options: GRANULARITIES });
       out.push({ path: "drill", kind: "drill", key: "drill" });
       each(panel.series, (s, i) => {
@@ -115,7 +116,7 @@ export function getAt(obj, path) {
 }
 
 // Fields that name what a panel groups or lists by: a click rule (on_click.set_filter) depends on them.
-const GROUPING = /^(by|group\.\d+|rows\.\d+|columns|columns\.member|columns\.\d+(\.member)?)$/;
+const GROUPING = /^(time_dimension|by|group\.\d+|rows\.\d+|columns|columns\.member|columns\.\d+(\.member)?)$/;
 
 /**
  * Sets one field of one panel and returns { source, notes }: a copy of the source with the change (the argument is not touched), and what the person should be told.
