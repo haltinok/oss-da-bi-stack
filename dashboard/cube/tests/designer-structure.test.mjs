@@ -396,3 +396,30 @@ test("a table field can be hidden (queried, to sort by, but not drawn) and shown
   const agg = { ...src, panels: src.panels.map((p) => (p.id === "tbl" ? { ...p, columns: ["products.name", { member: "internet_sales.order_date", aggregate: "max" }] } : p)) };
   assert.equal(setColumnHidden(agg, "tbl", 1, true).problem, "aggregated");
 });
+
+// ---- calculations
+import { addCalculation, removeCalculation, setCalculation, withCalculations, formulaMembers } from "../../static/lib/designer-structure.js";
+
+test("a calculation is added with an id made from its name, edited, and refused removal while a panel uses it", () => {
+  const added = addCalculation(SOURCE, { label: "Tax amount (20%)", formula: "internet_sales.revenue * 0.2", format: "money" });
+  assert.deepEqual(added.source.calculations, [{ id: "tax_amount_20", label: "Tax amount (20%)", formula: "internet_sales.revenue * 0.2", format: "money" }]);
+  assert.equal(added.calcId, "tax_amount_20");
+  assert.equal(addCalculation(added.source, { label: "Tax amount 20", formula: "a.b" }).source.calculations[1].id, "tax_amount_20_2", "a taken id gets a number");
+  assert.equal(addCalculation(SOURCE, { label: " ", formula: "a.b" }).problem, "calcEmpty");
+  assert.equal(setCalculation(added.source, "tax_amount_20", "format", "").source.calculations[0].format, undefined, "an empty format is removed");
+  assert.equal(setCalculation(added.source, "tax_amount_20", "formula", " ").problem, "calcEmpty");
+  const used = { ...added.source, panels: [...added.source.panels, { id: "k", type: "kpi", measures: [{ member: "calc.tax_amount_20" }] }] };
+  assert.equal(removeCalculation(used, "tax_amount_20").problem, "calcUsed");
+  assert.equal("calculations" in removeCalculation(added.source, "tax_amount_20").source, false);
+});
+
+test("the catalog gets a cube of calculations that reaches what the parts of the formulas reach", () => {
+  assert.deepEqual(formulaMembers("sum(a.rev, b.rev) * 0.2 / c.units"), ["a.rev", "b.rev", "c.units"]);
+  const base = [{ cube: "a", joins: ["d", "e"], measures: [{ member: "a.rev" }], dimensions: [] }, { cube: "b", joins: ["d"], measures: [{ member: "b.rev" }], dimensions: [] },
+    { cube: "d", joins: [], measures: [], dimensions: [{ member: "d.x" }] }, { cube: "e", joins: [], measures: [], dimensions: [{ member: "e.y" }] }];
+  const cat = withCalculations(base, { calculations: [{ id: "both", label: "Both", formula: "a.rev + b.rev" }] });
+  const calc = cat.find((c) => c.cube === "calc");
+  assert.deepEqual(calc.measures.map((m) => m.member), ["calc.both"]);
+  assert.deepEqual([...calc.joins].sort(), ["d"], "only what a and b both reach");
+  assert.equal(withCalculations(base, {}), base, "no calculations: the catalog as it was");
+});

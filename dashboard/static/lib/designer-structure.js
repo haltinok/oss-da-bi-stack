@@ -438,7 +438,7 @@ export function withCalculations(base, source) {
 
 const slug = (text) => String(text).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^[0-9]+/, "") || "calculation";
 
-/** A new calculation: { label, formula, format? } -> { source, id } (the id comes from the label). */
+/** A new calculation: { label, formula, format? } -> { source, calcId } (the id comes from the label). */
 export function addCalculation(source, { label, formula, format }) {
   const next = clone(source);
   if (!String(label || "").trim() || !String(formula || "").trim()) return { problem: "calcEmpty" };
@@ -446,7 +446,7 @@ export function addCalculation(source, { label, formula, format }) {
   let id = slug(label), n = 2;
   while (taken.has(id)) id = `${slug(label)}_${n++}`;
   next.calculations = [...(next.calculations || []), { id, label: String(label).trim(), formula: String(formula).trim(), ...(format ? { format } : {}) }];
-  return { source: next, id };
+  return { source: next, calcId: id };
 }
 
 /** Changes one field (label, formula, format; "" removes the format) of a calculation. */

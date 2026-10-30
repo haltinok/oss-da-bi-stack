@@ -72,7 +72,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <h3 class="dz-section">${esc(dz.filters)}</h3><div id="dz-filters" class="dz-filters"></div>
       <div class="dz-add-filter"><select id="dz-newfilter" aria-label="${esc(dz.addFilter)}"></select><button type="button" id="dz-addfilter">${esc(dz.addFilter)}</button></div>
       <h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calcs" class="dz-filters"></div>
-      <div class="dz-add-calc"><input type="text" id="dz-newcalc-label" maxlength="60" placeholder="${esc(dz.calcLabelHint)}" aria-label="${esc(dz.f.calcLabel)}"><input type="text" id="dz-newcalc-formula" maxlength="500" placeholder="${esc(dz.calcFormulaHint)}" aria-label="${esc(dz.f.calcFormula)}"><button type="button" id="dz-addcalc">${esc(dz.addCalc)}</button></div>
+      <div id="dz-calc-add"></div>
       <h3 class="dz-section">${esc(dz.addPanel)}</h3>
       <div class="dz-gallery" id="dz-gallery">${PANEL_TYPES.map((ty) => `<button type="button" class="dz-type" data-add="${ty}"><strong>${esc(typeName(ty))}</strong><span>${esc(dz.typeHint[ty])}</span></button>`).join("")}</div>`;
     const form = drawer.querySelector("#dz-page");
@@ -137,13 +137,21 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       card.append(el("button", { type: "button", class: "dz-danger", "data-rm-calc": c.id }, esc(dz.removeCalc)));
       calcList.append(card);
     }
-    drawer.querySelector("#dz-addcalc").addEventListener("click", () => {
-      const label = drawer.querySelector("#dz-newcalc-label").value, formula = drawer.querySelector("#dz-newcalc-formula").value;
-      commit(addCalculation(source, { label, formula }), { message: dz.calcAdded, panel: null });
-    });
+    drawer.querySelector("#dz-calc-add").append(calcAddRow(null));
     for (const b of calcList.querySelectorAll("[data-rm-calc]")) b.addEventListener("click", () => commit(removeCalculation(source, b.dataset.rmCalc), { message: dz.calcRemoved, panel: null }));
     const pick = drawer.querySelector("#dz-newfilter");
     for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
+  }
+
+  /** Name + formula + button: a new calculation (it then appears in every measure list). `panel` is the panel to stay on afterwards (null: the page view). */
+  function calcAddRow(panel) {
+    const row = el("div", { class: "dz-add-calc" });
+    const label = el("input", { type: "text", id: "dz-newcalc-label", maxlength: 60, placeholder: dz.calcLabelHint, "aria-label": dz.f.calcLabel });
+    const formulaBox = el("input", { type: "text", id: "dz-newcalc-formula", maxlength: 500, placeholder: dz.calcFormulaHint, "aria-label": dz.f.calcFormula });
+    const add = el("button", { type: "button", id: "dz-addcalc" }, esc(dz.addCalc));
+    add.addEventListener("click", () => commit(addCalculation(source, { label: label.value, formula: formulaBox.value }), { message: dz.calcAdded, panel }));
+    row.append(label, formulaBox, add);
+    return row;
   }
 
   function drawPanel(panel) {
@@ -157,12 +165,14 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     }).join("");
     drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn()}</div>
       <div id="dz-msg" class="bmsg" role="alert" hidden></div><form class="dz-form" onsubmit="return false">${rows}</form>
+      ${["text", "slicer"].includes(panel.type) ? "" : `<h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calc-add"></div>`}
       <h3 class="dz-section">${esc(dz.layout)}</h3>
       <div class="dz-layout" role="group" aria-label="${esc(dz.layout)}">${LAYOUT_COMMANDS.map((cmd) => `<button type="button" data-cmd="${cmd}" ${moveCommand(source, panel.id, cmd).problem ? "disabled" : ""}>${esc(dz.cmd[cmd])}</button>`).join("")}</div>
       <p class="hint">${esc(dz.width(rowOf(source, panel.id).find((c) => c.id === panel.id)?.span ?? 12))}</p>
       ${tabsOf(source).length > 1 ? `<label class="dz-field"><span>${esc(dz.toTab)}</span><span class="dz-input"><select id="dz-totab"><option value="">—</option>${tabsOf(source).filter((tab) => !tab.panels.includes(panel.id)).map((tab) => `<option value="${esc(tab.id)}">${esc(tab.title)}</option>`).join("")}</select></span></label>` : ""}
       <div class="dz-actions"><button type="button" id="dz-back">${esc(dz.back)}</button><button type="button" id="dz-dup">${esc(dz.duplicate)}</button><button type="button" id="dz-del" class="dz-danger">${esc(dz.remove)}</button></div>
       <p class="hint">${esc(dz.footer)}</p>`;
+    drawer.querySelector("#dz-calc-add")?.append(calcAddRow(selected));
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
       if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
