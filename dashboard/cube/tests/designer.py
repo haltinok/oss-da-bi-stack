@@ -1013,6 +1013,8 @@ with sync_playwright() as p:
     path = page.evaluate("() => { const s = [...document.querySelectorAll('#designer select[data-path]')].find((x) => [...x.options].some((o) => o.value === 'calc.tax_amount')); return s ? s.dataset.path : null; }")
     check(path is not None, "the measure list of a bar offers it")
     page.select_option(f'#designer select[data-path="{path}"]', "calc.tax_amount")
+    page.wait_for_function("(localStorage.getItem('builder.draft') || '').includes('calc.tax_amount')", timeout=15000)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
     settled(page)
     check("calc.tax_amount" in json.dumps(next(x for x in yaml_of(page)["panels"] if x["id"] == bar)) and page.locator(f'[data-panel="{bar}"] .panel-error').count() == 0, "choosing it draws the bar with no error")
     page.click("#dz-back")

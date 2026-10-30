@@ -173,7 +173,7 @@ Rules the validator enforces: a page filter names a tab that exists, a pane filt
 In the designer, a filter card has **Applies to** (the whole dashboard, one tab, one panel), the tab or panel, and a checkbox for whether the reader can see it; a hidden filter shows a "hidden" badge and needs a default first. Removing a panel takes its pane filters with it, removing a tab hands its page filters to the tab that receives its panels, and putting the tabs back on one page makes page filters dashboard filters (each says so).
 
 ### Click to filter: on by default
-A click on a mark filters the other panels **without any setting**, and without defining a filter or writing `on_click`: the page adds the filters when the file is compiled. This holds for a bar, a pie, a treemap, a table, a pivot and a time chart; key figures, notes and slicers have no mark to click.
+A click on a mark filters the other panels **without any setting**, and without defining a filter or writing `on_click`: the page adds the filters when the file is compiled. This holds for a bar, a pie, a treemap, a pivot and a time chart (a **table** is off by default: its rows are details to read; `cross_filter: true` turns it on); key figures, notes and slicers have no mark to click.
 What a click carries is **all the dimension values of the mark**: a bar's or pie's `by`, a treemap's groups, **every** group column of a table row (an order number, a date and a country: all three), a pivot cell's rows and plain column, a time chart's fiscal year. A date value filters to exactly that value. The other panels of the page are narrowed by all of them at once, and two panels that carry the same field share one filter.
 
 The default scope is **the panel's page**: the panels of its tab, or the whole dashboard when there are no tabs. A panel can say otherwise:
@@ -182,10 +182,11 @@ The default scope is **the panel's page**: the panels of its tab, or the whole d
 panels:
   - { id: by_region, type: bar, measure: internet_sales.revenue, by: territories.region }                    # the default: filters its page
   - { id: by_cat, type: bar, measure: internet_sales.revenue, by: products.category, cross_filter: true }     # every tab
-  - { id: detail, type: table, columns: [...], cross_filter: false }                                          # does not filter the others
+  - { id: detail, type: table, columns: [...], cross_filter: true }                                           # a table filters the others only when it says so
+  - { id: quiet, type: bar, measure: internet_sales.revenue, by: products.color, cross_filter: false }        # does not filter the others
 ```
 
-If the dashboard already has a visible `select` filter on that field (a `region` filter and a click on a region bar), the click sets that filter, so the header select and the click stay in step. A panel with an `on_click` of its own keeps it (nothing is added; `cross_filter` cannot be combined with it), and a time chart that drills down keeps its drill-down (its click opens the next level). A panel that cannot join to the field is skipped, with no `ignore_filters` to write. Filter ids may not start with `xf_` (those are made here).
+If the dashboard already has a visible `select` filter on that field (a `region` filter and a click on a region bar), the click sets that filter, so the header select and the click stay in step. **A choice made in the header narrows every panel, the one that shares the filter included; the choice a click made keeps that panel showing every mark** (it marks the chosen one instead). A panel with an `on_click` of its own keeps it (nothing is added; `cross_filter` cannot be combined with it), and a time chart that drills down keeps its drill-down (its click opens the next level). A panel that cannot join to the field is skipped, with no `ignore_filters` to write. Filter ids may not start with `xf_` (those are made here).
 What a click chose shows as chips in a **selection bar** above the panels ("Name: Road-150 ✕"), each with a button that removes it; a click on the chosen mark again undoes it, **Reset** clears them, and they are in the address (`?xf_by_region_1=France`), so a link carries the selection. With the default scope the chips show only on the tab they filter.
 In the designer, every such panel has **Clicking it filters the other panels**: Yes (the default), Yes for every tab (with tabs), No, or its own click rule written in the YAML. The source file keeps only what was chosen: nothing for the default.
 

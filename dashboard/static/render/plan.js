@@ -32,11 +32,15 @@ export const ownFilterIds = (def) => {
 };
 
 /**
- * The Cube filters for the page's filter values. A panel leaves out the filters in its ignore_filters and the ones its own clicks set:
- * a cross-filtering panel keeps showing every choice (and marks the selected one) instead of narrowing itself to it.
+ * The filters a panel's own clicks set that it leaves out: a cross-filtering panel keeps showing every choice (and marks the selected one) instead of narrowing itself to it.
+ * That holds for the choice a click made (`values._clicked` lists the filters whose value came from a click) and for the filters the compiler made for the click; a filter's value
+ * chosen in the header bar narrows every panel, the one that shares the filter included.
  */
+export const clickedIds = (spec, values, panel) => ownFilterIds(panel).filter((id) => (values._clicked || []).includes(id) || (spec.filters || []).find((f) => f.id === id)?.implicit);
+
+/** The Cube filters for the page's filter values. A panel leaves out the filters in its ignore_filters and the ones its own clicks set (see clickedIds). */
 export function activeFilters(spec, values, panel = {}, env = defaultEnv(spec)) {
-  const ignored = new Set([...(panel.ignore_filters || []), ...ownFilterIds(panel)]);
+  const ignored = new Set([...(panel.ignore_filters || []), ...clickedIds(spec, values, panel)]);
   return (spec.filters || [])
     .filter((f) => filterApplies(spec, f, panel) && !ignored.has(f.id))
     .flatMap((f) => { const v = filterValue(f, values); return v === undefined || v === "" ? [] : toCube(f, v, env); });          // a filter of a kind other than `select` can mean several Cube filters, or none
