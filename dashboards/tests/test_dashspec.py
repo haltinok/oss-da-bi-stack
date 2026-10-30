@@ -1663,3 +1663,26 @@ def test_a_broken_calculation_fails_with_a_message_that_names_the_place(name, mu
     errors, _ = validate(spec, CATALOG)
     text = "\n".join(errors)
     assert errors and all(e in text for e in expected), text
+
+
+def test_a_bar_can_be_ordered_by_the_name_of_its_grouping_in_the_groupings_own_order(tmp_path):
+    spec = copy.deepcopy(GOOD)
+    spec["panels"] += [{"id": "byname", "type": "bar", "measure": "internet_sales.revenue", "by": "dates.month_name", "sort_by": "label", "sort": "asc", "limit": 12},
+                       {"id": "bystack", "type": "bar", "stack": [{"member": "internet_sales.revenue"}, {"member": "reseller_sales.revenue"}], "by": "dates.month_name", "sort_by": "label"}]
+    spec["layout"] += [[{"byname": 6}, {"bystack": 6}]]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    (q,) = panel_queries(out, panel(out, "byname"), {})
+    assert q["query"]["order"] == {"dates.month_of_year": "asc"} and q["query"]["dimensions"] == ["dates.month_name", "dates.month_of_year"], "a month's name is ordered by its number, which the query asks for"
+    stack = panel_queries(out, panel(out, "bystack"), {})
+    assert all("order" not in x["query"] and "dates.month_of_year" in x["query"]["dimensions"] for x in stack), "a stack is ordered by the page, after the totals are known"
+    path = tmp_path / "b.json"
+    path.write_text(json.dumps(out))
+    dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    for state in dumped:
+        for pid in ("byname", "bystack"):
+            assert panel_queries(out, panel(out, pid), state["values"]) == state["panels"][pid]
+    bad = copy.deepcopy(spec)
+    panel(bad, "byname")["sort_by"] = "size"
+    assert validate(bad, CATALOG)[0]

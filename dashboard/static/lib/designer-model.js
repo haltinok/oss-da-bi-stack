@@ -58,7 +58,7 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
       if (panel.stack) each(panel.stack, (s, i) => { const g = { n: i + 1, of: panel.stack.length }; out.push(f(`stack.${i}.member`, "measure", { key: "measure", group: g, list: "stack", index: i, count: panel.stack.length }), f(`stack.${i}.label`, "text", { key: "label", group: g }), f(`stack.${i}.color`, "color", { key: "color", optional: true, group: g })); });
       else if (panel.measure) out.push(f("measure", "measure", { key: "measure" }), f("label", "text", { key: "label", optional: true }));
       out.push(f("by", "dimension", { key: "by" }), f("by_label", "text", { key: "byLabel", optional: true }), ...(panel.stack ? [] : [f("split", "dimension", { key: "split", optional: true })]),
-        f("sort", "choice", { key: "sort", options: DIRECTIONS, optional: true }), f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }),
+        f("sort_by", "choice", { key: "sortBy", options: ["value", "label"], optional: true }), f("sort", "choice", { key: "sort", options: DIRECTIONS, optional: true }), f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }),
         f("orientation", "choice", { key: "orientation", options: ["horizontal", "vertical"], optional: true }), f("format", "choice", { key: "format", options: FORMATS, optional: true }), f("cross_filter", "crossfilter", { key: "crossFilter" }));
       break;
     case "pie":

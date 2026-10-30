@@ -394,9 +394,11 @@ export function timeseriesQueries(spec, def, values, granularity, range = null) 
 export function barQueries(spec, def, values) {
   const measures = def.stack ? def.stack.map((s) => s.member) : [def.measure];
   const single = !def.stack && !def.split;       // then the database ranks and limits; otherwise totals per row are needed first
+  const byLabel = def.sort_by === "label";       // ordered by the name of the grouping (in its own order: a month by its number)
+  const dimensions = [def.by, ...(def.split ? [def.split] : [])];
   return followPeriod(spec, def, values, queriesPerCube(spec, measures, {
-    dimensions: [def.by, ...(def.split ? [def.split] : [])], filters: activeFilters(spec, values, def),
-    ...(single ? { order: { [def.measure]: def.sort || "desc" }, limit: def.limit || 10 } : {}),
+    dimensions: byLabel ? withSortKeys(spec, dimensions) : dimensions, filters: activeFilters(spec, values, def),
+    ...(single ? { order: { [byLabel ? (sortKeyOf(spec, def.by) || def.by) : def.measure]: def.sort || "desc" }, limit: def.limit || 10 } : {}),
   }));
 }
 
