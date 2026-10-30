@@ -25,6 +25,10 @@ class Catalog:
             return "dimension", c["dimensions"][name]
         return None
 
+    def extra(self, member):
+        """What the compiled spec keeps about a member beyond its kind and type (a calculation: its formula); nothing for a model member."""
+        return {}
+
     def label(self, member):
         """The name a report shows for a field of a role-playing cube ("Ship month name": the role in front); None when the cube has no role prefix, and the page makes the name itself."""
         cube, _, name = member.partition(".")

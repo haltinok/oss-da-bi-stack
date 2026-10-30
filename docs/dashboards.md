@@ -212,6 +212,25 @@ It takes part in everything the other filters do:
 - **Cross-filtering**: a click on a chart that sets the filter (`on_click.set_filter`) shows in the slicer, and picking in the slicer narrows the chart, like the header filter does.
 - **Drill-down**: the period a drill-down opens narrows the options too.
 
+## Calculations: formulas over measures
+
+A calculation is a named formula over measures, defined once at the top of the file and used like a measure (`calc.<id>`) in any panel: a key figure, a chart series, a bar, a pie, a treemap, a table column, a pivot measure, and as the field a table is sorted by. It can mix measures of cubes that do not join (internet and reseller sales).
+
+```yaml
+calculations:
+  - id: avg_price
+    label: Average sales price
+    formula: sum(internet_sales.revenue, reseller_sales.revenue) / sum(internet_sales.units, reseller_sales.units)
+    format: money
+  - id: tax
+    label: Tax amount (20%)
+    formula: (internet_sales.revenue + reseller_sales.revenue) * 0.2
+panels:
+  - { id: price, type: table, columns: [products.category, calc.avg_price, calc.tax], order: { calc.avg_price: desc }, limit: 10 }
+```
+
+The formula knows `+ - * /`, brackets, numbers, measures (`cube.measure`) and `sum(a, b, ...)`. The page asks Cube for the measures a formula reads, puts the answers together on the panel's grouping, works the formula out, and only then orders and limits, so "the ten best by average price" is right. A total is the formula over the totals of its parts (a ratio of sums, not an average of ratios). `+`, `-` and `sum` skip a part with no value (a month one cube has no row for); `*` and `/` give no value when a side has none, and `/` by zero gives none. A calculation cannot use another calculation, and a panel can only group it by what every measure it reads can join to (the validator says which). In the designer, the **Page** view has a Calculations section, and the measure lists of every panel offer them.
+
 ## Fields that sort by another field
 This is the standard of our semantic model, described once in the Cube model (`cube/model/cubes/*.yml`) like Power BI's "Sort by column", and shown on the generated semantic-layer page ("Sorted by") and in the designer's field list. A text field says which field it sorts by: `meta: { sort_by: month_of_year }` on `dates.month_name`. A table, a pivot's rows and columns, a filter's list and a slicer then ask Cube for the sort field as well and order by it, so months run January, February, March (and December, November, October when descending) instead of April, August, December. The sort field has to be a number or time dimension of the same cube and cannot itself sort by another (a test checks every declaration). Each field names its own: `month_name` by `month_of_year`, `quarter_name` by `calendar_quarter`, `year_month` (Jan 2012) by `year_month_number` (201201), `year_quarter` by `year_quarter_number`, `fiscal_quarter_name` by `fiscal_quarter`, `day_name` by `day_of_week`; add the same two lines to any text field with a natural order. Nothing in a dashboard file changes. (Cube itself does not know that a month's name is a date: it is text, so it sorts it as text unless the model says otherwise.)
 

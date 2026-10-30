@@ -3,11 +3,11 @@
 // change, and an accepted change is stored in the draft and the page is drawn again (the picked panel and the scroll position come back from sessionStorage).
 // The logic is in lib/designer-model.js (a panel's fields) and lib/designer-structure.js (new panels, removing, filters, the page's fields).
 import { $, el, esc } from "../lib/dom.js";
-import { anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
+import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, addCalculation, removeCalculation, setCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -39,7 +39,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   const dz = t.designer;
   const button = el("button", { type: "button", id: "bd-design", "aria-pressed": "false" }, esc(dz.button));
   head.querySelector("[data-tab]")?.before(button);
-  let source = null, catalog = null, selected = null, on = false, busy = false;
+  let source = null, baseCatalog = null, catalog = null, selected = null, on = false, busy = false;
   const state = read();
 
   const drawer = el("aside", { id: "designer", class: "designer", role: "complementary", "aria-label": dz.title, hidden: "" });
@@ -71,6 +71,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         : `<p class="hint">${esc(dz.noTabs)}</p><div class="dz-actions"><button type="button" id="dz-totabs" ${(source.layout || []).length < 2 ? "disabled" : ""}>${esc(dz.makeTabs)}</button></div>`}
       <h3 class="dz-section">${esc(dz.filters)}</h3><div id="dz-filters" class="dz-filters"></div>
       <div class="dz-add-filter"><select id="dz-newfilter" aria-label="${esc(dz.addFilter)}"></select><button type="button" id="dz-addfilter">${esc(dz.addFilter)}</button></div>
+      <h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calcs" class="dz-filters"></div>
+      <div class="dz-add-calc"><input type="text" id="dz-newcalc-label" maxlength="60" placeholder="${esc(dz.calcLabelHint)}" aria-label="${esc(dz.f.calcLabel)}"><input type="text" id="dz-newcalc-formula" maxlength="500" placeholder="${esc(dz.calcFormulaHint)}" aria-label="${esc(dz.f.calcFormula)}"><button type="button" id="dz-addcalc">${esc(dz.addCalc)}</button></div>
       <h3 class="dz-section">${esc(dz.addPanel)}</h3>
       <div class="dz-gallery" id="dz-gallery">${PANEL_TYPES.map((ty) => `<button type="button" class="dz-type" data-add="${ty}"><strong>${esc(typeName(ty))}</strong><span>${esc(dz.typeHint[ty])}</span></button>`).join("")}</div>`;
     const form = drawer.querySelector("#dz-page");
@@ -124,6 +126,22 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       card.append(rm);
       list.append(card);
     }
+    const calcList = drawer.querySelector("#dz-calcs");
+    for (const c of source.calculations || []) {
+      const card = el("div", { class: "dz-filter", "data-calc": c.id });
+      card.append(el("h4", {}, esc(`calc.${c.id}`)));
+      const edit = (key, v) => commit(setCalculation(source, c.id, key, v), { message: dz.calcChanged, panel: null });
+      card.append(field({ path: "label", kind: "text", key: "calcLabel" }, c, (v) => edit("label", v)),
+        field({ path: "formula", kind: "text", key: "calcFormula" }, c, (v) => edit("formula", v)),
+        field({ path: "format", kind: "choice", key: "format", options: FORMATS, optional: true }, c, (v) => edit("format", v)));
+      card.append(el("button", { type: "button", class: "dz-danger", "data-rm-calc": c.id }, esc(dz.removeCalc)));
+      calcList.append(card);
+    }
+    drawer.querySelector("#dz-addcalc").addEventListener("click", () => {
+      const label = drawer.querySelector("#dz-newcalc-label").value, formula = drawer.querySelector("#dz-newcalc-formula").value;
+      commit(addCalculation(source, { label, formula }), { message: dz.calcAdded, panel: null });
+    });
+    for (const b of calcList.querySelectorAll("[data-rm-calc]")) b.addEventListener("click", () => commit(removeCalculation(source, b.dataset.rmCalc), { message: dz.calcRemoved, panel: null }));
     const pick = drawer.querySelector("#dz-newfilter");
     for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
   }
@@ -526,6 +544,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       // A change to a panel's own fields is applied to that panel alone (the page patches it in place); anything else (layout, tabs, filters, a new or removed panel) draws the page again.
       if (!edit.id && panel === selected && window.__render?.patch?.(r.spec)) {
         source = edit.source;
+        catalog = withCalculations(baseCatalog, source);
         const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset?.path : null;
         resync();
         draw();
@@ -670,7 +689,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (!r.ok) throw new Error(r.problems?.[0] || "the draft does not validate");
     if (!r.source) throw new Error(dz.oldBuilder);                              // a builder service built before the designer existed does not send the source back
     source = r.source;
-    catalog = cat;
+    baseCatalog = cat;
+    catalog = withCalculations(baseCatalog, source);
     setMemberLabels(Object.fromEntries(cat.flatMap((c) => [...c.measures, ...c.dimensions]).filter((m) => m.label).map((m) => [m.member, m.label])));          // the role's name in front: "Ship month name"
     button.disabled = false;
     document.body.append(el("datalist", { id: "dz-colors" }, '<option value="internet"><option value="reseller">'));

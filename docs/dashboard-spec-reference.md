@@ -15,6 +15,7 @@ A dashboard is one YAML file, `dashboards/<id>.yml`.
 | `tags` | list of string |  | Up to 5 short labels for finding and grouping dashboards on the list page: lower case, 1 to 24 characters, letters (of any language), digits, spaces and hyphens, no repeats. Put the most important first. Tags are visible to everyone who can see the dashboard, so they must not carry anything sensitive. |
 | `locale` | string |  | Number and date formats, month names, and the language of the page's own words (buttons, "All", status): `en` and `tr` exist, any other language shows English. Default `en-US`. |
 | `currency` | string |  | The currency sign on screen and in Excel files, an ISO code such as `USD` or `TRY`. Display only: nothing is converted. Default `USD`. |
+| `calculations` | list of calculation |  | Named formulas over measures, used like a measure as `calc.<id>` in any panel that takes a measure (a key figure, a series, a bar, a pie, a treemap, a table column, a pivot measure), also as the field a table or bar is sorted by. Up to 20. The formula reads in the browser on the numbers Cube returns, so it can mix measures of cubes that do not join (two fact cubes). |
 | `roles` | list of `admin` \| `manager` \| `rep` \| `purchasing` \| `marketing` (1+) |  | Who may open the page: `admin`, `manager`, `rep`, `purchasing`, `marketing`. It decides what `/d/` lists; what each role can read is Cube's decision, and the validator rejects a page that would fail for a listed role. Default: everyone. |
 | `theme` | object |  | The dashboard's look (all optional). |
 | `time` | object | yes | The time axis of the dashboard. |
@@ -61,6 +62,17 @@ Each value is `#rrggbb`.
 |---|---|---|---|
 | `dimension` | member (`cube.name`) | yes | The time dimension of the dashboard's fact data (for example `dates.full_date`). Time charts and KPI sparklines group by it. Must be a `time` dimension. |
 | `fiscal_year_start` | integer 1-12 |  | The month a fiscal year starts (1-12), used when a click on a time chart sets a fiscal-year filter. A fiscal year is named after the year it ends in (July start: Jul 2020 is FY2021). Default 1. |
+
+### A calculation (`calculations[]`)
+
+A named formula over measures; a panel uses it as `calc.<id>`.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | The calculation's id: lower case letters, digits and `_`. A panel uses it as `calc.<id>`. |
+| `label` | string | yes | The name a panel shows for it (the column heading, the legend), unless the panel gives its own `label`. |
+| `formula` | string | yes | `+ - * /`, brackets, numbers, measures (`cube.measure`) and `sum(a, b, ...)`, for example `sum(a.revenue, b.revenue) / sum(a.units, b.units)` or `(a.revenue + b.revenue) * 0.2` (`a` and `b` standing for cubes). A total is the formula over the totals of its parts (a ratio of sums, not an average of ratios). `+`, `-` and `sum` skip a part with no value; `*` and `/` give no value when a side has none, and `/` by zero gives none. A calculation cannot use another calculation. |
+| `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How the value is shown wherever a panel does not say otherwise: money, int, decimal, pct, number. Default: number. |
 
 ### A filter
 

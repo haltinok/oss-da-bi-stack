@@ -1572,3 +1572,94 @@ def test_explicit_cross_filter_on_a_panel_that_cannot_carry_a_click_is_refused()
     assert any("opens the next level" in e for e in errors), errors
     errors = run(lambda s: panel(s, "kpis").update(cross_filter=True))
     assert errors and any("cross_filter" in e for e in errors), errors
+
+
+# ---------------------------------------------------------------------------------------------------------------- calculations
+from dashspec import calculations as calc_mod  # noqa: E402
+
+AVG = "sum(internet_sales.revenue, reseller_sales.revenue) / sum(internet_sales.units, reseller_sales.units)"
+
+
+def with_calcs(spec=None):
+    spec = copy.deepcopy(spec or GOOD)
+    spec["calculations"] = [{"id": "avg_price", "label": "Average sales price", "formula": AVG, "format": "money"},
+                            {"id": "tax", "label": "Tax amount", "formula": "(internet_sales.revenue + reseller_sales.revenue) * 0.2"}]
+    return spec
+
+
+def test_a_formula_is_read_into_a_tree_and_worked_out_with_missing_parts_skipped():
+    tree = calc_mod.parse("sum(internet_sales.revenue + reseller_sales.revenue) / sum(internet_sales.units, reseller_sales.units) * 2 - -1")
+    assert calc_mod.members_of(tree) == ["internet_sales.revenue", "reseller_sales.revenue", "internet_sales.units", "reseller_sales.units"]
+    value = {"internet_sales.revenue": 10, "reseller_sales.revenue": 30, "internet_sales.units": 2, "reseller_sales.units": 2}.get
+    assert calc_mod.evaluate(tree, value) == 21
+    assert calc_mod.evaluate(tree, {"internet_sales.revenue": 10, "internet_sales.units": 2}.get) == 11, "a part with no value is skipped in a sum"
+    assert calc_mod.evaluate(calc_mod.parse("a.x / b.y"), {"a.x": 1, "b.y": 0}.get) is None, "division by zero has no value"
+    assert calc_mod.evaluate(calc_mod.parse("a.x * 2"), {}.get) is None, "a product needs both sides"
+    for bad in ["", "a.x +", "revenue", "(a.x", "a.x $ 2", "sum(a.x", "a.x b.y"]:
+        with pytest.raises(calc_mod.FormulaError):
+            calc_mod.parse(bad)
+
+
+def test_every_panel_type_can_use_a_calculation_and_the_page_asks_cube_for_its_parts():
+    spec = with_calcs()
+    spec["filters"] = []
+    for p in spec["panels"]:
+        p.pop("on_click", None)
+    spec["panels"] += [
+        {"id": "ckpi", "type": "kpi", "measures": [{"member": "calc.avg_price"}, {"member": "calc.tax"}], "sparkline": {"granularity": "month"}},
+        {"id": "cbar", "type": "bar", "measure": "calc.avg_price", "by": "products.category", "limit": 5},
+        {"id": "cstack", "type": "bar", "stack": [{"member": "calc.tax"}, {"member": "internet_sales.revenue"}], "by": "products.category"},
+        {"id": "cpie", "type": "pie", "measure": "calc.tax", "by": "products.category"},
+        {"id": "ctree", "type": "treemap", "measure": "calc.tax", "group": ["products.category"]},
+        {"id": "ctab", "type": "table", "columns": ["products.category", "calc.avg_price", "calc.tax"], "order": {"calc.avg_price": "desc"}, "limit": 10, "totals": "footer"},
+        {"id": "cpiv", "type": "pivot", "rows": ["products.category"], "columns": "territories.group_name", "measures": ["calc.avg_price"]},
+        {"id": "cts", "type": "timeseries", "series": [{"member": "calc.avg_price", "label": "Price"}], "granularity": "month"},
+    ]
+    spec["layout"] += [[{"ckpi": 12}], [{"cbar": 6}, {"cstack": 6}], [{"cpie": 4}, {"ctree": 4}, {"cts": 4}], [{"ctab": 6}, {"cpiv": 6}]]
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert out["members"]["calc.avg_price"]["calc"]["members"] == ["internet_sales.revenue", "reseller_sales.revenue", "internet_sales.units", "reseller_sales.units"]
+    assert out["members"]["calc.avg_price"]["label"] == "Average sales price"
+    assert panel(out, "ctab")["columns"][1]["format"] == "money" and "format" not in panel(out, "ctab")["columns"][2], "the calculation's own format is the default"
+    assert panel(out, "cbar")["format"] == "money"
+    bar = panel_queries(out, panel(out, "cbar"), {})
+    assert [q["cube"] for q in bar] == ["internet_sales", "reseller_sales"], "Cube is asked for the measures a calculation reads, one query per cube"
+    assert all("calc.avg_price" not in json.dumps(q["query"]) and "limit" not in q["query"] and "order" not in q["query"] for q in bar)
+    assert bar[0]["post"]["order"] == {"calc.avg_price": "desc"} and bar[0]["post"]["limit"] == 5
+    path = None
+    import pathlib, tempfile  # noqa: E401
+    with tempfile.TemporaryDirectory() as d:
+        path = pathlib.Path(d) / "calc.json"
+        path.write_text(json.dumps(out))
+        dumped = json.loads(subprocess.run(["node", str(REPO / "dashboards/tests/dump_queries.mjs"), str(path)], capture_output=True, text=True, check=True).stdout)
+    assert dumped
+    for state in dumped:
+        for p in out["panels"]:
+            assert panel_queries(out, p, state["values"]) == state["panels"][p["id"]], f"{p['id']} under {state['values']}"
+
+
+CALC_BROKEN = [
+    ("a formula that does not read", lambda s: s["calculations"][0].update(formula="sum(internet_sales.revenue"), ["calculation 'avg_price': formula: expected ')'"]),
+    ("an unknown measure", lambda s: s["calculations"][0].update(formula="internet_sales.nope / 2"), ["calculation 'avg_price': formula: 'internet_sales.nope' is not in the Cube model"]),
+    ("a dimension in a formula", lambda s: s["calculations"][0].update(formula="products.name * 2"), ["calculation 'avg_price': formula: 'products.name' is a dimension, a measure is needed here"]),
+    ("a calculation of a calculation", lambda s: s["calculations"][0].update(formula="calc.tax * 2"), ["calculation 'avg_price': formula: 'calc.tax' is a calculation"]),
+    ("an id used twice", lambda s: s["calculations"][1].update(id="avg_price"), ["dashboard: calculations: id 'avg_price' is used by more than one calculation"]),
+    ("a calculation that does not exist", lambda s: s["panels"].append({"id": "bad", "type": "table", "columns": ["products.category", "calc.nope"]}) or s["layout"].append([{"bad": 12}]),
+     ["panel 'bad' (table): columns[1]: 'calc.nope' is not in the Cube model (calculations: calc.avg_price, calc.tax)"]),
+    ("a calculation that cannot join to a column", lambda s: s["panels"].append({"id": "bad", "type": "table", "columns": ["internet_sales.order_number", "calc.avg_price"]}) or s["layout"].append([{"bad": 12}]),
+     ["panel 'bad' (table): 'reseller_sales.revenue' cannot be combined with 'internet_sales.order_number'"]),
+    ("a calculation of what the role cannot read", lambda s: (s.update(roles=["rep"]), s["calculations"][0].update(formula="internet_sales.gross_profit / internet_sales.revenue")) and None,
+     ["role 'rep' cannot read 'internet_sales.gross_profit' (profit and margin are hidden from reps)"]),
+]
+
+
+@pytest.mark.parametrize("name,mutate,expected", CALC_BROKEN, ids=[c[0] for c in CALC_BROKEN])
+def test_a_broken_calculation_fails_with_a_message_that_names_the_place(name, mutate, expected):
+    spec = with_calcs()
+    spec["panels"].append({"id": "uses", "type": "table", "columns": ["products.category", "calc.avg_price"]})
+    spec["layout"].append([{"uses": 12}])
+    mutate(spec)
+    errors, _ = validate(spec, CATALOG)
+    text = "\n".join(errors)
+    assert errors and all(e in text for e in expected), text
