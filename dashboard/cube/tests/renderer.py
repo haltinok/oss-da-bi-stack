@@ -1033,6 +1033,22 @@ with sync_playwright() as p:
     def serve(compiled):
         return lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(compiled))
 
+    # a bar ordered by the name of its grouping (not by value)
+    def compiled_sorted_by_name():
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-overview.yml").read_text())
+        top_panel = next(p for p in src["panels"] if p["id"] == "top")
+        top_panel.update(sort_by="label", sort="asc", limit=5)
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        return _compile(src, used, catalog)
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_sorted_by_name()))])
+    settled(page)
+    names = [n.strip() for n in page.locator('[data-panel="top"] .rrow .name').all_inner_texts()]
+    check(len(names) >= 2 and names == sorted(names, key=lambda n: n.lower()), f"a stacked bar with sort_by: label lists its names in order, not by value ({names})")
+    ctx.close()
+
     # a filter chosen in the header narrows the panel whose own click sets it too; the choice a click made keeps that panel showing everything
     ctx, page = open_page(browser, "/d/sales-overview")
     settled(page)

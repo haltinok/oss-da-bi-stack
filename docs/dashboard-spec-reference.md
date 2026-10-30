@@ -179,7 +179,8 @@ Exactly one of `measure` or `stack`.
 | `stack` | list of object (2+) |  | Two or more measures stacked in one bar (internet and reseller revenue), ranked by their total after merging the per-cube results. |
 | `by` | member (`cube.name`) | yes | The dimension each bar stands for. |
 | `split` | member (`cube.name`) |  | Splits each bar by another dimension (with `measure`, not with `stack`). |
-| `sort` | `asc` \| `desc` |  | `desc` (default) or `asc`. |
+| `sort_by` | `value` \| `label` |  | What the bars are ordered by: `value` (default: the measure, or the total of the stack) or `label` (the name of the grouping, in its own order: a month by its number, a number by its size, text alphabetically). With `limit`, the bars kept are the first in this order. |
+| `sort` | `asc` \| `desc` |  | `desc` (default) or `asc`, of what `sort_by` says. |
 | `limit` | integer 1-1000 |  | How many bars. Default 10. |
 | `orientation` | `horizontal` \| `vertical` |  | `horizontal` (ranked rows, default) or `vertical` (columns, for a few categories). |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How values are shown. Default `number`. |

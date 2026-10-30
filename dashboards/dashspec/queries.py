@@ -269,9 +269,11 @@ def panel_queries(spec, panel, values):
     if kind == "bar":
         measures = [s["member"] for s in panel["stack"]] if "stack" in panel else [panel["measure"]]
         single = "stack" not in panel and "split" not in panel
-        base = {"dimensions": [panel["by"], *([panel["split"]] if "split" in panel else [])], "filters": filters}
+        by_label = panel.get("sort_by") == "label"
+        dims = [panel["by"], *([panel["split"]] if "split" in panel else [])]
+        base = {"dimensions": with_sort_keys(spec, dims) if by_label else dims, "filters": filters}
         if single:
-            base |= {"order": {panel["measure"]: panel.get("sort", "desc")}, "limit": panel.get("limit", DEFAULT_LIMIT["bar"])}
+            base |= {"order": {(sort_key_of(spec, panel["by"]) or panel["by"]) if by_label else panel["measure"]: panel.get("sort", "desc")}, "limit": panel.get("limit", DEFAULT_LIMIT["bar"])}
         return follow_period(spec, panel, values, per_cube(spec, measures, base))
     if kind == "pie":
         qs = per_cube(spec, panel.get("sum") or [panel["measure"]], {"dimensions": [panel["by"]], "filters": filters, "limit": 100})

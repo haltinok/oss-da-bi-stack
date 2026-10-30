@@ -347,9 +347,10 @@ function barPanel(def, ctx) {
     const limit = def.limit || 10;
     const res = await runAll(ctx.run, barQueries(ctx.spec, def, ctx.filterValues()), signal);
     const by = new Map();
+    const rankKey = sortKeyOf(ctx.spec, def.by);                  // a month's name sorts by its number
     for (const r of res.flatMap((x) => x.rows)) {
       const k = String(r[def.by]);
-      if (!by.has(k)) by.set(k, { label: k, parts: new Map(), total: 0 });
+      if (!by.has(k)) by.set(k, { label: k, parts: new Map(), total: 0, rank: rankKey && r[rankKey] != null ? Number(r[rankKey]) : undefined });
       const cur = by.get(k);
       for (const m of measures) {
         if (!(m in r)) continue;
@@ -359,7 +360,8 @@ function barPanel(def, ctx) {
         cur.total += v;
       }
     }
-    const rows = [...by.values()].sort((a, b) => (sort === "asc" ? a.total - b.total : b.total - a.total)).slice(0, limit);
+    const byName = (a, b) => (a.rank !== undefined && b.rank !== undefined ? a.rank - b.rank : a.label.localeCompare(b.label, undefined, { numeric: true }));
+    const rows = [...by.values()].sort((a, b) => (def.sort_by === "label" ? (sort === "asc" ? byName(a, b) : byName(b, a)) : sort === "asc" ? a.total - b.total : b.total - a.total)).slice(0, limit);
     const splits = def.split ? [...new Set(res[0].rows.map((r) => String(r[def.split])))].sort() : [];
     const parts = def.stack ? stack.map((s) => ({ key: s.member, name: s.label, color: s.color })) : splits.map((s, i) => ({ key: s, name: s, color: colorOf(null, i) }));
     const max = Math.max(...rows.map((r) => Math.abs(r.total)), 1);

@@ -266,6 +266,7 @@
               },
               "by": { "$ref": "#/$defs/member" },
               "split": { "$ref": "#/$defs/member" },
+              "sort_by": { "enum": ["value", "label"] },
               "sort": { "$ref": "#/$defs/direction" },
               "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
               "orientation": { "enum": ["horizontal", "vertical"] },
