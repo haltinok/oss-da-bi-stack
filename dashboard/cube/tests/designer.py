@@ -975,6 +975,19 @@ with sync_playwright() as p:
         page.locator("#designer [data-rmitem]").nth(before - 1).click()
     settled(page)
     check(len(cols()) == before - 1, "Remove this one takes a field out")
+    heads_n = lambda: page.locator(f'[data-panel="{tbl}"] thead th').count()
+    shown_n = heads_n()
+    with changes(page):
+        page.select_option('#designer [data-path="columns.0.hidden"]', "hidden")
+    settled(page)
+    check(isinstance(cols()[0], dict) and cols()[0].get("hidden") is True, "choosing Hidden writes hidden: true on the field")
+    page.wait_for_selector(f'[data-panel="{tbl}"] table', timeout=15000)
+    check(heads_n() == shown_n - 1, f"a hidden field is not drawn ({shown_n} headings became {heads_n()})")
+    check(any("(hidden)" in o for o in page.locator('#designer [data-path="order.member"] option').all_inner_texts()), "the sort list still offers it, marked hidden")
+    with changes(page):
+        page.select_option('#designer [data-path="columns.0.hidden"]', "shown")
+    settled(page)
+    check("hidden" not in (cols()[0] if isinstance(cols()[0], dict) else {}) and heads_n() == shown_n, "Shown brings it back")
     measure_idx = next(i for i, c in enumerate(cols()) if (c["member"] if isinstance(c, dict) else c).endswith(("revenue", "orders", "units")) or False) if any((c["member"] if isinstance(c, dict) else c).endswith(("revenue", "orders", "units")) for c in cols()) else None
     check(measure_idx is None or "Built into the measure" in page.locator("#designer .dz-formula").first.inner_text(), "a measure shows the aggregation it already has (not editable)")
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")

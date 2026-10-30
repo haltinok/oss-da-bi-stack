@@ -396,6 +396,11 @@ def semantic_errors(spec, catalog):
                 if col not in shown:
                     errs.append(f"{w}: order.{col}: not one of the table's columns")
             for c in p["columns"]:
+                if isinstance(c, dict) and c.get("hidden") and "aggregate" in c:
+                    errs.append(f"{w}: columns: '{c['member']}' is `hidden` and has an `aggregate`; a hidden field is only there to sort or limit by (remove one of them)")
+            if all(isinstance(c, dict) and c.get("hidden") for c in p["columns"]):
+                errs.append(f"{w}: columns: every column is `hidden`; show at least one")
+            for c in p["columns"]:
                 if isinstance(c, dict) and "rules" in c and (catalog.lookup(c["member"]) or ("",))[0] != "measure":
                     errs.append(f"{w}: columns: '{c['member']}' has `rules`, which colour a measure column; it is not a measure")
             if "totals" in p and not any((catalog.lookup(m) or ("",))[0] == "measure" for m in shown) and not any(isinstance(c, dict) and "aggregate" in c for c in p["columns"]):

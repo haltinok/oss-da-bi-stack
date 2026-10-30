@@ -157,7 +157,8 @@
             "label": { "type": "string" },
             "format": { "$ref": "#/$defs/format" },
             "aggregate": { "$ref": "#/$defs/aggregate" },
-            "rules": { "$ref": "#/$defs/rules" }
+            "rules": { "$ref": "#/$defs/rules" },
+            "hidden": { "type": "boolean" }
           }
         }
       ]

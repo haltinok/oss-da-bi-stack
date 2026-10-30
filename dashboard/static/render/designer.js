@@ -8,7 +8,7 @@ import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
 import { PANEL_TYPES, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
-import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
+import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
 import { mountDnd } from "./designer-dnd.js";
@@ -153,6 +153,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       if (fd.kind === "pievalue") { slot.append(pieControl(panel)); continue; }
       if (["multicheck", "drill", "ignorefilters", "tableorder", "barkind", "pivotstep"].includes(fd.kind)) { slot.append(panelOptionControl(fd, panel)); continue; }
       if (fd.kind === "aggregate") { slot.append(aggregateControl(fd, panel)); continue; }
+      if (fd.kind === "colshown") { slot.append(shownControl(fd, panel)); continue; }
       if (fd.kind === "builtin") { slot.append(el("span", { class: "dz-formula" }, esc(dz.builtinAgg(memberInfo(fd.member)?.type)))); continue; }
       if (fd.kind === "value") slot.append(valueControl(fd, panel));
       else slot.append(control(fd, panel, (v) => {
@@ -227,7 +228,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       const members = panel.columns.map((c) => (typeof c === "string" ? c : c.member));
       const cur = Object.entries(panel.order || {})[0] || ["", "desc"];
       const field = el("select", { "data-path": "order.member", "aria-label": dz.f.tableOrder });
-      field.append(el("option", { value: "" }, esc(dz.none)), ...members.map((m) => el("option", { value: m }, esc(m))));
+      field.append(el("option", { value: "" }, esc(dz.none)), ...members.map((m, i) => el("option", { value: m }, esc(panel.columns[i]?.hidden ? `${m} (${dz.v.col_hidden_short})` : m))));
       const dir = el("select", { "data-path": "order.dir", "aria-label": dz.f.orderDir });
       for (const d of ["desc", "asc"]) dir.append(el("option", { value: d }, esc(dz.v[d])));
       field.value = members.includes(cur[0]) ? cur[0] : "";
@@ -305,6 +306,15 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     for (const a of aggregatesFor(fd.type)) pick.append(el("option", { value: a }, esc(dz.v[`agg_${a}`])));
     pick.value = panel.columns[fd.index]?.aggregate || "";
     pick.addEventListener("change", () => commit(setColumnAggregate(source, selected, fd.index, pick.value), { message: dz.changed(panel.title || selected) }));
+    return pick;
+  }
+
+  /** A table field: shown, or hidden (queried so the table can be sorted or limited by it, not drawn). */
+  function shownControl(fd, panel) {
+    const pick = el("select", { "data-path": fd.path, "aria-label": dz.f.shown });
+    for (const v of ["shown", "hidden"]) pick.append(el("option", { value: v }, esc(dz.v[`col_${v}`])));
+    pick.value = panel.columns[fd.index]?.hidden ? "hidden" : "shown";
+    pick.addEventListener("change", () => commit(setColumnHidden(source, selected, fd.index, pick.value === "hidden"), { message: dz.changed(panel.title || selected) }));
     return pick;
   }
 

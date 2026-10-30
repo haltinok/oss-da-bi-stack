@@ -604,7 +604,8 @@ function tablePanel(def, ctx) {
     if (c.format) return colOf(label, XLSX_TYPE[c.format] || "text", (r) => num(r.dims[m]), ctx.formatter(c.format, true));
     return colOf(label, "text", (r) => (r.dims[m] == null ? "" : String(r.dims[m])), (v) => v);
   };
-  const columns = () => cols.map((c) => ({ ...colFor(c), sortKey: c.member }));
+  const shownCols = cols.filter((c) => !c.hidden);                    // a hidden field is queried (to sort or limit by) but not drawn, exported or totalled
+  const columns = () => shownCols.map((c) => ({ ...colFor(c), sortKey: c.member }));
   // The viewer can hide the total row (a per-viewer view setting, like the Table toggle; the spec's `totals` says where it goes when shown).
   let showTotals = true;
   // The viewer's header click (see plan.js tableOrder): undefined = untouched, null = cleared, { member, dir }. Cube re-sorts, because `limit` cuts the rows.
@@ -644,7 +645,7 @@ function tablePanel(def, ctx) {
     let totalsRow = null;
     if (def.totals) {
       const t = tot && totals(tot);
-      totalsRow = { position: def.totals, cells: cols.map((c) => (aggOf.has(c.member) ? (aggTotals?.get(c.member) ?? null) : kindOf(c.member).kind === "measure" ? (t?.get(c.member) ?? null) : undefined)) };
+      totalsRow = { position: def.totals, cells: shownCols.map((c) => (aggOf.has(c.member) ? (aggTotals?.get(c.member) ?? null) : kindOf(c.member).kind === "measure" ? (t?.get(c.member) ?? null) : undefined)) };
     }
     const draw = (host) => {
       const shown = showTotals ? totalsRow : null;
