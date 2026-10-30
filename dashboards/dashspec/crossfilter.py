@@ -22,7 +22,7 @@ def carried(panel, used, catalog=None, time_dim=None):
         return list(panel["group"])
     if kind == "table":
         cols = [c if isinstance(c, dict) else {"member": c} for c in panel["columns"]]
-        return [c["member"] for c in cols if used.get(c["member"], {}).get("kind") != "measure" and "aggregate" not in c]          # an aggregated field is a value, not a key
+        return [c["member"] for c in cols if used.get(c["member"], {}).get("kind") != "measure" and "aggregate" not in c and not c.get("hidden")]          # an aggregated field is a value, not a key
     if kind == "pivot":
         return [*panel["rows"], *([panel["columns"]] if isinstance(panel["columns"], str) else [])]
     if kind == "timeseries" and catalog is not None and time_dim:

@@ -1529,6 +1529,26 @@ def test_a_table_does_not_cross_filter_unless_it_says_so():
     assert panel(out, "chosen")["on_click"]["set_filter"], "cross_filter: true turns it on"
 
 
+def test_a_hidden_column_is_there_to_sort_by_and_is_not_carried_by_a_click():
+    spec = copy.deepcopy(GOOD)
+    spec["filters"] = []
+    for p in spec["panels"]:
+        p.pop("on_click", None)
+    panel(spec, "lines")["columns"] = [{"member": "internet_sales.order_number", "label": "Order"}, {"member": "internet_sales.order_date", "hidden": True}, "internet_sales.revenue"]
+    panel(spec, "lines")["limit"] = 20
+    errors, used = validate(spec, CATALOG)
+    assert errors == [], errors
+    out = compile_spec(spec, used, CATALOG)
+    assert [by["dimension"] for by in _made(out, "lines")] == ["internet_sales.order_number"], "the click carries the shown field only"
+    bad = copy.deepcopy(spec)
+    panel(bad, "lines")["columns"][1]["aggregate"] = "max"
+    assert any("hidden" in e and "aggregate" in e for e in validate(bad, CATALOG)[0])
+    allhid = copy.deepcopy(spec)
+    allhid_cols = [{"member": c if isinstance(c, str) else c["member"], "hidden": True} for c in panel(allhid, "lines")["columns"]]
+    panel(allhid, "lines")["columns"] = allhid_cols
+    assert any("every column is `hidden`" in e for e in validate(allhid, CATALOG)[0])
+
+
 def test_a_pivot_and_a_time_chart_cross_filter_by_default_too():
     spec = copy.deepcopy(GOOD)
     spec["filters"] = [f for f in spec["filters"] if f["id"] != "fy"]

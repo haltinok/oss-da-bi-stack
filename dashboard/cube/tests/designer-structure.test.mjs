@@ -378,3 +378,21 @@ test("a measure to add is one the panel can join to: customers.count is not offe
   const all = one.flatMap((c) => c.measures.map((x) => x.member));
   assert.ok(all.includes(spareMeasure(one, src, kpi, all)), "every fitting measure taken: a repeat is allowed");
 });
+
+// ---- hidden table fields
+import { setColumnHidden } from "../../static/lib/designer-items.js";
+
+test("a table field can be hidden (queried, to sort by, but not drawn) and shown again", () => {
+  const src = { ...SOURCE, panels: [...SOURCE.panels, { id: "tbl", type: "table", columns: ["products.name", { member: "internet_sales.order_date", label: "Date" }, "internet_sales.revenue"], order: { "internet_sales.order_date": "desc" } }] };
+  const get = (s) => s.panels.find((p) => p.id === "tbl");
+  const hid = setColumnHidden(src, "tbl", 1, true);
+  assert.equal(get(hid.source).columns[1].hidden, true);
+  assert.equal(get(src).columns[1].hidden, undefined, "the argument is not touched");
+  const plain = setColumnHidden(src, "tbl", 0, true);
+  assert.deepEqual(get(plain.source).columns[0], { member: "products.name", hidden: true }, "a plain member becomes an object");
+  assert.equal(get(setColumnHidden(plain.source, "tbl", 0, false).source).columns[0], "products.name", "shown again: back to a plain member");
+  const two = { ...src, panels: src.panels.map((p) => (p.id === "tbl" ? { ...p, columns: [{ member: "products.name", hidden: true }, "internet_sales.revenue"] } : p)) };
+  assert.equal(setColumnHidden(two, "tbl", 1, true).problem, "lastShown", "one field stays shown");
+  const agg = { ...src, panels: src.panels.map((p) => (p.id === "tbl" ? { ...p, columns: ["products.name", { member: "internet_sales.order_date", aggregate: "max" }] } : p)) };
+  assert.equal(setColumnHidden(agg, "tbl", 1, true).problem, "aggregated");
+});

@@ -78,6 +78,7 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
         // A measure has its aggregation built in; a dimension is a group, or a value with an aggregate (sum, max, ...).
         if (isMeasure(member)) out.push({ path: `columns.${i}.~builtin`, kind: "builtin", key: "aggregate", member, group: g });
         else out.push({ path: `columns.${i}.aggregate`, kind: "aggregate", key: "aggregate", type: typeOf(member), index: i, group: g });
+        if (!(isObj && c.aggregate)) out.push({ path: `columns.${i}.hidden`, kind: "colshown", key: "shown", index: i, group: g });          // a value field (aggregated) is always shown
         if (isMeasure(member)) ruleFields(`columns.${i}`, isObj ? c : {}, true);
       });
       out.push(f("limit", "number", { key: "limit", min: 1, max: 1000, optional: true }), f("totals", "choice", { key: "totals", options: ["footer", "header"], optional: true }), { path: "order", kind: "tableorder", key: "tableOrder" }, f("cross_filter", "crossfilter", { key: "crossFilter" }));

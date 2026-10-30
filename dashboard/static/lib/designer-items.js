@@ -149,8 +149,23 @@ export function setColumnAggregate(source, panelId, index, aggregate) {
   const col = panel?.columns?.[index];
   if (!col) return { problem: "item" };
   const made = typeof col === "string" ? { member: col } : col;
-  if (aggregate) made.aggregate = aggregate; else delete made.aggregate;
+  if (aggregate) { made.aggregate = aggregate; delete made.hidden; } else delete made.aggregate;          // a value field is shown
   panel.columns[index] = made;
+  return { source: next };
+}
+
+/** Shows a table field, or hides it (`hidden: true`: queried, so the table can be sorted or limited by it, but not drawn). The last shown field cannot be hidden. */
+export function setColumnHidden(source, panelId, index, hidden) {
+  const { next, panel } = at(source, panelId, "id");
+  const col = panel?.columns?.[index];
+  if (!col) return { problem: "item" };
+  const made = typeof col === "string" ? { member: col } : col;
+  if (hidden) {
+    if (made.aggregate) return { problem: "aggregated" };
+    if (panel.columns.every((c, i) => i === index || (typeof c === "object" && c.hidden))) return { problem: "lastShown" };
+    made.hidden = true;
+  } else delete made.hidden;
+  panel.columns[index] = Object.keys(made).length === 1 && made.member ? made.member : made;
   return { source: next };
 }
 
