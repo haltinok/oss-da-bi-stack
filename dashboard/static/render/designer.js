@@ -7,7 +7,7 @@ import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, m
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, addCalculation, removeCalculation, setCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -127,31 +127,171 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       list.append(card);
     }
     const calcList = drawer.querySelector("#dz-calcs");
+    if (!(source.calculations || []).length) calcList.innerHTML = `<p class="hint">${esc(dz.noCalcs)}</p>`;
     for (const c of source.calculations || []) {
       const card = el("div", { class: "dz-filter", "data-calc": c.id });
-      card.append(el("h4", {}, esc(`calc.${c.id}`)));
-      const edit = (key, v) => commit(setCalculation(source, c.id, key, v), { message: dz.calcChanged, panel: null });
-      card.append(field({ path: "label", kind: "text", key: "calcLabel" }, c, (v) => edit("label", v)),
-        field({ path: "formula", kind: "text", key: "calcFormula" }, c, (v) => edit("formula", v)),
-        field({ path: "format", kind: "choice", key: "format", options: FORMATS, optional: true }, c, (v) => edit("format", v)));
-      card.append(el("button", { type: "button", class: "dz-danger", "data-rm-calc": c.id }, esc(dz.removeCalc)));
+      card.append(el("h4", {}, esc(`calc.${c.id}`)), el("div", {}, `<strong>${esc(c.label)}</strong>`), el("code", { class: "dz-formula" }, esc(c.formula)));
+      const edit = el("button", { type: "button", "data-edit-calc": c.id }, esc(dz.calcEdit));
+      edit.addEventListener("click", () => openCalcDialog(c.id, null));
+      const rm = el("button", { type: "button", class: "dz-danger", "data-rm-calc": c.id }, esc(dz.removeCalc));
+      rm.addEventListener("click", () => commit(removeCalculation(source, c.id), { message: dz.calcRemoved, panel: null }));
+      card.append(el("div", { class: "dz-actions" }, "")); card.lastChild.append(edit, rm);
       calcList.append(card);
     }
-    drawer.querySelector("#dz-calc-add").append(calcAddRow(null));
-    for (const b of calcList.querySelectorAll("[data-rm-calc]")) b.addEventListener("click", () => commit(removeCalculation(source, b.dataset.rmCalc), { message: dz.calcRemoved, panel: null }));
+    drawer.querySelector("#dz-calc-add").append(calcEntry(null));
     const pick = drawer.querySelector("#dz-newfilter");
     for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
   }
 
-  /** Name + formula + button: a new calculation (it then appears in every measure list). `panel` is the panel to stay on afterwards (null: the page view). */
-  function calcAddRow(panel) {
-    const row = el("div", { class: "dz-add-calc" });
-    const label = el("input", { type: "text", id: "dz-newcalc-label", maxlength: 60, placeholder: dz.calcLabelHint, "aria-label": dz.f.calcLabel });
-    const formulaBox = el("input", { type: "text", id: "dz-newcalc-formula", maxlength: 500, placeholder: dz.calcFormulaHint, "aria-label": dz.f.calcFormula });
-    const add = el("button", { type: "button", id: "dz-addcalc" }, esc(dz.addCalc));
-    add.addEventListener("click", () => commit(addCalculation(source, { label: label.value, formula: formulaBox.value }), { message: dz.calcAdded, panel }));
-    row.append(label, formulaBox, add);
+  /** The way into the calculations window: New, and one button per calculation of the dashboard to edit it. `panelId` is the panel to stay on afterwards (null: the page view). */
+  function calcEntry(panelId) {
+    const row = el("div", { class: "dz-calc-entry" });
+    const add = el("button", { type: "button", id: "dz-newcalc", class: "dz-mini" }, esc(dz.calcNew));
+    add.addEventListener("click", () => openCalcDialog(null, panelId));
+    row.append(add);
+    for (const c of source.calculations || []) {
+      const b = el("button", { type: "button", class: "dz-mini", "data-edit-calc": c.id, title: c.formula }, esc(`${dz.calcEdit}: ${c.label}`));
+      b.addEventListener("click", () => openCalcDialog(c.id, panelId));
+      row.append(b);
+    }
     return row;
+  }
+
+  /** The window for writing a calculation: a name, the model's measures on the left (double-click one to put it into the formula), the formula in the middle, operators on the right. */
+  function openCalcDialog(editId = null, panelId = null) {
+    const dlg = el("dialog", { id: "calc-dialog", class: "calc-dialog", "aria-labelledby": "calc-title" });
+    const pickCalc = el("select", { id: "calc-pick", "aria-label": dz.calcPick });
+    const name = el("input", { type: "text", id: "calc-name", maxlength: 60, placeholder: dz.calcLabelHint, "aria-label": dz.f.calcLabel });
+    const format = el("select", { id: "calc-format", "aria-label": dz.f.format });
+    format.append(el("option", { value: "" }, esc(dz.none)), ...FORMATS.map((v) => el("option", { value: v }, esc(dz.v[v] || v))));
+    const box = el("textarea", { id: "calc-formula", rows: 9, spellcheck: "false", "aria-label": dz.f.calcFormula, placeholder: dz.calcFormulaHint });
+    const status = el("div", { id: "calc-check", class: "calc-check", role: "status" });
+    const save = el("button", { type: "button", id: "calc-save", class: "calc-primary" }, esc(dz.calcSave));
+    const del = el("button", { type: "button", id: "calc-delete", class: "dz-danger" }, esc(dz.removeCalc));
+    const cancel = el("button", { type: "button", id: "calc-cancel" }, esc(dz.calcCancel));
+    let current = editId, checked = 0, valid = false, timer = 0;
+
+    /** Puts text where the cursor is in the formula (replacing what is selected) and leaves the cursor after it, `back` characters in from the end. */
+    const insert = (text, back = 0) => {
+      const from = box.selectionStart ?? box.value.length, to = box.selectionEnd ?? from;
+      box.value = box.value.slice(0, from) + text + box.value.slice(to);
+      const at = from + text.length - back;
+      box.focus();
+      box.setSelectionRange(at, at);
+      later();
+    };
+
+    // the model's measures, by cube
+    const tree = el("div", { id: "calc-tree", class: "calc-tree" });
+    const search = el("input", { type: "search", id: "calc-search", placeholder: dz.calcSearch, "aria-label": dz.calcSearch });
+    for (const c of baseCatalog) {
+      if (!c.measures.length) continue;
+      const det = el("details", { "data-cube": c.cube });
+      det.append(el("summary", {}, esc(c.cube)));
+      for (const m of c.measures) {
+        const b = el("button", { type: "button", class: "calc-m", "data-member": m.member, title: `${m.description || m.member}${dz.calcDblHint}` }, esc(m.member.split(".")[1]));
+        b.addEventListener("dblclick", () => insert(m.member));
+        b.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); insert(m.member); } });
+        det.append(b);
+      }
+      tree.append(det);
+    }
+    tree.querySelector("details")?.setAttribute("open", "");
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      for (const det of tree.querySelectorAll("details")) {
+        let any = false;
+        for (const b of det.querySelectorAll(".calc-m")) { const hit = !q || b.dataset.member.includes(q); b.hidden = !hit; any ||= hit; }
+        det.hidden = !any;
+        if (q && any) det.setAttribute("open", "");
+      }
+    });
+
+    // the operators and keywords
+    const OPS = [["+", " + ", 0], ["−", " - ", 0], ["×", " * ", 0], ["÷", " / ", 0], ["(", "(", 0], [")", ")", 0], [",", ", ", 0], ["sum( )", "sum()", 1]];
+    const ops = el("div", { class: "calc-ops" });
+    ops.append(el("h3", {}, esc(dz.calcOperators)));
+    for (const [label, text, back] of OPS) {
+      const b = el("button", { type: "button", class: "calc-op", "data-insert": text.trim() || text, title: dz.calcOpHint[label] || "" }, esc(label));
+      b.addEventListener("dblclick", () => insert(text, back));
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); insert(text, back); } });
+      ops.append(b);
+    }
+    ops.append(el("p", { class: "hint" }, esc(dz.calcOpsTip)));
+
+    const candidate = () => saveCalculation(source, { id: current, label: name.value.trim() || dz.calcPlaceholderName, formula: box.value, format: format.value });
+    async function check() {
+      const mine = ++checked;
+      const text = box.value.trim();
+      valid = false;
+      save.disabled = true;
+      if (!text) { status.className = "calc-check"; status.textContent = dz.calcNeedFormula; return; }
+      const edit = candidate();
+      try {
+        const r = await api.validate(JSON.stringify(edit.source));
+        if (mine !== checked) return;                                                       // a newer check is on its way
+        valid = !!r.ok;
+        status.className = `calc-check ${r.ok ? "ok" : "bad"}`;
+        status.innerHTML = r.ok ? esc(dz.calcOk) : `<ul>${(r.problems || []).map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`;
+        save.disabled = !valid || !name.value.trim();
+      } catch (e) { if (mine === checked) { status.className = "calc-check bad"; status.textContent = e.message; } }
+    }
+    const later = () => { clearTimeout(timer); save.disabled = true; timer = setTimeout(check, 350); };
+    function load(id) {
+      current = id || null;
+      const c = (source.calculations || []).find((x) => x.id === current);
+      name.value = c?.label || ""; box.value = c?.formula || ""; format.value = c?.format || "";
+      del.hidden = !c;
+      dlg.querySelector("#calc-title").textContent = c ? `${dz.calcTitleEdit}: calc.${c.id}` : dz.calcTitleNew;
+      pickCalc.value = current || "";
+      check();
+    }
+    pickCalc.append(el("option", { value: "" }, esc(dz.calcNew)), ...(source.calculations || []).map((c) => el("option", { value: c.id }, esc(c.label))));
+    pickCalc.addEventListener("change", () => load(pickCalc.value));
+    name.addEventListener("input", later);
+    box.addEventListener("input", later);
+    format.addEventListener("change", later);
+
+    const close = () => { dlg.close(); dlg.remove(); };
+    cancel.addEventListener("click", close);
+    dlg.addEventListener("cancel", () => setTimeout(() => dlg.remove()));
+    save.addEventListener("click", async () => {
+      await check();
+      if (!valid || !name.value.trim()) return;
+      const edit = candidate();
+      close();
+      commit(edit, { message: current ? dz.calcChanged : dz.calcAdded, panel: panelId });
+    });
+    del.addEventListener("click", () => {
+      const edit = removeCalculation(source, current);
+      if (edit.problem) { status.className = "calc-check bad"; status.textContent = dz.cannot[edit.problem]; return; }
+      close();
+      commit(edit, { message: dz.calcRemoved, panel: panelId });
+    });
+
+    dlg.append(
+      el("div", { class: "calc-head" }, `<h2 id="calc-title"></h2>`),
+      el("div", { class: "calc-top" }, ""),
+      el("div", { class: "calc-body" }, ""),
+      el("div", { class: "calc-foot" }, ""));
+    dlg.querySelector(".calc-head").append(el("label", { class: "calc-pick" }, `<span>${esc(dz.calcPick)}</span>`), el("button", { type: "button", class: "dz-close", "aria-label": dz.close }, "✕"));
+    dlg.querySelector(".calc-pick").append(pickCalc);
+    dlg.querySelector(".dz-close").addEventListener("click", close);
+    const top = dlg.querySelector(".calc-top");
+    top.append(el("label", { class: "calc-name" }, `<span>${esc(dz.f.calcLabel)}</span>`), el("label", { class: "calc-fmt" }, `<span>${esc(dz.f.format)}</span>`));
+    top.querySelector(".calc-name").append(name); top.querySelector(".calc-fmt").append(format);
+    const body = dlg.querySelector(".calc-body");
+    const left = el("aside", { class: "calc-measures" }, `<h3>${esc(dz.calcMeasures)}</h3>`);
+    left.append(search, tree);
+    const mid = el("section", { class: "calc-main" }, `<label for="calc-formula">${esc(dz.f.calcFormula)}</label>`);
+    mid.append(box, status, el("p", { class: "hint" }, esc(dz.calcsHint)));
+    body.append(left, mid, ops);
+    const foot = dlg.querySelector(".calc-foot");
+    foot.append(del, el("span", { class: "spacer" }, ""), cancel, save);
+    document.body.append(dlg);
+    load(editId);
+    dlg.showModal();
+    (editId ? box : name).focus();
   }
 
   function drawPanel(panel) {
@@ -172,7 +312,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       ${tabsOf(source).length > 1 ? `<label class="dz-field"><span>${esc(dz.toTab)}</span><span class="dz-input"><select id="dz-totab"><option value="">—</option>${tabsOf(source).filter((tab) => !tab.panels.includes(panel.id)).map((tab) => `<option value="${esc(tab.id)}">${esc(tab.title)}</option>`).join("")}</select></span></label>` : ""}
       <div class="dz-actions"><button type="button" id="dz-back">${esc(dz.back)}</button><button type="button" id="dz-dup">${esc(dz.duplicate)}</button><button type="button" id="dz-del" class="dz-danger">${esc(dz.remove)}</button></div>
       <p class="hint">${esc(dz.footer)}</p>`;
-    drawer.querySelector("#dz-calc-add")?.append(calcAddRow(selected));
+    drawer.querySelector("#dz-calc-add")?.append(calcEntry(selected));
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
       if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field

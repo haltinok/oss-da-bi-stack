@@ -423,3 +423,14 @@ test("the catalog gets a cube of calculations that reaches what the parts of the
   assert.deepEqual([...calc.joins].sort(), ["d"], "only what a and b both reach");
   assert.equal(withCalculations(base, {}), base, "no calculations: the catalog as it was");
 });
+
+import { saveCalculation } from "../../static/lib/designer-structure.js";
+
+test("saving from the window adds a calculation, or changes one and keeps its id", () => {
+  const added = saveCalculation(SOURCE, { label: "Tax", formula: "a.b * 0.2", format: "money" });
+  assert.equal(added.calcId, "tax");
+  const changed = saveCalculation(added.source, { id: "tax", label: "Tax (10%)", formula: "a.b * 0.1", format: "" });
+  assert.deepEqual(changed.source.calculations, [{ id: "tax", label: "Tax (10%)", formula: "a.b * 0.1" }], "the id stays, an empty format is removed");
+  assert.equal(saveCalculation(added.source, { id: "nope", label: "x", formula: "a.b" }).problem, "item");
+  assert.equal(saveCalculation(SOURCE, { label: "x", formula: "" }).problem, "calcEmpty");
+});

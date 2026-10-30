@@ -467,3 +467,16 @@ export function removeCalculation(source, id) {
   if (!next.calculations.length) delete next.calculations;
   return { source: next };
 }
+
+/** Saves a calculation from the window: a new one (no `id`) or a change to an existing one. -> { source, calcId } or { problem }. */
+export function saveCalculation(source, { id = null, label, formula, format }) {
+  if (!String(label || "").trim() || !String(formula || "").trim()) return { problem: "calcEmpty" };
+  if (!id) return addCalculation(source, { label, formula, format });
+  const next = clone(source);
+  const calc = (next.calculations || []).find((c) => c.id === id);
+  if (!calc) return { problem: "item" };
+  calc.label = String(label).trim();
+  calc.formula = String(formula).trim();
+  if (format) calc.format = format; else delete calc.format;
+  return { source: next, calcId: id };
+}
