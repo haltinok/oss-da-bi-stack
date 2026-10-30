@@ -17,6 +17,11 @@ D = {  # "<section>.<field>": meaning
     "dashboard.roles": "Who may open the page: `admin`, `manager`, `rep`, `purchasing`, `marketing`. It decides what `/d/` lists; what each role can read is Cube's decision, and the validator rejects a page that would fail for a listed role. Default: everyone.",
     "dashboard.theme": "The dashboard's look (all optional).",
     "dashboard.time": "The time axis of the dashboard.",
+    "dashboard.calculations": "Named formulas over measures, used like a measure as `calc.<id>` in any panel that takes a measure (a key figure, a series, a bar, a pie, a treemap, a table column, a pivot measure), also as the field a table or bar is sorted by. Up to 20. The formula reads in the browser on the numbers Cube returns, so it can mix measures of cubes that do not join (two fact cubes).",
+    "calculation.id": "The calculation's id: lower case letters, digits and `_`. A panel uses it as `calc.<id>`.",
+    "calculation.label": "The name a panel shows for it (the column heading, the legend), unless the panel gives its own `label`.",
+    "calculation.formula": "`+ - * /`, brackets, numbers, measures (`cube.measure`) and `sum(a, b, ...)`, for example `sum(a.revenue, b.revenue) / sum(a.units, b.units)` or `(a.revenue + b.revenue) * 0.2` (`a` and `b` standing for cubes). A total is the formula over the totals of its parts (a ratio of sums, not an average of ratios). `+`, `-` and `sum` skip a part with no value; `*` and `/` give no value when a side has none, and `/` by zero gives none. A calculation cannot use another calculation.",
+    "calculation.format": "How the value is shown wherever a panel does not say otherwise: money, int, decimal, pct, number. Default: number.",
     "dashboard.filters": "Selects above the panels. A filter applies to every panel whose measures can join to its dimension (see `ignore_filters`).",
     "dashboard.panels": "The panels, in any order; `layout` places them.",
     "dashboard.tabs": "Pages, 2 to 8, instead of `layout`: the header and the filters stay, the tab bar switches the panels below. Filters and the drill-down period are shared by all tabs; only the open tab loads its panels. `panels` stays one flat list and each panel is placed in exactly one tab. Use `layout` or `tabs`, not both.",
@@ -184,6 +189,8 @@ def generate():
     out.append(_table("`theme`", "theme", theme["properties"], [], used))
     out.append(_table("`theme.colors`", "theme.colors", theme["properties"]["colors"]["properties"], [], used, "Each value is `#rrggbb`."))
     out.append(_table("`time`", "time", top["time"]["properties"], top["time"]["required"], used))
+    out.append(_table("A calculation (`calculations[]`)", "calculation", defs["calculation"]["properties"], defs["calculation"]["required"], used,
+                      "A named formula over measures; a panel uses it as `calc.<id>`."))
     out.append(_table("A filter", "filter", defs["filter"]["properties"], defs["filter"]["required"], used))
     out.append(_table("A KPI measure (`kpi.measures[]`)", "measure", defs["measure"]["properties"], [], used,
                       "Exactly one of `member`, `sum` (with `label`) or `ratio` (with `label`). `ratio` is `{ num: [measures], den: [measures] }`."))

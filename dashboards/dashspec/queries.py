@@ -2,6 +2,7 @@
 `dashspec lint` asks Cube about these, so they must be the queries the page really sends; dashboards/tests runs the JS builders and
 compares, on every checked-in dashboard and several filter states."""
 
+from .calculations import PREFIX, real_members
 from .filters import applies, default_env, effective_value, to_cube
 
 DEFAULT_LIMIT = {"bar": 10, "table": 100}
@@ -31,14 +32,23 @@ def term_members(m):
     return list(dict.fromkeys([*m["ratio"]["num"], *m["ratio"]["den"]]))
 
 
-def per_cube(measures, base=None):
-    """One query per cube that owns some of the measures, in first-seen order: [{ cube, query }]."""
+def per_cube(spec, measures, base=None):
+    """One query per cube that owns some of the measures, in first-seen order: [{ cube, query }].
+    A calculation (`calc.<id>`) is not asked of Cube: the measures it reads are, and the queries carry `post`, what the page does with their rows: put the parts together by their
+    dimensions, work the formulas out, and only then order and limit (Cube cannot rank by a formula). Mirror of queriesPerCube in render/plan.js."""
+    members = spec.get("members", {})
+    calcs = {m: members[m]["calc"]["ast"] for m in dict.fromkeys(measures) if m.startswith(PREFIX) and m in members}
+    post = None
+    if calcs:
+        base = dict(base or {})
+        post = {"calcs": calcs, **{k: base.pop(k) for k in ("order", "limit") if k in base}}
+        measures = real_members(members, measures)
     groups = {}
     for m in measures:
         members = groups.setdefault(cube_of(m), [])
         if m not in members:
             members.append(m)
-    return [{"cube": c, "query": {**(base or {}), "measures": ms}} for c, ms in groups.items()]
+    return [{"cube": c, "query": {**(base or {}), "measures": ms}, **({"post": post} if post else {})} for c, ms in groups.items()]
 
 
 def sort_key_of(spec, member):
@@ -105,10 +115,15 @@ def slicer_queries(spec, panel, values):
     measures = option_measures(spec, flt)
     own = {**panel, "ignore_filters": [*panel.get("ignore_filters", []), flt["id"]], "optionMeasures": measures}
     dims = with_sort_keys(spec, [*([flt["parent"]] if "parent" in flt else []), flt["dimension"]])
-    return follow_period(spec, own, values, per_cube(measures, {"dimensions": dims, "filters": active_filters(spec, values, own)}))
+    return follow_period(spec, own, values, per_cube(spec, measures, {"dimensions": dims, "filters": active_filters(spec, values, own)}))
 
 
 def panel_measures(panel, members):
+    """Every measure a panel reads, a calculation as the measures it reads (what decides the cubes it reaches)."""
+    return real_members(members, _own_measures(panel, members))
+
+
+def _own_measures(panel, members):
     kind = panel["type"]
     if kind == "kpi":
         return [x for m in panel["measures"] for x in term_members(m)]
@@ -198,7 +213,7 @@ def pivot_queries(spec, panel, values):
     base = active_filters(spec, values, panel)
 
     def lead_query(query):
-        return follow_period(spec, panel, values, [{"cube": cube_of(lead), "query": {"measures": [lead], "filters": base, **query}}])
+        return follow_period(spec, panel, values, per_cube(spec, [lead], {"filters": base, **query}))
 
     def shape(row_dims, with_col):
         """The grouping by these rows and, with with_col, the column: a time column is a timeDimension at its granularity (mirror of `shape` in plan.js)."""
@@ -221,7 +236,7 @@ def pivot_queries(spec, panel, values):
 
     def per(row_dims, with_col):
         grouping = shape(row_dims, with_col)
-        return follow_period(spec, panel, values, per_cube(measures, {"filters": base, **grouping, **({"limit": PIVOT_CELLS} if grouping else {})}))
+        return follow_period(spec, panel, values, per_cube(spec, measures, {"filters": base, **grouping, **({"limit": PIVOT_CELLS} if grouping else {})}))
 
     row_total, col_total, anything = totals in ("both", "rows"), totals in ("both", "columns"), totals != "none"
     out += per(rows, True)
@@ -243,25 +258,28 @@ def panel_queries(spec, panel, values):
         out = []
         for m in panel["measures"]:
             members = term_members(m)
-            out += follow_period(spec, panel, values, per_cube(members, {"filters": filters}))
+            out += follow_period(spec, panel, values, per_cube(spec, members, {"filters": filters}))
             if "sparkline" in panel:
-                out += follow_period(spec, panel, values, per_cube(members, {"filters": filters, "timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["sparkline"]["granularity"]}]}))
+                out += follow_period(spec, panel, values, per_cube(spec, members, {"filters": filters, "timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["sparkline"]["granularity"]}]}))
         return out
     if kind == "timeseries":
         members = list(dict.fromkeys(x for s in panel["series"] for x in term_members(s)))
-        return follow_period(spec, panel, values, per_cube(members, {"timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["granularity"]}], "filters": filters}))
+        return follow_period(spec, panel, values, per_cube(spec, members, {"timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["granularity"]}], "filters": filters}))
     if kind == "bar":
         measures = [s["member"] for s in panel["stack"]] if "stack" in panel else [panel["measure"]]
         single = "stack" not in panel and "split" not in panel
         base = {"dimensions": [panel["by"], *([panel["split"]] if "split" in panel else [])], "filters": filters}
         if single:
             base |= {"order": {panel["measure"]: panel.get("sort", "desc")}, "limit": panel.get("limit", DEFAULT_LIMIT["bar"])}
-        return follow_period(spec, panel, values, per_cube(measures, base))
+        return follow_period(spec, panel, values, per_cube(spec, measures, base))
     if kind == "pie":
-        qs = per_cube(panel_measures(panel, spec["members"]), {"dimensions": [panel["by"]], "filters": filters, "limit": 100})
+        qs = per_cube(spec, panel.get("sum") or [panel["measure"]], {"dimensions": [panel["by"]], "filters": filters, "limit": 100})
+        if qs and "post" in qs[0]:                                    # a calculation is ranked after the parts are put together
+            post = {**qs[0]["post"], "order": {(panel.get("sum") or [panel["measure"]])[0]: "desc"}}
+            return follow_period(spec, panel, values, [{**q, "post": post} for q in qs])
         return follow_period(spec, panel, values, [{**q, "query": {**q["query"], "order": {q["query"]["measures"][0]: "desc"}}} for q in qs])
     if kind == "treemap":
-        return follow_period(spec, panel, values, per_cube([panel["measure"]], {"dimensions": panel["group"], "filters": filters}))
+        return follow_period(spec, panel, values, per_cube(spec, [panel["measure"]], {"dimensions": panel["group"], "filters": filters}))
     if kind == "pivot":
         return pivot_queries(spec, panel, values)
     if kind == "table":
@@ -274,7 +292,7 @@ def panel_queries(spec, panel, values):
         out = []
         if measures:
             single = len({cube_of(m) for m in measures}) <= 1 and not agg           # with aggregated fields the rows are merged and ordered here, not in Cube
-            out += follow_period(spec, panel, values, per_cube(measures, {**base, **({"order": order, "limit": limit} if single else {})}))
+            out += follow_period(spec, panel, values, per_cube(spec, measures, {**base, **({"order": order, "limit": limit} if single else {})}))
         elif not agg:
             return [{"cube": "", "query": {**base, "order": order, "limit": limit}}]
         if agg:                                                                   # the rows the value fields are aggregated over: one per row of their cube, tagged `agg:<cube>`
@@ -283,6 +301,6 @@ def panel_queries(spec, panel, values):
             fields = list(dict.fromkeys(m for m, _ in agg))
             out.append({"cube": f"agg:{cube}", "query": {"dimensions": [*with_sort_keys(spec, dims), key, *fields], "filters": filters, "order": {key: "asc"}, "limit": AGGREGATE_LIMIT}})
         if panel.get("totals") and measures:
-            out += follow_period(spec, panel, values, per_cube(measures, {"filters": filters}))
+            out += follow_period(spec, panel, values, per_cube(spec, measures, {"filters": filters}))
         return out
     return []

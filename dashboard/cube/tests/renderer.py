@@ -1033,6 +1033,34 @@ with sync_playwright() as p:
     def serve(compiled):
         return lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(compiled))
 
+    # calculations: a formula over measures of two fact cubes, used like a measure in a key figure, a bar and a table
+    def compiled_with_calcs():
+        src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-overview.yml").read_text())
+        src["calculations"] = [{"id": "avg_price", "label": "Average sales price", "format": "money", "formula": "sum(internet_sales.revenue, reseller_sales.revenue) / sum(internet_sales.units, reseller_sales.units)"},
+                               {"id": "tax", "label": "Tax amount", "format": "money", "formula": "sum(internet_sales.revenue, reseller_sales.revenue) * 0.2"}]
+        src["panels"] += [{"id": "cprice", "type": "table", "title": "Price and tax by category", "columns": ["products.category", "calc.avg_price", "calc.tax"], "order": {"calc.tax": "desc"}, "limit": 3, "totals": "footer"},
+                          {"id": "ctax", "type": "bar", "title": "Tax by category", "measure": "calc.tax", "by": "products.category", "limit": 2},
+                          {"id": "ckpi", "type": "kpi", "measures": [{"member": "calc.avg_price"}, {"member": "calc.tax"}]}]
+        src["layout"] += [[{"cprice": 6}, {"ctax": 6}], [{"ckpi": 12}]]
+        catalog = _cat.from_model(ms.ROOT / "cube" / "model")
+        errors, used = _validate(src, catalog)
+        assert errors == [], errors
+        return _compile(src, used, catalog)
+
+    ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_calcs()))])
+    settled(page)
+    heads = [h.strip() for h in page.locator('[data-panel="cprice"] thead th').all_inner_texts()]
+    check(heads == ["Category", "Average sales price", "Tax amount"], f"a calculation is a column, headed by its label ({heads})")
+    rows = page.locator('[data-panel="cprice"] tbody tr').count()
+    cells = page.locator('[data-panel="cprice"] tbody tr').first.locator("td").all_inner_texts()
+    check(rows == 3 and page.locator('[data-panel="cprice"] tfoot tr, [data-panel="cprice"] tbody tr.total').count() >= 1 and re.fullmatch(r"\$[\d,.]+[KM]?", cells[1].strip()) is not None, f"it is limited by the page after the parts are put together, and shown in its own format ({rows} rows, {cells})")
+    check(page.locator('[data-panel="ctax"] .rrow').count() == 2 and "$" in page.locator('[data-panel="ctax"]').inner_text(), "a bar by a calculation keeps its two best")
+    check("Average sales price" in page.locator('[data-panel="ckpi"]').inner_text() and re.search(r"\$[\d,.]+", page.locator('[data-panel="ckpi"] .kpi').first.inner_text()), "a key figure shows it")
+    qs = sent(page)
+    check(qs and not any("calc." in json.dumps(q) for q in qs), "Cube is never asked for a calculation, only for the measures it reads")
+    check(not [x for x in page.problems if "pageerror" in x or "console.error" in x], f"no script errors {page.problems[:2]}")
+    ctx.close()
+
     ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_cross()))])
     settled(page)
     top = '[data-panel="top"]'

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import {
   appliesPeriod, followPeriod, formatPeriod, parsePeriod, PERIOD, pieQueries, rangeOf, withRange,
   activeFilters, byBucket, byCube, byDims, colorOf, evaluate, humanize, isSelected, markdown, optionMeasures, optionsOf, ownFilterIds, panelMeasures,
-  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, pivotShare, normalizeTabs, pickTab, tabPanelIds, tabKeyTarget, PIVOT_LIMIT, queriesPerCube, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
+  pick, nextSort, tableOrder, pivotQueries, pivotModel, pivotQueryList, pivotColumn, heatScale, pivotShare, normalizeTabs, pickTab, tabPanelIds, tabKeyTarget, PIVOT_LIMIT, queriesPerCube, runAll, tableParts, tableTotalQueries, panelQueries, term, totals, yearOf,
 } from "../../static/render/plan.js";
 import { tableHtml, pinTotals, pivotHtml } from "../../static/lib/table.js";
 import { stringsFor, translations, langOf, uiLocale, readLang, writeLang } from "../../static/render/strings.js";
@@ -61,7 +61,7 @@ test("a member term is the member's own value", () => {
 });
 
 test("queriesPerCube makes one query per cube and adds the base to each", () => {
-  const qs = queriesPerCube(["a.rev", "b.rev", "a.units"], { filters: [{ member: "x" }] });
+  const qs = queriesPerCube({}, ["a.rev", "b.rev", "a.units"], { filters: [{ member: "x" }] });
   assert.deepEqual(qs, [
     { cube: "a", query: { filters: [{ member: "x" }], measures: ["a.rev", "a.units"] } },
     { cube: "b", query: { filters: [{ member: "x" }], measures: ["b.rev"] } },
@@ -695,4 +695,49 @@ test("tabKeyTarget: arrows move and wrap, Home and End jump, any other key is no
   assert.equal(tabKeyTarget("Home", 2, 3), 0);
   assert.equal(tabKeyTarget("End", 0, 3), 2);
   for (const k of ["Enter", " ", "Tab", "a", "Escape", "PageDown"]) assert.equal(tabKeyTarget(k, 1, 3), null, k);
+});
+
+// ---- calculations
+import { evaluateCalc } from "../../static/lib/calc.js";
+
+const AVG = { op: "/", a: { sum: [{ m: "i.rev" }, { m: "r.rev" }] }, b: { sum: [{ m: "i.units" }, { m: "r.units" }] } };
+const SPEC = { members: {
+  "calc.avg": { kind: "measure", type: "number", calc: { ast: AVG, members: ["i.rev", "r.rev", "i.units", "r.units"] } },
+  "calc.tax": { kind: "measure", type: "number", calc: { ast: { op: "*", a: { m: "i.rev" }, b: { n: 0.2 } }, members: ["i.rev"] } },
+  "i.rev": { kind: "measure", type: "number" },
+} };
+
+test("a formula skips a part with no value in a sum and gives none in a product or a division by zero", () => {
+  const v = (o) => (m) => o[m] ?? null;
+  assert.equal(evaluateCalc(AVG, v({ "i.rev": 10, "i.units": 2, "r.units": 3 })), 2, "a missing part is skipped in a sum");
+  assert.equal(evaluateCalc(AVG, v({})), null, "nothing: no value");
+  assert.equal(evaluateCalc(AVG, v({ "i.rev": 1, "i.units": 0 })), null, "division by zero: no value");
+  assert.equal(evaluateCalc({ op: "*", a: { m: "x" }, b: { n: 2 } }, v({})), null, "a product needs both sides");
+  assert.equal(evaluateCalc({ neg: { m: "x" } }, v({ x: 3 })), -3);
+});
+
+test("a calculation is asked of Cube as the measures it reads, with the ordering and limit kept for the page", () => {
+  const qs = queriesPerCube(SPEC, ["calc.avg"], { dimensions: ["p.name"], order: { "calc.avg": "desc" }, limit: 10 });
+  assert.deepEqual(qs.map((q) => [q.cube, q.query.measures]), [["i", ["i.rev", "i.units"]], ["r", ["r.rev", "r.units"]]]);
+  assert.ok(qs.every((q) => !("order" in q.query) && !("limit" in q.query) && q.post === qs[0].post), "no order or limit for Cube; one `post` for all the parts");
+  assert.deepEqual(qs[0].post.order, { "calc.avg": "desc" });
+  assert.equal(qs[0].post.limit, 10);
+  assert.deepEqual(panelMeasures({ type: "bar", measure: "calc.tax", by: "p.name" }, SPEC.members), ["i.rev"], "what a panel reaches is what its calculations read");
+  assert.deepEqual(queriesPerCube(SPEC, ["i.rev"], { limit: 5 }), [{ cube: "i", query: { limit: 5, measures: ["i.rev"] } }], "a plain measure is untouched");
+});
+
+test("the parts of a calculation come back as one result: merged on the dimensions, worked out per row, then ordered and limited", async () => {
+  const qs = queriesPerCube(SPEC, ["calc.avg", "calc.tax"], { dimensions: ["p.name"], order: { "calc.avg": "desc" }, limit: 2 });
+  const answers = {
+    i: [{ "p.name": "A", "i.rev": "100", "i.units": "10" }, { "p.name": "B", "i.rev": "50", "i.units": "10" }, { "p.name": "C", "i.rev": "9", "i.units": "1" }],
+    r: [{ "p.name": "A", "r.rev": "200", "r.units": "10" }, { "p.name": "D", "r.rev": "400", "r.units": "10" }],
+  };
+  const out = await runAll(async (q) => answers[q.measures[0].split(".")[0]], qs);
+  assert.equal(out.length, 1);
+  assert.deepEqual(out[0].rows.map((r) => [r["p.name"], r["calc.avg"]]), [["D", 40], ["A", 15]], "D: 400/10, A: 300/20; limited to 2, best first");
+  assert.equal(out[0].rows[1]["calc.tax"], 20, "the other calculation is on the same rows");
+  const total = await runAll(async (q) => [{ "i.rev": "10", "i.units": "5", "r.rev": "20", "r.units": "5" }], queriesPerCube(SPEC, ["calc.avg"], {}));
+  assert.equal(total[0].rows[0]["calc.avg"], 3, "a total is the formula over the totals (30/10), not an average of ratios");
+  const plain = await runAll(async () => [{ a: 1 }], [{ cube: "x", query: { measures: ["x.m"] } }]);
+  assert.deepEqual(plain, [{ cube: "x", rows: [{ a: 1 }] }], "queries without a calculation come back as they were");
 });

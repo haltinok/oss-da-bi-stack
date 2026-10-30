@@ -319,7 +319,7 @@ async function showDashboard() {
       if (slicerOf.has(f.id)) { optionRows.set(f.id, await runAll(ctx.run, slicerQueries(spec, slicerOf.get(f.id), values), signal)); return; }          // narrowed by the other filters
       const measures = optionMeasures(spec, f);
       const dims = withSortKeys(spec, [...(f.parent ? [f.parent] : []), f.dimension]);
-      optionRows.set(f.id, measures.length ? await runAll(ctx.run, queriesPerCube(measures, { dimensions: dims }), signal) : []);
+      optionRows.set(f.id, measures.length ? await runAll(ctx.run, queriesPerCube(spec, measures, { dimensions: dims }), signal) : []);
     }));
     for (const f of visibleFilters()) fillOptions(f);
   }

@@ -414,3 +414,56 @@ export function setPageField(source, path, value) {
 
 /** The time dimensions of the catalog (what `time.dimension` may be). */
 export const timeDimensions = (catalog) => catalog.flatMap((c) => c.dimensions.filter((d) => d.type === "time").map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: d.description })));
+
+// ------------------------------------------------------------------------------------------------------------------ calculations
+/** The measures a formula reads (`cube.measure` names; a number such as 0.2 is not one). */
+export const formulaMembers = (formula) => [...new Set(String(formula || "").match(/\b[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\b/g) || [])];
+
+/**
+ * The catalog with the dashboard's calculations added as a cube `calc` of measures (`calc.<id>`), so every list of measures offers them. The cube joins to what all the measures
+ * a formula reads can reach (a calculation reaches what its parts have in common).
+ */
+export function withCalculations(base, source) {
+  const calcs = source?.calculations || [];
+  if (!calcs.length) return base;
+  const names = base.map((c) => c.cube);
+  const reach = (formula) => {
+    const cubes = [...new Set(formulaMembers(formula).map(cubeOf))].filter((c) => names.includes(c));
+    return cubes.length ? [...(reachableCubes(base, cubes) || names)] : names;
+  };
+  const joins = [...new Set(calcs.flatMap((c) => reach(c.formula)))];            // the union is what the list may offer: the validator refuses a calculation that cannot reach a grouping
+  return [...base, { cube: "calc", description: "Calculations of this dashboard", joins, dimensions: [],
+    measures: calcs.map((c) => ({ member: `calc.${c.id}`, label: c.label, type: "number", description: `${c.label}: ${c.formula}` })) }];
+}
+
+const slug = (text) => String(text).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^[0-9]+/, "") || "calculation";
+
+/** A new calculation: { label, formula, format? } -> { source, id } (the id comes from the label). */
+export function addCalculation(source, { label, formula, format }) {
+  const next = clone(source);
+  if (!String(label || "").trim() || !String(formula || "").trim()) return { problem: "calcEmpty" };
+  const taken = new Set((next.calculations || []).map((c) => c.id));
+  let id = slug(label), n = 2;
+  while (taken.has(id)) id = `${slug(label)}_${n++}`;
+  next.calculations = [...(next.calculations || []), { id, label: String(label).trim(), formula: String(formula).trim(), ...(format ? { format } : {}) }];
+  return { source: next, id };
+}
+
+/** Changes one field (label, formula, format; "" removes the format) of a calculation. */
+export function setCalculation(source, id, key, value) {
+  const next = clone(source);
+  const calc = (next.calculations || []).find((c) => c.id === id);
+  if (!calc || !["label", "formula", "format"].includes(key)) return { problem: "item" };
+  if (key !== "format" && !String(value).trim()) return { problem: "calcEmpty" };
+  if (value === "" || value == null) delete calc[key]; else calc[key] = String(value).trim();
+  return { source: next };
+}
+
+/** Removes a calculation; refused while a panel still uses it. */
+export function removeCalculation(source, id) {
+  const next = clone(source);
+  if (JSON.stringify(next.panels).includes(`"calc.${id}"`)) return { problem: "calcUsed" };
+  next.calculations = (next.calculations || []).filter((c) => c.id !== id);
+  if (!next.calculations.length) delete next.calculations;
+  return { source: next };
+}

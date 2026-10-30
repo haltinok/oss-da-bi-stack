@@ -5,6 +5,7 @@
 import { defaultEnv, toCube } from "../lib/filters.js";
 import { AGGREGATE_LIMIT } from "../lib/aggregate.js";
 import { memberLabel } from "../lib/labels.js";
+import { evaluateCalc, realMembers } from "../lib/calc.js";
 
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
@@ -57,7 +58,7 @@ export const filterValue = (f, values) => (f.visible === false ? f.default || ""
 
 /** A KPI measure as a term: what to fetch (members) and how to turn the fetched numbers into the tile's value. */
 export function term(def) {
-  if (def.member) return { kind: "member", members: [def.member], parts: [def.member], label: def.label, format: def.format };
+  if (def.member) return { kind: "member", members: [def.member], parts: [def.member], label: def.label ?? humanize(def.member), format: def.format };
   if (def.sum) return { kind: "sum", members: [...def.sum], parts: def.sum, label: def.label, format: def.format };
   return {
     kind: "ratio", members: [...new Set([...def.ratio.num, ...def.ratio.den])], num: def.ratio.num, den: def.ratio.den,
@@ -89,13 +90,58 @@ export function byCube(members) {
 }
 
 /** One Cube query per cube that owns some of `measures`; `base` (dimensions, timeDimensions, filters, ...) is added to each. */
-export function queriesPerCube(measures, base = {}) {
-  return [...byCube(measures)].map(([cube, ms]) => ({ cube, query: { ...base, measures: ms } }));
+export function queriesPerCube(spec, measures, base = {}) {
+  const members = spec.members || {};
+  const calcs = Object.fromEntries([...new Set(measures)].filter((m) => m.startsWith("calc.") && members[m]?.calc).map((m) => [m, members[m].calc.ast]));
+  let post = null;
+  if (Object.keys(calcs).length) {
+    // A calculation is not asked of Cube: the measures it reads are, and `post` says what to do with their rows (see runAll); Cube cannot order or limit by a formula.
+    const { order, limit, ...rest } = base;
+    base = rest;
+    post = { calcs, ...(order ? { order } : {}), ...(limit !== undefined ? { limit } : {}) };
+    measures = realMembers(members, measures);
+  }
+  return [...byCube(measures)].map(([cube, ms]) => ({ cube, query: { ...base, measures: ms }, ...(post ? { post } : {}) }));
 }
 
-/** Run those queries in parallel -> [{ cube, rows }]. */
-export function runAll(run, queries, signal) {
-  return Promise.all(queries.map(async ({ cube, query }) => ({ cube, rows: await run(query, signal) })));
+/**
+ * Run those queries in parallel -> [{ cube, rows }]. The queries of a calculation (they carry `post`, see queriesPerCube) come back as one result: the rows of its parts put
+ * together on their dimensions, the formulas worked out on each row (a total row is the formula over the totals), then ordered and limited.
+ */
+export async function runAll(run, queries, signal) {
+  const results = await Promise.all(queries.map(async ({ cube, query, post }) => ({ cube, rows: await run(query, signal), measures: query.measures, post })));
+  if (!results.some((r) => r.post)) return results.map(({ cube, rows }) => ({ cube, rows }));
+  const out = [], groups = new Map();
+  for (const r of results) {
+    if (!r.post) { out.push({ cube: r.cube, rows: r.rows }); continue; }
+    if (!groups.has(r.post)) { const slot = { cube: r.cube, rows: [] }; groups.set(r.post, { slot, parts: [] }); out.push(slot); }
+    groups.get(r.post).parts.push(r);
+  }
+  for (const [post, { slot, parts }] of groups) slot.rows = combine(parts, post);
+  return out;
+}
+
+const orderValue = (a, b) => {
+  if (a == null || b == null) return (a == null) - (b == null);                          // no value last
+  const x = typeof a === "number" || (a !== "" && isFinite(a)) ? Number(a) : NaN, y = typeof b === "number" || (b !== "" && isFinite(b)) ? Number(b) : NaN;
+  return !Number.isNaN(x) && !Number.isNaN(y) ? x - y : String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+};
+
+function combine(parts, post) {
+  const measures = new Set(parts.flatMap((p) => p.measures));
+  const merged = new Map();
+  for (const { rows } of parts) {
+    for (const r of rows) {
+      const key = JSON.stringify(Object.keys(r).filter((k) => !measures.has(k)).sort().map((k) => [k, r[k]]));          // the dimensions (and a time bucket) tell the rows apart
+      merged.set(key, { ...(merged.get(key) || {}), ...r });
+    }
+  }
+  let rows = [...merged.values()];
+  for (const r of rows) for (const [id, ast] of Object.entries(post.calcs)) r[id] = evaluateCalc(ast, (m) => num(r[m]));
+  const keys = Object.entries(post.order || {});
+  if (keys.length) rows.sort((a, b) => { for (const [k, dir] of keys) { const c = orderValue(a[k], b[k]) * (dir === "desc" ? -1 : 1); if (c) return c; } return 0; });
+  if (post.limit !== undefined) rows = rows.slice(0, post.limit);
+  return rows;
 }
 
 /** Measures of a no-dimension query: member -> number (a query with no rows has no value). */
@@ -184,7 +230,8 @@ export function optionMeasures(spec, filter, nested = false) {
 }
 
 /** Every measure a panel reads (`members` is the compiled spec's member map, needed to tell a table's measures from its dimensions). */
-export function panelMeasures(p, members = {}) {
+export const panelMeasures = (p, members = {}) => realMembers(members, ownMeasures(p, members));          // a calculation as the measures it reads: what decides the cubes a panel reaches
+function ownMeasures(p, members) {
   switch (p.type) {
     case "kpi": return p.measures.flatMap((m) => term(m).members);
     case "timeseries": return p.series.flatMap((s) => term(s).members);
@@ -327,34 +374,37 @@ export function followPeriod(spec, def, values, queries) {
 export function kpiQueries(spec, def, t, values) {
   const filters = activeFilters(spec, values, def);
   return {
-    now: followPeriod(spec, def, values, queriesPerCube(t.members, { filters })),
+    now: followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters })),
     series: def.sparkline
-      ? followPeriod(spec, def, values, queriesPerCube(t.members, { filters, timeDimensions: [{ dimension: timeDimOf(spec, def), granularity: def.sparkline.granularity }] })) : null,
+      ? followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters, timeDimensions: [{ dimension: timeDimOf(spec, def), granularity: def.sparkline.granularity }] })) : null,
   };
 }
 
 /** `range` is the drill-down's own date range (the period of the bucket drilled into); a chart that does not drill follows the page's period instead. */
 export function timeseriesQueries(spec, def, values, granularity, range = null) {
   const members = [...new Set(def.series.flatMap((s) => term(s).members))];
-  const queries = queriesPerCube(members, { timeDimensions: [{ dimension: timeDimOf(spec, def), granularity, ...(range ? { dateRange: range } : {}) }], filters: activeFilters(spec, values, def) });
+  const queries = queriesPerCube(spec, members, { timeDimensions: [{ dimension: timeDimOf(spec, def), granularity, ...(range ? { dateRange: range } : {}) }], filters: activeFilters(spec, values, def) });
   return range ? queries : followPeriod(spec, def, values, queries);
 }
 
 export function barQueries(spec, def, values) {
   const measures = def.stack ? def.stack.map((s) => s.member) : [def.measure];
   const single = !def.stack && !def.split;       // then the database ranks and limits; otherwise totals per row are needed first
-  return followPeriod(spec, def, values, queriesPerCube(measures, {
+  return followPeriod(spec, def, values, queriesPerCube(spec, measures, {
     dimensions: [def.by, ...(def.split ? [def.split] : [])], filters: activeFilters(spec, values, def),
     ...(single ? { order: { [def.measure]: def.sort || "desc" }, limit: def.limit || 10 } : {}),
   }));
 }
 
 /** A pie reads every slice (up to 100) so that the tail past `limit` can be grouped as "Other" with an exact total. */
-export const pieQueries = (spec, def, values) => followPeriod(spec, def, values,
-  queriesPerCube(def.sum || [def.measure], { dimensions: [def.by], filters: activeFilters(spec, values, def), limit: 100 })
-    .map((q) => ({ ...q, query: { ...q.query, order: { [q.query.measures[0]]: "desc" } } })));
+export function pieQueries(spec, def, values) {
+  const own = def.sum || [def.measure];
+  const qs = queriesPerCube(spec, own, { dimensions: [def.by], filters: activeFilters(spec, values, def), limit: 100 });
+  if (qs[0]?.post) { const post = { ...qs[0].post, order: { [own[0]]: "desc" } }; return followPeriod(spec, def, values, qs.map((q) => ({ ...q, post }))); }          // a calculation is ranked after its parts are put together
+  return followPeriod(spec, def, values, qs.map((q) => ({ ...q, query: { ...q.query, order: { [q.query.measures[0]]: "desc" } } })));
+}
 
-export const treemapQueries = (spec, def, values) => followPeriod(spec, def, values, queriesPerCube([def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) }));
+export const treemapQueries = (spec, def, values) => followPeriod(spec, def, values, queriesPerCube(spec, [def.measure], { dimensions: def.group, filters: activeFilters(spec, values, def) }));
 
 /**
  * The order a table is read in. `sort` is the viewer's header click: undefined = untouched (the author's `order`, else every dimension
@@ -381,7 +431,7 @@ export function tableQueries(spec, def, values, sort) {
   const single = new Set(measures.map((m) => m.split(".")[0])).size <= 1 && !agg.length;           // with aggregated fields the rows are merged and ordered in the page, not in Cube
   const base = { dimensions: withSortKeys(spec, dimensions), filters, ...(single ? { order: sortedBy(spec, order), limit: def.limit || 100 } : {}) };
   const out = [];
-  if (measures.length) out.push(...followPeriod(spec, def, values, queriesPerCube(measures, base)));
+  if (measures.length) out.push(...followPeriod(spec, def, values, queriesPerCube(spec, measures, base)));
   else if (!agg.length) return [{ cube: "", query: { ...base, order: sortedBy(spec, order), limit: def.limit || 100 } }];
   if (agg.length) {                                                                              // the rows the value fields are aggregated over: one per row of their cube, tagged `agg:<cube>`
     const cube = cubeOf(agg[0].member), key = spec.rowKeys[cube];
@@ -394,7 +444,7 @@ export function tableQueries(spec, def, values, sort) {
 export function tableTotalQueries(spec, def, values) {
   if (!def.totals) return [];
   const { measures } = tableParts(def, spec.members);
-  return measures.length ? followPeriod(spec, def, values, queriesPerCube(measures, { filters: activeFilters(spec, values, def) })) : [];
+  return measures.length ? followPeriod(spec, def, values, queriesPerCube(spec, measures, { filters: activeFilters(spec, values, def) })) : [];
 }
 
 // ------------------------------------------------------------------ tabs
@@ -448,7 +498,7 @@ export function pivotQueries(spec, def, values, keys = null) {
   };
   const base = activeFilters(spec, values, def);
   const follow = (qs) => followPeriod(spec, def, values, qs);
-  const leadQuery = (query) => follow([{ cube: cubeOf(lead), query: { measures: [lead], filters: base, ...query } }]);
+  const leadQuery = (query) => follow(queriesPerCube(spec, [lead], { filters: base, ...query }));
   const dimsAsc = Object.fromEntries(def.rows.map((d) => [d, "asc"]));
   // An axis is read in the order of its labels: a field that sorts by another (a month's name by its number) asks for that one and orders by it.
   const axis = (sh, order, limit) => ({ ...(sh.dimensions ? { ...sh, dimensions: withSortKeys(spec, sh.dimensions) } : sh), order: sortedBy(spec, order), limit });
@@ -462,7 +512,7 @@ export function pivotQueries(spec, def, values, keys = null) {
   const colF = !keys || gran ? [] : [keyFilter(col, keys.cols)];
   const per = (rowDims, withCol, filters) => {
     const grouping = shape(rowDims, withCol);
-    return follow(queriesPerCube(measures, { filters: [...base, ...filters], ...grouping, ...(Object.keys(grouping).length ? { limit: PIVOT_CELLS } : {}) }));
+    return follow(queriesPerCube(spec, measures, { filters: [...base, ...filters], ...grouping, ...(Object.keys(grouping).length ? { limit: PIVOT_CELLS } : {}) }));
   };
   const rowTot = totalsMode === "both" || totalsMode === "rows", colTot = totalsMode === "both" || totalsMode === "columns", any = totalsMode !== "none";
   return {
@@ -566,7 +616,7 @@ export function slicerQueries(spec, def, values) {
   const measures = optionMeasures(spec, f);
   const own = { ...def, ignore_filters: [...(def.ignore_filters || []), f.id], optionMeasures: measures };
   const dims = withSortKeys(spec, [...(f.parent ? [f.parent] : []), f.dimension]);
-  return followPeriod(spec, own, values, queriesPerCube(measures, { dimensions: dims, filters: activeFilters(spec, values, own) }));
+  return followPeriod(spec, own, values, queriesPerCube(spec, measures, { dimensions: dims, filters: activeFilters(spec, values, own) }));
 }
 
 export function panelQueries(spec, def, values) {

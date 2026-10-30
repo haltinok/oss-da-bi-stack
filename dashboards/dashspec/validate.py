@@ -6,7 +6,7 @@ import re
 
 from jsonschema import Draft202012Validator
 
-from . import crossfilter, filters as filters_mod
+from . import calculations, crossfilter, filters as filters_mod
 
 SCHEMA = json.loads((pathlib.Path(__file__).parent.parent / "schema" / "dashboard.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
@@ -308,8 +308,32 @@ def _cross_filter_errors(w, p, spec, used, catalog):
     return errs
 
 
+def _calculation_errors(spec, catalog):
+    """Each calculation reads, reads only measures the role can have, and is not built from another calculation; ids are unique and do not clash with a cube's name."""
+    errs, ids = [], [c["id"] for c in spec.get("calculations", [])]
+    for dup in sorted({i for i in ids if ids.count(i) > 1}):
+        errs.append(f"dashboard: calculations: id '{dup}' is used by more than one calculation")
+    for c in spec.get("calculations", []):
+        w = f"calculation '{c['id']}'"
+        try:
+            tree = calculations.parse(c["formula"])
+        except calculations.FormulaError as e:
+            errs.append(f"{w}: formula: {e}")
+            continue
+        for m in calculations.members_of(tree):
+            found = catalog.lookup(m)
+            if m.startswith(calculations.PREFIX):
+                errs.append(f"{w}: formula: '{m}' is a calculation; a calculation reads measures of the model")
+            elif found is None:
+                errs.append(f"{w}: formula: '{m}' is not in the Cube model ({catalog.suggest(m)})")
+            elif found[0] != "measure":
+                errs.append(f"{w}: formula: '{m}' is a {found[0]}, a measure is needed here")
+    return errs
+
+
 def semantic_errors(spec, catalog):
-    errs = _logo_errors(spec.get("theme", {}).get("logo"))
+    errs = _logo_errors(spec.get("theme", {}).get("logo")) + _calculation_errors(spec, catalog)
+    catalog = calculations.with_calculations(catalog, spec)          # `calc.<id>` is a measure from here on
     used = {}  # member -> (kind, type), for the compiler
 
     def check(where, field, member, want, time=False):
@@ -324,7 +348,7 @@ def semantic_errors(spec, catalog):
         if time and typ != "time":
             errs.append(f"{where}: {field}: '{member}' is a {typ} dimension, a time dimension is needed")
             return None
-        used[member] = {"kind": kind, "type": typ}
+        used[member] = {"kind": kind, "type": typ, **catalog.extra(member)}
         key = catalog.sort_by(member) if kind == "dimension" else None
         if key:
             used[member]["sort_by"] = key                  # the renderer orders this field by that one (a month's name by its number)
@@ -516,7 +540,7 @@ def _join_errors(spec, p, w, catalog, errs):
         dims.append(("the time axis (time.dimension)" if "time_dimension" not in p else "the time axis (time_dimension)", p.get("time_dimension") or spec["time"]["dimension"]))
     ignored = set(p.get("ignore_filters", []))
     dims += [(f"filter '{f['id']}'", f["dimension"]) for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])]
-    for meas in sorted(set(measures)):
+    for meas in sorted(set(calculations.real_members(getattr(catalog, "calcs", {}), measures))):
         mc = meas.partition(".")[0]
         for origin, dim in dims:
             dc = dim.partition(".")[0]
@@ -588,9 +612,10 @@ def denied(role, member):
 
 
 def _role_errors(spec, errs):
+    calcs = calculations.of_spec(spec)
     for p in spec["panels"]:
         w = f"panel '{p['id']}' ({p['type']})"
-        members = [m for _, m, _ in _panel_members(p)]
+        members = calculations.real_members(calcs, [m for _, m, _ in _panel_members(p)])          # a calculation is as readable as the measures it reads
         ignored = set(p.get("ignore_filters", []))
         members += [f["dimension"] for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])] if members else []
         if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
