@@ -18,7 +18,8 @@ def cube_of(member):
 def active_filters(spec, values, panel, env=None):
     clicked = panel.get("on_click", {}).get("set_filter")
     own = [] if clicked is None else [clicked] if isinstance(clicked, str) else list(clicked)
-    ignored = set(panel.get("ignore_filters", [])) | set(own)
+    implicit = {f["id"] for f in spec.get("filters", []) if f.get("implicit")}
+    ignored = set(panel.get("ignore_filters", [])) | {i for i in own if i in implicit or i in values.get("_clicked", [])}          # the choice a click made; a header choice narrows every panel (see clickedIds in plan.js)
     env = env or default_env(spec)
     return [c for f in spec.get("filters", []) if f["id"] not in ignored and applies(spec, f, panel.get("id")) and effective_value(f, values) not in (None, "")
             for c in to_cube(f, effective_value(f, values), env)]

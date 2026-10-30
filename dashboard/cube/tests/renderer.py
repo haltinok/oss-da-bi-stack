@@ -655,7 +655,7 @@ with sync_playwright() as p:
     cat, sub = page.input_value("#filters select >> nth=2"), page.input_value("#filters select >> nth=3")
     check(sub == "Helmets" and cat != "", f"a treemap tile sets the subcategory and its category ({cat} / {sub})")
     check(page.locator(f"{mix} .cell.sel").count() == 1 and "✓" in page.locator(f"{mix} .cell.sel").inner_text(), "the selected tile is outlined and ticked")
-    check(not [q for q in sent(page) if q.get("dimensions") == ["products.category", "products.subcategory"]], "the treemap keeps showing every category (no query of its own)")
+    check(not [q for q in sent(page) if q.get("dimensions") == ["products.category", "products.subcategory"] and (has_filter(q, "products.category") or has_filter(q, "products.subcategory"))], "the treemap keeps showing every category (the choice its own click made does not narrow it)")
     page.locator(f"{mix} .cell.sel").click()
     settled(page)
     check(page.input_value("#filters select >> nth=2") == "Bikes" and page.input_value("#filters select >> nth=3") == "", "clicking it again brings back the category that was chosen before")
@@ -1032,6 +1032,23 @@ with sync_playwright() as p:
 
     def serve(compiled):
         return lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(compiled))
+
+    # a filter chosen in the header narrows the panel whose own click sets it too; the choice a click made keeps that panel showing everything
+    ctx, page = open_page(browser, "/d/sales-overview")
+    settled(page)
+    sel = page.locator('#filters label.field:has-text("Subcategory") select')
+    page.queries.clear()
+    sel.select_option(index=1)
+    settled(page)
+    mix_q = lambda: [q for q in sent(page) if q.get("dimensions") == ["products.category", "products.subcategory"]]
+    check(mix_q() and all(has_filter(q, "products.subcategory") for q in mix_q()), "a subcategory chosen in the header narrows the treemap whose click sets it")
+    sel.select_option(index=0)
+    settled(page)
+    page.queries.clear()
+    page.locator('[data-panel="mix"] .cell').first.click()
+    settled(page)
+    check(not any(has_filter(q, "products.subcategory") for q in mix_q()), "a tile clicked in it narrows the other panels but not the treemap itself")
+    ctx.close()
 
     # calculations: a formula over measures of two fact cubes, used like a measure in a key figure, a bar and a table
     def compiled_with_calcs():

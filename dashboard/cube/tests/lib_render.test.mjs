@@ -137,13 +137,15 @@ test("markdown escapes html first, then renders bold, code, links and lists", ()
   assert.ok(!markdown("[x](javascript:alert(1))", esc).includes("<a "), "only http(s) links become links");
 });
 
-test("a panel leaves out the filters its own clicks set", () => {
+test("a panel leaves out the choice its own click made, not one chosen in the header", () => {
   const panel = { on_click: { set_filter: ["category", "subcategory"] } };
   assert.deepEqual(ownFilterIds(panel), ["category", "subcategory"]);
   assert.deepEqual(ownFilterIds({ on_click: { set_filter: "fy" } }), ["fy"]);
   assert.deepEqual(ownFilterIds({}), []);
-  const values = { fy: "2021", category: "Bikes", subcategory: "Road Bikes" };
-  assert.deepEqual(activeFilters(spec, values, panel).map((f) => f.member), ["dates.fiscal_year"]);
+  const values = { fy: "2021", category: "Bikes", subcategory: "Road Bikes", _clicked: ["category", "subcategory"] };
+  assert.deepEqual(activeFilters(spec, values, panel).map((f) => f.member), ["dates.fiscal_year"], "chosen by a click: the clicked panel keeps showing everything");
+  assert.deepEqual(activeFilters(spec, { ...values, _clicked: [] }, panel).map((f) => f.member), ["dates.fiscal_year", "products.category", "products.subcategory"], "chosen in the header: it narrows the panel too");
+  assert.deepEqual(activeFilters(spec, { ...values, _clicked: ["subcategory"] }, panel).map((f) => f.member), ["dates.fiscal_year", "products.category"], "per filter");
   assert.deepEqual(activeFilters(spec, values, { ...panel, ignore_filters: ["fy"] }), []);
 });
 

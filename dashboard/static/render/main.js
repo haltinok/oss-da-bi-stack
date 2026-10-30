@@ -9,7 +9,7 @@ import { setMemberLabels } from "../lib/labels.js";
 import { createTooltip } from "../lib/tooltip.js";
 import { downloadXlsx, slugify } from "../lib/table.js";
 import { createPanel, readable } from "./panels.js";
-import { formatPeriod, humanize, normalizeTabs, optionMeasures, optionsOf, parsePeriod, sortKeyOf, withSortKeys, PERIOD, pick, pickTab, queriesPerCube, runAll, periodDims, periodKey, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
+import { formatPeriod, humanize, normalizeTabs, optionMeasures, optionsOf, parsePeriod, sortKeyOf, withSortKeys, PERIOD, isSelected, pick, pickTab, queriesPerCube, runAll, periodDims, periodKey, slicerQueries, tabKeyTarget, tabPanelIds } from "./plan.js";
 import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { mountLangSwitch } from "./lang.js";
@@ -215,7 +215,11 @@ async function showDashboard() {
     onPeriodCleared: (fn, dim = spec.time.dimension) => clearedHooks.push({ fn, dim }),
     bodyWidth: (id) => panels.get(id)?.root.querySelector(".panel-body")?.clientWidth || 640,
     // A click on a panel sets filters (see plan.js `pick`): the page applies them like a change in the filter bar.
-    pick: (ids, vals) => apply(pick(values, ids, vals, saved)),
+    pick: (ids, vals) => {
+      const was = isSelected(values, ids, vals), patch = pick(values, ids, vals, saved);
+      values._clicked = was ? (values._clicked || []).filter((i) => !ids.includes(i)) : [...new Set([...(values._clicked || []), ...ids])];          // which filters hold a choice made by a click (see clickedIds)
+      apply(patch);
+    },
   };
   const saved = {};                                     // what the filters held before a click, so that clicking again can undo it
 
@@ -354,6 +358,7 @@ async function showDashboard() {
     if ((values[f.id] || "") === value) return;                                           // Enter and then leaving the box say the same thing twice: load once
     for (const k of Object.keys(saved)) delete saved[k];
     values[f.id] = value;
+    values._clicked = (values._clicked || []).filter((i) => i !== f.id);                 // chosen in the header now: it narrows every panel
     for (const g of spec.filters) if (parentFilter(g)?.id === f.id) fillOptions(g);       // a child's options follow its parent's value
     for (const g of spec.filters) { const sel = selects.get(g.id); if (sel) sel.classList.toggle("set", !!values[g.id]); }
     writeUrl();
@@ -396,6 +401,7 @@ async function showDashboard() {
     const reset = el("button", { class: "reset", type: "button", hidden: "" }, esc(t.reset));
     reset.addEventListener("click", () => {
       for (const k of Object.keys(saved)) delete saved[k];
+      values._clicked = [];
       for (const f of visibleFilters()) values[f.id] = f.default || "";                     // Reset goes back to where the page opened (a hidden filter never moved)
       for (const dim of periodDims(spec)) values[periodKey(spec, dim)] = "";
       clearedHooks.forEach((h) => h.fn());
