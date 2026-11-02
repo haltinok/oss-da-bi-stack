@@ -5,6 +5,9 @@
   GET  /schema    the cubes, dimensions and measures this person may query (role rules and blocked cubes applied), for the schema browser
   POST /query     { sql } -> { columns: [{name, type}], rows: [[...]], row_count, truncated, ms }
   POST /export    { sql, format: csv | xlsx } -> the file (up to LAB_EXPORT_ROWS rows; header X-Lab-Truncated says when it was cut), under the same rules, limits and audit as /query
+  GET|POST /queries, GET|PUT|DELETE /queries/{id}        saved queries (queries.py: private, or shared with people and groups for view or edit; in the dashboards' folders)
+  POST /queries/{id}/run, GET /queries/{id}/snapshot     run one as YOU (under your own rules) and keep the result for you for LAB_SNAPSHOT_HOURS; read your own last result
+  POST /transfer  { from_user, to_user }                 admin: hand every saved query of one person to another
 
 Every call carries a Keycloak access token of the dashboard client. The lab asks the auth service for the person's Cube token (which says their role, territories, blocked cubes and whether
 they have the lab), and runs the statement on Cube's SQL API (Postgres protocol) signed in as that person, with the Cube token as the password. So a statement goes through the very
@@ -30,7 +33,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+import queries
 import sqlcheck
+from store import NotFound, PgStore
 
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
@@ -44,6 +49,8 @@ TIMEOUT = float(os.environ.get("LAB_TIMEOUT", "60"))
 PER_USER = int(os.environ.get("LAB_MAX_PER_USER", "2"))
 MAX_CONCURRENT = int(os.environ.get("LAB_MAX_CONCURRENT", "8"))
 LOG_FILE = os.environ.get("LAB_LOG_FILE", "")
+SNAPSHOT_HOURS = float(os.environ.get("LAB_SNAPSHOT_HOURS", "24"))
+STORE = PgStore.from_env()                                  # None when LAB_DB_PASSWORD is not set: the lab runs, but cannot save queries
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="lab")
@@ -236,7 +243,7 @@ def limits() -> dict:
 @app.get("/info")
 def info(caller: Caller = Who) -> dict:
     s = cube_session(caller)
-    return {"user": caller.name, "role": s.get("role"), "lab": bool(s.get("lab")), "limits": limits()}
+    return {"user": caller.name, "role": s.get("role"), "lab": bool(s.get("lab")), "saving": STORE is not None, "limits": limits()}
 
 
 @app.get("/schema")
@@ -329,3 +336,121 @@ def export(req: ExportRequest, caller: Caller = Who):
     if req.format == "csv":
         return StreamingResponse(csv_bytes(out["columns"], out["rows"]), media_type="text/csv; charset=utf-8", headers=headers)
     return Response(xlsx_bytes(out["columns"], out["rows"]), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+
+
+# -------------------------------------------------------------------------------------------------------------------- saved queries
+def need_store():
+    if STORE is None:
+        raise HTTPException(503, "Saving queries is off: set LAB_DB_PASSWORD and run postgres/sync-lab.sh.")
+    return STORE
+
+
+def who_of(s: dict, caller: Caller) -> queries.Who:
+    return queries.Who(name=caller.name, role=s.get("role", ""), groups=list(s.get("groups") or []))
+
+
+def qcall(fn, *args, **kw):
+    try:
+        return fn(*args, **kw)
+    except queries.QueryError as e:
+        raise HTTPException(e.status, e.message) from None
+    except NotFound:
+        raise HTTPException(404, "There is no such saved query.") from None
+
+
+class QueryIn(BaseModel):
+    title: str = Field(max_length=120)
+    sql: str = Field(max_length=sqlcheck.MAX_SQL + 1000)
+    description: str = Field(default="", max_length=400)
+    folder_id: str | None = Field(default=None, max_length=60)
+    shares: list[dict] | None = Field(default=None, max_length=60)
+
+
+class QueryPatch(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    sql: str | None = Field(default=None, max_length=sqlcheck.MAX_SQL + 1000)
+    description: str | None = Field(default=None, max_length=400)
+    shares: list[dict] | None = Field(default=None, max_length=60)
+    folder_id: str | None = Field(default=None, max_length=60)                  # given as null: out of any folder
+    owner: str | None = Field(default=None, max_length=120)
+
+
+class TransferRequest(BaseModel):
+    from_user: str = Field(min_length=1, max_length=120)
+    to_user: str = Field(min_length=1, max_length=120)
+
+
+@app.get("/query-folders")
+def query_folders(caller: Caller = Who) -> list[dict]:
+    s = need_lab(cube_session(caller))
+    return qcall(queries.list_folders, need_store(), who_of(s, caller))
+
+
+@app.get("/queries")
+def queries_list(caller: Caller = Who) -> list[dict]:
+    s = need_lab(cube_session(caller))
+    store = need_store()
+    store.purge()
+    return qcall(queries.list_queries, store, who_of(s, caller))
+
+
+@app.post("/queries", status_code=201)
+def queries_create(req: QueryIn, caller: Caller = Who) -> dict:
+    s = need_lab(cube_session(caller))
+    out = qcall(queries.create, need_store(), who_of(s, caller), title=req.title, sql=req.sql, description=req.description, folder_id=req.folder_id, shares=req.shares)
+    audit({"event": "lab_query_save", "user": caller.name, "id": out["id"], "title": out["title"][:80]})
+    return out
+
+
+@app.get("/queries/{id}")
+def queries_get(id: str, caller: Caller = Who) -> dict:
+    s = need_lab(cube_session(caller))
+    return qcall(queries.get, need_store(), who_of(s, caller), id)
+
+
+@app.put("/queries/{id}")
+def queries_update(id: str, req: QueryPatch, caller: Caller = Who) -> dict:
+    s = need_lab(cube_session(caller))
+    given = req.model_fields_set
+    extra: dict = {}
+    if "shares" in given:
+        extra["shares"] = req.shares if req.shares is not None else []
+    if "folder_id" in given:
+        extra["folder_id"] = req.folder_id
+    if "owner" in given and req.owner is not None:
+        extra["owner"] = req.owner
+    out = qcall(queries.update, need_store(), who_of(s, caller), id, title=req.title, description=req.description, sql=req.sql, **extra)
+    audit({"event": "lab_query_update", "user": caller.name, "id": id, **({"shares": extra["shares"]} if "shares" in extra else {}), **({"new_owner": extra["owner"]} if "owner" in extra else {})})
+    return out
+
+
+@app.delete("/queries/{id}", status_code=204, response_class=Response)
+def queries_delete(id: str, caller: Caller = Who):
+    s = need_lab(cube_session(caller))
+    qcall(queries.delete, need_store(), who_of(s, caller), id)
+    audit({"event": "lab_query_delete", "user": caller.name, "id": id})
+
+
+@app.post("/queries/{id}/run")
+def queries_run(id: str, caller: Caller = Who) -> dict:
+    """Run a saved query as the caller (their own Cube token, so their own rules) and keep the result as the caller's own snapshot."""
+    s = need_lab(cube_session(caller))
+    store, who = need_store(), who_of(s, caller)
+    q = qcall(queries.get, store, who, id)
+    out = run_limited(caller, s, q["sql"])
+    snap = store.put_snapshot(id, caller.name, out, SNAPSHOT_HOURS)
+    return {**out, "snapshot": {"created_at": snap["created_at"], "expires_at": snap["expires_at"]}}
+
+
+@app.get("/queries/{id}/snapshot")
+def queries_snapshot(id: str, caller: Caller = Who) -> dict:
+    s = need_lab(cube_session(caller))
+    return qcall(queries.snapshot_of, need_store(), who_of(s, caller), id)
+
+
+@app.post("/transfer")
+def transfer(req: TransferRequest, caller: Caller = Who) -> dict:
+    s = cube_session(caller)
+    n = qcall(queries.transfer_all, need_store(), who_of(s, caller), req.from_user, req.to_user)
+    audit({"event": "lab_transfer", "user": caller.name, "from": req.from_user, "to": req.to_user, "count": n})
+    return {"transferred": n}

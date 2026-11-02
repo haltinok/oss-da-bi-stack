@@ -114,6 +114,7 @@ services:
       BUILDER_DB_PASSWORD: ${BUILDER_DB_PASSWORD:-}      # the dashboard builder's login (postgres/init/03_builder_user.sh); empty skips it
       ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:-}          # the admin console's and the auth service's logins on the access schema (postgres/init/05_access_users.sh); empty skips them
       AUTH_PG_PASSWORD: ${AUTH_PG_PASSWORD:-}
+      LAB_DB_PASSWORD: ${LAB_DB_PASSWORD:-}              # the SQL lab's login on the lab schema (postgres/init/07_lab_user.sh); empty skips it (no saved queries)
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -535,6 +536,14 @@ services:
       LAB_ROW_LIMIT: ${LAB_ROW_LIMIT:-10000}
       LAB_TIMEOUT: ${LAB_TIMEOUT:-60}
       LAB_MAX_PER_USER: ${LAB_MAX_PER_USER:-2}
+      LAB_EXPORT_ROWS: ${LAB_EXPORT_ROWS:-100000}
+      # saved queries and result snapshots (Postgres, schema lab); without LAB_DB_PASSWORD the lab runs without saving
+      LAB_PG_HOST: postgres
+      LAB_PG_PORT: "5432"
+      LAB_PG_DB: postgres
+      LAB_PG_USER: lab_app
+      LAB_DB_PASSWORD: ${LAB_DB_PASSWORD:-}
+      LAB_SNAPSHOT_HOURS: ${LAB_SNAPSHOT_HOURS:-24}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8450/healthz').status==200 else 1)"]
       interval: 10s

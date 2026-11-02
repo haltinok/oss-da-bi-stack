@@ -446,6 +446,14 @@ jobs:
           psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f postgres/init/04_access_schema.sql
           POSTGRES_USER=postgres POSTGRES_DB=postgres ADMIN_DB_PASSWORD=ci-admin AUTH_PG_PASSWORD=ci-auth PGHOST=localhost bash postgres/init/05_access_users.sh
           cd admin && PYTHONPATH=. python -m pytest tests -q
+      - name: Apply the lab schema and login, and test saved queries on it
+        env:
+          PGPASSWORD: ci-superuser
+          LAB_TEST_PG_DSN: host=localhost port=5432 dbname=postgres user=lab_app password=ci-lab
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f postgres/init/06_lab_schema.sql
+          POSTGRES_USER=postgres POSTGRES_DB=postgres LAB_DB_PASSWORD=ci-lab PGHOST=localhost bash postgres/init/07_lab_user.sh
+          cd lab && PYTHONPATH=. python -m pytest tests -q
 
   # The public overlay (docker-compose.public.yml): Keycloak under /kc, the auth service and the dashboard behind Caddy at one
   # address. Plain HTTP on a local port stands in for the HTTPS front door; the routing, issuer, admin-console block and browser
