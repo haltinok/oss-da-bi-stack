@@ -31,6 +31,8 @@ export function createSlicer(f, t, display = "list") {
     const all = [...known, ...[...chosen].filter((v) => !known.includes(v))];                 // a chosen value the options no longer hold stays, after them (the list does not jump when you pick)
     search.hidden = all.length <= 12;
     const hits = all.filter((v) => !q || fold(v).includes(q)).slice(0, MAX_SHOWN);
+    const items = () => [...list.querySelectorAll("input, button")];
+    const focused = list.contains(document.activeElement) ? items().indexOf(document.activeElement) : -1;       // the list is rebuilt on every pick: focus stays on the same row
     list.replaceChildren(...hits.map((v) => {
       const on = chosen.has(v);
       if (display === "chips") {
@@ -45,6 +47,7 @@ export function createSlicer(f, t, display = "list") {
       lab.append(box, document.createTextNode(` ${v}`));
       return lab;
     }));
+    if (focused >= 0) items()[focused]?.focus({ preventScroll: true });
     exceptRow.hidden = !multi || !chosen.size;
     except.checked = exclude;
     clear.hidden = !chosen.size;

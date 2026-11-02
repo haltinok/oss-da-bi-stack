@@ -15,7 +15,7 @@ import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
 
 const GRAN_STEPS = ["day", "week", "month", "quarter", "year"];
-const KEY = "designer";                                           // { on, panel, scroll }: what design mode was doing when the page last loaded
+const KEY = "designer";                                           // { on, panel, scroll, ui }: what design mode was doing when the page last loaded (ui: where the drawer was, see placeInDrawer)
 const read = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || "{}"); } catch { return {}; } };
 const write = (s) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage unavailable: design mode just starts closed after a change */ } };
 
@@ -676,6 +676,22 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   // ---------------------------------------------------------------------------------------------------------------- applying a change
+  // A change that draws the page again (a filter, a tab, undo) would drop the reader's place in the drawer: its scroll, the scroll of a value list, and the control that had focus.
+  const FOCUSABLE = "input, select, textarea, button";
+  const placeInDrawer = () => ({
+    top: drawer.scrollTop,
+    focus: [...drawer.querySelectorAll(FOCUSABLE)].indexOf(document.activeElement),
+    lists: [...drawer.querySelectorAll(".slicer-list")].map((l) => l.scrollTop),
+  });
+  let place = state.ui || null;                                   // the place to go back to once the drawer is drawn; dropped at the first thing the reader does
+  const forgetPlace = () => { if (place) { place = null; write({ ...read(), ui: null }); } };
+  function restorePlace() {
+    if (!place || !on) return;
+    drawer.scrollTop = place.top || 0;
+    drawer.querySelectorAll(".slicer-list").forEach((l, i) => { l.scrollTop = place.lists?.[i] || 0; });
+    if (place.focus >= 0) [...drawer.querySelectorAll(FOCUSABLE)][place.focus]?.focus({ preventScroll: true });
+  }
+
   /**
    * Checks a changed source with the validator and, if it is accepted, stores it in the draft and draws the page again with `panel` picked. `edit` is what a function of
    * lib/designer-model.js or lib/designer-structure.js returned: { source, notes, id? } or { problem }. Returns false when nothing was applied.
@@ -689,7 +705,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       const r = await api.validate(JSON.stringify(edit.source));
       if (!r.ok) { draw(); problems(r.problems); return false; }                     // the controls go back to what the draft holds
       drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message, notes: (edit.notes || []).map((n) => dz.notes[n] || n) });
-      write({ on: true, panel: edit.id ?? panel, scroll: window.scrollY });
+      write({ on: true, panel: edit.id ?? panel, scroll: window.scrollY, ui: placeInDrawer() });
       Object.assign(draft, drafts.current());                                         // the page's draft object is the one the draft bar and the Change box read from
       // A change to a panel's own fields is applied to that panel alone (the page patches it in place); anything else (layout, tabs, filters, a new or removed panel) draws the page again.
       if (!edit.id && panel === selected && window.__render?.patch?.(r.spec)) {
@@ -726,7 +742,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   /** Undo or redo one step of the draft's history: the draft in this browser is replaced and the page drawn again (the picked panel and the scroll position stay). */
   function step(kind) {
     if (busy || !drafts[kind]((label) => (kind === "undo" ? dz.undone : dz.redone)(label))) return;
-    write({ on: true, panel: selected, scroll: window.scrollY });
+    write({ on: true, panel: selected, scroll: window.scrollY, ui: placeInDrawer() });
     location.reload();
   }
 
@@ -830,7 +846,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
   button.addEventListener("click", () => setMode(!on));
   // The filters' options arrive after the page is drawn (and the designer may already be open): the page view is drawn again so a default value can be picked from them.
-  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) draw(); });
+  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) { draw(); restorePlace(); forgetPlace(); } });
+  for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) drawer.addEventListener(ev, forgetPlace, { passive: true });
 
   // The data the drawer needs: the source of this draft and the members the role may read.
   button.disabled = true;
@@ -853,6 +870,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   if (state.on) {
     setMode(true);
     if (state.panel && panels.has(state.panel)) select(state.panel);
+    requestAnimationFrame(() => { restorePlace(); if (place) setTimeout(forgetPlace, 5000); });
     if (Number.isFinite(state.scroll)) requestAnimationFrame(() => window.scrollTo(0, state.scroll));
   }
 }
