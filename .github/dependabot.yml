@@ -50,6 +50,12 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # cp-kafka-connect 8.4 drops org.apache.kafka.common.utils.Sanitizer, which
+      # the Debezium Postgres connector (3.2.x, the newest on Confluent Hub) still
+      # calls: the task dies with NoClassDefFoundError (seen in cdc-smoke, #141).
+      # Lift this once Confluent Hub ships a Debezium release built for Kafka 4.2.
+      - dependency-name: "confluentinc/cp-kafka-connect"
+        versions: [">= 8.4"]
 
   # Images referenced directly in docker-compose.yml (postgres, clickhouse,
   # kafka, kafka-ui, keycloak, cube, nginx, starrocks).
