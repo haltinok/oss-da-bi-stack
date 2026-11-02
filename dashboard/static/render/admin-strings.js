@@ -13,7 +13,15 @@ const EN = {
   deactivateTitle: "Deactivate this person?", deactivateWhy: "They are signed out and cannot sign in again until you activate them. Access already issued to their browser ends within a few minutes.",
   newGroup: "New group", groupName: "Group name", create: "Create", rename: "Rename", members: "Members", membersOf: (g) => `Members of ${g}`, addMember: "Add a person", add: "Add", remove: "Remove",
   deleteGroup: "Delete this group?", deleteGroupWhy: "The people in it stay; they just leave the group.", noUsers: "Nobody matches.", noGroups: "No groups yet.", noMembers: "Nobody is in this group.",
-  shortPassword: "The password needs at least 10 characters.", saved: "Saved.", failed: "Could not do that:", you: "you", rolesHint: { admin: "everything, and this console", manager: "sales, by territory", rep: "sales, own territory, no profit", purchasing: "inventory", marketing: "inventory, no supplier data" },
+  shortPassword: "The password needs at least 10 characters.",
+  rules: "Row rules", rulesHint: "Which sales territories a person or a group may see. A person sees the union of the rules for them and for their groups; with no rule, the dbt seed decides, as before.",
+  newRule: "New rule", ruleFor: "Applies to", ruleUser: "A person", ruleGroup: "A group", ruleWho: "Who", ruleTerritories: "Territories", ruleUpdated: "Updated by", ruleSave: "Save rule",
+  ruleDelete: "Remove this rule?", ruleDeleteWhy: (who) => `${who} goes back to the dbt seed, or to what their groups' rules allow.`, noRules: "No rules yet: everybody sees what the dbt seed gives them.",
+  rulesOff: "Row rules are off: set ADMIN_DB_PASSWORD and AUTH_PG_PASSWORD, run postgres/sync-access.sh and restart the admin and auth services.", regionsHint: "Separate territories with commas (the list of known territories is not available).",
+  preview: "What will this person see?", previewPick: "Choose a person", previewGo: "Show", previewNa: "Territory rules do not apply to this role (it works on inventory).",
+  previewSource: { rules: "from the rules", seed: "from the dbt seed (no rule applies)", none: "nothing: no rule and nothing in the seed, so they cannot see sales data", unknown: "unknown: the seed cannot be read right now" },
+  previewVia: "Rules that apply", pickOne: "Choose at least one territory.",
+  saved: "Saved.", failed: "Could not do that:", you: "you", rolesHint: { admin: "everything, and this console", manager: "sales, by territory", rep: "sales, own territory, no profit", purchasing: "inventory", marketing: "inventory, no supplier data" },
 };
 const TR = {
   title: "Yönetim", home: "Panolar", users: "Kullanıcılar", groups: "Gruplar", notAdmin: "Bu sayfayı yalnızca yönetici kullanabilir.", signedOut: "Giriş yapılıyor…",
@@ -29,6 +37,14 @@ const TR = {
   deactivateTitle: "Bu kişi devre dışı bırakılsın mı?", deactivateWhy: "Oturumu kapatılır ve siz etkinleştirene kadar giriş yapamaz. Tarayıcısına verilmiş erişim birkaç dakika içinde biter.",
   newGroup: "Yeni grup", groupName: "Grup adı", create: "Oluştur", rename: "Yeniden adlandır", members: "Üyeler", membersOf: (g) => `${g} grubunun üyeleri`, addMember: "Kişi ekle", add: "Ekle", remove: "Çıkar",
   deleteGroup: "Bu grup silinsin mi?", deleteGroupWhy: "İçindeki kişiler kalır; yalnızca gruptan çıkarlar.", noUsers: "Eşleşen kimse yok.", noGroups: "Henüz grup yok.", noMembers: "Bu grupta kimse yok.",
-  shortPassword: "Parola en az 10 karakter olmalı.", saved: "Kaydedildi.", failed: "Yapılamadı:", you: "siz", rolesHint: { admin: "her şey ve bu sayfa", manager: "satış, bölgeye göre", rep: "satış, kendi bölgesi, kâr yok", purchasing: "envanter", marketing: "envanter, tedarikçi verisi yok" },
+  shortPassword: "Parola en az 10 karakter olmalı.",
+  rules: "Satır kuralları", rulesHint: "Bir kişinin ya da grubun hangi satış bölgelerini görebileceği. Kişi, kendisine ve gruplarına ait kuralların birleşimini görür; kural yoksa eskisi gibi dbt tohumu belirler.",
+  newRule: "Yeni kural", ruleFor: "Kime", ruleUser: "Bir kişi", ruleGroup: "Bir grup", ruleWho: "Kim", ruleTerritories: "Bölgeler", ruleUpdated: "Güncelleyen", ruleSave: "Kuralı kaydet",
+  ruleDelete: "Bu kural kaldırılsın mı?", ruleDeleteWhy: (who) => `${who}, dbt tohumuna ya da gruplarının kurallarının izin verdiğine döner.`, noRules: "Henüz kural yok: herkes dbt tohumunun verdiğini görür.",
+  rulesOff: "Satır kuralları kapalı: ADMIN_DB_PASSWORD ve AUTH_PG_PASSWORD ayarlayın, postgres/sync-access.sh çalıştırın, admin ve auth servislerini yeniden başlatın.", regionsHint: "Bölgeleri virgülle ayırın (bilinen bölge listesi şu an alınamıyor).",
+  preview: "Bu kişi ne görecek?", previewPick: "Bir kişi seçin", previewGo: "Göster", previewNa: "Bölge kuralları bu role uygulanmaz (envanter üzerinde çalışır).",
+  previewSource: { rules: "kurallardan", seed: "dbt tohumundan (kural uygulanmıyor)", none: "hiçbir şey: kural da tohumda kayıt da yok, satış verisini göremez", unknown: "bilinmiyor: tohum şu an okunamıyor" },
+  previewVia: "Uygulanan kurallar", pickOne: "En az bir bölge seçin.",
+  saved: "Kaydedildi.", failed: "Yapılamadı:", you: "siz", rolesHint: { admin: "her şey ve bu sayfa", manager: "satış, bölgeye göre", rep: "satış, kendi bölgesi, kâr yok", purchasing: "envanter", marketing: "envanter, tedarikçi verisi yok" },
 };
 export const adminStrings = (lang) => ({ ...EN, ...(lang === "tr" ? TR : {}) });

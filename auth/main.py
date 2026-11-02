@@ -39,6 +39,13 @@ if not re.fullmatch(r"[a-z0-9]+", DATASET):
 DATASET_SUFFIX = "" if DATASET in ("live", "both") else f"_{DATASET}"
 REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE") or f"rls{DATASET_SUFFIX}.user_regions"
 
+# Row-level rules the admin console edits (Postgres, schema `access`, read-only login `access_auth`): a person's territories are the union of the rules for them and their
+# groups. Without AUTH_PG_PASSWORD there are no rules and only the dbt seed decides, as before. With it, a rules database that cannot be read fails the sign-in
+# (503) instead of falling back to the seed, which could give someone more than their rule allows.
+PG = {"host": os.environ.get("AUTH_PG_HOST", "postgres"), "port": int(os.environ.get("AUTH_PG_PORT", "5432")), "dbname": os.environ.get("AUTH_PG_DB", "postgres"),
+      "user": os.environ.get("AUTH_PG_USER", "access_auth"), "password": os.environ.get("AUTH_PG_PASSWORD", "")}
+RULES_ON = bool(PG["password"]) and PG["password"] != "REPLACE_ME"
+
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="spike-auth")
 app.add_middleware(
@@ -88,6 +95,19 @@ def _territories_for(username: str) -> list[str]:
         conn.close()
 
 
+def rule_territories(username: str, groups: list[str]) -> list[str]:
+    """The territories the rules give this person (union over the rules for them and for their groups); [] when no rule applies."""
+    import psycopg2
+    conn = psycopg2.connect(connect_timeout=5, **PG)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("select \"values\" from access.rls_rule where dimension = 'territory' and ((principal_type = 'user' and principal = %s) "
+                        "or (principal_type = 'group' and principal = any(%s)))", (username, groups))
+            return sorted({v for (vals,) in cur.fetchall() for v in vals})
+    finally:
+        conn.close()
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {"status": "ok"}
@@ -115,11 +135,18 @@ def token(authorization: str = Header(default="")) -> dict:
     if role is None:
         raise HTTPException(403, "no dashboard role")
     user = claims["preferred_username"]
-    territories = territories_for(user) if role in TERRITORY_ROLES else []
-    if role in TERRITORY_ROLES and not territories:
-        raise HTTPException(403, "no territories assigned")
-
-    groups = sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str))       # Keycloak's group-membership mapper (the `dashboard` client); Cube ignores it for now
+    groups = sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str))       # Keycloak's group-membership mapper (the `dashboard` client)
+    territories: list[str] = []
+    if role in TERRITORY_ROLES:
+        if RULES_ON:
+            try:
+                territories = rule_territories(user, groups)
+            except Exception as exc:                                                              # noqa: BLE001 (any failure to read the rules fails the sign-in)
+                raise HTTPException(503, "the access rules cannot be read right now") from exc
+        if not territories:
+            territories = territories_for(user)                                                   # no rule for this person or their groups: the dbt seed decides
+        if not territories:
+            raise HTTPException(403, "no territories assigned")
 
     now = int(time.time())
     cube_token = jwt.encode(

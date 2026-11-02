@@ -48,6 +48,11 @@ What an admin can do, on a new page `/admin` (linked from the header for admins 
 existing `starrocks-e2e` can host it cheaply, otherwise a documented manual check.
 
 ## Phase 2: datasets, row-level rules and grants
+Split in two PRs. **2a (row-level rules, built 2026-11-02):** `access.rls_rule` (Postgres, `postgres/init/04_access_schema.sql`, logins `access_admin` read/write and `access_auth` read-only, `05_access_users.sh`, `postgres/sync-access.sh`);
+the `auth` service reads the rules at token time (union over the person and their groups, else the dbt seed; fails closed when the rules database cannot be read); the admin service has `/rls/rules` and `/rls/preview/{user}`;
+the console has a **Row rules** tab with the preview. A rule replaces the seed for that person; rules follow a group's rename and go with a deleted group or person. Decisions taken with the plan's recommendations
+(2026-11-02): grants only narrow, one role per person, a deleted person's dashboards transfer (phase 3). **2b (datasets and grants, not started):** below.
+
 - **The `access` schema** (migration, idempotent): `access.grant (principal_type user|group|role, principal, object_type dataset|folder|dashboard, object_id, permission view|edit|manage)`,
   `access.dataset (id, name, description, cubes[])`, `access.rls_rule (principal_type, principal, dimension, values[])`.
 - **Datasets:** a named set of cubes ("Sales", "Inventory", "Finance"). The catalog the builder and the designer offer, and what Cube allows, becomes *role's cubes ∩ datasets the user has a grant on*
