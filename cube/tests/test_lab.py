@@ -108,3 +108,25 @@ def test_a_result_exports_as_csv_and_excel_with_the_same_rules():
     assert x.status_code == 200 and x.content[:2] == b"PK" and "spreadsheetml" in x.headers["content-type"], "an .xlsx is a zip"
     assert requests.post(f"{LAB}/export", headers=kc("na_manager"), json={"sql": sql, "format": "csv"}, timeout=60).status_code == 403, "no lab, no export"
     assert requests.post(f"{LAB}/export", headers=kc("admin"), json={"sql": "drop table internet_sales", "format": "csv"}, timeout=60).status_code == 400
+
+
+def test_a_saved_query_runs_as_the_runner_and_the_snapshot_is_the_runners_own(lab_for_managers):
+    sql = "select measure(revenue) as revenue from internet_sales"
+    h_admin, h_manager = kc("admin"), kc("na_manager")
+    made = requests.post(f"{LAB}/queries", headers=h_admin, json={"title": "CI revenue", "sql": sql, "shares": [{"type": "user", "principal": "na_manager", "permission": "view"}]}, timeout=60)
+    assert made.status_code == 201, made.text
+    qid = made.json()["id"]
+    try:
+        assert requests.get(f"{LAB}/queries/{qid}/snapshot", headers=h_admin, timeout=60).status_code == 404, "nothing was run yet"
+        admin_run = requests.post(f"{LAB}/queries/{qid}/run", headers=h_admin, timeout=120).json()
+        manager_run = requests.post(f"{LAB}/queries/{qid}/run", headers=h_manager, timeout=120)
+        assert manager_run.status_code == 200, manager_run.text
+        assert 0 < manager_run.json()["rows"][0][0] < admin_run["rows"][0][0], "the shared query ran as the manager: only their territories"
+        assert requests.get(f"{LAB}/queries/{qid}/snapshot", headers=h_admin, timeout=60).json()["rows"] == admin_run["rows"]
+        assert requests.get(f"{LAB}/queries/{qid}/snapshot", headers=h_manager, timeout=60).json()["rows"] == manager_run.json()["rows"], "each keeps their own"
+        assert [q["id"] for q in requests.get(f"{LAB}/queries", headers=h_manager, timeout=60).json()] == [qid]
+        assert requests.put(f"{LAB}/queries/{qid}", headers=h_manager, json={"title": "mine now"}, timeout=60).status_code == 403
+        assert requests.post(f"{LAB}/queries", headers=h_manager, json={"title": "bad", "sql": "drop table x"}, timeout=60).status_code == 422
+    finally:
+        requests.delete(f"{LAB}/queries/{qid}", headers=h_admin, timeout=60)
+    assert requests.get(f"{LAB}/queries/{qid}", headers=h_manager, timeout=60).status_code == 404

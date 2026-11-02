@@ -36,3 +36,9 @@
 .lab-history summary { cursor: pointer; color: var(--muted); }
 .lab-history li { list-style: none; padding: 4px 0; border-bottom: 1px solid var(--border); }
 .lab-history button { border: 0; background: none; color: var(--ink); font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: left; cursor: pointer; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-saved { margin: 0 0 10px; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.lab-saved ul { margin: 2px 0 6px; padding: 0; }
+.lab-saved li { list-style: none; display: flex; gap: 6px; align-items: baseline; }
+.lab-q { border: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; text-align: left; padding: 2px 4px; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
+.lab-q:hover { background: var(--surface-2); }
+.lab-linked { margin: 0 0 6px; padding: 4px 10px; border-left: 3px solid var(--focus); background: var(--surface-2); border-radius: 4px; font-size: 13px; }

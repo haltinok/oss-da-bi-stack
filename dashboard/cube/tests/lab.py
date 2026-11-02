@@ -135,7 +135,80 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:1]}")
     ctx.close()
 
+    # ---- saved queries: save, share, run as the runner, snapshots are your own
+    ms.LAB.pop("lab_store", None)
+    ms.USER["name"] = "alice"
+    ms.USER["groups"] = []
+    ms.ROLE["role"] = "manager"
+    ms.LAB["on"] = True
+    ctx, page = open_page(browser)
+    page.wait_for_selector("#sql")
+    check(page.locator("#save").is_hidden() is False and page.locator("#share").is_hidden(), "a new query can be saved but not yet shared or deleted")
+    page.fill("#sql", "select category, measure(revenue) from internet_sales cross join products group by 1")
+    page.click("#save")
+    page.wait_for_selector("#share-dlg input[name=name]")
+    page.fill('#share-dlg input[name="name"]', "Revenue by category")
+    page.click("#share-dlg [data-go]")
+    page.wait_for_selector("#linked:not([hidden])")
+    check("Revenue by category" in page.inner_text("#linked") and "Revenue by category" in page.inner_text("#saved-box"), "saving names the query, lists it, and links the tab to it")
+    page.click("#share")
+    page.wait_for_selector("#sh-name")
+    page.fill("#sh-name", "bob")
+    page.click("#sh-add")
+    page.select_option('#share-dlg select[name="folder"]', label="Quarterly")
+    page.click("#share-dlg [data-go]")
+    page.wait_for_function("!document.querySelector('#share-dlg').open")
+    page.wait_for_function("document.querySelector('#linked').innerText.includes('Quarterly')")
+    check("in Quarterly" in page.inner_text("#saved-box"), "sharing with a person and putting it in a folder is shown")
+    page.click("#run")
+    page.wait_for_selector("#note:has-text('Your result from')")
+    alice_numbers = page.inner_text("#result")
+    check("4279788.58" in alice_numbers, "running a saved query keeps the result as your snapshot and says until when")
+    page.reload()
+    page.wait_for_selector("#sql")
+    page.click('#saved-box [data-open]')
+    page.wait_for_selector("#note:has-text('Your result from')")
+    check("4279788.58" in page.inner_text("#result"), "opening it later brings your last result back without running anything")
+    ctx.close()
+
+    ms.USER["name"] = "bob"
+    ctx, page = open_page(browser)
+    page.wait_for_selector("#sql")
+    check("Shared with you" in page.inner_text("#saved-box") and "Revenue by category" in page.inner_text("#saved-box") and "alice" in page.inner_text("#saved-box"), "a person it is shared with finds it under 'Shared with you'")
+    page.click('#saved-box [data-open]')
+    page.wait_for_selector("#note:has-text('No saved result')")
+    check(page.locator("#result table").count() == 0, "alice's result is not bob's to see: there is none for bob yet")
+    check(page.locator("#share").is_hidden() and page.locator("#delete-q").is_hidden() and page.locator("#save").is_hidden(), "a viewer cannot share, delete or overwrite it")
+    page.click("#run")
+    page.wait_for_selector("#note:has-text('Your result from')")
+    bob_numbers = page.inner_text("#result")
+    check("4279788.58" not in bob_numbers and "427.98" in bob_numbers, "running it runs it as bob, under bob's rules: smaller numbers")
+    ctx.close()
+    ms.USER["name"] = "alice"
+    ctx, page = open_page(browser)
+    page.wait_for_selector("#sql")
+    page.click('#saved-box [data-open]')
+    page.wait_for_selector("#note:has-text('Your result from')")
+    check("4279788.58" in page.inner_text("#result"), "and alice still has her own numbers")
+    page.once("dialog", lambda d: d.accept())
+    page.click("#delete-q")
+    page.wait_for_function("document.querySelector('#saved-box').innerText.includes('Nothing saved yet')")
+    check(page.locator("#linked").is_hidden(), "deleting a saved query removes it and unlinks the tab")
+    check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:1]}")
+    ctx.close()
+    ms.LAB["saving"] = False
+    ctx, page = open_page(browser)
+    page.wait_for_selector("#sql")
+    check("Saving queries is off" in page.inner_text("#saved-box") and page.locator("#save").is_hidden(), "without saving the lab says so and offers no Save")
+    ctx.close()
+    ms.LAB["saving"] = True
+    ms.USER["name"] = "admin"
+    ms.ROLE["role"] = "admin"
+    ms.LAB["on"] = False
+
     # ---- the start page offers it, and an admin always has it
+    ms.ROLE["role"] = "manager"
+    ms.LAB["on"] = True
     ctx, page = open_page(browser, path="/home/")
     page.wait_for_selector(".home-sec")
     check(page.locator(".home-card.start:has-text('SQL lab')").count() == 1, "a person with the lab finds it on the start page")

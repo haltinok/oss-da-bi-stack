@@ -7,6 +7,7 @@ import { initTheme, mountThemeMenu } from "../lib/theme.js";
 import { langOf, uiLocale } from "./strings.js";
 import { mountLangSwitch } from "./lang.js";
 import { labStrings } from "./lab-strings.js";
+import { nameDialog, shareDialog, words as sharingWords } from "./sharing.js";
 
 const C = window.STACK;
 const lang = langOf(uiLocale(navigator.language));
@@ -55,10 +56,11 @@ let tabs = cleanTabs(store.get("labTabs", null));
 let current = tabs.some((t) => t.id === store.get("labTab", 0)) ? store.get("labTab", 0) : tabs[0].id;
 let history = store.get("labHistory", []);
 let last = null;                                                       // { columns, rows, sort: {index, dir} } of the tab on screen
-let cubes = [], limits = { row_limit: 10000, timeout_seconds: 60 };
+let cubes = [], limits = { row_limit: 10000, timeout_seconds: 60 }, saving = false, saved = [], folders = [];
 const MAX_SHOWN = 1000;
 
 const tabOf = () => tabs.find((t) => t.id === current);
+const savedOf = () => saved.find((q) => q.id === tabOf().queryId);                // the saved query the open tab is linked to, if it is still there
 const save = () => { store.set("labTabs", tabs); store.set("labTab", current); };
 
 function drawSchema(filter = "") {
@@ -101,8 +103,11 @@ async function run() {
   btn.disabled = true; btn.textContent = w.running;
   $("#err").hidden = true;
   try {
-    const out = await call("POST", "/query", { sql });
+    const q = savedOf();
+    const keep = q && q.sql.trim() === sql;                                          // the tab is a saved query, unchanged: run it as a saved query, which keeps the result as your snapshot
+    const out = keep ? await call("POST", `/queries/${encodeURIComponent(q.id)}/run`) : await call("POST", "/query", { sql });
     last = { ...out, sort: null };
+    if (keep && out.snapshot) $("#note").textContent = w.snapshotNote(new Date().toLocaleString(lang === "tr" ? "tr-TR" : "en-US"), new Date(out.snapshot.expires_at).toLocaleString(lang === "tr" ? "tr-TR" : "en-US"));
     history = pushHistory(history, sql);
     store.set("labHistory", history);
     drawHistory();
@@ -113,23 +118,92 @@ async function run() {
   } finally { btn.disabled = false; btn.textContent = w.run; }
 }
 
+// ------------------------------------------------------------------------------------------------------------------ saved queries
+const when = (iso) => new Date(iso).toLocaleString(lang === "tr" ? "tr-TR" : "en-US");
+const sw = () => sharingWords({ dateLocale: lang === "tr" ? "tr-TR" : "en-US" });
+
+async function loadSaved() {
+  if (!saving) return;
+  [saved, folders] = await Promise.all([call("GET", "/queries").catch(() => []), call("GET", "/query-folders").catch(() => [])]);
+}
+
+function drawSaved() {
+  const box = $("#saved-box");
+  if (!saving) { box.innerHTML = `<p class="hint">${esc(w.savedOff)}</p>`; return; }
+  const item = (q) => `<li><button type="button" class="lab-q" data-open="${esc(q.id)}" title="${esc(q.sql)}">${esc(q.title)}</button><span class="hint">${q.folder_name ? esc(w.folderOf(q.folder_name)) + " · " : ""}${q.mine ? "" : esc(q.owner)}</span></li>`;
+  const mine = saved.filter((q) => q.mine), others = saved.filter((q) => !q.mine);
+  box.innerHTML = `<details open><summary>${esc(w.saved)} (${saved.length})</summary><p class="hint">${esc(w.savedHint)}</p>
+    ${mine.length ? `<p class="hint"><strong>${esc(w.savedMine)}</strong></p><ul>${mine.map(item).join("")}</ul>` : ""}${others.length ? `<p class="hint"><strong>${esc(w.savedShared)}</strong></p><ul>${others.map(item).join("")}</ul>` : ""}${saved.length ? "" : `<p class="hint">${esc(w.savedNone)}</p>`}</details>`;
+}
+
+function drawLinked() {
+  const q = savedOf(), tab = tabOf();
+  if (tab.queryId && !q) { delete tab.queryId; save(); }                              // the saved query is gone (deleted, or no longer shared with you)
+  $("#linked").hidden = !q;
+  if (q) $("#linked").textContent = `${w.linked(q.title, q.owner, q.mine)}${q.folder_name ? ` · ${w.folderOf(q.folder_name)}` : ""}`;
+  $("#save").hidden = !saving || (!!q && !q.can_edit);
+  $("#save-new").hidden = !saving || !q;
+  $("#share").hidden = !q || !q.can_manage;
+  $("#delete-q").hidden = !q || !q.can_manage;
+}
+
+async function openSaved(id) {
+  const q = saved.find((x) => x.id === id);
+  if (!q) return;
+  const tab = tabOf();
+  tab.sql = q.sql; tab.queryId = q.id; save();
+  $("#sql").value = q.sql; last = null; drawResult(); drawLinked();
+  $("#status").textContent = ""; $("#err").hidden = true; $("#note").textContent = "";
+  try {                                                                               // your own last result of it, if it has not expired
+    const snap = await call("GET", `/queries/${encodeURIComponent(id)}/snapshot`);
+    last = { ...snap, sort: null }; drawResult();
+    $("#note").textContent = w.snapshotNote(when(snap.created_at), when(snap.expires_at));
+  } catch (e) { if (e.status === 404) $("#note").textContent = w.snapshotNone; }
+}
+
+async function saveQuery(asNew) {
+  const tab = tabOf(), q = savedOf(), sql = tab.sql.trim();
+  if (!sql) return;
+  const done = async (out) => { tab.queryId = out.id; save(); await loadSaved(); drawSaved(); drawLinked(); $("#status").textContent = w.saved1; };
+  if (q && !asNew) { try { await done(await call("PUT", `/queries/${encodeURIComponent(q.id)}`, { sql })); } catch (e) { $("#err").textContent = `${w.failed} ${e.message}`; $("#err").hidden = false; } return; }
+  nameDialog({ ...sw(), folderName: w.queryTitle }, w.saveTitle, q && asNew ? q.title : "", w.save, async (title) => { await done(await call("POST", "/queries", { title, sql })); });
+}
+
+function shareQuery() {
+  const q = savedOf();
+  if (!q) return;
+  shareDialog({ w: sw(), kind: "dashboard", item: { ...q, title: q.title }, folders, save: async (body) => { await call("PUT", `/queries/${encodeURIComponent(q.id)}`, body); await loadSaved(); drawSaved(); drawLinked(); } });
+}
+
+async function deleteQuery() {
+  const q = savedOf();
+  if (!q || !confirm(w.deleteConfirm)) return;
+  try { await call("DELETE", `/queries/${encodeURIComponent(q.id)}`); } catch (e) { $("#err").textContent = `${w.failed} ${e.message}`; $("#err").hidden = false; return; }
+  await loadSaved(); drawSaved(); drawLinked();
+}
+
 function mountLab() {
-  main.innerHTML = `<div class="lab-grid"><aside class="lab-side" aria-label="${esc(w.schema)}"><input type="search" id="schema-q" placeholder="${esc(w.schemaSearch)}" aria-label="${esc(w.schemaSearch)}"><p class="hint">${esc(w.schemaHint)}</p><div id="schema"></div></aside>
-    <section class="lab-main"><div class="lab-tabs" id="tabs" role="tablist"></div>
+  main.innerHTML = `<div class="lab-grid"><aside class="lab-side" aria-label="${esc(w.schema)}"><div id="saved-box" class="lab-saved"></div><input type="search" id="schema-q" placeholder="${esc(w.schemaSearch)}" aria-label="${esc(w.schemaSearch)}"><p class="hint">${esc(w.schemaHint)}</p><div id="schema"></div></aside>
+    <section class="lab-main"><div class="lab-tabs" id="tabs" role="tablist"></div><div class="lab-linked" id="linked" hidden></div>
       <textarea id="sql" spellcheck="false" aria-label="SQL" placeholder="${esc(w.placeholder)}"></textarea>
-      <div class="lab-bar"><button type="button" class="lab-btn primary" id="run">${esc(w.run)}</button><button type="button" class="lab-btn" id="clear">${esc(w.clear)}</button>
+      <div class="lab-bar"><button type="button" class="lab-btn primary" id="run">${esc(w.run)}</button><button type="button" class="lab-btn" id="clear">${esc(w.clear)}</button><button type="button" class="lab-btn" id="save" hidden>${esc(w.save)}</button><button type="button" class="lab-btn" id="save-new" hidden>${esc(w.saveNew)}</button><button type="button" class="lab-btn" id="share" hidden>${esc(w.shareBtn)}</button><button type="button" class="lab-btn" id="delete-q" hidden>${esc(w.deleteBtn)}</button>
         <select id="samples" aria-label="${esc(w.samples)}"><option value="">${esc(w.samples)}</option>${SAMPLES.map(([n], i) => `<option value="${i}">${esc(n)}</option>`).join("")}</select>
         <span class="spacer"></span><span class="hint">${esc(w.limits(limits.row_limit, limits.timeout_seconds))} Ctrl/⌘ + Enter</span><button type="button" class="lab-btn" id="copy" hidden>${esc(w.copy)}</button><button type="button" class="lab-btn" id="export-csv" hidden>${esc(w.exportCsv)}</button><button type="button" class="lab-btn" id="export-xlsx" hidden>${esc(w.exportXlsx)}</button></div>
       <p class="hint">${esc(w.help)}</p>
-      <div class="lab-err" id="err" role="alert" hidden></div><div class="lab-status" id="status" role="status" aria-live="polite"></div><div class="lab-result" id="result"></div>
+      <div class="lab-err" id="err" role="alert" hidden></div><div class="lab-status" id="status" role="status" aria-live="polite"></div><div class="lab-status" id="note"></div><div class="lab-result" id="result"></div>
       <details class="lab-history"><summary>${esc(w.history)}</summary><div id="history"></div></details></section></div>`;
   const ed = $("#sql");
   const load = () => { ed.value = tabOf().sql; };
-  load(); drawTabs(); drawSchema(); drawHistory();
+  load(); drawTabs(); drawSchema(); drawHistory(); drawSaved(); drawLinked();
   ed.addEventListener("input", () => { tabOf().sql = ed.value; save(); });
   ed.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); } });
   $("#run").addEventListener("click", run);
-  $("#clear").addEventListener("click", () => { ed.value = ""; tabOf().sql = ""; save(); last = null; drawResult(); $("#status").textContent = ""; $("#err").hidden = true; ed.focus(); });
+  $("#save").addEventListener("click", () => saveQuery(false));
+  $("#save-new").addEventListener("click", () => saveQuery(true));
+  $("#share").addEventListener("click", shareQuery);
+  $("#delete-q").addEventListener("click", deleteQuery);
+  $("#saved-box").addEventListener("click", (e) => { const b = e.target.closest("[data-open]"); if (b) openSaved(b.dataset.open); });
+  $("#clear").addEventListener("click", () => { ed.value = ""; tabOf().sql = ""; save(); last = null; drawResult(); $("#status").textContent = ""; $("#err").hidden = true; $("#note").textContent = ""; ed.focus(); });
   $("#samples").addEventListener("change", (e) => { if (e.target.value !== "") { ed.value = SAMPLES[Number(e.target.value)][1]; tabOf().sql = ed.value; save(); e.target.value = ""; ed.focus(); } });
   $("#schema-q").addEventListener("input", (e) => drawSchema(e.target.value));
   $("#schema").addEventListener("click", (e) => {
@@ -144,7 +218,7 @@ function mountLab() {
     else if (close) { tabs = tabs.filter((t) => t.id !== Number(close.dataset.close)); current = tabs[0].id; }
     else if (add) { const id = Math.max(...tabs.map((t) => t.id)) + 1; if (tabs.length < 12) { tabs.push({ id, sql: "" }); current = id; } }
     else return;
-    save(); last = null; drawTabs(); load(); drawResult(); $("#status").textContent = ""; $("#err").hidden = true;
+    save(); last = null; drawTabs(); load(); drawResult(); drawLinked(); $("#status").textContent = ""; $("#err").hidden = true; $("#note").textContent = "";
   });
   $("#history").addEventListener("click", (e) => { const b = e.target.closest("[data-hist]"); if (b) { ed.value = history[Number(b.dataset.hist)].sql; tabOf().sql = ed.value; save(); ed.focus(); } });
   $("#result").addEventListener("click", (e) => {
@@ -191,8 +265,10 @@ async function exportAs(format) {
   try {
     const info = await call("GET", "/info");
     limits = info.limits || limits;
+    saving = !!info.saving;
     if (!info.lab) { main.innerHTML = `<div class="home-sec"><h2>${esc(w.noLab)}</h2><p class="hint">${esc(w.noLabWhy)}</p></div>`; return; }
     cubes = (await call("GET", "/schema")).cubes;
+    await loadSaved();
     mountLab();
   } catch (e) { show(`${w.failed} ${e.message}`); }
 })();
