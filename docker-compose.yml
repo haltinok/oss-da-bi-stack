@@ -118,7 +118,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # Over TCP: while the init scripts run (a fresh volume) the server listens on its socket only, and a socket check would call it healthy too early.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -591,6 +592,8 @@ services:
     restart: unless-stopped
     depends_on:
       keycloak:
+        condition: service_healthy
+      postgres:                       # the access rules (schema `access`) are read from it at every sign-in
         condition: service_healthy
     ports:
       - "127.0.0.1:${AUTH_PORT:-8200}:8200"
