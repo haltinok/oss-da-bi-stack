@@ -5,3 +5,4 @@ httpx==0.27.*
 psycopg2-binary==2.9.*
 pyyaml==6.*
 jsonschema>=4.18
+xlsxwriter==3.*

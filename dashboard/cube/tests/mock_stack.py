@@ -382,6 +382,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
             return self._send(json.dumps({"token": "t", "expires_in": 900, "user": USER["name"], "role": ROLE["role"], "territories": ["Canada"], "lab": LAB["on"] or ROLE["role"] == "admin"}).encode())
+        if path == "/lab-api/export":
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}")
+            status, answer = lab_answer("/query", body, "POST")
+            if status != 200:
+                return self._send(json.dumps(answer).encode(), status=status)
+            LAB.setdefault("exports", []).append(body.get("format"))
+            text = "\ufeff" + "\r\n".join([",".join(c["name"] for c in answer["columns"])] + [",".join("" if v is None else str(v) for v in r) for r in answer["rows"]]) + "\r\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8" if body.get("format") == "csv" else "application/octet-stream")
+            self.send_header("Content-Disposition", f'attachment; filename="lab-test.{body.get("format")}"')
+            self.send_header("X-Lab-Rows", str(answer["row_count"]))
+            self.send_header("X-Lab-Truncated", "true" if LAB.get("export_cut") else "false")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(text.encode())
+            return
         if path.startswith("/lab-api/"):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
             status, answer = lab_answer(path[len("/lab-api"):], body, self.command)

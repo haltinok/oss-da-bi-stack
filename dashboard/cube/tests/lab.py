@@ -81,6 +81,22 @@ with sync_playwright() as p:
     clip = page.evaluate("navigator.clipboard.readText()")
     check(clip.startswith("category\trevenue\tlast_order"), f"Copy puts the grid on the clipboard as tab-separated text ({clip[:30]!r})")
 
+    # ---- export: the file is the statement's result, downloaded by the browser
+    check(page.locator("#export-csv").is_visible() and page.locator("#export-xlsx").is_visible(), "a result offers CSV and Excel")
+    with page.expect_download() as d:
+        page.click("#export-csv")
+    dl = d.value
+    text = pathlib.Path(dl.path()).read_text(encoding="utf-8-sig")
+    check(dl.suggested_filename == "lab-test.csv" and text.startswith("category,revenue,last_order") and "Bikes" in text, f"CSV downloads with the result ({dl.suggested_filename})")
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Exported 3 rows')")
+    check(True, "and the page says how many rows were exported")
+    ms.LAB["export_cut"] = True
+    with page.expect_download():
+        page.click("#export-xlsx")
+    page.wait_for_function("document.querySelector('#status').textContent.includes('first 3 rows')")
+    check("xlsx" in ms.LAB["exports"], "Excel is asked for, and a cut export says the file holds only the first rows")
+    ms.LAB["export_cut"] = False
+
     # ---- keyboard, errors, refusals, empty, many rows
     page.fill("#sql", "select 'boom'")
     page.press("#sql", "Control+Enter")

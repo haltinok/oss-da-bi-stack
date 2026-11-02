@@ -29,8 +29,13 @@ The result grid sorts by column, and **Copy** puts it on the clipboard as tab-se
   the statement is sent to Cube's SQL API signed in as the person with their own Cube token as the password, and Cube applies `queryRewrite` to it like any other query. Warehouse tables behind the cubes are not reachable at all (Cube only knows the cubes).
 - A change to someone's grants or rules shows at their next token (15 minutes by default).
 
+## Export
+**CSV** and **Excel** buttons appear under a result. The statement runs again as an export, under the same gate, rules, time limit and audit (`event: lab_export`), and may return more rows than the grid shows: up to **100,000** (`LAB_EXPORT_ROWS`);
+the page says when the file was cut. CSV is UTF-8 with a byte-order mark (Excel reads Turkish letters right). **Nothing in a cell is run as a formula:** in CSV a text that starts with `=`, `+`, `-` or `@` gets a leading apostrophe, and in Excel every
+non-number is written as text. Numbers stay numbers.
+
 ## Limits
-At most **10,000 rows** per query (the grid says when a result was cut), **60 seconds**, **2 queries at a time** per person, 8 across the lab, 20,000 characters. Each statement writes one audit line (`event: lab`: who, role, the statement, rows, time, error) to the service's stdout.
+At most **10,000 rows** per query on screen (100,000 in an export) (the grid says when a result was cut), **60 seconds**, **2 queries at a time** per person, 8 across the lab, 20,000 characters. Each statement writes one audit line (`event: lab`: who, role, the statement, rows, time, error) to the service's stdout.
 Settings: `LAB_ROW_LIMIT`, `LAB_TIMEOUT`, `LAB_MAX_PER_USER`, `LAB_MAX_CONCURRENT` in `.env`.
 
 ## Running it

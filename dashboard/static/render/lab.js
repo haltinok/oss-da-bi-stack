@@ -91,7 +91,7 @@ function drawResult() {
   const body = shown.map((r) => `<tr>${r.map((v, i) => { const c = columns[i]; const empty = v === null || v === undefined; return `<td class="${c.type === "number" ? "n" : ""}${empty ? " null" : ""}">${esc(formatCell(v, c.type))}</td>`; }).join("")}</tr>`).join("");
   box.innerHTML = rows.length ? `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` : `<p class="hint" style="padding:12px">${esc(w.nothing)}</p>`;
   $("#status").textContent = `${w.rows(last.row_count)} · ${w.took(last.ms)}${last.truncated ? ` · ${w.cut(last.row_count)}` : rows.length > MAX_SHOWN ? ` · ${w.shown(MAX_SHOWN, rows.length)}` : ""}`;
-  $("#copy").hidden = !rows.length;
+  for (const id of ["copy", "export-csv", "export-xlsx"]) $(`#${id}`).hidden = !rows.length;
 }
 
 async function run() {
@@ -119,7 +119,7 @@ function mountLab() {
       <textarea id="sql" spellcheck="false" aria-label="SQL" placeholder="${esc(w.placeholder)}"></textarea>
       <div class="lab-bar"><button type="button" class="lab-btn primary" id="run">${esc(w.run)}</button><button type="button" class="lab-btn" id="clear">${esc(w.clear)}</button>
         <select id="samples" aria-label="${esc(w.samples)}"><option value="">${esc(w.samples)}</option>${SAMPLES.map(([n], i) => `<option value="${i}">${esc(n)}</option>`).join("")}</select>
-        <span class="spacer"></span><span class="hint">${esc(w.limits(limits.row_limit, limits.timeout_seconds))} Ctrl/⌘ + Enter</span><button type="button" class="lab-btn" id="copy" hidden>${esc(w.copy)}</button></div>
+        <span class="spacer"></span><span class="hint">${esc(w.limits(limits.row_limit, limits.timeout_seconds))} Ctrl/⌘ + Enter</span><button type="button" class="lab-btn" id="copy" hidden>${esc(w.copy)}</button><button type="button" class="lab-btn" id="export-csv" hidden>${esc(w.exportCsv)}</button><button type="button" class="lab-btn" id="export-xlsx" hidden>${esc(w.exportXlsx)}</button></div>
       <p class="hint">${esc(w.help)}</p>
       <div class="lab-err" id="err" role="alert" hidden></div><div class="lab-status" id="status" role="status" aria-live="polite"></div><div class="lab-result" id="result"></div>
       <details class="lab-history"><summary>${esc(w.history)}</summary><div id="history"></div></details></section></div>`;
@@ -154,11 +154,37 @@ function mountLab() {
     last.sort = last.sort?.index === index ? { index, dir: last.sort.dir === "asc" ? "desc" : "asc" } : { index, dir: "asc" };
     drawResult();
   });
+  $("#export-csv").addEventListener("click", () => exportAs("csv"));
+  $("#export-xlsx").addEventListener("click", () => exportAs("xlsx"));
   $("#copy").addEventListener("click", async () => {
     if (!last) return;
     const rows = last.sort ? sortRows(last.rows, last.sort.index, last.sort.dir, last.columns[last.sort.index]?.type) : last.rows;
     try { await navigator.clipboard.writeText(toTsv(last.columns, rows)); $("#copy").textContent = w.copied; setTimeout(() => { $("#copy").textContent = w.copy; }, 1200); } catch { show("clipboard"); }
   });
+}
+
+/** Run the statement of the open tab again as an export and hand the file to the browser. The file may hold more rows than the grid (the export limit). */
+async function exportAs(format) {
+  const sql = tabOf().sql.trim();
+  if (!sql) return;
+  const buttons = ["export-csv", "export-xlsx"].map((id) => $(`#${id}`));
+  const labels = buttons.map((b) => b.textContent);
+  buttons.forEach((b) => { b.disabled = true; b.textContent = w.exporting; });
+  $("#err").hidden = true;
+  try {
+    const kc = await client.keycloak();
+    const res = await fetch(`${C.lab}/export`, { method: "POST", headers: { Authorization: `Bearer ${kc.access}`, "Content-Type": "application/json" }, body: JSON.stringify({ sql, format }) });
+    if (!res.ok) { const d = (await res.json().catch(() => ({}))).detail; throw new Error(typeof d === "string" ? d : `HTTP ${res.status}`); }
+    const blob = await res.blob();
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `lab.${format}`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    const n = Number(res.headers.get("X-Lab-Rows") || 0);
+    $("#status").textContent = res.headers.get("X-Lab-Truncated") === "true" ? w.exportCut(n) : w.exportAll(n);
+  } catch (e) {
+    $("#err").textContent = `${w.failed} ${e.message}`; $("#err").hidden = false;
+  } finally { buttons.forEach((b, i) => { b.disabled = false; b.textContent = labels[i]; }); }
 }
 
 (async () => {
