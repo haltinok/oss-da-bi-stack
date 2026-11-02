@@ -85,6 +85,8 @@ x-cube-env: &cube-env
   CUBEJS_PRE_AGGREGATIONS_SCHEMA: ${CUBE_PREAGG_SCHEMA:-dev_pre_aggregations}
   CUBEJS_REFRESH_WORKER: "true"
   CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:?set CUBEJS_API_SECRET in .env}
+  # The SQL API (Postgres protocol), for the SQL lab: on the compose network only, never published. checkSqlAuth in cube.js takes the Cube token as the password.
+  CUBEJS_PG_SQL_PORT: "15432"
   # StarRocks speaks the MySQL protocol. cube_ro can only SELECT on the mart.
   CUBEJS_DB_TYPE: mysql
   CUBEJS_DB_HOST: starrocks-fe
@@ -508,6 +510,37 @@ services:
       timeout: 3s
       retries: 10
 
+  # The SQL lab: ad-hoc SELECTs over the semantic layer for the people who have been given it (a dataset grant with the SQL lab permission; admins always). It runs each statement on Cube's
+  # SQL API signed in as the person, so role rules, territories and blocked cubes apply exactly as on a dashboard (lab/main.py).
+  lab:
+    build:
+      context: ./lab
+      additional_contexts:
+        dashboards: ./dashboards
+        cubemodel: ./cube/model
+    profiles: [starrocks]
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${LAB_PORT:-8450}:8450"
+    environment:
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
+      AUTH_URL: http://auth:8200
+      CUBE_SQL_HOST: cube
+      CUBE_SQL_PORT: "15432"
+      ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
+      LAB_ROW_LIMIT: ${LAB_ROW_LIMIT:-10000}
+      LAB_TIMEOUT: ${LAB_TIMEOUT:-60}
+      LAB_MAX_PER_USER: ${LAB_MAX_PER_USER:-2}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8450/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   cubestore:
     image: cubejs/cubestore:${CUBE_VERSION:-latest}
     profiles: [starrocks]
@@ -722,6 +755,7 @@ services:
       ACTIONS_PORT: ${ACTIONS_PORT:-8300}
       BUILDER_PORT: ${BUILDER_PORT:-8350}
       ADMIN_PORT: ${ADMIN_PORT:-8400}
+      LAB_PORT: ${LAB_PORT:-8450}
       # Optional second dataset in the dashboard: the port of the 250M benchmark Cube (spike/bench/run_scale.sh 250m).
       CUBE_250M_PORT: ${CUBE_250M_PORT:-}
       # How the browser reaches Keycloak, the auth and actions services and Cube. Empty (the default): each on its own

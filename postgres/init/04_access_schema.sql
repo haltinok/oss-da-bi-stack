@@ -25,14 +25,18 @@ CREATE TABLE IF NOT EXISTS access.dataset (
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- Who may use what. object_type is general on purpose (folders and dashboards come in phase 3); `view` is the only permission so far.
+-- Who may use what. object_type is general on purpose; `view` reads the dataset's cubes, `lab` also opens the SQL lab (a grant on any dataset with `lab` is what turns the lab on for a person).
 CREATE TABLE IF NOT EXISTS access.grant (
     object_type    text NOT NULL CHECK (object_type IN ('dataset', 'folder', 'dashboard')),
     object_id      text NOT NULL,
     principal_type text NOT NULL CHECK (principal_type IN ('user', 'group', 'role')),
     principal      text NOT NULL CHECK (char_length(principal) BETWEEN 1 AND 120),
-    permission     text NOT NULL DEFAULT 'view' CHECK (permission IN ('view')),
+    permission     text NOT NULL DEFAULT 'view' CHECK (permission IN ('view', 'lab')),                              -- lab: view, and may use the SQL lab
     granted_by     text NOT NULL,
     granted_at     timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (object_type, object_id, principal_type, principal)
 );
+
+-- An install that has the table from before `lab` existed: widen the check (idempotent).
+ALTER TABLE access."grant" DROP CONSTRAINT IF EXISTS grant_permission_check;
+ALTER TABLE access."grant" ADD CONSTRAINT grant_permission_check CHECK (permission IN ('view', 'lab'));

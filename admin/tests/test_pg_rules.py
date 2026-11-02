@@ -61,9 +61,9 @@ def test_datasets_and_grants_on_postgres(store):
     assert [(d["name"], d["grants"]) for d in store.datasets()] == [("Sales 2", [])]
     store.put_dataset("sales", "Sales 2", "", ["internet_sales"], [{"type": "group", "principal": "EU"}], "root")
     store.rename_grants("group", "EU", "Europe")
-    assert store.datasets()[0]["grants"] == [{"type": "group", "principal": "Europe"}]
+    assert store.datasets()[0]["grants"] == [{"type": "group", "principal": "Europe", "permission": "view"}]
     ds, gs = store.resolve_input()
-    assert ds == [{"id": "sales", "cubes": ["internet_sales"]}] and gs == [{"object_id": "sales", "principal_type": "group", "principal": "Europe"}]
+    assert ds == [{"id": "sales", "cubes": ["internet_sales"]}] and gs == [{"object_id": "sales", "principal_type": "group", "principal": "Europe", "permission": "view"}]
     store.drop_grants("group", "Europe")
     assert store.datasets()[0]["grants"] == []
     assert store.delete_dataset("sales") and not store.delete_dataset("sales")
@@ -87,3 +87,12 @@ def test_the_auth_and_builder_logins_read_datasets_but_cannot_write():
             cur.execute('select count(*) from access."grant"')
             with pytest.raises(psycopg2.errors.InsufficientPrivilege):
                 cur.execute("delete from access.dataset")
+
+
+def test_a_lab_grant_is_stored_and_a_bad_permission_refused(store):
+    import psycopg2
+    row = store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "manager", "permission": "lab"}], "root")
+    assert row["grants"] == [{"type": "role", "principal": "manager", "permission": "lab"}]
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "manager", "permission": "own"}], "root")
+    store.delete_dataset("labs")

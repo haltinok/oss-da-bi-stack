@@ -252,7 +252,8 @@ def admin_answer(path, body, method, query):
             mine = {d["id"] for d in ADMIN["datasets"].values() if any((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names) for g in d["grants"])}
             allowed = {c for d in ADMIN["datasets"].values() if d["id"] in mine for c in d["cubes"]}
             blocked = [] if u["role"] == "admin" else sorted(gov - allowed)
-            base = {"username": u["username"], "role": u["role"], "groups": names, "applies": u["role"] in ("admin", "manager", "rep"), "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked}
+            base = {"username": u["username"], "role": u["role"], "groups": names, "applies": u["role"] in ("admin", "manager", "rep"), "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked,
+                    "lab": u["role"] == "admin" or any(g.get("permission") == "lab" and ((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names)) for d in ADMIN["datasets"].values() for g in d["grants"])}
             if hits:
                 return 200, {**base, "territories": sorted({x for _, _, v in hits for x in v}), "source": "rules"}
             seeded = SEED_REGIONS.get(u["username"], [])
@@ -311,6 +312,43 @@ def admin_answer(path, body, method, query):
     return 404, {"detail": "not found"}
 
 
+# ---- the SQL lab service (lab/): the real statement checks, fake data
+LAB = {"on": False}                                   # True: this (non-admin) person has the lab; an admin always does
+LAB_SCHEMA = [
+    {"name": "internet_sales", "description": "Online sales", "joins": ["products"],
+     "measures": [{"name": "revenue", "type": "sum", "description": "Total sales"}, {"name": "orders", "type": "count", "description": ""}],
+     "dimensions": [{"name": "order_number", "type": "string", "description": ""}, {"name": "order_date", "type": "time", "description": ""}]},
+    {"name": "products", "description": "Products", "joins": [], "measures": [], "dimensions": [{"name": "category", "type": "string", "description": ""}, {"name": "name", "type": "string", "description": ""}]},
+]
+
+
+def lab_answer(path, body, method):
+    sys.path.insert(0, str(ROOT / "lab"))
+    import sqlcheck
+    has_lab = LAB["on"] or ROLE["role"] == "admin"
+    if path == "/info":
+        return 200, {"user": USER["name"], "role": ROLE["role"], "lab": has_lab, "limits": {"row_limit": 10000, "timeout_seconds": 60, "per_user": 2, "max_sql": sqlcheck.MAX_SQL}}
+    if not has_lab:
+        return 403, {"detail": "You have not been given the SQL lab. Ask an admin to give a dataset you use the SQL lab permission."}
+    if path == "/schema":
+        return 200, {"cubes": LAB_SCHEMA}
+    if path == "/query" and method == "POST":
+        try:
+            sql = sqlcheck.check(body.get("sql", ""))
+        except sqlcheck.SqlRefused as e:
+            return 400, {"detail": str(e)}
+        LAB.setdefault("ran", []).append(sql)
+        if "boom" in sql:
+            return 400, {"detail": "Profit and margin are not available for your role"}
+        if "empty" in sql:
+            return 200, {"columns": [{"name": "category", "type": "string"}], "rows": [], "row_count": 0, "truncated": False, "ms": 5}
+        if "many" in sql:
+            return 200, {"columns": [{"name": "n", "type": "number"}, {"name": "label", "type": "string"}], "rows": [[i, f"row {i}"] for i in range(1200)], "row_count": 1200, "truncated": False, "ms": 41}
+        return 200, {"columns": [{"name": "category", "type": "string"}, {"name": "revenue", "type": "number"}, {"name": "last_order", "type": "time"}],
+                     "rows": [["Bikes", 4279788.58, "2026-06-30T10:00:00"], ["Accessories", 75418.41, "2026-06-29T00:00:00"], ["Clothing", 35949.7, None]], "row_count": 3, "truncated": False, "ms": 12}
+    return 404, {"detail": "not found"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -343,7 +381,11 @@ class Handler(BaseHTTPRequestHandler):
                     f'location.replace({json.dumps(to)});</script>')
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
-            return self._send(json.dumps({"token": "t", "expires_in": 900, "user": USER["name"], "role": ROLE["role"], "territories": ["Canada"]}).encode())
+            return self._send(json.dumps({"token": "t", "expires_in": 900, "user": USER["name"], "role": ROLE["role"], "territories": ["Canada"], "lab": LAB["on"] or ROLE["role"] == "admin"}).encode())
+        if path.startswith("/lab-api/"):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
+            status, answer = lab_answer(path[len("/lab-api"):], body, self.command)
+            return self._send(json.dumps(answer).encode(), status=status)
         if path.startswith("/admin-api/"):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
             status, answer = admin_answer(path[len("/admin-api"):], body, self.command, parse_qs(urlparse(self.path).query))
@@ -376,7 +418,7 @@ class Handler(BaseHTTPRequestHandler):
             if BENCH["on"]:
                 ds += f', {{ id: "250m", label: "250M benchmark", mart: "mart_250m", cube: "http://localhost:{PORT}/cube-bench", readOnly: true }}'
             js = (f'window.STACK = {{ keycloak: {{ url: "http://localhost:{PORT}/kc", realm: "spike", clientId: "dashboard" }}, '
-                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", admin: "http://localhost:{PORT}/admin-api", cube: "http://localhost:{PORT}/cube-live" }}; '
+                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", admin: "http://localhost:{PORT}/admin-api", lab: "http://localhost:{PORT}/lab-api", cube: "http://localhost:{PORT}/cube-live" }}; '
                   f"window.STACK.datasets = {ds}];")
             return self._send(js.encode(), "application/javascript")
         if path == "/d" or path.startswith("/d/"):          # the renderer page, for /d/ and /d/<id>
@@ -385,6 +427,8 @@ class Handler(BaseHTTPRequestHandler):
             path = "/admin.html"
         if path == "/home" or path.startswith("/home/"):    # the start page
             path = "/home.html"
+        if path == "/lab" or path.startswith("/lab/"):      # the SQL lab
+            path = "/lab.html"
         for base, strip in ((ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
             if path.startswith(strip):
                 rel = path[len(strip):] or "index.html"

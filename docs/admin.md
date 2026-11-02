@@ -35,7 +35,8 @@ A **dataset** is a named set of cubes (for example *Sales facts*: `internet_sale
 - A cube in **no** dataset works exactly as before: only the role rules decide. So nothing changes until the first dataset exists.
 - Access can only **narrow** what a role allows. Giving a `rep` access to a dataset does not let them see profit, and giving `purchasing` access to `internet_sales` does not let them query sales.
 - A dataset nobody has access to is readable only by admins: the tab says so, so an empty list is never a surprise.
-- The **preview** on the Row rules tab also lists the cubes datasets keep from a person.
+- Tick **Also give the SQL lab** when adding someone to a dataset and they get the [SQL lab](lab.md) (admins always have it). The lab adds no access of its own: what they can read in it is what the dashboards let them read.
+- The **preview** on the Row rules tab also lists the cubes datasets keep from a person, and whether they have the SQL lab.
 
 **Where it is enforced.** The auth service puts the cubes a person may not read into the Cube token (`blocked_cubes`) and **Cube refuses any query that touches one**, whatever the dashboard says. The builder and the designer leave
 those cubes out of the person's catalog, so they are not offered (and a saved dashboard that uses one tells its opener why it cannot open). A grant follows its group's rename and goes with a deleted group or person.

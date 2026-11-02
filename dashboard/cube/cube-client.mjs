@@ -81,7 +81,7 @@ export function createCubeClient({ stack, apiUrl, redirect = `${location.origin}
     if (res.status === 401) { store.del("kc"); return login(); }
     if (!res.ok) throw new Error(res.status === 403 ? "Your account has no access to this dashboard" : `Sign-in failed (${res.status})`);
     const t = await res.json();
-    session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, territories: t.territories };
+    session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, territories: t.territories, lab: !!t.lab };
     onSession(session);
     return session.token;
   }

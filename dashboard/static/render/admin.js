@@ -130,8 +130,9 @@ function previewHtml(p) {
   if (!p.applies) return `<p class="hint">${esc(t.previewNa)}</p><p class="hint">${esc(t.blockedCubes)}: ${(p.blocked_cubes || []).map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("") || esc(t.noneBlocked)}</p>`;
   const chips = p.territories.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("") || `<span class="hint">${esc(t.none)}</span>`;
   const via = p.rules.length ? `<p class="hint">${esc(t.previewVia)}: ${p.rules.map((r) => `${esc(r.principal)} (${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)})`).join(", ")}</p>` : "";
+  const labLine = `<p class="hint">${esc(p.lab ? t.labOn : t.labOff)}</p>`;
   const blocked = `<p class="hint">${esc(t.blockedCubes)}: ${(p.blocked_cubes || []).map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("") || esc(t.noneBlocked)}</p>`;
-  return `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>${via}${blocked}`;
+  return `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>${via}${blocked}${labLine}`;
 }
 
 function wireRules() {
@@ -178,7 +179,7 @@ async function ruleDialog(rule) {
 // ------------------------------------------------------------------------------------------------------------------ datasets
 function datasetsHtml() {
   if (s.rulesOff) return `<p class="adm-empty" role="status">${esc(t.rulesOff)}</p>`;
-  const who = (g) => `<span class="adm-chip" title="${esc(t.grantType[g.type])}">${esc(g.type === "role" ? `role: ${g.principal}` : g.type === "group" ? `group: ${g.principal}` : g.principal)}</span>`;
+  const who = (g) => `<span class="adm-chip" title="${esc(t.grantType[g.type])}">${esc((g.type === "role" ? `role: ${g.principal}` : g.type === "group" ? `group: ${g.principal}` : g.principal) + (g.permission === "lab" ? ` · ${t.grantLabShort}` : ""))}</span>`;
   const rows = s.datasets.map((d) => `<tr data-id="${esc(d.id)}"><td><strong>${esc(d.name)}</strong><br><span class="hint">${esc(d.description)}</span></td>
       <td>${d.cubes.map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("")}</td>
       <td>${d.grants.map(who).join("") || `<span class="hint">${esc(t.nobodyYet)}</span>`}</td>
@@ -210,7 +211,8 @@ async function datasetDialog(d) {
     <label>${esc(t.datasetCubes)}<div class="groups-pick" role="group" aria-label="${esc(t.datasetCubes)}">${s.cubes.map((c) => `<label title="${esc(c.description)}"><input type="checkbox" name="c" value="${esc(c.name)}"${picked.has(c.name) ? " checked" : ""}> ${esc(c.name)} <span class="hint">(${c.measures + c.dimensions})</span></label>`).join("")}</div></label>
     <div><span class="hint">${esc(t.datasetAccess)}</span><div id="grant-list" class="adm-grants"></div>
       <div class="row"><select id="g-type" aria-label="${esc(t.ruleFor)}">${opts([["user", t.grantType.user], ["group", t.grantType.group], ["role", t.grantType.role]], "role")}</select>
-      <select id="g-who" aria-label="${esc(t.ruleWho)}"></select></div><button type="button" class="adm-btn mini" id="g-add">${esc(t.grantAdd)}</button></div>
+      <select id="g-who" aria-label="${esc(t.ruleWho)}"></select></div>
+      <label class="inline"><input type="checkbox" id="g-lab"> ${esc(t.grantLab)}</label><span class="hint">${esc(t.grantLabHint)}</span><br><button type="button" class="adm-btn mini" id="g-add">${esc(t.grantAdd)}</button></div>
     ${foot(t.datasetSave)}`, async (f) => {
     const v = Object.fromEntries(new FormData(f));
     const cubes = [...f.querySelectorAll("[name=c]:checked")].map((c) => c.value);
@@ -219,12 +221,18 @@ async function datasetDialog(d) {
   });
   const list = form.querySelector("#grant-list"), type = form.querySelector("#g-type"), who = form.querySelector("#g-who");
   const drawGrants = () => {
-    list.innerHTML = grants.map((g, i) => `<span class="adm-chip">${esc(`${t.grantType[g.type]}: ${g.principal}`)} <button type="button" class="adm-x" data-rm="${i}" aria-label="${esc(t.remove)} ${esc(g.principal)}">✕</button></span>`).join("") || `<span class="hint">${esc(t.nobodyYet)}</span>`;
+    list.innerHTML = grants.map((g, i) => `<span class="adm-chip">${esc(`${t.grantType[g.type]}: ${g.principal}${g.permission === "lab" ? ` · ${t.grantLabShort}` : ""}`)} <button type="button" class="adm-x" data-rm="${i}" aria-label="${esc(t.remove)} ${esc(g.principal)}">✕</button></span>`).join("") || `<span class="hint">${esc(t.nobodyYet)}</span>`;
     list.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => { grants.splice(Number(b.dataset.rm), 1); drawGrants(); }));
   };
   const drawWho = () => { who.innerHTML = opts(choices(type.value).map((x) => [x, x]), "", t.grantPick); };
   type.addEventListener("change", drawWho);
-  form.querySelector("#g-add").addEventListener("click", () => { if (who.value && !grants.some((g) => g.type === type.value && g.principal === who.value)) { grants.push({ type: type.value, principal: who.value }); drawGrants(); } });
+  form.querySelector("#g-add").addEventListener("click", () => {
+    if (!who.value) return;
+    const permission = form.querySelector("#g-lab").checked ? "lab" : "view";
+    const at = grants.findIndex((g) => g.type === type.value && g.principal === who.value);
+    if (at >= 0) grants[at].permission = permission; else grants.push({ type: type.value, principal: who.value, permission });
+    drawGrants();
+  });
   drawGrants(); drawWho();
 }
 

@@ -1,0 +1,38 @@
+/* The SQL lab (/lab/). Reuses the page's tokens so every theme works. */
+.lab-wrap { max-width: 1500px; }
+.lab-grid { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .lab-grid { grid-template-columns: 1fr; } }
+.lab-side { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 10px 12px; max-height: 78vh; overflow: auto; }
+.lab-side input[type="search"] { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--ink); font: inherit; font-size: 13px; }
+.lab-side details { margin: 0 0 4px; }
+.lab-side summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 3px 0; }
+.lab-side .hint, .lab-main .hint { color: var(--muted); font-size: 12.5px; }
+.lab-field { display: flex; gap: 6px; align-items: baseline; width: 100%; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12.5px; text-align: left; padding: 2px 4px 2px 12px; border-radius: 6px; cursor: pointer; }
+.lab-field:hover { background: var(--surface-2); }
+.lab-field .k { color: var(--muted); font-size: 11px; margin-left: auto; }
+.lab-field.measure { font-weight: 600; }
+.lab-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); margin: 0 0 8px; align-items: flex-end; }
+.lab-tabs button { padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.lab-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--focus); }
+.lab-tabs .x { padding: 6px 4px; color: var(--muted); }
+#sql { width: 100%; box-sizing: border-box; min-height: 190px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); color: var(--ink); font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
+.lab-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.lab-bar .spacer { flex: 1; }
+.lab-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.lab-btn.primary { background: var(--focus); border-color: var(--focus); color: var(--on-focus, #fff); }
+.lab-btn:disabled { opacity: .55; cursor: default; }
+.lab-bar select { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--ink); font: inherit; font-size: 13px; }
+.lab-err { border: 1px solid var(--bad, #c0392b); border-radius: 8px; padding: 8px 12px; color: var(--bad, #c0392b); font-size: 13px; margin: 8px 0; overflow-wrap: anywhere; }
+.lab-status { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
+.lab-result { overflow: auto; max-height: 56vh; border: 1px solid var(--border); border-radius: 10px; }
+.lab-result table { border-collapse: collapse; font-size: 13px; width: max-content; min-width: 100%; }
+.lab-result th { position: sticky; top: 0; background: var(--surface-2); text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; }
+.lab-result th[aria-sort="ascending"]::after { content: " ▲"; font-size: 10px; }
+.lab-result th[aria-sort="descending"]::after { content: " ▼"; font-size: 10px; }
+.lab-result td { padding: 5px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.lab-result td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.lab-result td.null { color: var(--muted); font-style: italic; }
+.lab-history { margin-top: 14px; }
+.lab-history summary { cursor: pointer; color: var(--muted); }
+.lab-history li { list-style: none; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.lab-history button { border: 0; background: none; color: var(--ink); font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: left; cursor: pointer; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

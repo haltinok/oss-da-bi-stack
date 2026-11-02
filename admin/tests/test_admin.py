@@ -291,3 +291,13 @@ def test_grants_follow_a_group_and_go_with_a_group_or_person(ruled, kc):
     uid = next(u for u, v in kc.users_.items() if v["username"] == "de_rep")
     assert ruled.delete(f"/users/{uid}?confirm=de_rep").status_code == 204
     assert ruled.get("/datasets").json()["datasets"][0]["grants"] == []
+
+
+def test_a_grant_can_be_view_or_lab_and_the_preview_says_whether_the_lab_is_open(ruled, kc):
+    kc.add("de_rep", "rep")
+    kc.add("na_manager", "manager")
+    r = ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "user", "principal": "de_rep", "permission": "lab"}, {"type": "role", "principal": "manager"},
+                                                                                                    {"type": "user", "principal": "de_rep", "permission": "view"}]})
+    assert r.status_code == 200 and {(g["type"], g["principal"], g["permission"]) for g in r.json()["grants"]} == {("user", "de_rep", "lab"), ("role", "manager", "view")}
+    assert ruled.put("/datasets/sales", json={"name": "S", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "manager", "permission": "own"}]}).status_code == 400
+    assert ruled.get("/rls/preview/de_rep").json()["lab"] is True and ruled.get("/rls/preview/na_manager").json()["lab"] is False and ruled.get("/rls/preview/root").json()["lab"] is True

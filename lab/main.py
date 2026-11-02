@@ -1,0 +1,250 @@
+"""The SQL lab service: ad-hoc SELECTs over the semantic layer, for the people who have been given the lab.
+
+  GET  /healthz
+  GET  /info      { user, role, lab, limits }: whether this person has the lab, and the limits
+  GET  /schema    the cubes, dimensions and measures this person may query (role rules and blocked cubes applied), for the schema browser
+  POST /query     { sql } -> { columns: [{name, type}], rows: [[...]], row_count, truncated, ms }
+
+Every call carries a Keycloak access token of the dashboard client. The lab asks the auth service for the person's Cube token (which says their role, territories, blocked cubes and whether
+they have the lab), and runs the statement on Cube's SQL API (Postgres protocol) signed in as that person, with the Cube token as the password. So a statement goes through the very
+same queryRewrite as a dashboard's query: role rules (no profit for a rep), row-level security (territories) and blocked cubes (datasets) apply to it, and Cube only understands
+queries over the cubes (no other tables, no INSERT or DROP). The lab adds the limits: one statement, a row cap, a time limit, a few queries at a time per person, and an audit line per statement.
+"""
+from __future__ import annotations
+
+import datetime
+import decimal
+import json
+import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+
+import httpx
+import jwt
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+import sqlcheck
+
+ISSUER = os.environ["KEYCLOAK_ISSUER"]
+JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
+CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
+AUTH_URL = os.environ.get("AUTH_URL", "http://auth:8200").rstrip("/")
+CUBE_SQL_HOST = os.environ.get("CUBE_SQL_HOST", "cube")
+CUBE_SQL_PORT = int(os.environ.get("CUBE_SQL_PORT", "15432"))
+ROW_LIMIT = int(os.environ.get("LAB_ROW_LIMIT", "10000"))
+TIMEOUT = float(os.environ.get("LAB_TIMEOUT", "60"))
+PER_USER = int(os.environ.get("LAB_MAX_PER_USER", "2"))
+MAX_CONCURRENT = int(os.environ.get("LAB_MAX_CONCURRENT", "8"))
+LOG_FILE = os.environ.get("LAB_LOG_FILE", "")
+
+jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
+app = FastAPI(title="lab")
+app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ALLOWED_ORIGINS", "http://localhost:8250").split(","),
+                   allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT)
+_slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+_per_user: dict[str, threading.BoundedSemaphore] = {}
+_lock = threading.Lock()
+
+
+class Caller(BaseModel):
+    name: str
+    raw: str                                                  # the Keycloak token, passed to the auth service for the Cube token
+
+
+def current_caller(authorization: str = Header(default="")) -> Caller:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing bearer token")
+    raw = authorization.removeprefix("Bearer ")
+    try:
+        key = jwks.get_signing_key_from_jwt(raw).key
+        claims = jwt.decode(raw, key, algorithms=["RS256"], issuer=ISSUER, options={"verify_aud": False})
+    except jwt.PyJWTError as exc:
+        raise HTTPException(401, f"invalid token: {exc}") from exc
+    if claims.get("azp") != CLIENT_ID:
+        raise HTTPException(401, "token was not issued to the dashboard client")
+    return Caller(name=claims["preferred_username"], raw=raw)
+
+
+Who = Depends(current_caller)
+
+
+def audit(entry: dict) -> None:
+    line = json.dumps({"event": "lab", "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
+    print(line, flush=True)
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError as exc:
+            print(json.dumps({"event": "lab", "warning": f"could not write {LOG_FILE}: {exc}"}), flush=True)
+
+
+def cube_session(caller: Caller) -> dict:
+    """The person's Cube token and claims, from the auth service (it applies the access rules); a refusal there is a refusal here."""
+    try:
+        r = httpx.post(f"{AUTH_URL}/token", headers={"Authorization": f"Bearer {caller.raw}"}, timeout=10)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"the auth service is not reachable: {exc}") from exc
+    if r.status_code != 200:
+        raise HTTPException(r.status_code if r.status_code in (401, 403, 503) else 502, r.json().get("detail", "the auth service refused") if r.headers.get("content-type", "").startswith("application/json") else "the auth service refused")
+    return r.json()
+
+
+def need_lab(session: dict) -> dict:
+    if not session.get("lab"):
+        raise HTTPException(403, "You have not been given the SQL lab. Ask an admin to give a dataset you use the SQL lab permission.")
+    return session
+
+
+# -------------------------------------------------------------------------------------------------------------------- schema
+_catalog = None
+
+
+def catalog():
+    global _catalog
+    if _catalog is None:
+        try:
+            from dashspec import catalog as cat
+            _catalog = cat.from_model(os.environ.get("LAB_MODEL_DIR", "/app/cube-model"))
+        except (ImportError, SystemExit, OSError):
+            _catalog = False
+    return _catalog or None
+
+
+def schema_for(session: dict) -> list[dict]:
+    """The cubes and members this person may query: what the role rules and the blocked cubes leave (the same rules Cube enforces; this only keeps the browser from listing what would be refused)."""
+    cat = catalog()
+    if cat is None:
+        return []
+    from dashspec.validate import denied
+    role, blocked = session.get("role", ""), set(session.get("blocked_cubes") or [])
+    out = []
+    for name, c in sorted(cat.cubes.items()):
+        if name in blocked:
+            continue
+        dims = [{"name": d, "type": t, "description": c.get("docs", {}).get(d, "")} for d, t in sorted(c["dimensions"].items()) if denied(role, f"{name}.{d}") is None]
+        meas = [{"name": m, "type": t, "description": c.get("docs", {}).get(m, "")} for m, t in sorted(c["measures"].items()) if denied(role, f"{name}.{m}") is None]
+        if dims or meas:
+            out.append({"name": name, "description": c.get("description", ""), "dimensions": dims, "measures": meas, "joins": sorted(j for j in (c["joins"] or ()) if j not in blocked)})
+    return out
+
+
+# -------------------------------------------------------------------------------------------------------------------- running a statement
+_NUMERIC = {20, 21, 23, 700, 701, 1700, 26}
+_TIME = {1082, 1114, 1184, 1083}
+
+
+def kind_of(type_code: int) -> str:
+    return "number" if type_code in _NUMERIC else "time" if type_code in _TIME else "boolean" if type_code == 16 else "string"
+
+
+def plain(v):
+    """A value as JSON can carry it."""
+    if v is None or isinstance(v, (bool, int, str)):
+        return v
+    if isinstance(v, decimal.Decimal):
+        return float(v) if v.is_finite() else str(v)
+    if isinstance(v, float):
+        return v if v == v and v not in (float("inf"), float("-inf")) else str(v)
+    if isinstance(v, (datetime.datetime, datetime.date, datetime.time)):
+        return v.isoformat()
+    if isinstance(v, (bytes, memoryview)):
+        return bytes(v).hex()
+    return str(v)
+
+
+def execute(user: str, token: str, sql: str, limit: int) -> dict:
+    """Run one statement on Cube's SQL API as `user` (the Cube token is the password). Blocking: called in a worker thread."""
+    import psycopg2
+    conn = psycopg2.connect(host=CUBE_SQL_HOST, port=CUBE_SQL_PORT, dbname="db", user=user, password=token, connect_timeout=5, sslmode="disable")
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            cols = [{"name": d.name, "type": kind_of(d.type_code)} for d in (cur.description or [])]
+            rows = cur.fetchmany(limit + 1) if cur.description else []
+        truncated = len(rows) > limit
+        return {"columns": cols, "rows": [[plain(v) for v in r] for r in rows[:limit]], "row_count": min(len(rows), limit), "truncated": truncated}
+    finally:
+        try:
+            conn.close()
+        except Exception:                                      # noqa: BLE001
+            pass
+
+
+def user_slot(user: str) -> threading.BoundedSemaphore:
+    with _lock:
+        return _per_user.setdefault(user, threading.BoundedSemaphore(PER_USER))
+
+
+def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = None, timeout: float | None = None) -> dict:
+    mine, anyone = user_slot(caller.name), _slots
+    if not mine.acquire(blocking=False):
+        raise HTTPException(429, f"You already have {PER_USER} queries running; wait for one to finish.")
+    if not anyone.acquire(blocking=False):
+        mine.release()
+        raise HTTPException(503, "The SQL lab is busy; try again in a moment.")
+    t0 = time.time()
+    future = _pool.submit(execute, caller.name, session["token"], sql, limit or ROW_LIMIT)
+    future.add_done_callback(lambda _f: (mine.release(), anyone.release()))        # the slots are held until Cube is really done, even if we stopped waiting
+    try:
+        out = future.result(timeout=timeout or TIMEOUT)
+    except FutureTimeout:
+        audit({"user": caller.name, "role": session.get("role"), "sql": sql[:500], "error": "timeout", "ms": int((time.time() - t0) * 1000)})
+        raise HTTPException(504, f"The query took longer than {int(timeout or TIMEOUT)} seconds and was given up on. Narrow it (a filter, fewer rows) and try again.") from None
+    except Exception as exc:                                   # noqa: BLE001 (Cube's refusals and errors, in its words)
+        audit({"user": caller.name, "role": session.get("role"), "sql": sql[:500], "error": str(exc)[:200], "ms": int((time.time() - t0) * 1000)})
+        raise HTTPException(400, clean_error(exc)) from None
+    out["ms"] = int((time.time() - t0) * 1000)
+    audit({"user": caller.name, "role": session.get("role"), "sql": sql[:500], "rows": out["row_count"], "truncated": out["truncated"], "ms": out["ms"]})
+    return out
+
+
+def clean_error(exc: Exception) -> str:
+    """Cube's message without the echo of the statement and the connection details."""
+    msg = str(exc).split("\nQUERY:")[0].strip()
+    for prefix in ("Database Execution Error: ", "Internal Error: ", "Planning Error: ", "User Error: ", "Unsupported Error: ", "Rewrite Error: "):
+        msg = msg.removeprefix("ERROR:  ").removeprefix(prefix)
+    if "password authentication failed" in msg or "could not connect" in msg:
+        return "The SQL lab could not reach the data service right now."
+    return msg[:400] or "The query failed."
+
+
+# -------------------------------------------------------------------------------------------------------------------- routes
+class QueryRequest(BaseModel):
+    sql: str = Field(max_length=sqlcheck.MAX_SQL + 1000)
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    return {"status": "ok"}
+
+
+def limits() -> dict:
+    return {"row_limit": ROW_LIMIT, "timeout_seconds": int(TIMEOUT), "per_user": PER_USER, "max_sql": sqlcheck.MAX_SQL}
+
+
+@app.get("/info")
+def info(caller: Caller = Who) -> dict:
+    s = cube_session(caller)
+    return {"user": caller.name, "role": s.get("role"), "lab": bool(s.get("lab")), "limits": limits()}
+
+
+@app.get("/schema")
+def schema(caller: Caller = Who) -> dict:
+    s = need_lab(cube_session(caller))
+    return {"cubes": schema_for(s)}
+
+
+@app.post("/query")
+def query(req: QueryRequest, caller: Caller = Who) -> dict:
+    s = need_lab(cube_session(caller))
+    try:
+        sql = sqlcheck.check(req.sql)
+    except sqlcheck.SqlRefused as exc:
+        raise HTTPException(400, str(exc)) from None
+    return run_limited(caller, s, sql)
