@@ -15,7 +15,7 @@ import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
 
 const GRAN_STEPS = ["day", "week", "month", "quarter", "year"];
-const KEY = "designer";                                           // { on, panel, scroll }: what design mode was doing when the page last loaded
+const KEY = "designer";                                           // { on, panel, scroll, ui }: what design mode was doing when the page last loaded (ui: where the drawer was, see placeInDrawer)
 const read = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || "{}"); } catch { return {}; } };
 const write = (s) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage unavailable: design mode just starts closed after a change */ } };
 
@@ -101,7 +101,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       card.append(field({ path: "type", kind: "choice", key: "filterType", options: typesFor(dimensionTypeOf(catalog, f.dimension)) }, { ...f, type: typ },
         (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
       if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
-      card.append(defaultRow(f, typ, (v) => edit("default", v)));
+      card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
+      if (typ !== "select" && typ !== "multiselect") card.append(defaultRow(f, typ, (v) => edit("default", v)));           // a list filter has the allowed values instead; the reader picks on the page
       // Where it applies and whether the reader sees it.
       const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
       const scopes = ["dashboard", ...(hasTabs || scope === "page" ? ["page"] : []), "panel"];
@@ -541,38 +542,27 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     return wrap;
   }
 
-  /** The row for a filter's default value: the filter's own control for the types that have one, and plain boxes for a select (a value) and a multiselect (values; the options come from data the designer does not read). */
-  function defaultRow(f, typ, set) {
+  /** The designer's limit on a filter: the values the reader can choose from on the page (nothing ticked: all of them). Only a select or multiselect with a list of real values has one. */
+  function allowedRow(f, typ, set) {
     const known = (typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : [];
-    if (known.length) {                                        // the real values, picked from a list (one for a select, several for a multiselect)
-      const picker = createSlicer({ ...f, label: dz.f.filterDefault }, t, "list");
-      picker.setOptions(known.map((value) => ({ value })));
-      picker.show(f.default || "");
-      picker.onChange = set;
-      picker.el.classList.add("dz-default");
-      const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
-      const slot = el("span", { class: "dz-input" });
-      slot.append(picker.el);
-      wrap.append(slot);
-      return wrap;
-    }
-    if (typ === "select") return field({ path: "default", kind: "text", key: "filterDefault", optional: true }, f, set);
-    const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
+    if (!known.length) return [];
+    const picker = createSlicer({ ...f, type: "multiselect", label: dz.f.filterAllowed }, t, "list");
+    picker.setOptions(known.map((value) => ({ value })));
+    picker.show(f.allowed?.length ? formatValue({ op: "in", args: f.allowed }) : "");
+    picker.onChange = (v) => {
+      const m = parseValue(v);
+      set(!m ? [] : m.op === "not" ? known.filter((x) => !m.args.includes(x)) : m.args);          // "all except these" is stored as the list it stands for
+    };
+    picker.el.classList.add("dz-default");
+    const wrap = el("div", { class: "dz-field dz-default dz-allowed" }, `<span>${esc(dz.f.filterAllowed)}</span>`);
     const slot = el("span", { class: "dz-input" });
-    wrap.append(slot);
-    if (typ === "multiselect") {
-      const cur = parseValue(f.default), box = el("input", { type: "text", maxlength: 200, "aria-label": dz.f.filterDefault, placeholder: dz.multiHint, "data-path": "default" });
-      box.value = cur ? cur.args.join(", ") : "";
-      const not = el("input", { type: "checkbox", "aria-label": dz.exceptSelected });
-      not.checked = cur?.op === "not";
-      const push = () => { const args = box.value.split(",").map((x) => x.trim()).filter(Boolean); set(args.length ? formatValue({ op: not.checked ? "not" : "in", args }) : ""); };
-      box.addEventListener("change", push);
-      not.addEventListener("change", () => { if (box.value.trim()) push(); });
-      const label = el("label", { class: "dz-except" }, "");
-      label.append(not, document.createTextNode(` ${dz.exceptSelected}`));
-      slot.append(box, label);
-      return wrap;
-    }
+    slot.append(picker.el);
+    wrap.append(slot, el("p", { class: "hint dz-allowed-count", role: "status" }, `<strong>${esc(dz.allowedCount(f.allowed?.length || 0, known.length))}</strong> · ${esc(dz.allowedHint)}`));
+    return [wrap];
+  }
+
+  /** The row for the default of a text, number or date filter: the filter's own control. (A select or multiselect has the allowed values instead.) */
+  function defaultRow(f, typ, set) {
     const control = createControl({ ...f, label: dz.f.filterDefault }, t);
     control.show(f.default || "");
     control.onChange = set;
@@ -676,6 +666,22 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   // ---------------------------------------------------------------------------------------------------------------- applying a change
+  // A change that draws the page again (a filter, a tab, undo) would drop the reader's place in the drawer: its scroll, the scroll of a value list, and the control that had focus.
+  const FOCUSABLE = "input, select, textarea, button";
+  const placeInDrawer = () => ({
+    top: drawer.scrollTop,
+    focus: [...drawer.querySelectorAll(FOCUSABLE)].indexOf(document.activeElement),
+    lists: [...drawer.querySelectorAll(".slicer-list")].map((l) => l.scrollTop),
+  });
+  let place = state.ui || null;                                   // the place to go back to once the drawer is drawn; dropped at the first thing the reader does
+  const forgetPlace = () => { if (place) { place = null; write({ ...read(), ui: null }); } };
+  function restorePlace(at = place) {
+    if (!at || !on) return;
+    drawer.scrollTop = at.top || 0;
+    drawer.querySelectorAll(".slicer-list").forEach((l, i) => { l.scrollTop = at.lists?.[i] || 0; });
+    if (at.focus >= 0) [...drawer.querySelectorAll(FOCUSABLE)][at.focus]?.focus({ preventScroll: true });
+  }
+
   /**
    * Checks a changed source with the validator and, if it is accepted, stores it in the draft and draws the page again with `panel` picked. `edit` is what a function of
    * lib/designer-model.js or lib/designer-structure.js returned: { source, notes, id? } or { problem }. Returns false when nothing was applied.
@@ -683,13 +689,14 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   async function commit(edit, { message, panel = selected } = {}) {
     if (busy) return false;
     if (edit.problem) { problems([dz.cannot[edit.problem] || edit.problem], "failed", dz.cannotTitle); return false; }
+    const here = placeInDrawer();                                                       // where the reader is in the drawer, for when it is drawn again
     busy = true;
     drawer.classList.add("busy");
     try {
       const r = await api.validate(JSON.stringify(edit.source));
       if (!r.ok) { draw(); problems(r.problems); return false; }                     // the controls go back to what the draft holds
       drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message, notes: (edit.notes || []).map((n) => dz.notes[n] || n) });
-      write({ on: true, panel: edit.id ?? panel, scroll: window.scrollY });
+      write({ on: true, panel: edit.id ?? panel, scroll: window.scrollY, ui: placeInDrawer() });
       Object.assign(draft, drafts.current());                                         // the page's draft object is the one the draft bar and the Change box read from
       // A change to a panel's own fields is applied to that panel alone (the page patches it in place); anything else (layout, tabs, filters, a new or removed panel) draws the page again.
       if (!edit.id && panel === selected && window.__render?.patch?.(r.spec)) {
@@ -698,6 +705,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset?.path : null;
         resync();
         draw();
+        restorePlace(here);
         if (focused) drawer.querySelector(`[data-path="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
         document.dispatchEvent(new CustomEvent("draft:changed"));
         return true;
@@ -726,7 +734,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   /** Undo or redo one step of the draft's history: the draft in this browser is replaced and the page drawn again (the picked panel and the scroll position stay). */
   function step(kind) {
     if (busy || !drafts[kind]((label) => (kind === "undo" ? dz.undone : dz.redone)(label))) return;
-    write({ on: true, panel: selected, scroll: window.scrollY });
+    write({ on: true, panel: selected, scroll: window.scrollY, ui: placeInDrawer() });
     location.reload();
   }
 
@@ -830,7 +838,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
   button.addEventListener("click", () => setMode(!on));
   // The filters' options arrive after the page is drawn (and the designer may already be open): the page view is drawn again so a default value can be picked from them.
-  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) draw(); });
+  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) { draw(); restorePlace(); forgetPlace(); } });
+  for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) drawer.addEventListener(ev, forgetPlace, { passive: true });
 
   // The data the drawer needs: the source of this draft and the members the role may read.
   button.disabled = true;
@@ -853,6 +862,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   if (state.on) {
     setMode(true);
     if (state.panel && panels.has(state.panel)) select(state.panel);
+    requestAnimationFrame(() => { restorePlace(); if (place) setTimeout(forgetPlace, 5000); });
     if (Number.isFinite(state.scroll)) requestAnimationFrame(() => window.scrollTo(0, state.scroll));
   }
 }

@@ -1686,3 +1686,34 @@ def test_a_bar_can_be_ordered_by_the_name_of_its_grouping_in_the_groupings_own_o
     bad = copy.deepcopy(spec)
     panel(bad, "byname")["sort_by"] = "size"
     assert validate(bad, CATALOG)[0]
+
+
+# ---- allowed values (the designer's limit on a filter's list)
+@pytest.mark.parametrize("flt", [
+    {"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": ["Bikes", "Clothing"]},
+    {"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": ["Bikes", "Clothing"], "default": "in:Bikes"},
+    {"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": ["Bikes", "Clothing"], "default": "not:Clothing"},
+    {"id": "s", "dimension": "products.category", "allowed": ["Bikes", "Clothing"], "default": "Bikes"},
+])
+def test_allowed_values_validate(flt):
+    assert run(_filters(flt)) == []
+
+
+@pytest.mark.parametrize("flt,needle", [
+    ({"id": "t", "dimension": "products.name", "type": "text", "allowed": ["x"]}, "only a select or multiselect"),
+    ({"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": []}, "non-empty"),
+    ({"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": ["A", "A"]}, "non-unique"),
+    ({"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": ["Bikes"], "default": "in:Bikes,Clothing"}, "'Clothing' not in `allowed`"),
+    ({"id": "s", "dimension": "products.category", "allowed": ["Bikes"], "default": "Clothing"}, "'Clothing' not in `allowed`"),
+])
+def test_bad_allowed_values_are_refused(flt, needle):
+    assert any(needle in e for e in run(_filters(flt)))
+
+
+def test_allowed_values_limit_every_panel_the_filter_applies_to_even_with_nothing_picked():
+    from dashspec.queries import active_filters
+    spec = {"filters": [{"id": "m", "dimension": "products.category", "type": "multiselect", "allowed": ["A", "B"]}], "panels": [{"id": "p"}, {"id": "q", "ignore_filters": ["m"]}]}
+    limit = {"member": "products.category", "operator": "equals", "values": ["A", "B"]}
+    assert active_filters(spec, {}, {"id": "p"}) == [limit]
+    assert active_filters(spec, {"m": "in:A"}, {"id": "p"}) == [{"member": "products.category", "operator": "equals", "values": ["A"]}, limit]       # the pick narrows inside the limit
+    assert active_filters(spec, {}, spec["panels"][1]) == []

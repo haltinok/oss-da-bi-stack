@@ -41,10 +41,16 @@ export const clickedIds = (spec, values, panel) => ownFilterIds(panel).filter((i
 /** The Cube filters for the page's filter values. A panel leaves out the filters in its ignore_filters and the ones its own clicks set (see clickedIds). */
 export function activeFilters(spec, values, panel = {}, env = defaultEnv(spec)) {
   const ignored = new Set([...(panel.ignore_filters || []), ...clickedIds(spec, values, panel)]);
-  return (spec.filters || [])
+  const chosen = (spec.filters || [])
     .filter((f) => filterApplies(spec, f, panel) && !ignored.has(f.id))
     .flatMap((f) => { const v = filterValue(f, values); return v === undefined || v === "" ? [] : toCube(f, v, env); });          // a filter of a kind other than `select` can mean several Cube filters, or none
+  return [...chosen, ...allowedFilters(spec, panel)];
 }
+
+/** The designer's limit on a filter's values (`allowed`): it holds whatever the reader picked, even nothing, and only a panel's `ignore_filters` leaves it out. */
+export const allowedFilters = (spec, panel = {}) => (spec.filters || [])
+  .filter((f) => f.allowed?.length && filterApplies(spec, f, panel) && !(panel.ignore_filters || []).includes(f.id))
+  .map((f) => ({ member: f.dimension, operator: "equals", values: [...f.allowed] }));
 
 /** The id of the tab that places a panel (null on a dashboard without tabs). `spec` is the compiled one: tab layouts are rows of { panel, span }. */
 export const tabOf = (spec, panelId) => spec.tabs?.find((t) => t.layout.flat().some((c) => c.panel === panelId))?.id ?? null;

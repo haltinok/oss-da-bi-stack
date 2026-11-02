@@ -20,8 +20,9 @@ export function createSlicer(f, t, display = "list") {
   const exceptRow = el("label", { class: "fc-ex", hidden: "" }, "");
   exceptRow.append(except, document.createTextNode(` ${fc.exclude}`));
   const clear = el("button", { type: "button", class: "fc-mini", hidden: "" }, esc(fc.clear));
-  root.append(search, list, el("div", { class: "fc-actions" }), exceptRow);
-  root.querySelector(".fc-actions").append(clear);
+  const actions = el("div", { class: "fc-actions" });                                         // above the list, so they stay in reach however long it is
+  actions.append(clear, exceptRow);
+  root.append(search, actions, list);
   let options = [], chosen = new Set(), exclude = false;
   const value = () => (!chosen.size ? "" : multi ? formatValue({ op: exclude ? "not" : "in", args: [...chosen] }) : [...chosen][0]);
   const emit = () => { control.onChange(value()); draw(); };
@@ -31,6 +32,8 @@ export function createSlicer(f, t, display = "list") {
     const all = [...known, ...[...chosen].filter((v) => !known.includes(v))];                 // a chosen value the options no longer hold stays, after them (the list does not jump when you pick)
     search.hidden = all.length <= 12;
     const hits = all.filter((v) => !q || fold(v).includes(q)).slice(0, MAX_SHOWN);
+    const items = () => [...list.querySelectorAll("input, button")];
+    const focused = list.contains(document.activeElement) ? items().indexOf(document.activeElement) : -1;       // the list is rebuilt on every pick: focus stays on the same row
     list.replaceChildren(...hits.map((v) => {
       const on = chosen.has(v);
       if (display === "chips") {
@@ -45,6 +48,7 @@ export function createSlicer(f, t, display = "list") {
       lab.append(box, document.createTextNode(` ${v}`));
       return lab;
     }));
+    if (focused >= 0) items()[focused]?.focus({ preventScroll: true });
     exceptRow.hidden = !multi || !chosen.size;
     except.checked = exclude;
     clear.hidden = !chosen.size;

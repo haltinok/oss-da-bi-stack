@@ -307,6 +307,7 @@ export function setFilterType(source, catalog, id, type) {
   const notes = [];
   if (type === "select") delete filter.type; else filter.type = type;
   if ("default" in filter) { delete filter.default; notes.push("defaultDropped"); }
+  if (filter.allowed && type !== "select" && type !== "multiselect") { delete filter.allowed; notes.push("allowedDropped"); }
   if (type !== "select" && type !== "multiselect" && filter.parent) { delete filter.parent; notes.push("parentDropped"); }
   const slicer = slicerOf(next, id);
   if (slicer?.display && type !== "select" && type !== "multiselect") { delete slicer.display; notes.push("displayDropped"); }
@@ -317,17 +318,30 @@ export function setFilterType(source, catalog, id, type) {
   return { source: next, notes: [...new Set(notes)] };
 }
 
-/** Changes a filter's label, dimension, default or parent (an empty one removes it). A new dimension re-decides which panels ignore the filter. */
+/** A default (`A`, `in:A,B` or `not:A`) cut down to the allowed values: what is left of it, or "" when nothing is. */
+export function narrowDefault(def, allowed) {
+  const m = /^(in|not):(.*)$/.exec(def);
+  if (!m) return allowed.includes(def) ? def : "";
+  const args = m[2].split(",").map((x) => decodeURIComponent(x)).filter((x) => allowed.includes(x));
+  return args.length ? `${m[1]}:${args.map(encodeURIComponent).join(",")}` : "";
+}
+
+/** Changes a filter's label, dimension, default, allowed values or parent (an empty one removes it). A new dimension re-decides which panels ignore the filter. */
 export function setFilter(source, catalog, id, field, value) {
   const next = clone(source);
   const filter = next.filters.find((f) => f.id === id);
   if (!filter) throw new Error(`no filter '${id}'`);
-  if ((field === "parent" || field === "label" || field === "default") && !value) delete filter[field]; else filter[field] = value;
+  if ((field === "parent" || field === "label" || field === "default" || field === "allowed") && (!value || value.length === 0)) delete filter[field]; else filter[field] = value;
   let notes = [];
+  if (field === "allowed" && filter.allowed && filter.default) {                       // the default is one of the values the reader can choose
+    const kept = narrowDefault(filter.default, filter.allowed);
+    if (kept !== filter.default) { if (kept) filter.default = kept; else delete filter.default; notes.push("defaultNarrowed"); }
+  }
   if (field === "panel") dropOtherClicks(next, filter, notes);
   if (field === "dimension") {
     notes = ignoreWhereUnreachable(next, catalog, filter).length ? ["ignored"] : [];
     if (!typesFor(dimensionTypeOf(catalog, value)).includes(filter.type || "select")) { delete filter.type; delete filter.default; notes.push("typeReset"); }        // the type no longer fits the new field
+    if (filter.allowed) { delete filter.allowed; delete filter.default; notes.push("allowedDropped"); }                                  // the values belonged to the old field
     if (filter.parent === value) delete filter.parent;
     for (const p of next.panels) if (p.on_click) { const ids = [].concat(p.on_click.set_filter || []); if (ids.includes(id)) { delete p.on_click; notes.push("click"); } }       // a click rule names this filter for the old dimension
   }
@@ -374,6 +388,9 @@ export function setFilterVisible(source, id, visible) {
   if (!filter) return { problem: "missing" };
   const notes = [];
   if (visible) { delete filter.visible; return { source: next, notes }; }
+  if (!filter.default && filter.allowed?.length && (filter.type === "multiselect" || filter.allowed.length === 1)) {         // a list filter applies with the values it allows
+    filter.default = filter.type === "multiselect" ? `in:${filter.allowed.map(encodeURIComponent).join(",")}` : filter.allowed[0];
+  }
   if (!filter.default) return { problem: "needsDefault" };
   if (slicerOf(next, id)) return { problem: "hasSlicer" };
   filter.visible = false;

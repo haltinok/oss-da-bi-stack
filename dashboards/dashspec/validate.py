@@ -193,6 +193,15 @@ def _filter_type_errors(w, f, filters, used):
                 ok = False
             if not ok:
                 errs.append(f"{w}: default: '{f['default']}' is not a value of a {typ} filter (for example {FILTER_EXAMPLES[typ]})")
+    if "allowed" in f:
+        if typ not in ("select", "multiselect"):
+            errs.append(f"{w}: allowed: only a select or multiselect filter has a list of values to limit, this one is '{typ}'")
+        elif "default" in f:
+            v = filters_mod.parse_value(f["default"]) if typ == "multiselect" else None
+            picked = v["args"] if v is not None and v["op"] in ("in", "not") else [f["default"]] if typ == "select" else []
+            outside = [x for x in picked if x not in f["allowed"]]
+            if outside:
+                errs.append(f"{w}: default: {', '.join(repr(x) for x in outside)} not in `allowed`; the default must be one of the values the reader can choose")
     if "parent" in f:
         if typ not in ("select", "multiselect"):
             errs.append(f"{w}: parent: only a select or multiselect filter can be narrowed by a parent, this one is '{typ}'")

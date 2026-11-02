@@ -434,3 +434,18 @@ test("saving from the window adds a calculation, or changes one and keeps its id
   assert.equal(saveCalculation(added.source, { id: "nope", label: "x", formula: "a.b" }).problem, "item");
   assert.equal(saveCalculation(SOURCE, { label: "x", formula: "" }).problem, "calcEmpty");
 });
+
+test("allowed values: the default is cut down to them, and the list goes with a type or field it does not fit", async () => {
+  const { narrowDefault, setFilter, setFilterType } = await import("../../static/lib/designer-structure.js");
+  assert.equal(narrowDefault("in:A,B,C", ["A", "B"]), "in:A,B");
+  assert.equal(narrowDefault("not:C", ["A", "B"]), "");
+  assert.equal(narrowDefault("A", ["A", "B"]), "A");
+  assert.equal(narrowDefault("Z", ["A", "B"]), "");
+  const source = { ...SOURCE, filters: [{ id: "m", dimension: "products.category", type: "multiselect", default: "in:A,B,C" }] };
+  const limited = setFilter(source, CATALOG, "m", "allowed", ["A", "B"]);
+  assert.deepEqual(limited.source.filters[0].allowed, ["A", "B"]);
+  assert.equal(limited.source.filters[0].default, "in:A,B");
+  assert.deepEqual(limited.notes, ["defaultNarrowed"]);
+  assert.equal("allowed" in setFilter(limited.source, CATALOG, "m", "allowed", []).source.filters[0], false, "an empty list removes the limit");
+  assert.equal("allowed" in setFilterType(limited.source, CATALOG, "m", "text").source.filters[0], false, "a text filter has no list to limit");
+});
