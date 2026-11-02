@@ -1,4 +1,8 @@
-# Keeps the pinned versions current. Runs monthly (on the 1st) and groups
+# MUTED (2026-11-02): every ecosystem has open-pull-requests-limit: 0, so Dependabot opens no version-update PRs (the bumps kept breaking CI on
+# transitive incompatibilities: mysql-connector-python vs dbt-starrocks, cp-kafka-connect vs Debezium). Security updates are separate: they still arrive
+# through Dependabot alerts as soon as an advisory is published. To turn it back on, remove the `open-pull-requests-limit: 0` lines.
+#
+# (Original note:) Keeps the pinned versions current. Runs monthly (on the 1st) and groups
 # updates, so each ecosystem opens at most one PR a month; CI must pass before
 # merging. Security fixes don't wait for this schedule: they arrive through
 # Dependabot alerts / security updates as soon as an advisory is published.
@@ -16,6 +20,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 0                          # muted: no version-update PRs (see the note at the top)
     groups:
       actions:
         patterns: ["*"]
@@ -26,6 +31,7 @@ updates:
     directory: /airflow
     schedule:
       interval: monthly
+    open-pull-requests-limit: 0                          # muted: no version-update PRs (see the note at the top)
     groups:
       python:
         patterns: ["*"]
@@ -44,6 +50,7 @@ updates:
       - /debezium-connect
     schedule:
       interval: monthly
+    open-pull-requests-limit: 0                          # muted: no version-update PRs (see the note at the top)
     groups:
       docker:
         patterns: ["*"]
@@ -63,6 +70,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 0                          # muted: no version-update PRs (see the note at the top)
     groups:
       docker-compose:
         patterns: ["*"]
