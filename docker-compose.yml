@@ -407,6 +407,9 @@ services:
     profiles: [starrocks]
     restart: unless-stopped
     hostname: starrocks-fe
+    networks:
+      default:
+        ipv4_address: 172.18.0.6 # see the `networks:` block at the bottom
     # One backend: tables must not ask for the default 3 replicas.
     command:
       - bash
@@ -429,6 +432,9 @@ services:
     profiles: [starrocks]
     restart: unless-stopped
     hostname: starrocks-be
+    networks:
+      default:
+        ipv4_address: 172.18.0.10
     command: ["/opt/starrocks/be/bin/start_be.sh"]
     # The 500M-line spike needed 40 GB; the live demo data (~120k order lines) fits in a few.
     mem_limit: ${STARROCKS_MEM_LIMIT:-12g}
@@ -689,3 +695,22 @@ volumes:
   starrocks_be_storage:
   cubestore_data:
   keycloak_data:
+
+# StarRocks keeps the IP address of each node in its metadata (FE: bdb, BE: the
+# FE's backend list). With dynamic addresses, a Docker restart hands them out in
+# a different start order, the FE can no longer elect itself ("wait
+# globalStateMgr to be ready. FE type: INIT") and every service that depends on
+# it fails with "dependency starrocks-fe failed to start". So the FE and BE get
+# fixed addresses, and every other container gets one from ip_range, which does
+# not contain them, so nothing can take .6 or .10 first.
+# Changing this on an existing install means recreating the network once:
+#   docker compose --profile starrocks down && docker compose --profile starrocks up -d
+# (volumes are kept). If 172.18.0.0/16 clashes with another network on your
+# machine, change subnet/ip_range and the two addresses together; an existing
+# StarRocks volume still remembers the old addresses, so that needs a fresh one.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          ip_range: 172.18.1.0/24
