@@ -364,7 +364,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: pip install pytest requests fastapi httpx 'pyjwt[crypto]' pymysql psycopg2-binary pydantic pyyaml 'jsonschema>=4.18'
+      - run: pip install pytest requests fastapi httpx 'pyjwt[crypto]' pymysql psycopg2-binary pydantic pyyaml 'jsonschema>=4.18' xlsxwriter openpyxl
       - run: python -m pytest actions/tests/test_rules.py actions/tests/test_actions_dataset.py auth/tests agent/tests -q
       - run: cd admin && PYTHONPATH=. python -m pytest tests -q
       - run: cd lab && PYTHONPATH=. python -m pytest tests -q

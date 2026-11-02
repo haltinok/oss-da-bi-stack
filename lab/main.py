@@ -4,6 +4,7 @@
   GET  /info      { user, role, lab, limits }: whether this person has the lab, and the limits
   GET  /schema    the cubes, dimensions and measures this person may query (role rules and blocked cubes applied), for the schema browser
   POST /query     { sql } -> { columns: [{name, type}], rows: [[...]], row_count, truncated, ms }
+  POST /export    { sql, format: csv | xlsx } -> the file (up to LAB_EXPORT_ROWS rows; header X-Lab-Truncated says when it was cut), under the same rules, limits and audit as /query
 
 Every call carries a Keycloak access token of the dashboard client. The lab asks the auth service for the person's Cube token (which says their role, territories, blocked cubes and whether
 they have the lab), and runs the statement on Cube's SQL API (Postgres protocol) signed in as that person, with the Cube token as the password. So a statement goes through the very
@@ -12,8 +13,10 @@ queries over the cubes (no other tables, no INSERT or DROP). The lab adds the li
 """
 from __future__ import annotations
 
+import csv
 import datetime
 import decimal
+import io
 import json
 import os
 import threading
@@ -24,6 +27,7 @@ import httpx
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 import sqlcheck
@@ -35,6 +39,7 @@ AUTH_URL = os.environ.get("AUTH_URL", "http://auth:8200").rstrip("/")
 CUBE_SQL_HOST = os.environ.get("CUBE_SQL_HOST", "cube")
 CUBE_SQL_PORT = int(os.environ.get("CUBE_SQL_PORT", "15432"))
 ROW_LIMIT = int(os.environ.get("LAB_ROW_LIMIT", "10000"))
+EXPORT_ROWS = int(os.environ.get("LAB_EXPORT_ROWS", "100000"))
 TIMEOUT = float(os.environ.get("LAB_TIMEOUT", "60"))
 PER_USER = int(os.environ.get("LAB_MAX_PER_USER", "2"))
 MAX_CONCURRENT = int(os.environ.get("LAB_MAX_CONCURRENT", "8"))
@@ -43,7 +48,7 @@ LOG_FILE = os.environ.get("LAB_LOG_FILE", "")
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="lab")
 app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ALLOWED_ORIGINS", "http://localhost:8250").split(","),
-                   allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+                   allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"], expose_headers=["Content-Disposition", "X-Lab-Truncated", "X-Lab-Rows"])
 _pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT)
 _slots = threading.BoundedSemaphore(MAX_CONCURRENT)
 _per_user: dict[str, threading.BoundedSemaphore] = {}
@@ -73,7 +78,7 @@ Who = Depends(current_caller)
 
 
 def audit(entry: dict) -> None:
-    line = json.dumps({"event": "lab", "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), **entry}, ensure_ascii=False)
+    line = json.dumps({"event": "lab", "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), **entry}, ensure_ascii=False)         # an entry's own "event" wins
     print(line, flush=True)
     if LOG_FILE:
         try:
@@ -181,7 +186,7 @@ def user_slot(user: str) -> threading.BoundedSemaphore:
         return _per_user.setdefault(user, threading.BoundedSemaphore(PER_USER))
 
 
-def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = None, timeout: float | None = None) -> dict:
+def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = None, timeout: float | None = None, event: str = "lab") -> dict:
     mine, anyone = user_slot(caller.name), _slots
     if not mine.acquire(blocking=False):
         raise HTTPException(429, f"You already have {PER_USER} queries running; wait for one to finish.")
@@ -194,13 +199,13 @@ def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = 
     try:
         out = future.result(timeout=timeout or TIMEOUT)
     except FutureTimeout:
-        audit({"user": caller.name, "role": session.get("role"), "sql": sql[:500], "error": "timeout", "ms": int((time.time() - t0) * 1000)})
+        audit({"event": event, "user": caller.name, "role": session.get("role"), "sql": sql[:500], "error": "timeout", "ms": int((time.time() - t0) * 1000)})
         raise HTTPException(504, f"The query took longer than {int(timeout or TIMEOUT)} seconds and was given up on. Narrow it (a filter, fewer rows) and try again.") from None
     except Exception as exc:                                   # noqa: BLE001 (Cube's refusals and errors, in its words)
-        audit({"user": caller.name, "role": session.get("role"), "sql": sql[:500], "error": str(exc)[:200], "ms": int((time.time() - t0) * 1000)})
+        audit({"event": event, "user": caller.name, "role": session.get("role"), "sql": sql[:500], "error": str(exc)[:200], "ms": int((time.time() - t0) * 1000)})
         raise HTTPException(400, clean_error(exc)) from None
     out["ms"] = int((time.time() - t0) * 1000)
-    audit({"user": caller.name, "role": session.get("role"), "sql": sql[:500], "rows": out["row_count"], "truncated": out["truncated"], "ms": out["ms"]})
+    audit({"event": event, "user": caller.name, "role": session.get("role"), "sql": sql[:500], "rows": out["row_count"], "truncated": out["truncated"], "ms": out["ms"]})
     return out
 
 
@@ -225,7 +230,7 @@ def healthz() -> dict:
 
 
 def limits() -> dict:
-    return {"row_limit": ROW_LIMIT, "timeout_seconds": int(TIMEOUT), "per_user": PER_USER, "max_sql": sqlcheck.MAX_SQL}
+    return {"row_limit": ROW_LIMIT, "export_rows": EXPORT_ROWS, "timeout_seconds": int(TIMEOUT), "per_user": PER_USER, "max_sql": sqlcheck.MAX_SQL}
 
 
 @app.get("/info")
@@ -248,3 +253,79 @@ def query(req: QueryRequest, caller: Caller = Who) -> dict:
     except sqlcheck.SqlRefused as exc:
         raise HTTPException(400, str(exc)) from None
     return run_limited(caller, s, sql)
+
+
+# -------------------------------------------------------------------------------------------------------------------- export
+_DANGEROUS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_cell(v, kind: str):
+    """A cell for a CSV file. A text that starts like a formula would be run by a spreadsheet that opens the file, so it is made plain text with a leading apostrophe."""
+    if v is None:
+        return ""
+    if isinstance(v, str) and kind != "number" and v.startswith(_DANGEROUS):
+        return "'" + v
+    return v
+
+
+def csv_bytes(columns: list[dict], rows: list[list]):
+    """The CSV as chunks of bytes: UTF-8 with a byte-order mark (Excel then reads Turkish letters right), a header row, quoted as needed."""
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\r\n")
+    yield "\ufeff".encode()
+    w.writerow([csv_cell(c["name"], "string") for c in columns])
+    for i, row in enumerate(rows, 1):
+        w.writerow([csv_cell(v, columns[j]["type"]) for j, v in enumerate(row)])
+        if i % 2000 == 0:
+            yield buf.getvalue().encode()
+            buf.seek(0)
+            buf.truncate()
+    yield buf.getvalue().encode()
+
+
+def xlsx_bytes(columns: list[dict], rows: list[list]) -> bytes:
+    """The Excel file: numbers as numbers, everything else as text (written as text, so nothing is ever read as a formula), a bold header, the header row frozen."""
+    import xlsxwriter
+    out = io.BytesIO()
+    wb = xlsxwriter.Workbook(out, {"in_memory": True, "strings_to_formulas": False, "strings_to_numbers": False, "strings_to_urls": False, "nan_inf_to_errors": True})
+    ws = wb.add_worksheet("Result")
+    bold = wb.add_format({"bold": True})
+    for j, c in enumerate(columns):
+        ws.write_string(0, j, str(c["name"]), bold)
+    for i, row in enumerate(rows, 1):
+        for j, v in enumerate(row):
+            kind = columns[j]["type"]
+            if v is None:
+                continue
+            if kind == "number" and isinstance(v, (int, float)) and not isinstance(v, bool):
+                ws.write_number(i, j, v)
+            elif isinstance(v, bool):
+                ws.write_boolean(i, j, v)
+            else:
+                ws.write_string(i, j, str(v))
+    ws.freeze_panes(1, 0)
+    ws.set_column(0, max(len(columns) - 1, 0), 18)
+    wb.close()
+    return out.getvalue()
+
+
+class ExportRequest(BaseModel):
+    sql: str = Field(max_length=sqlcheck.MAX_SQL + 1000)
+    format: str = "csv"
+
+
+@app.post("/export")
+def export(req: ExportRequest, caller: Caller = Who):
+    s = need_lab(cube_session(caller))
+    if req.format not in ("csv", "xlsx"):
+        raise HTTPException(400, "format is csv or xlsx")
+    try:
+        sql = sqlcheck.check(req.sql)
+    except sqlcheck.SqlRefused as exc:
+        raise HTTPException(400, str(exc)) from None
+    out = run_limited(caller, s, sql, limit=EXPORT_ROWS, timeout=TIMEOUT * 2, event="lab_export")
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    headers = {"Content-Disposition": f'attachment; filename="lab-{stamp}.{req.format}"', "X-Lab-Truncated": "true" if out["truncated"] else "false", "X-Lab-Rows": str(out["row_count"])}
+    if req.format == "csv":
+        return StreamingResponse(csv_bytes(out["columns"], out["rows"]), media_type="text/csv; charset=utf-8", headers=headers)
+    return Response(xlsx_bytes(out["columns"], out["rows"]), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)

@@ -96,3 +96,15 @@ def test_a_rep_cannot_reach_profit_in_the_lab_either(lab_for_managers):
     assert query("de_rep", REVENUE).status_code == 200
     cubes = {c["name"]: c for c in requests.get(f"{LAB}/schema", headers=kc("de_rep"), timeout=60).json()["cubes"]}
     assert "gross_profit" not in {m["name"] for m in cubes["internet_sales"]["measures"]}
+
+
+def test_a_result_exports_as_csv_and_excel_with_the_same_rules():
+    sql = "select category, measure(revenue) as revenue from internet_sales cross join products group by 1 order by 2 desc"
+    r = requests.post(f"{LAB}/export", headers=kc("admin"), json={"sql": sql, "format": "csv"}, timeout=120)
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and r.headers["x-lab-truncated"] == "false"
+    lines = r.content.decode("utf-8-sig").strip().splitlines()
+    assert lines[0] == "category,revenue" and len(lines) == int(r.headers["x-lab-rows"]) + 1 >= 3
+    x = requests.post(f"{LAB}/export", headers=kc("admin"), json={"sql": sql, "format": "xlsx"}, timeout=120)
+    assert x.status_code == 200 and x.content[:2] == b"PK" and "spreadsheetml" in x.headers["content-type"], "an .xlsx is a zip"
+    assert requests.post(f"{LAB}/export", headers=kc("na_manager"), json={"sql": sql, "format": "csv"}, timeout=60).status_code == 403, "no lab, no export"
+    assert requests.post(f"{LAB}/export", headers=kc("admin"), json={"sql": "drop table internet_sales", "format": "csv"}, timeout=60).status_code == 400

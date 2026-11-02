@@ -6,7 +6,7 @@ const EN = {
   rows: (n) => `${n} row${n === 1 ? "" : "s"}`, took: (ms) => `${ms >= 1000 ? (ms / 1000).toFixed(1) + " s" : ms + " ms"}`, cut: (n) => `Showing the first ${n} rows: the rows beyond the limit were left out.`,
   shown: (a, b) => `Showing ${a} of ${b} rows; Copy takes all of them.`, nothing: "The query ran and returned no rows.", failed: "Could not run it:", limits: (r, s) => `At most ${r} rows and ${s} seconds per query.`, placeholder: "select category, measure(revenue) from internet_sales cross join products group by 1 order by 2 desc",
   helpTitle: "How it works", help: "Cubes are tables. Numbers are measures: use MEASURE(name). Dimensions are plain columns. Join cubes with CROSS JOIN (the model knows how they relate). You see exactly what the dashboards let you see: your territories, your role's fields.",
-  exportCsv: "CSV", exportXlsx: "Excel",
+  exportCsv: "CSV", exportXlsx: "Excel", exporting: "Exporting…", exportCut: (n) => `The file holds the first ${n} rows; the rest was left out.`, exportAll: (n) => `Exported ${n} rows.`,
 };
 const TR = {
   title: "SQL laboratuvarı", home: "Ana sayfa", sub: "Veriye SQL ile sorun. Her sorgu, bir panoyla aynı kurallardan geçer.", noLab: "SQL laboratuvarı size verilmedi.", noLabWhy: "Bir yöneticiden, kullandığınız bir veri kümesine SQL laboratuvarı izni vermesini isteyin.",
@@ -15,6 +15,6 @@ const TR = {
   rows: (n) => `${n} satır`, took: (ms) => `${ms >= 1000 ? (ms / 1000).toFixed(1) + " sn" : ms + " ms"}`, cut: (n) => `İlk ${n} satır gösteriliyor: sınırı aşan satırlar bırakıldı.`,
   shown: (a, b) => `${b} satırın ${a} tanesi gösteriliyor; Kopyala hepsini alır.`, nothing: "Sorgu çalıştı ve satır döndürmedi.", failed: "Çalıştırılamadı:", limits: (r, s) => `Sorgu başına en çok ${r} satır ve ${s} saniye.`, placeholder: "select category, measure(revenue) from internet_sales cross join products group by 1 order by 2 desc",
   helpTitle: "Nasıl çalışır", help: "Küpler tablodur. Sayılar ölçüdür: MEASURE(ad) kullanın. Boyutlar sıradan sütunlardır. Küpleri CROSS JOIN ile birleştirin (model nasıl ilişkili olduklarını bilir). Panoların size gösterdiğini görürsünüz: bölgeleriniz, rolünüzün alanları.",
-  exportCsv: "CSV", exportXlsx: "Excel",
+  exportCsv: "CSV", exportXlsx: "Excel", exporting: "Dışa aktarılıyor…", exportCut: (n) => `Dosya ilk ${n} satırı içeriyor; gerisi bırakıldı.`, exportAll: (n) => `${n} satır dışa aktarıldı.`,
 };
 export const labStrings = (lang) => ({ ...EN, ...(lang === "tr" ? TR : {}) });
