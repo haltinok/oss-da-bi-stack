@@ -160,7 +160,7 @@ jobs:
       - name: fill .env (values don't matter, only that they're set)
         run: cp .env.example .env
       - name: build the images
-        run: docker compose --profile starrocks build airflow-scheduler kafka-connect auth actions
+        run: docker compose --profile starrocks build airflow-scheduler kafka-connect auth actions admin
       - name: check the airflow image's Python environment
         run: |
           docker run --rm --entrypoint /bin/bash oss-da-bi-stack-airflow-scheduler:latest -ec '
@@ -362,6 +362,7 @@ jobs:
           python-version: "3.12"
       - run: pip install pytest requests fastapi httpx 'pyjwt[crypto]' pymysql psycopg2-binary pydantic
       - run: python -m pytest actions/tests/test_rules.py actions/tests/test_actions_dataset.py auth/tests agent/tests -q
+      - run: cd admin && PYTHONPATH=. python -m pytest tests -q
 
   # Dashboard specs (dashboards/*.yml): the validator's tests, every checked-in spec validated against the Cube model, and the compiler.
   dashspec:
@@ -394,6 +395,7 @@ jobs:
       - run: python -I dashboard/cube/tests/renderer.py
       - run: python -I dashboard/cube/tests/header.py
       - run: python -I dashboard/cube/tests/designer.py        # design mode: pick a panel, change its fields, a refusal, a phone, Turkish
+      - run: python -I dashboard/cube/tests/admin.py            # the admin console: people, groups, dialogs, who is let in
       - run: python -I dashboard/cube/tests/builderui.py        # the builder's page: the Save dialog, saved dashboards, tags
       - run: python -I dashboard/cube/tests/dataset.py
 
@@ -445,10 +447,10 @@ jobs:
           printf 'services:\n  caddy:\n    ports:\n      - "127.0.0.1:8088:8088"\n' > ci-public.yml
       - name: start Keycloak, the auth service, the dashboard and Caddy
         run: |
-          docker compose --profile starrocks build auth builder
+          docker compose --profile starrocks build auth builder admin
           docker compose --profile starrocks up -d --no-deps keycloak
           for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile starrocks ps -q keycloak)")" = healthy ] && break; sleep 3; done
-          docker compose --profile starrocks up -d --no-deps auth builder dashboard-cube caddy
+          docker compose --profile starrocks up -d --no-deps auth builder admin dashboard-cube caddy
           for i in $(seq 40); do curl -sf http://localhost:8088/auth-api/healthz >/dev/null && break; sleep 3; done
       - name: routing, issuer, admin console block, browser config
         run: |
@@ -471,6 +473,21 @@ jobs:
                   -d username=admin -d "password=$TEST_USER_PASSWORD" | jq -r .access_token \
                 | python3 -c "import sys,base64,json;s=sys.stdin.read().split('.')[1];print(json.loads(base64.urlsafe_b64decode(s+'='*(-len(s)%4)))['iss'])")
           test "$iss" = "$B/kc/realms/spike"
+          # the admin console through Caddy, against the real Keycloak: it wants an admin's token, lists people with their role, and a group a person joins
+          # comes back in their next token as the `groups` claim
+          curl -s $B/cube/config.js | grep -q 'admin: "http://localhost:8088/admin-api"'
+          for i in $(seq 20); do [ "$(code $B/admin-api/healthz)" = 200 ] && break; sleep 3; done
+          test "$(code $B/admin-api/healthz)" = 200
+          test "$(code $B/admin-api/users)" = 401
+          token() { curl -s -X POST $B/kc/realms/spike/protocol/openid-connect/token -d grant_type=password -d client_id=dashboard -d "username=$1" -d "password=$TEST_USER_PASSWORD" | jq -r .access_token; }
+          A="Authorization: Bearer $(token admin)"
+          test "$(code -H "Authorization: Bearer $(token na_manager)" $B/admin-api/users)" = 403
+          users=$(curl -s -H "$A" $B/admin-api/users)
+          echo "$users" | jq -e '.users[] | select(.username == "admin" and .role == "admin" and .enabled)' >/dev/null
+          gid=$(curl -s -X POST -H "$A" -H 'Content-Type: application/json' -d '{"name":"ci-team"}' $B/admin-api/groups | jq -r .id)
+          uid=$(echo "$users" | jq -r '.users[] | select(.username == "admin") | .id')
+          test "$(code -X PUT -H "$A" $B/admin-api/groups/$gid/members/$uid)" = 204
+          token admin | python3 -c "import sys,base64,json;s=sys.stdin.read().split('.')[1];c=json.loads(base64.urlsafe_b64decode(s+'='*(-len(s)%4)));assert 'ci-team' in c['groups'], c.get('groups')"
           echo "public routing checks passed"
       - name: logs on failure
         if: failure()

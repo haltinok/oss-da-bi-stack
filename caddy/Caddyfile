@@ -36,6 +36,10 @@
 		reverse_proxy actions:8300
 	}
 	# The dashboard builder (a prompt becomes a dashboard spec); every call needs the Keycloak token.
+	# The admin console (users, groups, roles over Keycloak); every call needs an admin's token.
+	handle_path /admin-api/* {
+		reverse_proxy admin:8400
+	}
 	handle_path /builder-api/* {
 		reverse_proxy builder:8350
 	}

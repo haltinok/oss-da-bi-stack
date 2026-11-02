@@ -9,6 +9,7 @@ https://demo.eloha-da.com
   /kc/*            Keycloak       (sign-in; KC_HTTP_RELATIVE_PATH=/kc; the admin console and master realm answer 404)
   /auth-api/*      auth service   (Keycloak token -> Cube token)       prefix stripped
   /actions-api/*   actions service (approve inventory actions)         prefix stripped
+  /admin-api/*     admin service  (people, groups, roles; admins only) prefix stripped
   /cubejs-api/*    Cube           (queries; every call needs the signed token)
   everything else  dashboard-cube (the page)
 ```

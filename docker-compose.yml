@@ -468,6 +468,29 @@ services:
       starrocks-be:
         condition: service_healthy
 
+  # The admin console: people, groups and roles over Keycloak (admin/). Every call needs an admin's token; the service signs in to Keycloak as its own
+  # `admin-console` client (a service account that may only manage users and groups).
+  admin:
+    build: ./admin
+    profiles: [starrocks]
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${ADMIN_PORT:-8400}:8400"
+    environment:
+      KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      ADMIN_CLIENT_SECRET: ${ADMIN_CLIENT_SECRET:?set ADMIN_CLIENT_SECRET in .env}
+      ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8400/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   cubestore:
     image: cubejs/cubestore:${CUBE_VERSION:-latest}
     profiles: [starrocks]
@@ -535,6 +558,7 @@ services:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       TEST_USER_PASSWORD: ${TEST_USER_PASSWORD:?set TEST_USER_PASSWORD in .env}
       AGENT_CLIENT_SECRET: ${AGENT_CLIENT_SECRET:?set AGENT_CLIENT_SECRET in .env}
+      ADMIN_CLIENT_SECRET: ${ADMIN_CLIENT_SECRET:?set ADMIN_CLIENT_SECRET in .env}
       # The dashboard's public address, for the realm's redirect URIs, web origins and post-logout URIs (see
       # realm-spike.json; imported on the first start only: keycloak/update-public-url.sh changes it on an existing volume).
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
@@ -672,6 +696,7 @@ services:
       CUBE_PORT: ${CUBE_PORT:-4000}
       ACTIONS_PORT: ${ACTIONS_PORT:-8300}
       BUILDER_PORT: ${BUILDER_PORT:-8350}
+      ADMIN_PORT: ${ADMIN_PORT:-8400}
       # Optional second dataset in the dashboard: the port of the 250M benchmark Cube (spike/bench/run_scale.sh 250m).
       CUBE_250M_PORT: ${CUBE_250M_PORT:-}
       # How the browser reaches Keycloak, the auth and actions services and Cube. Empty (the default): each on its own

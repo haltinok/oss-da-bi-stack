@@ -43,14 +43,38 @@
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "${PUBLIC_URL}/*"
-      }
-    }    ,
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
     {
       "clientId": "inventory-agent",
       "name": "Inventory proposal agent (service account, read-only data + draft proposals)",
       "enabled": true,
       "publicClient": false,
       "secret": "${AGENT_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "admin-console",
+      "name": "Admin console service (service account: manages users and groups)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${ADMIN_CLIENT_SECRET}",
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
@@ -154,6 +178,20 @@
       "realmRoles": [
         "agent"
       ]
+    },
+    {
+      "username": "service-account-admin-console",
+      "enabled": true,
+      "serviceAccountClientId": "admin-console",
+      "clientRoles": {
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users",
+          "query-groups",
+          "view-realm"
+        ]
+      }
     }
   ]
 }

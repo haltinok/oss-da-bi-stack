@@ -119,10 +119,12 @@ def token(authorization: str = Header(default="")) -> dict:
     if role in TERRITORY_ROLES and not territories:
         raise HTTPException(403, "no territories assigned")
 
+    groups = sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str))       # Keycloak's group-membership mapper (the `dashboard` client); Cube ignores it for now
+
     now = int(time.time())
     cube_token = jwt.encode(
-        {"user_id": user, "role": role, "territories": territories, "iat": now, "exp": now + TTL},
+        {"user_id": user, "role": role, "territories": territories, "groups": groups, "iat": now, "exp": now + TTL},
         CUBE_SECRET,
         algorithm="HS256",
     )
-    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories}
+    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "groups": groups}

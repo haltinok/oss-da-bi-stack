@@ -1,0 +1,384 @@
+"""Admin console service: people, groups and roles, over Keycloak.
+
+  GET  /healthz
+  GET  /roles                              the dashboard roles a person can hold
+  GET  /users?search&role&group&enabled&first&max      { users: [...], total }
+  POST /users                              create (a temporary password the person must change at first sign-in)
+  GET|PUT /users/{id}                      read; change name, email, role, groups
+  POST /users/{id}/enable | /disable       activate, or deactivate (and end their sessions)
+  POST /users/{id}/password                set a password { password, temporary }
+  POST /users/{id}/reset-password          email Keycloak's "update password" link ({ email: true }) or set a temporary one and return it once
+  DELETE /users/{id}?confirm=<username>    delete (deactivating is what the page suggests)
+  GET|POST /groups, PUT|DELETE /groups/{id}, PUT|DELETE /groups/{id}/members/{userId}
+
+Every call needs a Keycloak access token of the dashboard client from a person with the `admin` role. The service signs in to Keycloak as its own client
+(`admin-console`), so the browser never holds a Keycloak admin token. Rules kept here, not only on the page: the last active admin cannot be deactivated, deleted or
+demoted, and nobody can do that to their own account. Every change writes one JSON line to stdout (who, what, to whom).
+"""
+from __future__ import annotations
+
+import datetime
+import json
+import os
+import secrets
+from typing import Annotated
+
+import jwt
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from keycloak import Keycloak, KeycloakError
+
+ISSUER = os.environ["KEYCLOAK_ISSUER"]
+JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
+CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
+ROLES = ("admin", "manager", "rep", "purchasing", "marketing")        # the dashboard roles a person holds (`agent` belongs to a service account)
+MIN_PASSWORD = 10
+MAX_USERS = 1000
+
+jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
+app = FastAPI(title="admin")
+app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ALLOWED_ORIGINS", "http://localhost:8250").split(","),
+                   allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
+
+_kc: Keycloak | None = None
+
+
+def kc() -> Keycloak:
+    """The Keycloak client (made on first use, so a test can replace it with a fake before that)."""
+    global _kc
+    if _kc is None:
+        _kc = Keycloak(os.environ.get("KEYCLOAK_ADMIN_URL", "http://keycloak:8080"), os.environ.get("KEYCLOAK_REALM", "spike"),
+                       os.environ.get("ADMIN_CLIENT_ID", "admin-console"), os.environ["ADMIN_CLIENT_SECRET"])
+    return _kc
+
+
+class Admin(BaseModel):
+    id: str
+    name: str
+
+
+def current_admin(authorization: str = Header(default="")) -> Admin:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing bearer token")
+    raw = authorization.removeprefix("Bearer ")
+    try:
+        key = jwks.get_signing_key_from_jwt(raw).key
+        claims = jwt.decode(raw, key, algorithms=["RS256"], issuer=ISSUER, options={"verify_aud": False})
+    except jwt.PyJWTError as exc:
+        raise HTTPException(401, f"invalid token: {exc}") from exc
+    if claims.get("azp") != CLIENT_ID:
+        raise HTTPException(401, "token was not issued to the dashboard client")
+    if "admin" not in claims.get("realm_access", {}).get("roles", []):
+        raise HTTPException(403, "only an admin can use the console")
+    return Admin(id=claims["sub"], name=claims["preferred_username"])
+
+
+Who = Annotated[Admin, Depends(current_admin)]
+
+
+def audit(who: Admin, action: str, **entry) -> None:
+    print(json.dumps({"event": "admin", "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "by": who.name, "action": action, **entry}, ensure_ascii=False), flush=True)
+
+
+def fail(exc: KeycloakError):
+    raise HTTPException(exc.status, exc.message)
+
+
+# -------------------------------------------------------------------------------------------------------------------- shaping
+def role_map() -> dict[str, str]:
+    """user id -> dashboard role (the highest one, as the auth service picks it); 5 calls however many people there are."""
+    out: dict[str, str] = {}
+    for role in reversed(ROLES):                                       # ROLES is ordered high to low, so the highest is written last and wins
+        for u in kc().role_members(role):
+            out[u["id"]] = role
+    return out
+
+
+def group_map() -> tuple[dict[str, list[dict]], list[dict]]:
+    """user id -> [{id, name}], and the groups with their member counts."""
+    by_user: dict[str, list[dict]] = {}
+    groups = []
+    for g in kc().groups():
+        members = kc().group_members(g["id"])
+        groups.append({"id": g["id"], "name": g["name"], "members": len(members)})
+        for m in members:
+            by_user.setdefault(m["id"], []).append({"id": g["id"], "name": g["name"]})
+    return by_user, groups
+
+
+def shape(u: dict, roles: dict[str, str], groups: dict[str, list[dict]]) -> dict:
+    return {"id": u["id"], "username": u["username"], "email": u.get("email", ""), "firstName": u.get("firstName", ""), "lastName": u.get("lastName", ""),
+            "enabled": u.get("enabled", True), "role": roles.get(u["id"]), "groups": sorted(groups.get(u["id"], []), key=lambda g: g["name"].lower())}
+
+
+def one(uid: str) -> dict:
+    try:
+        return shape(kc().user(uid), role_map(), group_map()[0])
+    except KeycloakError as exc:
+        fail(exc)
+
+
+def active_admins(excluding: str) -> int:
+    return sum(1 for u in kc().role_members("admin") if u.get("enabled", True) and u["id"] != excluding)
+
+
+def keep_an_admin(who: Admin, uid: str, what: str) -> None:
+    """Refuse what would leave no active admin, or that an admin does to their own account."""
+    if uid == who.id:
+        raise HTTPException(409, f"you cannot {what} your own account")
+    try:
+        was_admin = any(u["id"] == uid for u in kc().role_members("admin"))
+        if was_admin and active_admins(uid) == 0:
+            raise HTTPException(409, f"the last active admin cannot be {what}d")
+    except KeycloakError as exc:
+        fail(exc)
+
+
+# -------------------------------------------------------------------------------------------------------------------- requests
+class NewUser(BaseModel):
+    username: str = Field(min_length=2, max_length=60, pattern=r"^[A-Za-z0-9._@-]+$")
+    email: str = Field(default="", max_length=200)
+    firstName: str = Field(default="", max_length=100)
+    lastName: str = Field(default="", max_length=100)
+    role: str
+    groups: list[str] = []
+    password: str = Field(min_length=MIN_PASSWORD, max_length=200)
+    temporary: bool = True
+
+
+class UserEdit(BaseModel):
+    email: str | None = Field(default=None, max_length=200)
+    firstName: str | None = Field(default=None, max_length=100)
+    lastName: str | None = Field(default=None, max_length=100)
+    role: str | None = None
+    groups: list[str] | None = None
+
+
+class PasswordRequest(BaseModel):
+    password: str = Field(min_length=MIN_PASSWORD, max_length=200)
+    temporary: bool = True
+
+
+class ResetRequest(BaseModel):
+    email: bool = False
+
+
+class GroupRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+def need_role(role: str) -> None:
+    if role not in ROLES:
+        raise HTTPException(400, f"role must be one of {', '.join(ROLES)}")
+
+
+def apply_groups(uid: str, wanted: list[str]) -> None:
+    current = {g["id"] for g in kc().groups() if any(m["id"] == uid for m in kc().group_members(g["id"]))}
+    known = {g["id"] for g in kc().groups()}
+    unknown = [g for g in wanted if g not in known]
+    if unknown:
+        raise HTTPException(400, f"no such group: {unknown[0]}")
+    for gid in set(wanted) - current:
+        kc().add_to_group(uid, gid)
+    for gid in current - set(wanted):
+        kc().remove_from_group(uid, gid)
+
+
+def apply_role(uid: str, role: str) -> None:
+    held = {r for r in ROLES if any(u["id"] == uid for u in kc().role_members(r))}
+    for r in held - {role}:
+        kc().remove_role(uid, r)
+    if role not in held:
+        kc().add_role(uid, role)
+
+
+# -------------------------------------------------------------------------------------------------------------------- routes
+@app.get("/healthz")
+def healthz() -> dict:
+    return {"status": "ok"}
+
+
+@app.get("/roles")
+def roles(_: Who) -> dict:
+    return {"roles": list(ROLES)}
+
+
+@app.get("/users")
+def list_users(_: Who, search: str = "", role: str = "", group: str = "", enabled: bool | None = None, first: int = 0, max: int = 50) -> dict:
+    try:
+        raw = kc().users(search=search, enabled=enabled, limit=MAX_USERS)
+        roles_, (groups_, _all) = role_map(), group_map()
+    except KeycloakError as exc:
+        fail(exc)
+    rows = [shape(u, roles_, groups_) for u in raw]
+    if role:
+        rows = [r for r in rows if r["role"] == role]
+    if group:
+        rows = [r for r in rows if any(g["id"] == group for g in r["groups"])]
+    rows.sort(key=lambda r: r["username"].lower())
+    max = min(max, 200)
+    return {"users": rows[first:first + max], "total": len(rows)}
+
+
+@app.post("/users", status_code=201)
+def create_user(req: NewUser, who: Who) -> dict:
+    need_role(req.role)
+    try:
+        uid = kc().create_user({"username": req.username, "email": req.email or None, "firstName": req.firstName, "lastName": req.lastName, "enabled": True,
+                                "emailVerified": bool(req.email), "requiredActions": ["UPDATE_PASSWORD"] if req.temporary else []})
+        kc().set_password(uid, req.password, req.temporary)
+        apply_role(uid, req.role)
+        apply_groups(uid, req.groups)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "create_user", user=req.username, role=req.role, groups=req.groups)
+    return one(uid)
+
+
+@app.get("/users/{uid}")
+def get_user(uid: str, _: Who) -> dict:
+    return one(uid)
+
+
+@app.put("/users/{uid}")
+def edit_user(uid: str, req: UserEdit, who: Who) -> dict:
+    if req.role is not None:
+        need_role(req.role)
+    try:
+        current = kc().user(uid)
+        if req.role is not None and req.role != "admin":
+            keep_an_admin(who, uid, "demote")
+        rep = {**current, **{k: v for k, v in {"email": req.email, "firstName": req.firstName, "lastName": req.lastName}.items() if v is not None}}
+        kc().update_user(uid, rep)
+        if req.role is not None:
+            apply_role(uid, req.role)
+        if req.groups is not None:
+            apply_groups(uid, req.groups)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "edit_user", user=current["username"], **{k: v for k, v in req.model_dump().items() if v is not None})
+    return one(uid)
+
+
+@app.post("/users/{uid}/disable")
+def disable(uid: str, who: Who) -> dict:
+    keep_an_admin(who, uid, "deactivate")
+    try:
+        u = kc().user(uid)
+        kc().update_user(uid, {**u, "enabled": False})
+        kc().logout(uid)                                                # their Keycloak sessions end now; a Cube token already issued lives out its few minutes
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "deactivate_user", user=u["username"])
+    return one(uid)
+
+
+@app.post("/users/{uid}/enable")
+def enable(uid: str, who: Who) -> dict:
+    try:
+        u = kc().user(uid)
+        kc().update_user(uid, {**u, "enabled": True})
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "activate_user", user=u["username"])
+    return one(uid)
+
+
+@app.post("/users/{uid}/password")
+def set_password(uid: str, req: PasswordRequest, who: Who) -> dict:
+    try:
+        u = kc().user(uid)
+        kc().set_password(uid, req.password, req.temporary)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "set_password", user=u["username"], temporary=req.temporary)               # the password itself is never logged
+    return {"ok": True}
+
+
+@app.post("/users/{uid}/reset-password")
+def reset_password(uid: str, who: Who, req: ResetRequest | None = None) -> dict:
+    by_email = bool(req and req.email)
+    try:
+        u = kc().user(uid)
+        if by_email:
+            if not u.get("email"):
+                raise HTTPException(400, "this person has no email address")
+            kc().email_update_password(uid)
+            audit(who, "reset_password", user=u["username"], by="email")
+            return {"ok": True, "emailed": True}
+        temp = secrets.token_urlsafe(12)
+        kc().set_password(uid, temp, True)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "reset_password", user=u["username"], by="temporary")
+    return {"ok": True, "emailed": False, "temporary_password": temp}                    # shown once; the person must change it at the next sign-in
+
+
+@app.delete("/users/{uid}", status_code=204, response_class=Response)
+def delete_user(uid: str, who: Who, confirm: str = ""):
+    try:
+        u = kc().user(uid)
+        if confirm != u["username"]:
+            raise HTTPException(400, "type the username to confirm the deletion")
+        keep_an_admin(who, uid, "delete")
+        kc().delete_user(uid)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "delete_user", user=u["username"])
+
+
+@app.get("/groups")
+def list_groups(_: Who) -> dict:
+    try:
+        return {"groups": sorted(group_map()[1], key=lambda g: g["name"].lower())}
+    except KeycloakError as exc:
+        fail(exc)
+
+
+@app.post("/groups", status_code=201)
+def create_group(req: GroupRequest, who: Who) -> dict:
+    try:
+        gid = kc().create_group(req.name.strip())
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "create_group", group=req.name)
+    return {"id": gid, "name": req.name.strip(), "members": 0}
+
+
+@app.put("/groups/{gid}")
+def rename_group(gid: str, req: GroupRequest, who: Who) -> dict:
+    try:
+        kc().rename_group(gid, req.name.strip())
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "rename_group", group=req.name, id=gid)
+    return {"id": gid, "name": req.name.strip()}
+
+
+@app.delete("/groups/{gid}", status_code=204, response_class=Response)
+def delete_group(gid: str, who: Who):
+    try:
+        kc().delete_group(gid)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "delete_group", id=gid)
+
+
+@app.put("/groups/{gid}/members/{uid}", status_code=204, response_class=Response)
+def add_member(gid: str, uid: str, who: Who):
+    try:
+        kc().add_to_group(uid, gid)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "add_to_group", id=gid, user_id=uid)
+
+
+@app.delete("/groups/{gid}/members/{uid}", status_code=204, response_class=Response)
+def remove_member(gid: str, uid: str, who: Who):
+    try:
+        kc().remove_from_group(uid, gid)
+    except KeycloakError as exc:
+        fail(exc)
+    audit(who, "remove_from_group", id=gid, user_id=uid)
