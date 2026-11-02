@@ -388,6 +388,9 @@ export function setFilterVisible(source, id, visible) {
   if (!filter) return { problem: "missing" };
   const notes = [];
   if (visible) { delete filter.visible; return { source: next, notes }; }
+  if (!filter.default && filter.allowed?.length && (filter.type === "multiselect" || filter.allowed.length === 1)) {         // a list filter applies with the values it allows
+    filter.default = filter.type === "multiselect" ? `in:${filter.allowed.map(encodeURIComponent).join(",")}` : filter.allowed[0];
+  }
   if (!filter.default) return { problem: "needsDefault" };
   if (slicerOf(next, id)) return { problem: "hasSlicer" };
   filter.visible = false;

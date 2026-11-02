@@ -102,7 +102,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
       if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
       card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
-      card.append(defaultRow(f, typ, (v) => edit("default", v)));
+      if (typ !== "select" && typ !== "multiselect") card.append(defaultRow(f, typ, (v) => edit("default", v)));           // a list filter has the allowed values instead; the reader picks on the page
       // Where it applies and whether the reader sees it.
       const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
       const scopes = ["dashboard", ...(hasTabs || scope === "page" ? ["page"] : []), "panel"];
@@ -561,38 +561,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     return [wrap];
   }
 
-  /** The row for a filter's default value: the filter's own control for the types that have one, and plain boxes for a select (a value) and a multiselect (values; the options come from data the designer does not read). */
+  /** The row for the default of a text, number or date filter: the filter's own control. (A select or multiselect has the allowed values instead.) */
   function defaultRow(f, typ, set) {
-    const known = ((typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : []).filter((v) => !f.allowed?.length || f.allowed.includes(v));          // only what the reader can choose can be the default
-    if (known.length) {                                        // the real values, picked from a list (one for a select, several for a multiselect)
-      const picker = createSlicer({ ...f, label: dz.f.filterDefault }, t, "list");
-      picker.setOptions(known.map((value) => ({ value })));
-      picker.show(f.default || "");
-      picker.onChange = set;
-      picker.el.classList.add("dz-default");
-      const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
-      const slot = el("span", { class: "dz-input" });
-      slot.append(picker.el);
-      wrap.append(slot);
-      return wrap;
-    }
-    if (typ === "select") return field({ path: "default", kind: "text", key: "filterDefault", optional: true }, f, set);
-    const wrap = el("div", { class: "dz-field dz-default" }, `<span>${esc(dz.f.filterDefault)}</span>`);
-    const slot = el("span", { class: "dz-input" });
-    wrap.append(slot);
-    if (typ === "multiselect") {
-      const cur = parseValue(f.default), box = el("input", { type: "text", maxlength: 200, "aria-label": dz.f.filterDefault, placeholder: dz.multiHint, "data-path": "default" });
-      box.value = cur ? cur.args.join(", ") : "";
-      const not = el("input", { type: "checkbox", "aria-label": dz.exceptSelected });
-      not.checked = cur?.op === "not";
-      const push = () => { const args = box.value.split(",").map((x) => x.trim()).filter(Boolean); set(args.length ? formatValue({ op: not.checked ? "not" : "in", args }) : ""); };
-      box.addEventListener("change", push);
-      not.addEventListener("change", () => { if (box.value.trim()) push(); });
-      const label = el("label", { class: "dz-except" }, "");
-      label.append(not, document.createTextNode(` ${dz.exceptSelected}`));
-      slot.append(box, label);
-      return wrap;
-    }
     const control = createControl({ ...f, label: dz.f.filterDefault }, t);
     control.show(f.default || "");
     control.onChange = set;

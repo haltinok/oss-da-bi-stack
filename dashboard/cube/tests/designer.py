@@ -705,53 +705,33 @@ with sync_playwright() as p:
     settled(page)
     cat = next(f for f in filters() if f["dimension"] == "products.category")
     card = f'.dz-filter:has(h4:text-is("{cat["id"]}"))'
-    dflt = f"{card} .dz-field.dz-default:not(.dz-allowed)"
     opts = page.locator(f'{card} [data-path="type"] option').evaluate_all("os => os.map((o) => o.value)")
     check(opts == ["select", "multiselect", "text"], f"a text dimension offers select, multiselect and text ({opts})")
     check(cat.get("type") == "multiselect", "a new filter is Several values from the start")
-    page.wait_for_selector(f"{dflt} .slicer-item", timeout=15000)
-    with changes(page):
-        page.locator(f"{dflt} .slicer-item input").nth(0).check()
-    settled(page)
-    page.wait_for_selector(f"{dflt} .slicer-item", timeout=15000)
-    page.set_viewport_size({"width": 1440, "height": 420})
-    page.locator(f"{dflt} .slicer-item input").nth(1).scroll_into_view_if_needed()
-    top_before = page.evaluate("document.querySelector('#designer').scrollTop")
-    origin = page.evaluate("performance.timeOrigin")
-    with changes(page):
-        page.locator(f"{dflt} .slicer-item input").nth(1).check()
-    settled(page)
-    check(page.evaluate("performance.timeOrigin") == origin, "ticking a default value does not load the page again")
-    page.wait_for_timeout(500)
-    shown = page.evaluate("[...document.querySelectorAll('#filters .fc .fc-btn')].map((b) => b.textContent)")
-    check(any("2" in x for x in shown), f"and the page's own filter shows the two values at once ({shown})")
-    page.wait_for_selector(f"{dflt} .slicer-item", timeout=15000)
-    page.wait_for_function("document.querySelector('#designer').scrollTop > 0", timeout=5000)
-    top_after = page.evaluate("document.querySelector('#designer').scrollTop")
-    in_card = page.evaluate("(id) => document.activeElement?.closest('.dz-filter')?.querySelector('h4')?.textContent === id", cat["id"])
-    check(top_before > 0 and abs(top_after - top_before) < 40, f"ticking a default value keeps the drawer where it was ({top_before:.0f} -> {top_after:.0f})")
-    check(in_card, "and keeps the focus inside the filter's card")
-    page.set_viewport_size({"width": 1440, "height": 1500})
-    two = next(f for f in filters() if f["id"] == cat["id"]).get("default", "")
-    check(two.startswith("in:") and two.count(",") == 1, f"a multiselect's default is ticked from the real values and stored as in:a,b ({two})")
-    page.wait_for_selector(f"{dflt} .fc-ex", timeout=15000)
-    with changes(page):
-        page.locator(f"{dflt} .fc-ex input").check()
-    settled(page)
-    check(next(f for f in filters() if f["id"] == cat["id"]).get("default") == "not:" + two[3:], "'All except the selected' makes it not:...")
-    page.wait_for_selector("#filters .fc", timeout=10000)
-    check(page.locator('#filters .fc .fc-btn').first.inner_text() == "all but 2", "and the page opens with that default ('all but 2')")
-    # the designer's "values the reader can choose" limit what the page's filter offers
+    check(page.locator(f"{card} .dz-field.dz-default:not(.dz-allowed)").count() == 0, "a list filter has no default value row: the reader picks on the page")
+    # "Values the reader can choose" limit what the page's filter offers
     allowed_items = f"{card} .dz-allowed .slicer-item input"
     page.wait_for_selector(allowed_items, timeout=15000)
     n_all = page.locator(allowed_items).count()
+    page.set_viewport_size({"width": 1440, "height": 420})
+    page.locator(allowed_items).nth(1).scroll_into_view_if_needed()
+    top_before = page.evaluate("document.querySelector('#designer').scrollTop")
+    origin = page.evaluate("performance.timeOrigin")
     for i in range(3):
         with changes(page):
             page.locator(allowed_items).nth(i).check()
         settled(page)
         page.wait_for_selector(allowed_items, timeout=15000)
+    check(page.evaluate("performance.timeOrigin") == origin, "ticking an allowed value does not load the page again")
+    page.wait_for_function("document.querySelector('#designer').scrollTop > 0", timeout=5000)
+    top_after = page.evaluate("document.querySelector('#designer').scrollTop")
+    in_card = page.evaluate("(id) => document.activeElement?.closest('.dz-filter')?.querySelector('h4')?.textContent === id", cat["id"])
+    check(top_before > 0 and abs(top_after - top_before) < 60, f"ticking a value keeps the drawer where it was ({top_before:.0f} -> {top_after:.0f})")
+    check(in_card, "and keeps the focus inside the filter's card")
+    page.set_viewport_size({"width": 1440, "height": 1500})
     check(n_all > 3, f"the category list has more than three values ({n_all})")
-    check(next(f for f in filters() if f["id"] == cat["id"]).get("allowed") and len(next(f for f in filters() if f["id"] == cat["id"])["allowed"]) == 3, "ticking three values stores them as `allowed`")
+    got = next(f for f in filters() if f["id"] == cat["id"]).get("allowed") or []
+    check(len(got) == 3, f"ticking three values stores them as `allowed` ({got})")
     page.locator('#filters .fc .fc-btn').first.click()
     page.wait_for_selector("#filters .fc-list input", timeout=5000)
     offered = page.locator("#filters .fc-list input").count()
@@ -761,8 +741,8 @@ with sync_playwright() as p:
         page.select_option(f'{card} [data-path="type"]', "text")
     settled(page)
     now = next(f for f in filters() if f["id"] == cat["id"])
-    check(now.get("type") == "text" and "default" not in now, "changing the type drops the default (it was a value of the old type)")
-    check("default value was removed" in page.inner_text("#bd-msg").lower() or "default" in page.inner_text("#bd-msg").lower(), "and the draft bar says so")
+    check(now.get("type") == "text" and "allowed" not in now, "changing the type drops the allowed values (a text filter has no list)")
+    check("allowed values" in page.inner_text("#bd-msg").lower(), "and the draft bar says so")
     ctl = f'{card} .fc[aria-label="Default value"]'
     page.locator(f"{ctl} select").select_option("contains")
     page.locator(f"{ctl} input").fill("mountain")
@@ -827,15 +807,15 @@ with sync_playwright() as p:
     check(page.locator("#tabpanel-tab_1 .tab-filters .field").count() == 1, "and the page draws it above that tab's panels")
     page.click(f'{fcard} [data-path="visible"]')
     page.wait_for_selector("#dz-msg:not([hidden])", timeout=10000)
-    check("default" in page.inner_text("#dz-msg").lower(), "hiding a filter that has no default is refused, saying why")
-    page.wait_for_selector(f"{fcard} .dz-field.dz-default:not(.dz-allowed) .slicer-item", timeout=15000)
+    check("values it applies with" in page.inner_text("#dz-msg").lower(), "hiding a filter that has no values to apply with is refused, saying why")
+    page.wait_for_selector(f"{fcard} .dz-allowed .slicer-item", timeout=15000)
     with changes(page):
-        page.locator(f"{fcard} .dz-field.dz-default:not(.dz-allowed) .slicer-item input").nth(0).check()
+        page.locator(f"{fcard} .dz-allowed .slicer-item input").nth(0).check()
     settled(page)
     with changes(page):
         page.click(f'{fcard} [data-path="visible"]')
     settled(page)
-    check(next(f for f in filters() if f["id"] == fid).get("visible") is False and "hidden" in page.inner_text(f"{fcard} h4").lower(), "with a default it can be hidden, and the card says so")
+    check(next(f for f in filters() if f["id"] == fid).get("visible") is False and "hidden" in page.inner_text(f"{fcard} h4").lower(), "with one allowed value it can be hidden (it applies with it), and the card says so")
     check(page.locator("#tabpanel-tab_1 .tab-filters .field").count() == 0, "a hidden filter has no control on the page")
     page.once("dialog", lambda d: d.accept())
     with changes(page):
@@ -937,7 +917,7 @@ with sync_playwright() as p:
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
-    # ---- a new filter starts as several values, and its default is picked from the real values
+    # ---- a new filter starts as several values, and the values the reader can choose are ticked from the real values
     ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
     settled(page)
@@ -951,17 +931,17 @@ with sync_playwright() as p:
     nf = next(f for f in yaml_of(page).get("filters", []) if f["dimension"] == "products.category")
     check(nf.get("type") == "multiselect", "a filter added in the designer starts as Several values")
     ncard = f'.dz-filter:has(h4:text-is("{nf["id"]}"))'
-    page.wait_for_selector(f"{ncard} .dz-field.dz-default:not(.dz-allowed) .slicer-item", timeout=15000)
-    check(page.locator(f"{ncard} .dz-field.dz-default:not(.dz-allowed) .slicer-item").count() >= 3, "its default value is picked from a list of the real values")
+    page.wait_for_selector(f"{ncard} .dz-allowed .slicer-item", timeout=15000)
+    check(page.locator(f"{ncard} .dz-allowed .slicer-item").count() >= 3, "the values the reader can choose are ticked from a list of the real values")
     with changes(page):
-        page.locator(f"{ncard} .dz-field.dz-default:not(.dz-allowed) .slicer-item input").nth(0).check()
+        page.locator(f"{ncard} .dz-allowed .slicer-item input").nth(0).check()
     settled(page)
-    page.wait_for_selector(f"{ncard} .dz-field.dz-default:not(.dz-allowed) .slicer-item", timeout=15000)
+    page.wait_for_selector(f"{ncard} .dz-allowed .slicer-item", timeout=15000)
     with changes(page):
-        page.locator(f"{ncard} .dz-field.dz-default:not(.dz-allowed) .slicer-item input").nth(1).check()
+        page.locator(f"{ncard} .dz-allowed .slicer-item input").nth(1).check()
     settled(page)
-    d = next(f for f in yaml_of(page)["filters"] if f["id"] == nf["id"]).get("default", "")
-    check(d.startswith("in:") and d.count(",") == 1, f"ticking two values makes the default in:a,b ({d})")
+    d = next(f for f in yaml_of(page)["filters"] if f["id"] == nf["id"]).get("allowed", [])
+    check(len(d) == 2, f"ticking two values makes allowed a list of two ({d})")
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
