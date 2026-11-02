@@ -22,6 +22,7 @@ def make_store(kind):
     store = PgStore(**dict(part.split("=", 1) for part in PG.split()))                       # "host=... port=... dbname=... user=builder_app password=..."
     with store._conn() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM builder.saved_dashboards")
+        cur.execute("DELETE FROM builder.folders")
     return store
 
 
@@ -32,10 +33,11 @@ def store(request):
     if request.param == "pg":
         with st._conn() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM builder.saved_dashboards")
+            cur.execute("DELETE FROM builder.folders")
 
 
-def who(name="alice", role="manager"):
-    return saved.Who(name=name, role=role)
+def who(name="alice", role="manager", groups=()):
+    return saved.Who(name=name, role=role, groups=list(groups))
 
 
 def new(store, owner=None, yaml_text=GOOD, **kw):
@@ -132,7 +134,10 @@ def test_only_the_owner_changes_the_yaml_and_an_admin_can_unshare_and_delete(sto
     assert [x["id"] for x in saved.list_saved(store, CATALOG, who("root", "admin"), everything=True)] == [d["id"]]
     assert saved.open_saved(store, CATALOG, who("root", "admin"), d["id"])["meta"]["owner"] == "alice", "an admin can open any dashboard"
     saved.delete_saved(store, who("root", "admin"), d["id"])
-    assert store.get(d["id"]) is None
+    assert store.get(d["id"])["deleted_at"], "deleting moves it to the trash"
+    with pytest.raises(saved.SavedError) as gone:
+        saved.open_saved(store, CATALOG, who("alice", "manager"), d["id"])
+    assert gone.value.status == 404
 
 
 def test_versions_are_the_owners_and_can_be_restored(store):
@@ -376,3 +381,132 @@ def test_each_version_says_what_it_changed(store):
         saved.update_saved(store, CATALOG, who(), d["id"], yaml_text=yaml.safe_dump(spec))
     oldest = saved.versions(store, who(), d["id"])[-1]
     assert oldest["changes"] == [{"kind": "unknown"}] and oldest["version"] > 2
+
+
+# ---------------------------------------------------------------------------------------------------------------- sharing with people and groups, folders, trash
+def share(store, owner, id_, *shares):
+    return saved.update_saved(store, CATALOG, owner, id_, shares=[{"type": t, "principal": p, "permission": perm} for t, p, perm in shares])
+
+
+def test_a_dashboard_shared_with_a_person_or_a_group_is_seen_by_them_and_only_them(store):
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD)
+    share(store, who("alice"), d["id"], ("user", "bob", "view"), ("group", "Ops", "view"))
+    assert [x["id"] for x in saved.list_saved(store, CATALOG, who("bob"))] == [d["id"]]
+    assert [x["id"] for x in saved.list_saved(store, CATALOG, who("carol", groups=["Ops"]))] == [d["id"]]
+    assert saved.list_saved(store, CATALOG, who("dave", groups=["Other"])) == []
+    item = saved.list_saved(store, CATALOG, who("bob"))[0]
+    assert item["shared_with_me"] and not item["mine"] and not item["can_edit"] and "shares" not in item, "a viewer does not see who else it is shared with"
+    assert saved.open_saved(store, CATALOG, who("bob"), d["id"])["meta"]["owner"] == "alice"
+    mine = saved.list_saved(store, CATALOG, who("alice"))[0]
+    assert len(mine["shares"]) == 2 and not mine["shared_with_me"]
+
+
+def test_edit_permission_changes_the_yaml_but_not_the_sharing_and_view_changes_nothing(store):
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD)
+    share(store, who("alice"), d["id"], ("user", "bob", "edit"), ("user", "carol", "view"))
+    changed = GOOD.replace("Regional sales", "Regional sales (bob)", 1)
+    out = saved.update_saved(store, CATALOG, who("bob"), d["id"], yaml_text=changed)
+    assert out["version"] == 2 and out["can_edit"] and not out["can_manage"]
+    with pytest.raises(saved.SavedError) as e:
+        saved.update_saved(store, CATALOG, who("carol"), d["id"], yaml_text=GOOD)
+    assert e.value.status == 403
+    for kw in ({"shares": []}, {"visibility": "everyone"}, {"folder_id": None}, {"owner": "bob"}):
+        with pytest.raises(saved.SavedError) as e:
+            saved.update_saved(store, CATALOG, who("bob"), d["id"], **kw)
+        assert e.value.status == 403, kw
+    with pytest.raises(saved.SavedError) as e:
+        saved.delete_saved(store, who("bob"), d["id"])
+    assert e.value.status == 403
+
+
+def test_bad_shares_are_refused(store):
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD)
+    for bad in ([{"type": "team", "principal": "x", "permission": "view"}], [{"type": "user", "principal": "", "permission": "view"}], [{"type": "user", "principal": "x", "permission": "own"}], "bob"):
+        with pytest.raises(saved.SavedError) as e:
+            saved.update_saved(store, CATALOG, who("alice"), d["id"], shares=bad)
+        assert e.value.status == 422
+    out = share(store, who("alice"), d["id"], ("user", "bob", "view"), ("user", "bob", "edit"))
+    assert out["shares"] == [{"type": "user", "principal": "bob", "permission": "edit"}], "the same person twice keeps the stronger permission"
+
+
+def test_folders_hold_dashboards_and_a_shared_folder_shares_what_is_in_it(store):
+    f = saved.create_folder(store, who("alice"), "Quarterly")
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD, folder_id=f["id"])
+    assert d["folder_id"] == f["id"] and d["folder_name"] == "Quarterly"
+    assert saved.list_saved(store, CATALOG, who("bob")) == [] and saved.list_folders(store, who("bob")) == []
+    saved.update_folder(store, who("alice"), f["id"], shares=[{"type": "user", "principal": "bob", "permission": "view"}])
+    assert [x["id"] for x in saved.list_saved(store, CATALOG, who("bob"))] == [d["id"]]
+    assert [x["name"] for x in saved.list_folders(store, who("bob"))] == ["Quarterly"]
+    with pytest.raises(saved.SavedError) as e:
+        saved.update_saved(store, CATALOG, who("bob"), d["id"], yaml_text=GOOD.replace("Regional sales", "X", 1))
+    assert e.value.status == 403, "view on the folder does not let bob change what is in it"
+    saved.update_folder(store, who("alice"), f["id"], shares=[{"type": "group", "principal": "Ops", "permission": "edit"}])
+    assert saved.update_saved(store, CATALOG, who("carol", groups=["Ops"]), d["id"], yaml_text=GOOD.replace("Regional sales", "By Ops", 1))["version"] == 2
+
+
+def test_moving_a_dashboard_needs_a_folder_you_may_put_things_in(store):
+    mine, theirs = saved.create_folder(store, who("alice"), "Mine"), saved.create_folder(store, who("bob"), "Bob's")
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD)
+    assert saved.update_saved(store, CATALOG, who("alice"), d["id"], folder_id=mine["id"])["folder_name"] == "Mine"
+    with pytest.raises(saved.SavedError) as e:
+        saved.update_saved(store, CATALOG, who("alice"), d["id"], folder_id=theirs["id"])
+    assert e.value.status == 404
+    saved.update_folder(store, who("bob"), theirs["id"], shares=[{"type": "user", "principal": "alice", "permission": "edit"}])
+    assert saved.update_saved(store, CATALOG, who("alice"), d["id"], folder_id=theirs["id"])["folder_name"] == "Bob's"
+    assert saved.update_saved(store, CATALOG, who("alice"), d["id"], folder_id=None)["folder_id"] is None
+
+
+def test_only_a_folders_owner_or_an_admin_renames_shares_or_deletes_it_and_what_was_in_it_stays(store):
+    f = saved.create_folder(store, who("alice"), "Old")
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD, folder_id=f["id"])
+    saved.update_folder(store, who("alice"), f["id"], shares=[{"type": "user", "principal": "bob", "permission": "edit"}])
+    with pytest.raises(saved.SavedError) as e:
+        saved.update_folder(store, who("bob"), f["id"], name="Hijacked")
+    assert e.value.status == 403
+    with pytest.raises(saved.SavedError) as e:
+        saved.delete_folder(store, who("carol"), f["id"])
+    assert e.value.status == 404, "a stranger is not even told it exists"
+    assert saved.update_folder(store, who("root", "admin"), f["id"], name="New")["name"] == "New"
+    saved.delete_folder(store, who("alice"), f["id"])
+    assert saved.list_folders(store, who("alice")) == []
+    assert saved.list_saved(store, CATALOG, who("alice"))[0]["folder_id"] is None and saved.list_saved(store, CATALOG, who("alice"))[0]["id"] == d["id"]
+    with pytest.raises(saved.SavedError):
+        saved.create_folder(store, who("alice"), "  ")
+
+
+def test_ownership_moves_to_someone_else_and_a_deleted_persons_dashboards_can_be_handed_over(store):
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD)
+    out = saved.update_saved(store, CATALOG, who("alice"), d["id"], owner="bob")
+    assert out["owner"] == "bob" and not out["mine"]
+    assert saved.list_saved(store, CATALOG, who("alice")) == [], "alice no longer sees it (it was private)"
+    assert saved.list_saved(store, CATALOG, who("bob"))[0]["mine"]
+    saved.save_new(store, CATALOG, who("bob"), GOOD)
+    with pytest.raises(saved.SavedError) as e:
+        saved.transfer_all(store, who("bob"), "bob", "carol")
+    assert e.value.status == 403
+    assert saved.transfer_all(store, who("root", "admin"), "bob", "root") == 2
+    assert {x["owner"] for x in saved.list_saved(store, CATALOG, who("root", "admin"))} == {"root"}
+
+
+def test_delete_goes_to_the_trash_and_can_be_restored_or_removed_for_good(store):
+    d = saved.save_new(store, CATALOG, who("alice"), GOOD)
+    saved.delete_saved(store, who("alice"), d["id"])
+    assert saved.list_saved(store, CATALOG, who("alice")) == []
+    assert [x["id"] for x in saved.list_trash(store, CATALOG, who("alice"))] == [d["id"]]
+    assert saved.list_trash(store, CATALOG, who("bob")) == [], "the trash is the owner's (and an admin's)"
+    with pytest.raises(saved.SavedError) as e:
+        saved.restore_trash(store, who("bob"), d["id"])
+    assert e.value.status == 404
+    saved.restore_trash(store, who("alice"), d["id"])
+    assert [x["id"] for x in saved.list_saved(store, CATALOG, who("alice"))] == [d["id"]] and saved.list_trash(store, CATALOG, who("alice")) == []
+    saved.delete_saved(store, who("alice"), d["id"])
+    saved.delete_forever(store, who("alice"), d["id"])
+    assert saved.list_trash(store, CATALOG, who("alice")) == [] and store.get(d["id"]) is None
+
+
+def test_the_trash_is_emptied_after_thirty_days_and_does_not_count_against_the_limit(store):
+    a = saved.save_new(store, CATALOG, who("alice"), GOOD, max_saved=1)
+    saved.delete_saved(store, who("alice"), a["id"])
+    saved.save_new(store, CATALOG, who("alice"), GOOD, max_saved=1)                          # the one in the trash is not counted
+    store.patch(a["id"], deleted_at="2020-01-01T00:00:00+00:00")
+    assert saved.list_trash(store, CATALOG, who("alice")) == [] and store.get(a["id"]) is None

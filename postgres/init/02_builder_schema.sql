@@ -26,3 +26,17 @@ CREATE TABLE IF NOT EXISTS builder.saved_versions (
     saved_at     timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (dashboard_id, version)
 );
+
+-- Sharing with people and groups, folders, and a trash (PLAN-access.md phase 3). Idempotent additions to the tables above.
+ALTER TABLE builder.saved_dashboards ADD COLUMN IF NOT EXISTS shares     jsonb       NOT NULL DEFAULT '[]';   -- [{type: user|group, principal, permission: view|edit}]
+ALTER TABLE builder.saved_dashboards ADD COLUMN IF NOT EXISTS folder_id  text;
+ALTER TABLE builder.saved_dashboards ADD COLUMN IF NOT EXISTS deleted_at timestamptz;                       -- set: in the trash (kept 30 days, then purged)
+
+CREATE TABLE IF NOT EXISTS builder.folders (
+    id         text        PRIMARY KEY,
+    name       text        NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80),
+    owner      text        NOT NULL,                                                                          -- the Keycloak username
+    shares     jsonb       NOT NULL DEFAULT '[]',                                                             -- who else may see (view) or change (edit) what is in it
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saved_dashboards_folder ON builder.saved_dashboards (folder_id);

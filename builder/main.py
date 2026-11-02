@@ -206,7 +206,7 @@ def need_store():
 
 
 def who(user: User) -> saved.Who:
-    return saved.Who(name=user.name, role=user.role)
+    return saved.Who(name=user.name, role=user.role, groups=user.groups)
 
 
 def saved_call(fn, *args, **kw):
@@ -226,6 +226,8 @@ class SaveRequest(BaseModel):
     visibility: str = "private"
     shared_roles: list[str] = []
     tags: list[Annotated[str, Field(max_length=100)]] | None = Field(default=None, max_length=10)      # the validator says what a tag may be; this only bounds the request
+    folder_id: str | None = Field(default=None, max_length=60)
+    shares: list[dict] | None = Field(default=None, max_length=60)                                   # [{type: user|group, principal, permission: view|edit}], checked in saved.py
 
 
 class UpdateRequest(BaseModel):
@@ -234,6 +236,9 @@ class UpdateRequest(BaseModel):
     visibility: str | None = None
     shared_roles: list[str] | None = None
     tags: list[Annotated[str, Field(max_length=100)]] | None = Field(default=None, max_length=10)
+    shares: list[dict] | None = Field(default=None, max_length=60)
+    folder_id: str | None = Field(default=None, max_length=60)                                         # given as null: out of any folder
+    owner: str | None = Field(default=None, max_length=120)
 
 
 class RestoreRequest(BaseModel):
@@ -247,7 +252,7 @@ def saved_list(user: User_, everything: bool = False) -> list[dict]:
 
 @app.post("/saved", status_code=201)
 def saved_create(req: SaveRequest, user: User_) -> dict:
-    out = saved_call(saved.save_new, need_store(), catalog_for(user), who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED)
+    out = saved_call(saved.save_new, need_store(), catalog_for(user), who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED, folder_id=req.folder_id, shares=req.shares)
     audit({"user": user.name, "role": user.role, "id": out["id"], "visibility": out["visibility"], "shared_roles": out["shared_roles"], "title": out["title"][:80]}, "saved")
     return out
 
@@ -259,8 +264,15 @@ def saved_open(id: str, user: User_, version: int | None = None) -> dict:
 
 @app.put("/saved/{id}")
 def saved_update(id: str, req: UpdateRequest, user: User_) -> dict:
-    out = saved_call(saved.update_saved, need_store(), catalog_for(user), who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags)
-    audit({"user": user.name, "role": user.role, "id": id, "version": out["version"], "visibility": out["visibility"], "shared_roles": out["shared_roles"]}, "saved_update")
+    given = req.model_fields_set                                    # "folder_id": null means out of any folder; leaving it out means leave it
+    extra = {"shares": req.shares if req.shares is not None else []} if "shares" in given else {}
+    if "folder_id" in given:
+        extra["folder_id"] = req.folder_id
+    if "owner" in given and req.owner is not None:
+        extra["owner"] = req.owner
+    out = saved_call(saved.update_saved, need_store(), catalog_for(user), who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, **extra)
+    audit({"user": user.name, "role": user.role, "id": id, "version": out["version"], "visibility": out["visibility"], "shared_roles": out["shared_roles"],
+           **({"shares": extra["shares"]} if "shares" in extra else {}), **({"folder": extra["folder_id"]} if "folder_id" in extra else {}), **({"new_owner": extra["owner"]} if "owner" in extra else {})}, "saved_update")
     return out
 
 
@@ -281,6 +293,72 @@ def saved_restore(id: str, req: RestoreRequest, user: User_) -> dict:
     out = saved_call(saved.restore, need_store(), catalog_for(user), who(user), id, req.version)
     audit({"user": user.name, "role": user.role, "id": id, "restored": req.version, "version": out["version"]}, "saved_restore")
     return out
+
+
+class FolderRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=80)
+    shares: list[dict] | None = Field(default=None, max_length=60)
+
+
+class TransferRequest(BaseModel):
+    from_user: str = Field(min_length=1, max_length=120)
+    to_user: str = Field(min_length=1, max_length=120)
+
+
+@app.get("/folders")
+def folders_list(user: User_) -> list[dict]:
+    return saved_call(saved.list_folders, need_store(), who(user))
+
+
+@app.post("/folders", status_code=201)
+def folders_create(req: FolderRequest, user: User_) -> dict:
+    out = saved_call(saved.create_folder, need_store(), who(user), req.name or "")
+    audit({"user": user.name, "role": user.role, "id": out["id"], "name": out["name"]}, "folder_create")
+    return out
+
+
+@app.put("/folders/{id}")
+def folders_update(id: str, req: FolderRequest, user: User_) -> dict:
+    kw = {"name": req.name}
+    if "shares" in req.model_fields_set:
+        kw["shares"] = req.shares if req.shares is not None else []
+    out = saved_call(saved.update_folder, need_store(), who(user), id, **kw)
+    audit({"user": user.name, "role": user.role, "id": id, **({"shares": kw["shares"]} if "shares" in kw else {}), **({"name": req.name} if req.name else {})}, "folder_update")
+    return out
+
+
+@app.delete("/folders/{id}", status_code=204, response_class=Response)
+def folders_delete(id: str, user: User_) -> Response:
+    saved_call(saved.delete_folder, need_store(), who(user), id)
+    audit({"user": user.name, "role": user.role, "id": id}, "folder_delete")
+    return Response(status_code=204)
+
+
+@app.get("/trash")
+def trash_list(user: User_) -> list[dict]:
+    return saved_call(saved.list_trash, need_store(), catalog_for(user), who(user))
+
+
+@app.post("/trash/{id}/restore")
+def trash_restore(id: str, user: User_) -> dict:
+    out = saved_call(saved.restore_trash, need_store(), who(user), id)
+    audit({"user": user.name, "role": user.role, "id": id}, "saved_undelete")
+    return out
+
+
+@app.delete("/trash/{id}", status_code=204, response_class=Response)
+def trash_delete(id: str, user: User_) -> Response:
+    saved_call(saved.delete_forever, need_store(), who(user), id)
+    audit({"user": user.name, "role": user.role, "id": id}, "saved_purge")
+    return Response(status_code=204)
+
+
+@app.post("/transfer")
+def transfer(req: TransferRequest, user: User_) -> dict:
+    """Admin only: hand every dashboard of one person to another (the admin console does this before it deletes the person)."""
+    n = saved_call(saved.transfer_all, need_store(), who(user), req.from_user, req.to_user)
+    audit({"user": user.name, "role": user.role, "from": req.from_user, "to": req.to_user, "count": n}, "saved_transfer")
+    return {"transferred": n}
 
 
 class ValidateRequest(BaseModel):

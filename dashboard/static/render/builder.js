@@ -2,6 +2,7 @@
 // It talks to the builder service (builder/): a prompt becomes a validated dashboard spec for the signed-in role. Everything the service or the model
 // returns is shown as text (escaped); a draft lives in this browser (localStorage) until it is saved to the repository as a reviewed YAML file.
 import { el, esc } from "../lib/dom.js";
+import { nameDialog, shareDialog, words } from "./sharing.js";
 import { filterItems } from "../lib/search.js";
 import { chipsHtml, groupByFirstTag, tagsOf, withTags } from "../lib/tags.js";
 
@@ -91,6 +92,14 @@ export function createBuilderApi({ stack, client, t }) {
     deleteSaved: (id) => call("DELETE", `/saved/${encodeURIComponent(id)}`),
     savedVersions: (id) => call("GET", `/saved/${encodeURIComponent(id)}/versions`),
     restoreSaved: (id, version) => call("POST", `/saved/${encodeURIComponent(id)}/restore`, { version }),
+    listFolders: () => call("GET", "/folders"),
+    createFolder: (name) => call("POST", "/folders", { name }),
+    updateFolder: (id, body) => call("PUT", `/folders/${encodeURIComponent(id)}`, body),
+    deleteFolder: (id) => call("DELETE", `/folders/${encodeURIComponent(id)}`),
+    listTrash: () => call("GET", "/trash"),
+    restoreTrash: (id) => call("POST", `/trash/${encodeURIComponent(id)}/restore`),
+    deleteForever: (id) => call("DELETE", `/trash/${encodeURIComponent(id)}`),
+    transfer: (fromUser, toUser) => call("POST", "/transfer", { from_user: fromUser, to_user: toUser }),
   };
 }
 
@@ -164,8 +173,12 @@ const visBadge = (d, t) => (d.visibility === "private" ? t.badgePrivate : d.visi
  * Resolves to null when the server keeps no dashboards.
  */
 export async function mountSavedList(host, api, t, { query = () => "", tags = () => [], group = () => false, onCount = () => {}, onTag = () => {} } = {}) {
-  let list = [];
-  const load = async () => { list = await api.listSaved(); };
+  let list = [], folders = [], trash = [];
+  const w = words(t);
+  const load = async () => {
+    list = await api.listSaved();
+    [folders, trash] = await Promise.all([api.listFolders().catch(() => []), api.listTrash().catch(() => [])]);              // an older server without folders just shows none
+  };
   try { await load(); } catch { host.hidden = true; onCount({ shown: 0, total: 0 }); return null; }
   host.hidden = false;
   const label = (tag) => t.tagFilterAria(tag);
@@ -174,7 +187,19 @@ export async function mountSavedList(host, api, t, { query = () => "", tags = ()
         <div class="hint">${esc(d.description || "")}${d.description ? " · " : ""}${d.mine ? "" : `${esc(t.by)} ${esc(d.owner)} · `}${esc(t.updated)} ${esc(new Date(d.updated_at).toLocaleString(t.dateLocale))}</div>
         ${tagsOf(d).length ? `<div class="tagrow">${chipsHtml(tagsOf(d), tags(), label)}</div>` : ""}
         ${d.readable ? "" : `<div class="hint warn">${esc(t.cannotOpen)}: ${esc(d.problems[0] || "")}</div>`}</div>
-      ${!d.mine && d.readable ? `<button type="button" data-act="copy">${esc(t.copy)}</button>` : ""}${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
+      ${!d.mine && d.readable ? `<button type="button" data-act="copy">${esc(t.copy)}</button>` : ""}${d.can_manage ? `<button type="button" class="mini" data-act="share">${esc(w.share)}</button>` : ""}${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
+  const folderHead = (f, name, count) => `<div class="folder-h" data-folder="${esc(f?.id || "")}"><strong>${f ? "📁 " : ""}${esc(name)}</strong> <span class="hint">(${count})</span><span class="spacer"></span>
+      ${f?.can_manage ? `<button type="button" data-act="folder-share">${esc(w.share)}</button><button type="button" data-act="folder-rename">${esc(w.rename)}</button><button type="button" data-act="folder-delete">${esc(w.delete)}</button>` : ""}</div>`;
+  /** Drawn by folder: each folder (yours, or shared with you) with what is in it, then what is in none. `emptyToo` keeps your own empty folders so they can be shared or deleted. */
+  const byFolder = (shown, emptyToo) => {
+    const known = new Map(folders.map((f) => [f.id, f]));
+    const groups = new Map();
+    for (const d of shown) { const k = d.folder_id && known.has(d.folder_id) ? d.folder_id : ""; groups.set(k, [...(groups.get(k) || []), d]); }
+    if (emptyToo) for (const f of folders) if (f.mine && !groups.has(f.id)) groups.set(f.id, []);
+    const named = [...groups.keys()].filter(Boolean).sort((a, b) => known.get(a).name.localeCompare(known.get(b).name));
+    const section = (k) => `${folderHead(k ? known.get(k) : null, k ? known.get(k).name : w.noFolder, (groups.get(k) || []).length)}<ul class="drafts">${(groups.get(k) || []).map(card).join("")}</ul>`;
+    return named.map(section).join("") + (groups.has("") || !named.length ? section("") : "");
+  };
   const render = () => {
     const q = query().trim(), selected = tags();
     const filtering = !!q || selected.length > 0;
@@ -182,12 +207,13 @@ export async function mountSavedList(host, api, t, { query = () => "", tags = ()
     const mine = list.filter((d) => d.mine), others = list.filter((d) => !d.mine);
     const mineShown = mine.filter(keep), othersShown = others.filter(keep);
     const heading = (text, hint, shown, all) => `<h2>${esc(text)}${filtering ? ` <span class="hint">(${esc(t.searchCount(shown.length, all.length))})</span>` : ""}</h2><p class="hint lsec-hint">${esc(hint)}</p>`;
-    const body = (shown) => (group()
+    const body = (shown, mineSection = false) => (group()
       ? groupByFirstTag(shown).map((g) => `<h3 class="tg-h">${esc(g.tag ?? t.untagged)} <span class="hint">(${g.items.length})</span></h3><ul class="drafts">${g.items.map(card).join("")}</ul>`).join("")
-      : `<ul class="drafts">${shown.map(card).join("")}</ul>`);
-    const section = (kind, text, hint, shown, all, none) => `<section class="lsec lsec-${kind}">${heading(text, hint, shown, all)}${shown.length ? body(shown) : `<p class="hint">${esc(none)}</p>`}</section>`;
+      : folders.length || mineSection && shown.some((d) => d.folder_id) ? byFolder(shown, mineSection && !filtering) : `<ul class="drafts">${shown.map(card).join("")}</ul>`);
+    const section = (kind, text, hint, shown, all, none) => `<section class="lsec lsec-${kind}">${heading(text, hint, shown, all)}${kind === "mine" ? `<div class="lsec-bar"><button type="button" data-act="folder-new">📁 ${esc(w.newFolder)}</button></div>` : ""}${shown.length || (kind === "mine" && folders.some((f) => f.mine) && !filtering) ? body(shown, kind === "mine") : `<p class="hint">${esc(none)}</p>`}</section>`;
     host.innerHTML = section("mine", t.yourSaved, t.yourSavedHint, mineShown, mine, mine.length ? t.searchNoSaved : t.noSaved)
-      + (others.length && (othersShown.length || !filtering) ? section("shared", t.sharedWithYou, t.sharedHint, othersShown, others, t.searchNoSaved) : "");
+      + (others.length && (othersShown.length || !filtering) ? section("shared", t.sharedWithYou, t.sharedHint, othersShown, others, t.searchNoSaved) : "")
+      + `<details class="trash" id="trash"${trash.length ? "" : " hidden"}><summary>${esc(w.trash(trash.length))}</summary><p class="hint">${esc(w.trashHint)}</p><ul>${trash.map((d) => `<li data-id="${esc(d.id)}"><span>${esc(d.title)}</span><span class="spacer"></span><button type="button" data-act="restore">${esc(w.restore)}</button><button type="button" data-act="forever">${esc(w.deleteForever)}</button></li>`).join("")}</ul></details>`;
     onCount({ shown: mineShown.length + othersShown.length, total: list.length });
   };
   render();
@@ -204,6 +230,18 @@ export async function mountSavedList(host, api, t, { query = () => "", tags = ()
       } catch (e) { cp.disabled = false; alert([e.message, ...(e.problems || [])].join("\n")); }
       return;
     }
+    const act = ev.target.closest("button[data-act]")?.dataset.act;
+    const again = async () => { try { await load(); } catch { /* keep what is shown */ } render(); };           // the search and tags are kept: the list is drawn again from the new answer
+    const fail = (e) => alert(`${w.failed} ${e.message}`);
+    const li = ev.target.closest("li[data-id]"), fid = ev.target.closest("[data-folder]")?.dataset.folder;
+    const itemOf = () => list.find((d) => d.id === li?.dataset.id), folderOf = () => folders.find((f) => f.id === fid);
+    if (act === "share") { const d = itemOf(); shareDialog({ w, kind: "dashboard", item: d, folders, save: async (body) => { await api.updateSaved(d.id, body); await again(); } }); return; }
+    if (act === "folder-new") { nameDialog(w, w.newFolder, "", w.create, async (name) => { await api.createFolder(name); await again(); }); return; }
+    if (act === "folder-rename") { const f = folderOf(); nameDialog(w, w.rename, f.name, w.save, async (name) => { await api.updateFolder(f.id, { name }); await again(); }); return; }
+    if (act === "folder-share") { const f = folderOf(); shareDialog({ w, kind: "folder", item: f, save: async (body) => { await api.updateFolder(f.id, { shares: body.shares }); await again(); } }); return; }
+    if (act === "folder-delete") { const f = folderOf(); if (confirm(w.folderDeleteConfirm(f.name))) { try { await api.deleteFolder(f.id); } catch (e) { fail(e); } await again(); } return; }
+    if (act === "restore") { try { await api.restoreTrash(li.dataset.id); } catch (e) { fail(e); } await again(); return; }
+    if (act === "forever") { if (confirm(w.deleteForeverConfirm)) { try { await api.deleteForever(li.dataset.id); } catch (e) { fail(e); } await again(); } return; }
     const b = ev.target.closest('button[data-act="delete"]');
     if (!b || !confirm(t.confirmDelete)) return;
     try { await api.deleteSaved(b.closest("li").dataset.id); } catch (e) { alert(e.message); }

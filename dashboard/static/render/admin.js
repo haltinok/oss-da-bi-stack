@@ -22,10 +22,10 @@ const client = createCubeClient({ stack: C, apiUrl: C.cube, redirect: `${locatio
 const show = (msg) => { const e = $("#error"); e.textContent = msg; e.hidden = !msg; };
 
 /** One call to the admin service with the Keycloak token; a 401 once refreshes the token and tries again. */
-async function call(method, path, body) {
+async function call(method, path, body, base = C.admin) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const kc = await client.keycloak();
-    const res = await fetch(`${C.admin}${path}`, { method, headers: { Authorization: `Bearer ${kc.access}`, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const res = await fetch(`${base}${path}`, { method, headers: { Authorization: `Bearer ${kc.access}`, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
     if (res.status === 401 && attempt === 0) { client.dropKeycloakToken(); continue; }
     if (res.status === 204) return null;
     const data = await res.json().catch(() => ({}));
@@ -300,8 +300,17 @@ function confirmDialog(title, why, go, fn) {
 
 function deleteDialog(u) {
   openForm(`<h2>${esc(t.deleteTitle)}</h2><p class="hint">${esc(t.deleteWhy)}</p>
+    <label class="inline"><input type="checkbox" name="handover" checked> ${esc(t.handOver(s.me || "you"))}</label>
     <label>${esc(t.deleteType)}: <strong>${esc(u.username)}</strong><input name="confirm" autocomplete="off"></label>${foot(t.deleteIt, "danger")}`,
-  (f) => call("DELETE", `/users/${u.id}?confirm=${encodeURIComponent(new FormData(f).get("confirm").trim())}`));
+  async (f) => {
+    const v = new FormData(f);
+    const confirm = v.get("confirm").trim();
+    if (confirm !== u.username) throw new Error(t.deleteType);
+    if (v.get("handover") && s.me && C.builder) {                       // their saved dashboards go to the admin first, so deleting the person deletes no work
+      try { await call("POST", "/transfer", { from_user: u.username, to_user: s.me }, C.builder); } catch (e) { if (e.status !== 503) throw e; }       // 503: this install does not keep saved dashboards
+    }
+    await call("DELETE", `/users/${u.id}?confirm=${encodeURIComponent(confirm)}`);
+  });
 }
 
 function nameDialog(title, value, go, fn) {
