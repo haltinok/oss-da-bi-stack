@@ -24,11 +24,16 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'
     DO $$ BEGIN
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_admin') THEN
         GRANT USAGE ON SCHEMA access TO access_admin;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON access.rls_rule TO access_admin;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON access.rls_rule, access.dataset, access."grant" TO access_admin;
       END IF;
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_auth') THEN
         GRANT USAGE ON SCHEMA access TO access_auth;
-        GRANT SELECT ON access.rls_rule TO access_auth;
+        GRANT SELECT ON access.rls_rule, access.dataset, access."grant" TO access_auth;
+      END IF;
+      -- the dashboard builder reads the datasets and grants to leave out the cubes a person may not read (it has its own login: 03_builder_user.sh)
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'builder_app') THEN
+        GRANT USAGE ON SCHEMA access TO builder_app;
+        GRANT SELECT ON access.dataset, access."grant" TO builder_app;
       END IF;
     END $$;
 EOSQL

@@ -12,7 +12,9 @@
   GET|POST /groups, PUT|DELETE /groups/{id}, PUT|DELETE /groups/{id}/members/{userId}
   GET  /rls/rules                          { rules, regions }: which territories each user or group may see (Postgres schema `access`)
   PUT|DELETE /rls/rules/{user|group}/{name}  set (values: [region, ...]) or remove one
-  GET  /rls/preview/{username}             what that person will see now: their territories, and whether the rules or the dbt seed decided
+  GET  /rls/preview/{username}             what that person will see now: their territories, whether the rules or the dbt seed decided, and the cubes datasets keep from them
+  GET  /datasets                           { datasets, cubes, roles }: named sets of cubes and who may use each (a cube in a dataset is readable only by those with a grant)
+  PUT|DELETE /datasets/{id}                create or replace one (name, description, cubes, grants: [{type: user|group|role, principal}]), or remove it
 
 Every call needs a Keycloak access token of the dashboard client from a person with the `admin` role. The service signs in to Keycloak as its own client
 (`admin-console`), so the browser never holds a Keycloak admin token. Rules kept here, not only on the page: the last active admin cannot be deactivated, deleted or
@@ -31,7 +33,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+import access_resolve
 from access import TYPES, PgRules
+from cubes import cubes as model_cubes
 from keycloak import Keycloak, KeycloakError
 from seed import Seed
 
@@ -358,7 +362,8 @@ def delete_user(uid: str, who: Who, confirm: str = ""):
             raise HTTPException(400, "type the username to confirm the deletion")
         keep_an_admin(who, uid, "delete")
         if rules_or_none():
-            rules().delete("user", u["username"])                                     # a new person with the same username must not inherit it
+            rules().delete("user", u["username"])                                     # a new person with the same username must not inherit them
+            rules().drop_grants("user", u["username"])
         kc().delete_user(uid)
     except KeycloakError as exc:
         fail(exc)
@@ -389,7 +394,8 @@ def rename_group(gid: str, req: GroupRequest, who: Who) -> dict:
         old = next((g["name"] for g in kc().groups() if g["id"] == gid), None)
         kc().rename_group(gid, req.name.strip())
         if old and old != req.name.strip() and rules_or_none():
-            rules().rename("group", old, req.name.strip())                          # a rule follows its group's name
+            rules().rename("group", old, req.name.strip())                          # a rule and a grant follow their group's name
+            rules().rename_grants("group", old, req.name.strip())
     except KeycloakError as exc:
         fail(exc)
     audit(who, "rename_group", group=req.name, id=gid)
@@ -401,7 +407,8 @@ def delete_group(gid: str, who: Who):
     try:
         old = next((g["name"] for g in kc().groups() if g["id"] == gid), None)
         if old and rules_or_none():
-            rules().delete("group", old)                                              # no rule outlives its group
+            rules().delete("group", old)                                              # no rule or grant outlives its group
+            rules().drop_grants("group", old)
         kc().delete_group(gid)
     except KeycloakError as exc:
         fail(exc)
@@ -487,8 +494,10 @@ def preview(username: str, _: Who) -> dict:
         fail(exc)
     names = [g["name"] for g in shaped["groups"]]
     applying = [r for r in store.list() if (r["type"] == "user" and r["principal"] == username) or (r["type"] == "group" and r["principal"] in names)]
+    datasets, grants = store.resolve_input()
     out = {"username": username, "role": shaped["role"], "groups": names, "applies": shaped["role"] in TERRITORY_ROLES,
-           "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying]}
+           "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying],
+           "blocked_cubes": access_resolve.blocked_cubes(datasets, grants, username, shaped["role"] or "", names)}
     if applying:
         return {**out, "territories": sorted({v for r in applying for v in r["values"]}), "source": "rules"}
     sd = seed()
@@ -496,3 +505,69 @@ def preview(username: str, _: Who) -> dict:
     if seeded is None:
         return {**out, "territories": [], "source": "unknown"}
     return {**out, "territories": seeded, "source": "seed" if seeded else "none"}
+
+
+# -------------------------------------------------------------------------------------------------------------------- datasets
+GRANT_ROLES = (*ROLES, "agent")
+
+
+class GrantIn(BaseModel):
+    type: str
+    principal: str = Field(min_length=1, max_length=120)
+
+
+class DatasetRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=400)
+    cubes: list[str] = Field(min_length=1, max_length=100)
+    grants: list[GrantIn] = Field(default=[], max_length=500)
+
+
+@app.get("/datasets")
+def list_datasets(_: Who) -> dict:
+    return {"datasets": rules().datasets(), "cubes": model_cubes(), "roles": list(GRANT_ROLES)}
+
+
+@app.put("/datasets/{dataset_id}")
+def put_dataset(dataset_id: str, req: DatasetRequest, who: Who) -> dict:
+    import re
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", dataset_id):
+        raise HTTPException(400, "the id is lowercase letters, digits, - and _ (at most 40 characters)")
+    store = rules()
+    known = {c["name"] for c in model_cubes()}
+    if known:
+        unknown = [c for c in req.cubes if c not in known]
+        if unknown:
+            raise HTTPException(400, f"no such cube: {unknown[0]}")
+    grants, seen = [], set()
+    try:
+        users, groups = None, None
+        for g in req.grants:
+            if g.type not in ("user", "group", "role"):
+                raise HTTPException(400, "a grant is for a user, a group or a role")
+            if (g.type, g.principal) in seen:
+                continue
+            seen.add((g.type, g.principal))
+            if g.type == "role" and g.principal not in GRANT_ROLES:
+                raise HTTPException(400, f"no such role: {g.principal}")
+            if g.type == "user":
+                users = users if users is not None else {u["username"] for u in kc().users(limit=MAX_USERS)}
+                if g.principal not in users:
+                    raise HTTPException(404, f"no user '{g.principal}'")
+            if g.type == "group":
+                groups = groups if groups is not None else {x["name"] for x in kc().groups()}
+                if g.principal not in groups:
+                    raise HTTPException(404, f"no group '{g.principal}'")
+            grants.append({"type": g.type, "principal": g.principal})
+    except KeycloakError as exc:
+        fail(exc)
+    row = store.put_dataset(dataset_id, req.name.strip(), req.description.strip(), sorted(set(req.cubes)), grants, who.name)
+    audit(who, "set_dataset", id=dataset_id, cubes=row["cubes"], grants=grants)
+    return row
+
+
+@app.delete("/datasets/{dataset_id}", status_code=204, response_class=Response)
+def delete_dataset(dataset_id: str, who: Who):
+    if not rules().delete_dataset(dataset_id):
+        raise HTTPException(404, "no such dataset")
+    audit(who, "delete_dataset", id=dataset_id)

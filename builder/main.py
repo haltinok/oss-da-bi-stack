@@ -31,7 +31,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from builder import core, provider, saved
+from builder import access_resolve, core, provider, saved
 from builder.standin import StandInClient
 from builder.store import PgStore
 
@@ -49,6 +49,30 @@ STORE = PgStore.from_env()                                                   # N
 MODE = os.environ.get("BUILDER_MODE", "auto").lower()
 if MODE not in ("auto", "llm", "standin"):
     raise SystemExit(f"BUILDER_MODE must be auto, llm or standin, got {MODE!r}")
+
+
+def blocked_for(user: "User") -> list[str]:
+    """The cubes this person may not read because of datasets (access_resolve.blocked_cubes), from the access schema through the builder's own login. Cube enforces it on
+    every query whatever this says; this only keeps the builder from offering what would be refused. Without the database, or when it cannot be read, nothing is left out."""
+    if STORE is None or user.role == "admin":
+        return []
+    try:
+        import psycopg2
+        conn = psycopg2.connect(**{**STORE.dsn, "connect_timeout": 3})
+        try:
+            with conn.cursor() as cur:
+                datasets, grants = access_resolve.load(cur)
+        finally:
+            conn.close()
+        return access_resolve.blocked_cubes(datasets, grants, user.name, user.role, user.groups)
+    except Exception as exc:                                                       # noqa: BLE001 (the builder still works; Cube is the one that refuses)
+        print(json.dumps({"event": "access", "warning": f"datasets could not be read: {exc}"[:200]}), flush=True)
+        return []
+
+
+def catalog_for(user: "User"):
+    blocked = blocked_for(user)
+    return core.without_cubes(CATALOG, blocked) if blocked else CATALOG
 
 
 def mode() -> str:
@@ -74,6 +98,7 @@ app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ALLOWED_ORIGINS
 class User(BaseModel):
     name: str
     role: str
+    groups: list[str] = []
 
 
 def current_user(authorization: str = Header(default="")) -> User:
@@ -91,7 +116,7 @@ def current_user(authorization: str = Header(default="")) -> User:
     role = next((r for r in core.ROLES if r in roles), None)
     if role is None:
         raise HTTPException(403, "your account has no dashboard role")
-    return User(name=claims["preferred_username"], role=role)
+    return User(name=claims["preferred_username"], role=role, groups=sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str)))
 
 
 _recent: dict[str, collections.deque] = collections.defaultdict(collections.deque)
@@ -171,7 +196,7 @@ def usage(user: User_) -> dict:
 
 @app.get("/catalog")
 def catalog(user: User_) -> list[dict]:
-    return catalog_json(CATALOG, user.role)
+    return catalog_json(catalog_for(user), user.role)
 
 
 def need_store():
@@ -217,24 +242,24 @@ class RestoreRequest(BaseModel):
 
 @app.get("/saved")
 def saved_list(user: User_, everything: bool = False) -> list[dict]:
-    return saved_call(saved.list_saved, need_store(), CATALOG, who(user), everything=everything)
+    return saved_call(saved.list_saved, need_store(), catalog_for(user), who(user), everything=everything)
 
 
 @app.post("/saved", status_code=201)
 def saved_create(req: SaveRequest, user: User_) -> dict:
-    out = saved_call(saved.save_new, need_store(), CATALOG, who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED)
+    out = saved_call(saved.save_new, need_store(), catalog_for(user), who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED)
     audit({"user": user.name, "role": user.role, "id": out["id"], "visibility": out["visibility"], "shared_roles": out["shared_roles"], "title": out["title"][:80]}, "saved")
     return out
 
 
 @app.get("/saved/{id}")
 def saved_open(id: str, user: User_, version: int | None = None) -> dict:
-    return saved_call(saved.open_saved, need_store(), CATALOG, who(user), id, version)
+    return saved_call(saved.open_saved, need_store(), catalog_for(user), who(user), id, version)
 
 
 @app.put("/saved/{id}")
 def saved_update(id: str, req: UpdateRequest, user: User_) -> dict:
-    out = saved_call(saved.update_saved, need_store(), CATALOG, who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags)
+    out = saved_call(saved.update_saved, need_store(), catalog_for(user), who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags)
     audit({"user": user.name, "role": user.role, "id": id, "version": out["version"], "visibility": out["visibility"], "shared_roles": out["shared_roles"]}, "saved_update")
     return out
 
@@ -253,7 +278,7 @@ def saved_versions(id: str, user: User_) -> list[dict]:
 
 @app.post("/saved/{id}/restore")
 def saved_restore(id: str, req: RestoreRequest, user: User_) -> dict:
-    out = saved_call(saved.restore, need_store(), CATALOG, who(user), id, req.version)
+    out = saved_call(saved.restore, need_store(), catalog_for(user), who(user), id, req.version)
     audit({"user": user.name, "role": user.role, "id": id, "restored": req.version, "version": out["version"]}, "saved_restore")
     return out
 
@@ -264,7 +289,7 @@ class ValidateRequest(BaseModel):
 
 @app.post("/validate")
 def validate(req: ValidateRequest, user: User_) -> dict:
-    built, problems = core.check_submission(req.yaml, CATALOG, user.role)
+    built, problems = core.check_submission(req.yaml, catalog_for(user), user.role)
     return {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "source": built and built["source"], "notes": built["notes"] if built else [], "problems": problems}
 
 
@@ -276,8 +301,12 @@ def build(req: BuildRequest, user: User_) -> dict:
         _recent[user.name].pop()                                  # a refused request does not count against the user
         raise HTTPException(503, "The builder is busy with other requests; try again in a moment.")
     t0, prompt = time.time(), clean(req.prompt)
+    mycat = catalog_for(user)
     try:
-        result = core.run_build(make_client(m, user.role), CATALOG, user.role, prompt, req.current_yaml, mode=m, focus=req.focus)
+        client = make_client(m, user.role)
+        if isinstance(client, StandInClient):
+            client.catalog = mycat                                   # the stand-in composes only from what this person may read
+        result = core.run_build(client, mycat, user.role, prompt, req.current_yaml, mode=m, focus=req.focus)
     except HTTPException:
         raise
     except Exception as exc:  # the model API: a key that is rejected, a timeout, an outage. Never echo anything but the kind of failure.

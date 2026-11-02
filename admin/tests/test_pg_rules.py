@@ -48,3 +48,42 @@ def test_the_auth_login_can_read_but_not_write():
         cur.execute("select count(*) from access.rls_rule")
         with pytest.raises(psycopg2.errors.InsufficientPrivilege):
             cur.execute("delete from access.rls_rule")
+
+
+def test_datasets_and_grants_on_postgres(store):
+    import psycopg2
+    with psycopg2.connect(DSN) as conn, conn.cursor() as cur:
+        cur.execute('delete from access."grant"')
+        cur.execute("delete from access.dataset")
+    row = store.put_dataset("sales", "Sales", "facts", ["internet_sales", "reseller_sales"], [{"type": "role", "principal": "manager"}, {"type": "group", "principal": "EU"}], "root")
+    assert row["cubes"] == ["internet_sales", "reseller_sales"] and {(g["type"], g["principal"]) for g in row["grants"]} == {("role", "manager"), ("group", "EU")}
+    store.put_dataset("sales", "Sales 2", "", ["internet_sales"], [], "root")
+    assert [(d["name"], d["grants"]) for d in store.datasets()] == [("Sales 2", [])]
+    store.put_dataset("sales", "Sales 2", "", ["internet_sales"], [{"type": "group", "principal": "EU"}], "root")
+    store.rename_grants("group", "EU", "Europe")
+    assert store.datasets()[0]["grants"] == [{"type": "group", "principal": "Europe"}]
+    ds, gs = store.resolve_input()
+    assert ds == [{"id": "sales", "cubes": ["internet_sales"]}] and gs == [{"object_id": "sales", "principal_type": "group", "principal": "Europe"}]
+    store.drop_grants("group", "Europe")
+    assert store.datasets()[0]["grants"] == []
+    assert store.delete_dataset("sales") and not store.delete_dataset("sales")
+
+
+def test_the_dataset_tables_refuse_a_bad_id_or_an_empty_cube_list(store):
+    import psycopg2
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        store.put_dataset("Bad Id", "x", "", ["a"], [], "root")
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        store.put_dataset("ok", "x", "", [], [], "root")
+
+
+def test_the_auth_and_builder_logins_read_datasets_but_cannot_write():
+    import psycopg2
+    for dsn in (AUTH_DSN, os.environ.get("BUILDER_TEST_PG_DSN")):
+        if not dsn:
+            continue
+        with psycopg2.connect(dsn) as conn, conn.cursor() as cur:
+            cur.execute("select count(*) from access.dataset")
+            cur.execute('select count(*) from access."grant"')
+            with pytest.raises(psycopg2.errors.InsufficientPrivilege):
+                cur.execute("delete from access.dataset")

@@ -474,7 +474,11 @@ services:
   # The admin console: people, groups and roles over Keycloak (admin/). Every call needs an admin's token; the service signs in to Keycloak as its own
   # `admin-console` client (a service account that may only manage users and groups).
   admin:
-    build: ./admin
+    build:
+      context: ./admin
+      additional_contexts:
+        dashboards: ./dashboards
+        cubemodel: ./cube/model
     profiles: [starrocks]
     restart: unless-stopped
     depends_on:

@@ -28,6 +28,19 @@ the dbt seed (`rls.user_regions`) still decides, exactly as before, so nothing c
 - **Fails closed:** if the rules database cannot be read, the sign-in fails (503) instead of falling back to the seed, which could give someone more than their rule allows.
 - Only the territory dimension exists for now. Inventory roles (`purchasing`, `marketing`) have no territories.
 
+## Datasets
+A **dataset** is a named set of cubes (for example *Sales facts*: `internet_sales`, `reseller_sales`). On the **Datasets** tab you choose its cubes and **who may use it**: people, groups or roles.
+
+- A cube that is in at least one dataset is **governed**: it can be read only by someone with access to a dataset that holds it. Admins always can.
+- A cube in **no** dataset works exactly as before: only the role rules decide. So nothing changes until the first dataset exists.
+- Access can only **narrow** what a role allows. Giving a `rep` access to a dataset does not let them see profit, and giving `purchasing` access to `internet_sales` does not let them query sales.
+- A dataset nobody has access to is readable only by admins: the tab says so, so an empty list is never a surprise.
+- The **preview** on the Row rules tab also lists the cubes datasets keep from a person.
+
+**Where it is enforced.** The auth service puts the cubes a person may not read into the Cube token (`blocked_cubes`) and **Cube refuses any query that touches one**, whatever the dashboard says. The builder and the designer leave
+those cubes out of the person's catalog, so they are not offered (and a saved dashboard that uses one tells its opener why it cannot open). A grant follows its group's rename and goes with a deleted group or person.
+A change shows at the person's next token (15 minutes by default).
+
 ## Rules the service keeps (not only the page)
 - The **last active admin** cannot be deactivated, deleted or demoted.
 - Nobody can deactivate, delete or demote **their own** account.

@@ -15,6 +15,8 @@ import time
 
 import jwt
 import pymysql
+
+import access_resolve
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -95,15 +97,18 @@ def _territories_for(username: str) -> list[str]:
         conn.close()
 
 
-def rule_territories(username: str, groups: list[str]) -> list[str]:
-    """The territories the rules give this person (union over the rules for them and for their groups); [] when no rule applies."""
+def read_access(username: str, role: str, groups: list[str]) -> tuple[list[str], list[str]]:
+    """From the access schema: the territories the rules give this person (union over the rules for them and for their groups; [] when none applies) and the cubes
+    they may not read because of datasets (access_resolve.blocked_cubes)."""
     import psycopg2
     conn = psycopg2.connect(connect_timeout=5, **PG)
     try:
         with conn.cursor() as cur:
             cur.execute("select \"values\" from access.rls_rule where dimension = 'territory' and ((principal_type = 'user' and principal = %s) "
                         "or (principal_type = 'group' and principal = any(%s)))", (username, groups))
-            return sorted({v for (vals,) in cur.fetchall() for v in vals})
+            territories = sorted({v for (vals,) in cur.fetchall() for v in vals})
+            datasets, grants = access_resolve.load(cur)
+        return territories, access_resolve.blocked_cubes(datasets, grants, username, role, groups)
     finally:
         conn.close()
 
@@ -136,22 +141,23 @@ def token(authorization: str = Header(default="")) -> dict:
         raise HTTPException(403, "no dashboard role")
     user = claims["preferred_username"]
     groups = sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str))       # Keycloak's group-membership mapper (the `dashboard` client)
+    ruled: list[str] = []
+    blocked: list[str] = []
+    if RULES_ON:
+        try:
+            ruled, blocked = read_access(user, role, groups)
+        except Exception as exc:                                                                  # noqa: BLE001 (any failure to read the rules fails the sign-in)
+            raise HTTPException(503, "the access rules cannot be read right now") from exc
     territories: list[str] = []
     if role in TERRITORY_ROLES:
-        if RULES_ON:
-            try:
-                territories = rule_territories(user, groups)
-            except Exception as exc:                                                              # noqa: BLE001 (any failure to read the rules fails the sign-in)
-                raise HTTPException(503, "the access rules cannot be read right now") from exc
-        if not territories:
-            territories = territories_for(user)                                                   # no rule for this person or their groups: the dbt seed decides
+        territories = ruled or territories_for(user)                                              # no rule for this person or their groups: the dbt seed decides
         if not territories:
             raise HTTPException(403, "no territories assigned")
 
     now = int(time.time())
     cube_token = jwt.encode(
-        {"user_id": user, "role": role, "territories": territories, "groups": groups, "iat": now, "exp": now + TTL},
+        {"user_id": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "iat": now, "exp": now + TTL},
         CUBE_SECRET,
         algorithm="HS256",
     )
-    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "groups": groups}
+    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked}

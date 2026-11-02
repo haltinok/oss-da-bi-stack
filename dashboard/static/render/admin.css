@@ -41,3 +41,5 @@
 @media (max-width: 720px) { .adm-table .hide-s { display: none; } }
 .adm-preview { margin-top: 22px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .adm-preview h3 { margin: 0 0 8px; font-size: 14px; }
+.adm-grants { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 8px; min-height: 24px; }
+.adm-x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 0 0 4px; font: inherit; }

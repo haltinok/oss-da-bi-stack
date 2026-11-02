@@ -99,6 +99,13 @@ function queryRewrite(query, { securityContext }) {
   const members = membersOf(query);
   const cubes = new Set(members.map((m) => m.split('.')[0]));
 
+  // Datasets (admin console): a cube that is in a dataset the person has no grant on. The auth service puts the list in the token; no list, nothing blocked.
+  const blockedCubes = Array.isArray(sc.blocked_cubes) ? sc.blocked_cubes : [];
+  const hidden = [...cubes].find((c) => blockedCubes.includes(c));
+  if (hidden) {
+    throw forbidden(`'${hidden}' is in a dataset you have no access to`);
+  }
+
   // Cost/profit are hidden from reps, whichever cube asks for them.
   if (sc.role === 'rep' && members.some((m) => PROFIT_MEMBERS.has(m.split('.')[1]))) {
     throw forbidden('Profit and margin are not available for your role');
