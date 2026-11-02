@@ -38,7 +38,7 @@ def _can_see(row: dict, who: Who) -> bool:
 
 
 def _readable_for(row: dict, catalog, role: str) -> tuple[bool, list[str]]:
-    key = (row["id"], row["version"], role)
+    key = (row["id"], row["version"], role, tuple(sorted(catalog.cubes)))              # the cubes the opener may read are part of the answer (datasets)
     if key not in _readable:
         if len(_readable) > 5000:
             _readable.clear()

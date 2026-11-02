@@ -40,7 +40,7 @@ async function call(method, path, body) {
   throw new Error("not signed in");
 }
 
-const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], regions: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
+const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], regions: [], datasets: [], cubes: [], grantRoles: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
 const main = $("#main");
 const dlg = $("#dlg");
 const nameOf = (u) => [u.firstName, u.lastName].filter(Boolean).join(" ");
@@ -51,15 +51,18 @@ async function load() {
   const [u, g] = await Promise.all([call("GET", `/users?${qs}`), call("GET", "/groups")]);
   s.users = u.users; s.total = u.total; s.groups = g.groups;
   try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.rulesOff = true; }
+  if (!s.rulesOff) { const d = await call("GET", "/datasets"); s.datasets = d.datasets; s.cubes = d.cubes; s.grantRoles = d.roles; } else { s.datasets = []; }
 }
 async function refresh() { try { await load(); draw(); show(""); } catch (e) { show(`${t.failed} ${e.message}`); } }
 
 // ------------------------------------------------------------------------------------------------------------------ the page
 function draw() {
-  const tabs = `<div class="adm-tabs" role="tablist"><button role="tab" data-tab="users" aria-selected="${s.tab === "users"}">${esc(t.users)}</button><button role="tab" data-tab="groups" aria-selected="${s.tab === "groups"}">${esc(t.groups)}</button><button role="tab" data-tab="rules" aria-selected="${s.tab === "rules"}">${esc(t.rules)}</button></div>`;
-  main.innerHTML = `<div class="adm-page">${tabs}${s.tab === "users" ? usersHtml() : s.tab === "groups" ? groupsHtml() : rulesHtml()}</div>`;
+  const typing = document.activeElement?.id === "q" ? { value: document.activeElement.value, at: document.activeElement.selectionStart } : null;      // a list that arrives while you type must not eat what you typed
+  const tabs = `<div class="adm-tabs" role="tablist"><button role="tab" data-tab="users" aria-selected="${s.tab === "users"}">${esc(t.users)}</button><button role="tab" data-tab="groups" aria-selected="${s.tab === "groups"}">${esc(t.groups)}</button><button role="tab" data-tab="rules" aria-selected="${s.tab === "rules"}">${esc(t.rules)}</button><button role="tab" data-tab="datasets" aria-selected="${s.tab === "datasets"}">${esc(t.datasets)}</button></div>`;
+  main.innerHTML = `<div class="adm-page">${tabs}${s.tab === "users" ? usersHtml() : s.tab === "groups" ? groupsHtml() : s.tab === "rules" ? rulesHtml() : datasetsHtml()}</div>`;
   main.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { s.tab = b.dataset.tab; draw(); }));
-  if (s.tab === "users") wireUsers(); else if (s.tab === "groups") wireGroups(); else wireRules();
+  if (s.tab === "users") wireUsers(); else if (s.tab === "groups") wireGroups(); else if (s.tab === "rules") wireRules(); else wireDatasets();
+  if (typing && $("#q")) { $("#q").value = typing.value; $("#q").focus(); $("#q").setSelectionRange(typing.at, typing.at); }
 }
 
 const opts = (items, current, first) => `${first ? `<option value="">${esc(first)}</option>` : ""}${items.map(([v, label]) => `<option value="${esc(v)}"${v === current ? " selected" : ""}>${esc(label)}</option>`).join("")}`;
@@ -124,10 +127,11 @@ function rulesHtml() {
 }
 
 function previewHtml(p) {
-  if (!p.applies) return `<p class="hint">${esc(t.previewNa)}</p>`;
+  if (!p.applies) return `<p class="hint">${esc(t.previewNa)}</p><p class="hint">${esc(t.blockedCubes)}: ${(p.blocked_cubes || []).map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("") || esc(t.noneBlocked)}</p>`;
   const chips = p.territories.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("") || `<span class="hint">${esc(t.none)}</span>`;
   const via = p.rules.length ? `<p class="hint">${esc(t.previewVia)}: ${p.rules.map((r) => `${esc(r.principal)} (${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)})`).join(", ")}</p>` : "";
-  return `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>${via}`;
+  const blocked = `<p class="hint">${esc(t.blockedCubes)}: ${(p.blocked_cubes || []).map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("") || esc(t.noneBlocked)}</p>`;
+  return `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>${via}${blocked}`;
 }
 
 function wireRules() {
@@ -169,6 +173,59 @@ async function ruleDialog(rule) {
     await call("PUT", `/rls/rules/${type_}/${encodeURIComponent(principal)}`, { values });
   });
   form.querySelector("[name=type]").addEventListener("change", (e) => { form.querySelector("[name=principal]").innerHTML = opts(principals(e.target.value), ""); });
+}
+
+// ------------------------------------------------------------------------------------------------------------------ datasets
+function datasetsHtml() {
+  if (s.rulesOff) return `<p class="adm-empty" role="status">${esc(t.rulesOff)}</p>`;
+  const who = (g) => `<span class="adm-chip" title="${esc(t.grantType[g.type])}">${esc(g.type === "role" ? `role: ${g.principal}` : g.type === "group" ? `group: ${g.principal}` : g.principal)}</span>`;
+  const rows = s.datasets.map((d) => `<tr data-id="${esc(d.id)}"><td><strong>${esc(d.name)}</strong><br><span class="hint">${esc(d.description)}</span></td>
+      <td>${d.cubes.map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("")}</td>
+      <td>${d.grants.map(who).join("") || `<span class="hint">${esc(t.nobodyYet)}</span>`}</td>
+      <td class="adm-act"><button class="adm-btn mini" data-act="edit">${esc(t.edit)}</button><button class="adm-btn mini danger" data-act="delete">${esc(t.delete)}</button></td></tr>`).join("");
+  return `<p class="hint">${esc(t.datasetsHint)}</p><div class="adm-bar"><span class="spacer"></span><button class="adm-btn primary" id="new-dataset">${esc(t.newDataset)}</button></div>
+    ${s.datasets.length ? `<table class="adm-table"><thead><tr><th>${esc(t.datasetName)}</th><th>${esc(t.datasetCubes)}</th><th>${esc(t.datasetAccess)}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="adm-empty">${esc(t.noDatasets)}</p>`}`;
+}
+
+function wireDatasets() {
+  if (s.rulesOff) return;
+  $("#new-dataset").addEventListener("click", () => datasetDialog());
+  main.querySelectorAll("tr[data-id] [data-act]").forEach((b) => b.addEventListener("click", () => {
+    const d = s.datasets.find((x) => x.id === b.closest("tr").dataset.id);
+    if (b.dataset.act === "edit") datasetDialog(d);
+    else confirmDialog(t.datasetDelete, t.datasetDeleteWhy(d.name), t.delete, () => call("DELETE", `/datasets/${encodeURIComponent(d.id)}`));
+  }));
+}
+
+const slug = (name) => name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "dataset";
+
+async function datasetDialog(d) {
+  const all = (await call("GET", "/users?max=200")).users;
+  const grants = (d?.grants || []).map((g) => ({ ...g }));
+  const picked = new Set(d?.cubes || []);
+  const choices = (type) => (type === "user" ? all.map((u) => u.username) : type === "group" ? s.groups.map((g) => g.name) : s.grantRoles);
+  const form = openForm(`<h2>${esc(d ? `${t.edit}: ${d.name}` : t.newDataset)}</h2>
+    <label>${esc(t.datasetName)}<input name="name" value="${esc(d?.name || "")}" maxlength="80" required></label>
+    <label>${esc(t.datasetDesc)}<input name="description" value="${esc(d?.description || "")}" maxlength="400"></label>
+    <label>${esc(t.datasetCubes)}<div class="groups-pick" role="group" aria-label="${esc(t.datasetCubes)}">${s.cubes.map((c) => `<label title="${esc(c.description)}"><input type="checkbox" name="c" value="${esc(c.name)}"${picked.has(c.name) ? " checked" : ""}> ${esc(c.name)} <span class="hint">(${c.measures + c.dimensions})</span></label>`).join("")}</div></label>
+    <div><span class="hint">${esc(t.datasetAccess)}</span><div id="grant-list" class="adm-grants"></div>
+      <div class="row"><select id="g-type" aria-label="${esc(t.ruleFor)}">${opts([["user", t.grantType.user], ["group", t.grantType.group], ["role", t.grantType.role]], "role")}</select>
+      <select id="g-who" aria-label="${esc(t.ruleWho)}"></select></div><button type="button" class="adm-btn mini" id="g-add">${esc(t.grantAdd)}</button></div>
+    ${foot(t.datasetSave)}`, async (f) => {
+    const v = Object.fromEntries(new FormData(f));
+    const cubes = [...f.querySelectorAll("[name=c]:checked")].map((c) => c.value);
+    if (!cubes.length) throw new Error(t.pickCube);
+    await call("PUT", `/datasets/${encodeURIComponent(d?.id || slug(v.name))}`, { name: v.name.trim(), description: (v.description || "").trim(), cubes, grants });
+  });
+  const list = form.querySelector("#grant-list"), type = form.querySelector("#g-type"), who = form.querySelector("#g-who");
+  const drawGrants = () => {
+    list.innerHTML = grants.map((g, i) => `<span class="adm-chip">${esc(`${t.grantType[g.type]}: ${g.principal}`)} <button type="button" class="adm-x" data-rm="${i}" aria-label="${esc(t.remove)} ${esc(g.principal)}">✕</button></span>`).join("") || `<span class="hint">${esc(t.nobodyYet)}</span>`;
+    list.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => { grants.splice(Number(b.dataset.rm), 1); drawGrants(); }));
+  };
+  const drawWho = () => { who.innerHTML = opts(choices(type.value).map((x) => [x, x]), "", t.grantPick); };
+  type.addEventListener("change", drawWho);
+  form.querySelector("#g-add").addEventListener("click", () => { if (who.value && !grants.some((g) => g.type === type.value && g.principal === who.value)) { grants.push({ type: type.value, principal: who.value }); drawGrants(); } });
+  drawGrants(); drawWho();
 }
 
 // ------------------------------------------------------------------------------------------------------------------ dialogs

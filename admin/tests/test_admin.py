@@ -232,3 +232,62 @@ def test_a_rule_follows_its_groups_name_and_goes_with_the_group_or_the_user(rule
     assert [(r["type"], r["principal"]) for r in ruled.get("/rls/rules").json()["rules"]] == [("user", "de_rep")]
     assert ruled.delete(f"/users/{uid}?confirm=de_rep").status_code == 204
     assert ruled.get("/rls/rules").json()["rules"] == []                                 # a new "de_rep" must not inherit the old rule
+
+
+# ---- datasets and grants
+def test_datasets_are_off_without_a_store(api, monkeypatch):
+    monkeypatch.setattr(main, "_rules", None)
+    assert api.get("/datasets").status_code == 503
+
+
+def test_create_a_dataset_with_grants_and_list_it(ruled, kc):
+    kc.add("de_rep", "rep")
+    ruled.post("/groups", json={"name": "Finance"})
+    r = ruled.put("/datasets/sales", json={"name": "Sales", "description": "revenue facts", "cubes": ["reseller_sales", "internet_sales", "internet_sales"],
+                                           "grants": [{"type": "user", "principal": "de_rep"}, {"type": "group", "principal": "Finance"}, {"type": "role", "principal": "manager"}, {"type": "role", "principal": "manager"}]})
+    assert r.status_code == 200 and r.json()["cubes"] == ["internet_sales", "reseller_sales"] and len(r.json()["grants"]) == 3
+    out = ruled.get("/datasets").json()
+    assert [d["id"] for d in out["datasets"]] == ["sales"] and "internet_sales" in {c["name"] for c in out["cubes"]} and "agent" in out["roles"]
+
+
+def test_a_dataset_needs_real_cubes_principals_and_a_clean_id(ruled, kc):
+    ok = {"name": "S", "cubes": ["internet_sales"], "grants": []}
+    assert ruled.put("/datasets/Bad Id", json=ok).status_code in (400, 404)
+    assert ruled.put("/datasets/s", json={**ok, "cubes": ["nope"]}).status_code == 400
+    assert ruled.put("/datasets/s", json={**ok, "cubes": []}).status_code == 422
+    assert ruled.put("/datasets/s", json={**ok, "grants": [{"type": "user", "principal": "ghost"}]}).status_code == 404
+    assert ruled.put("/datasets/s", json={**ok, "grants": [{"type": "group", "principal": "Nope"}]}).status_code == 404
+    assert ruled.put("/datasets/s", json={**ok, "grants": [{"type": "role", "principal": "king"}]}).status_code == 400
+    assert ruled.put("/datasets/s", json={**ok, "grants": [{"type": "team", "principal": "x"}]}).status_code == 400
+
+
+def test_replacing_and_deleting_a_dataset(ruled):
+    body = {"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "manager"}]}
+    ruled.put("/datasets/sales", json=body)
+    ruled.put("/datasets/sales", json={**body, "name": "Sales 2", "grants": []})
+    d = ruled.get("/datasets").json()["datasets"]
+    assert len(d) == 1 and d[0]["name"] == "Sales 2" and d[0]["grants"] == []
+    assert ruled.delete("/datasets/sales").status_code == 204
+    assert ruled.delete("/datasets/sales").status_code == 404
+
+
+def test_preview_lists_the_cubes_datasets_keep_from_a_person(ruled, kc):
+    kc.add("de_rep", "rep")
+    kc.add("na_manager", "manager")
+    ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales", "products"], "grants": [{"type": "user", "principal": "de_rep"}]})
+    assert ruled.get("/rls/preview/de_rep").json()["blocked_cubes"] == []
+    assert ruled.get("/rls/preview/na_manager").json()["blocked_cubes"] == ["internet_sales", "products"]
+    assert ruled.get("/rls/preview/root").json()["blocked_cubes"] == []
+
+
+def test_grants_follow_a_group_and_go_with_a_group_or_person(ruled, kc):
+    kc.add("de_rep", "rep")
+    gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
+    ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "group", "principal": "EU team"}, {"type": "user", "principal": "de_rep"}]})
+    ruled.put(f"/groups/{gid}", json={"name": "Europe"})
+    assert {(g["type"], g["principal"]) for g in ruled.get("/datasets").json()["datasets"][0]["grants"]} == {("group", "Europe"), ("user", "de_rep")}
+    ruled.delete(f"/groups/{gid}")
+    assert [(g["type"], g["principal"]) for g in ruled.get("/datasets").json()["datasets"][0]["grants"]] == [("user", "de_rep")]
+    uid = next(u for u, v in kc.users_.items() if v["username"] == "de_rep")
+    assert ruled.delete(f"/users/{uid}?confirm=de_rep").status_code == 204
+    assert ruled.get("/datasets").json()["datasets"][0]["grants"] == []

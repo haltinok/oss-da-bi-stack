@@ -21,6 +21,11 @@ const EN = {
   preview: "What will this person see?", previewPick: "Choose a person", previewGo: "Show", previewNa: "Territory rules do not apply to this role (it works on inventory).",
   previewSource: { rules: "from the rules", seed: "from the dbt seed (no rule applies)", none: "nothing: no rule and nothing in the seed, so they cannot see sales data", unknown: "unknown: the seed cannot be read right now" },
   previewVia: "Rules that apply", pickOne: "Choose at least one territory.",
+  datasets: "Datasets", datasetsHint: "A dataset is a named set of cubes. A cube that is in a dataset can only be read by the people, groups and roles you give access to (admins always can). A cube in no dataset works as before. Access can only narrow what a role allows.",
+  newDataset: "New dataset", datasetName: "Name", datasetDesc: "Description", datasetCubes: "Cubes", datasetAccess: "Who may use it", datasetCubesCount: (n) => `${n} cube${n === 1 ? "" : "s"}`,
+  noDatasets: "No datasets yet: every cube works as its role allows.", nobodyYet: "Nobody has access yet: only admins can read these cubes.", grantType: { user: "A person", group: "A group", role: "A role" }, grantPick: "Choose…",
+  grantAdd: "Give access", datasetSave: "Save dataset", datasetDelete: "Delete this dataset?", datasetDeleteWhy: (n) => `The cubes in ${n} are no longer governed by it: they go back to what each role allows, unless another dataset holds them.`,
+  pickCube: "Choose at least one cube.", blockedCubes: "Cubes kept from this person by datasets", noneBlocked: "none",
   saved: "Saved.", failed: "Could not do that:", you: "you", rolesHint: { admin: "everything, and this console", manager: "sales, by territory", rep: "sales, own territory, no profit", purchasing: "inventory", marketing: "inventory, no supplier data" },
 };
 const TR = {
@@ -45,6 +50,11 @@ const TR = {
   preview: "Bu kişi ne görecek?", previewPick: "Bir kişi seçin", previewGo: "Göster", previewNa: "Bölge kuralları bu role uygulanmaz (envanter üzerinde çalışır).",
   previewSource: { rules: "kurallardan", seed: "dbt tohumundan (kural uygulanmıyor)", none: "hiçbir şey: kural da tohumda kayıt da yok, satış verisini göremez", unknown: "bilinmiyor: tohum şu an okunamıyor" },
   previewVia: "Uygulanan kurallar", pickOne: "En az bir bölge seçin.",
+  datasets: "Veri kümeleri", datasetsHint: "Veri kümesi, adlandırılmış bir küp kümesidir. Bir veri kümesindeki küpü yalnızca erişim verdiğiniz kişiler, gruplar ve roller okuyabilir (yöneticiler her zaman). Hiçbir veri kümesinde olmayan küp eskisi gibi çalışır. Erişim, rolün izin verdiğini yalnızca daraltır.",
+  newDataset: "Yeni veri kümesi", datasetName: "Ad", datasetDesc: "Açıklama", datasetCubes: "Küpler", datasetAccess: "Kimler kullanabilir", datasetCubesCount: (n) => `${n} küp`,
+  noDatasets: "Henüz veri kümesi yok: her küp rolün izin verdiği gibi çalışır.", nobodyYet: "Henüz kimseye erişim verilmedi: bu küpleri yalnızca yöneticiler okuyabilir.", grantType: { user: "Bir kişi", group: "Bir grup", role: "Bir rol" }, grantPick: "Seçin…",
+  grantAdd: "Erişim ver", datasetSave: "Veri kümesini kaydet", datasetDelete: "Bu veri kümesi silinsin mi?", datasetDeleteWhy: (n) => `${n} içindeki küpler artık onun tarafından yönetilmez: başka bir veri kümesinde değilse rolün izin verdiğine dönerler.`,
+  pickCube: "En az bir küp seçin.", blockedCubes: "Veri kümelerinin bu kişiden sakladığı küpler", noneBlocked: "yok",
   saved: "Kaydedildi.", failed: "Yapılamadı:", you: "siz", rolesHint: { admin: "her şey ve bu sayfa", manager: "satış, bölgeye göre", rep: "satış, kendi bölgesi, kâr yok", purchasing: "envanter", marketing: "envanter, tedarikçi verisi yok" },
 };
 export const adminStrings = (lang) => ({ ...EN, ...(lang === "tr" ? TR : {}) });

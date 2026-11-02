@@ -164,7 +164,8 @@ def saved_answer(path, body, method, c):
 
 
 # ---- the admin service (admin/) on an in-memory directory: the same endpoints and refusals the page relies on
-ADMIN = {"users": {}, "groups": {}, "rules": {}, "rules_off": False, "n": 0}
+ADMIN = {"users": {}, "groups": {}, "rules": {}, "datasets": {}, "rules_off": False, "n": 0}
+CUBES = [{"name": n, "description": f"The {n} cube", "measures": 3, "dimensions": 5} for n in ("customers", "dates", "internet_sales", "inventory_health", "products", "reseller_sales", "territories")]
 REGIONS = ["Canada", "France", "Germany", "United States"]
 SEED_REGIONS = {"admin": REGIONS, "na_manager": ["Canada", "United States"], "de_rep": ["Germany"]}
 ROLES = ["admin", "manager", "rep", "purchasing", "marketing"]
@@ -172,7 +173,7 @@ TEMP_VALUE = "x" * 14                                  # what the mock shows as 
 
 
 def reset_admin():
-    ADMIN.update(users={}, groups={}, rules={}, rules_off=False, n=0)
+    ADMIN.update(users={}, groups={}, rules={}, datasets={}, rules_off=False, n=0)
     for name, role in (("admin", "admin"), ("na_manager", "manager"), ("de_rep", "rep")):
         _add_user(name, role)
 
@@ -195,6 +196,21 @@ def admin_answer(path, body, method, query):
     shape = lambda u: {**u, "groups": [{"id": g, "name": groups[g]["name"]} for g in u["groups"] if g in groups]}
     if parts == ["roles"]:
         return 200, {"roles": ROLES}
+    if parts[:1] == ["datasets"]:
+        if ADMIN["rules_off"]:
+            return 503, {"detail": "row-level rules are off: set ADMIN_DB_PASSWORD and run postgres/sync-access.sh"}
+        sets = ADMIN["datasets"]
+        if parts == ["datasets"] and method == "GET":
+            return 200, {"datasets": [{**d, "updated_by": "admin"} for d in sorted(sets.values(), key=lambda d: d["name"].lower())], "cubes": CUBES, "roles": [*ROLES, "agent"]}
+        if len(parts) == 2 and method == "PUT":
+            known = {c["name"] for c in CUBES}
+            if any(c not in known for c in body["cubes"]):
+                return 400, {"detail": "no such cube"}
+            sets[parts[1]] = {"id": parts[1], "name": body["name"], "description": body.get("description", ""), "cubes": sorted(set(body["cubes"])), "grants": body.get("grants", [])}
+            return 200, sets[parts[1]]
+        if len(parts) == 2 and method == "DELETE":
+            return (204, None) if sets.pop(parts[1], None) is not None else (404, {"detail": "no such dataset"})
+        return 404, {"detail": "not found"}
     if parts[:1] == ["rls"]:
         if ADMIN["rules_off"]:
             return 503, {"detail": "row-level rules are off: set ADMIN_DB_PASSWORD and run postgres/sync-access.sh"}
@@ -212,7 +228,11 @@ def admin_answer(path, body, method, query):
                 return 404, {"detail": f"no user '{parts[2]}'"}
             names = [groups[g]["name"] for g in u["groups"] if g in groups]
             hits = [(t, p, v) for (t, p), v in rules.items() if (t == "user" and p == u["username"]) or (t == "group" and p in names)]
-            base = {"username": u["username"], "role": u["role"], "groups": names, "applies": u["role"] in ("admin", "manager", "rep"), "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits]}
+            gov = {c for d in ADMIN["datasets"].values() for c in d["cubes"]}
+            mine = {d["id"] for d in ADMIN["datasets"].values() if any((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names) for g in d["grants"])}
+            allowed = {c for d in ADMIN["datasets"].values() if d["id"] in mine for c in d["cubes"]}
+            blocked = [] if u["role"] == "admin" else sorted(gov - allowed)
+            base = {"username": u["username"], "role": u["role"], "groups": names, "applies": u["role"] in ("admin", "manager", "rep"), "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked}
             if hits:
                 return 200, {**base, "territories": sorted({x for _, _, v in hits for x in v}), "source": "rules"}
             seeded = SEED_REGIONS.get(u["username"], [])

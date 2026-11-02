@@ -22,7 +22,7 @@ def load(monkeypatch):
     return importlib.import_module("main")
 
 
-def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",)):
+def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",), blocked=()):
     main = load(monkeypatch)
 
     class Key:
@@ -34,13 +34,13 @@ def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manage
     monkeypatch.setattr(main, "territories_for", lambda user: list(seed))
     calls = []
 
-    def fake_rules(user, grps):
-        calls.append((user, list(grps)))
+    def fake_access(user, role_, grps):
+        calls.append((user, role_, list(grps)))
         if isinstance(rules, Exception):
             raise rules
-        return list(rules or [])
+        return list(rules or []), list(blocked)
 
-    monkeypatch.setattr(main, "rule_territories", fake_rules)
+    monkeypatch.setattr(main, "read_access", fake_access)
     r = TestClient(main.app).post("/token", headers={"Authorization": "Bearer t"})
     return r, calls
 
@@ -52,7 +52,7 @@ def cube_territories(r):
 def test_a_rule_replaces_the_seed(monkeypatch):
     r, calls = sign_in(monkeypatch, rules_on=True, rules=["Germany", "France"])
     assert r.status_code == 200 and r.json()["territories"] == cube_territories(r) == ["Germany", "France"]
-    assert calls == [("ayse", ["Sales"])]                                      # the person and their groups are what the rules are asked about
+    assert calls == [("ayse", "manager", ["Sales"])]                                      # the person and their groups are what the rules are asked about
 
 
 def test_with_no_rule_the_seed_still_decides(monkeypatch):
@@ -75,6 +75,17 @@ def test_nobody_in_a_territory_role_without_rule_or_seed_gets_in(monkeypatch):
     assert r.status_code == 403
 
 
-def test_inventory_roles_have_no_territories_and_never_ask(monkeypatch):
-    r, calls = sign_in(monkeypatch, rules_on=True, rules=["Germany"], role="purchasing")
-    assert r.status_code == 200 and r.json()["territories"] == [] and calls == []
+def test_inventory_roles_have_no_territories_even_when_a_rule_names_some(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"], role="purchasing")
+    assert r.status_code == 200 and r.json()["territories"] == []
+
+
+def test_the_cubes_a_person_may_not_read_travel_in_the_cube_token(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], blocked=["internet_sales"])
+    assert r.json()["blocked_cubes"] == ["internet_sales"]
+    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["blocked_cubes"] == ["internet_sales"]
+
+
+def test_without_a_rules_login_nothing_is_blocked(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=False, blocked=["internet_sales"])
+    assert r.json()["blocked_cubes"] == []
