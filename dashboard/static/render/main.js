@@ -38,7 +38,8 @@ const client = createCubeClient({
   onSession(s) {
     if ($("#who")) return;
     const t = stringsFor(uiLocale(navigator.language));
-    const who = el("div", { id: "who", class: "who", title: t.signedInAs(s.user, s.role) }, `${esc(s.user)} · <a href="#" id="signout">${esc(t.signOut)}</a>`);
+    const adminLink = s.role === "admin" ? `<a href="/admin/" id="admin-link">${langOf(uiLocale(navigator.language)) === "tr" ? "Yönetim" : "Admin"}</a> · ` : "";
+    const who = el("div", { id: "who", class: "who", title: t.signedInAs(s.user, s.role) }, `${adminLink}${esc(s.user)} · <a href="#" id="signout">${esc(t.signOut)}</a>`);
     who.dataset.user = s.user;
     who.dataset.role = s.role;
     $("#tools").append(who);

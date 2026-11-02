@@ -38,3 +38,28 @@ else
   echo "client inventory-agent: exists (secret refreshed)"
 fi
 kc add-roles -r spike --uusername service-account-inventory-agent --rolename agent >/dev/null 2>&1 && echo "service account: agent role set" || echo "service account: role not set"
+
+# The admin console: a confidential client whose service account may manage users and groups (and nothing else of the realm).
+cid=$(kc get clients -r spike -q clientId=admin-console --fields id --format csv --noquotes)
+if [ -z "$cid" ]; then
+  kc create clients -r spike -s clientId=admin-console -s publicClient=false -s serviceAccountsEnabled=true \
+    -s standardFlowEnabled=false -s directAccessGrantsEnabled=false -s "secret=${ADMIN_CLIENT_SECRET:?}" >/dev/null
+  echo "client admin-console: created"
+else
+  kc update "clients/$cid" -r spike -s "secret=${ADMIN_CLIENT_SECRET:?}" >/dev/null
+  echo "client admin-console: exists (secret refreshed)"
+fi
+for role in manage-users view-users query-users query-groups view-realm; do
+  kc add-roles -r spike --uusername service-account-admin-console --cclientid realm-management --rolename "$role" >/dev/null 2>&1 || true
+done
+echo "service account: realm-management roles set"
+
+# The groups a person belongs to travel in the access token (claim `groups`), which the auth service passes on in the Cube token.
+dash=$(kc get clients -r spike -q clientId=dashboard --fields id --format csv --noquotes)
+if kc get "clients/$dash/protocol-mappers/models" -r spike --fields name --format csv --noquotes | grep -qx groups; then
+  echo "mapper groups: exists"
+else
+  kc create "clients/$dash/protocol-mappers/models" -r spike -s name=groups -s protocol=openid-connect -s protocolMapper=oidc-group-membership-mapper \
+    -s 'config."claim.name"=groups' -s 'config."full.path"=false' -s 'config."id.token.claim"=true' -s 'config."access.token.claim"=true' -s 'config."userinfo.token.claim"=true' >/dev/null
+  echo "mapper groups: created"
+fi
