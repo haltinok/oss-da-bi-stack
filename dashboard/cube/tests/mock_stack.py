@@ -163,6 +163,88 @@ def saved_answer(path, body, method, c):
     return 404, {"detail": "not found"}
 
 
+# ---- the admin service (admin/) on an in-memory directory: the same endpoints and refusals the page relies on
+ADMIN = {"users": {}, "groups": {}, "n": 0}
+ROLES = ["admin", "manager", "rep", "purchasing", "marketing"]
+
+
+def reset_admin():
+    ADMIN.update(users={}, groups={}, n=0)
+    for name, role in (("admin", "admin"), ("na_manager", "manager"), ("de_rep", "rep")):
+        _add_user(name, role)
+
+
+def _add_user(username, role, **extra):
+    ADMIN["n"] += 1
+    uid = f"u{ADMIN['n']}"
+    ADMIN["users"][uid] = {"id": uid, "username": username, "email": f"{username}@spike.local", "firstName": "", "lastName": "", "enabled": True, "role": role, "groups": [], **extra}
+    return uid
+
+
+def admin_answer(path, body, method, query):
+    if ROLE["role"] != "admin":
+        return 403, {"detail": "only an admin can use the console"}
+    if not ADMIN["users"]:
+        reset_admin()
+    users, groups = ADMIN["users"], ADMIN["groups"]
+    q = {k: v[0] for k, v in (query or {}).items()}
+    parts = [p for p in path.split("/") if p]
+    shape = lambda u: {**u, "groups": [{"id": g, "name": groups[g]["name"]} for g in u["groups"] if g in groups]}
+    if parts == ["roles"]:
+        return 200, {"roles": ROLES}
+    if parts == ["users"] and method == "GET":
+        rows = [u for u in users.values() if (not q.get("search") or q["search"].lower() in (u["username"] + u["email"]).lower()) and (not q.get("role") or u["role"] == q["role"])
+                and (not q.get("group") or q["group"] in u["groups"]) and (q.get("enabled") is None or u["enabled"] == (q["enabled"] == "true"))]
+        rows.sort(key=lambda u: u["username"])
+        return 200, {"users": [shape(u) for u in rows], "total": len(rows)}
+    if parts == ["users"] and method == "POST":
+        if any(u["username"] == body["username"] for u in users.values()):
+            return 409, {"detail": "User exists with same username"}
+        uid = _add_user(body["username"], body["role"], email=body.get("email", ""), firstName=body.get("firstName", ""), lastName=body.get("lastName", ""), groups=list(body.get("groups", [])))
+        return 201, shape(users[uid])
+    if len(parts) >= 2 and parts[0] == "users" and parts[1] in users:
+        u = users[parts[1]]
+        if len(parts) == 2 and method == "PUT":
+            u.update({k: v for k, v in body.items() if k in ("firstName", "lastName", "email", "role", "groups") and v is not None})
+            return 200, shape(u)
+        if len(parts) == 2 and method == "DELETE":
+            if q.get("confirm") != u["username"]:
+                return 400, {"detail": "type the username to confirm the deletion"}
+            del users[u["id"]]
+            return 204, None
+        if parts[2:] in (["disable"], ["enable"]):
+            if u["username"] == "admin" and parts[2] == "disable":
+                return 409, {"detail": "you cannot deactivate your own account"}
+            u["enabled"] = parts[2] == "enable"
+            return 200, shape(u)
+        if parts[2:] == ["password"]:
+            return 200, {"ok": True}
+        if parts[2:] == ["reset-password"]:
+            return 200, {"ok": True, "emailed": True} if body.get("email") else {"ok": True, "emailed": False, "temporary_password": "Temp-Pass-123456"}
+    if parts == ["groups"] and method == "GET":
+        return 200, {"groups": [{"id": g, "name": v["name"], "members": sum(1 for u in users.values() if g in u["groups"])} for g, v in groups.items()]}
+    if parts == ["groups"] and method == "POST":
+        ADMIN["n"] += 1
+        gid = f"g{ADMIN['n']}"
+        groups[gid] = {"name": body["name"]}
+        return 201, {"id": gid, "name": body["name"], "members": 0}
+    if len(parts) >= 2 and parts[0] == "groups" and parts[1] in groups:
+        if len(parts) == 2 and method == "PUT":
+            groups[parts[1]]["name"] = body["name"]
+            return 200, {"id": parts[1], "name": body["name"]}
+        if len(parts) == 2 and method == "DELETE":
+            del groups[parts[1]]
+            return 204, None
+        if len(parts) == 4 and parts[2] == "members" and parts[3] in users:
+            member = users[parts[3]]["groups"]
+            if method == "PUT" and parts[1] not in member:
+                member.append(parts[1])
+            if method == "DELETE" and parts[1] in member:
+                member.remove(parts[1])
+            return 204, None
+    return 404, {"detail": "not found"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -196,6 +278,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(page.encode(), "text/html")
         if path == "/auth/token":
             return self._send(json.dumps({"token": "t", "expires_in": 900, "user": USER["name"], "role": ROLE["role"], "territories": ["Canada"]}).encode())
+        if path.startswith("/admin-api/"):
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
+            status, answer = admin_answer(path[len("/admin-api"):], body, self.command, parse_qs(urlparse(self.path).query))
+            return self._send(b"" if status == 204 else json.dumps(answer).encode(), status=status)
         if path.startswith("/builder/"):
             body = {}
             if self.command in ("POST", "PUT"):
@@ -224,11 +310,13 @@ class Handler(BaseHTTPRequestHandler):
             if BENCH["on"]:
                 ds += f', {{ id: "250m", label: "250M benchmark", mart: "mart_250m", cube: "http://localhost:{PORT}/cube-bench", readOnly: true }}'
             js = (f'window.STACK = {{ keycloak: {{ url: "http://localhost:{PORT}/kc", realm: "spike", clientId: "dashboard" }}, '
-                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", cube: "http://localhost:{PORT}/cube-live" }}; '
+                  f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", admin: "http://localhost:{PORT}/admin-api", cube: "http://localhost:{PORT}/cube-live" }}; '
                   f"window.STACK.datasets = {ds}];")
             return self._send(js.encode(), "application/javascript")
         if path == "/d" or path.startswith("/d/"):          # the renderer page, for /d/ and /d/<id>
             path = "/d.html"
+        if path == "/admin" or path.startswith("/admin/"):  # the admin console
+            path = "/admin.html"
         for base, strip in ((ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
             if path.startswith(strip):
                 rel = path[len(strip):] or "index.html"

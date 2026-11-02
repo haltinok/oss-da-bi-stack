@@ -34,6 +34,8 @@ services:
         condition: service_started
       builder:
         condition: service_started
+      admin:
+        condition: service_started
 
   keycloak:
     environment:
@@ -59,6 +61,12 @@ services:
     environment:
       KEYCLOAK_ISSUER: ${PUBLIC_URL:?set PUBLIC_URL}/kc/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs
+
+  admin:
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_URL:?set PUBLIC_URL}/kc/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080/kc
 
   dashboard-cube:
     environment:
