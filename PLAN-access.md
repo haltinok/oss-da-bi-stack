@@ -76,6 +76,8 @@ the Share dialog, the trash; names are typed (the builder cannot look people up)
 - Tests: the saved-dashboard rules (`builder/tests`) extend to grants; Playwright for the share dialog and the folder tree.
 
 ## Phase 4: the home page
+**Built (2026-11-03):** `/home/` (`dashboard/static/home.html`, `render/home.js`, English and Turkish): launcher, "pick up where you left off" (a per-browser list kept in `localStorage`, `lib/recent.js`, written when a dashboard opens), shared with you, your dashboards and folders,
+samples, one search over all of them, admin link for admins. It is a new page, not a replacement for `/` (the live sales dashboard stays there: its tests and the demo's address depend on it); changing `/` to the start page is one nginx line if wanted. "SQL lab" gets a launcher card in phase 5. Original plan:
 - `/` after sign-in: *recent*, *shared with me*, *my folders*, and a launcher: new dashboard (describe / design), SQL lab (when it exists), and, for admins, the console. Everything shown is
   what the user can reach; empty states say what to do next. Reuses the list page's search.
 - Small by design; it is mostly a query over phase 3's grants. It waits for them so it does not have to be redone.

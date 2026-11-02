@@ -392,7 +392,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install playwright pyyaml "jsonschema>=4.18"
-      - run: node --test dashboard/cube/tests/lib.test.mjs dashboard/cube/tests/lib_render.test.mjs dashboard/cube/tests/themes.test.mjs dashboard/cube/tests/designer.test.mjs dashboard/cube/tests/designer-structure.test.mjs dashboard/cube/tests/designer-layout.test.mjs dashboard/cube/tests/drafts.test.mjs
+      - run: node --test dashboard/cube/tests/lib.test.mjs dashboard/cube/tests/lib_render.test.mjs dashboard/cube/tests/themes.test.mjs dashboard/cube/tests/designer.test.mjs dashboard/cube/tests/designer-structure.test.mjs dashboard/cube/tests/designer-layout.test.mjs dashboard/cube/tests/drafts.test.mjs dashboard/cube/tests/recent.test.mjs
       - run: python -I dashboard/cube/tests/render.py
       - run: python -I dashboard/cube/tests/renderer.py
       - run: python -I dashboard/cube/tests/header.py
@@ -400,6 +400,7 @@ jobs:
       - run: python -I dashboard/cube/tests/admin.py            # the admin console: people, groups, dialogs, who is let in
       - run: python -I dashboard/cube/tests/builderui.py        # the builder's page: the Save dialog, saved dashboards, tags
       - run: python -I dashboard/cube/tests/sharing.py          # folders, sharing with people and groups, the trash
+      - run: python -I dashboard/cube/tests/home.py             # the start page: launcher, recent, shared, search
       - run: python -I dashboard/cube/tests/dataset.py
 
   # The dashboard builder (builder/): its loop against a scripted model, the rule-based stand-in over every prompt x role, and the HTTP service

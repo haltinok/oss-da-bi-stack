@@ -28,6 +28,11 @@ server {
         rewrite ^ /d.html break;
         add_header Cache-Control "no-cache";
     }
+    location = /home { return 301 /home/; }
+    location /home/ {
+        rewrite ^ /home.html break;
+        add_header Cache-Control "no-cache";
+    }
     location = /admin { return 301 /admin/; }
     location /admin/ {
         rewrite ^ /admin.html break;
