@@ -79,6 +79,11 @@ A person can **Save…** a draft: it is stored in Postgres (schema `builder`, ta
 - **Who can do what.** Only the owner changes the YAML, restores a version or sees versions; the owner or an admin changes the sharing, the title, or deletes. A
   viewer can *Save a copy* or *Edit a copy* (their own private copy).
 - **Language.** `GET /info?lang=tr` returns the example requests in Turkish (`en` by default; any other language gets English); the page asks in the language of its EN | TR switch.
+- **Sharing with people and groups, folders, trash.** Besides roles and everyone, the owner can share a dashboard with named **people** and **groups**, for **view** or **edit** (the **Share…** button on the list). Someone with *edit* can
+  change the dashboard (a new version, saved by them) and rename it; only the owner (or an admin) changes how it is shared, moves it, hands it to someone else or deletes it. A **folder** holds dashboards and can be shared the same way:
+  what is in it is shared with the same people (view or edit). Names are typed as they are in the admin console (the builder does not look them up). **Delete** moves a dashboard to the **trash** for 30 days (restore, or delete for good);
+  the trash does not count against the limit of saved dashboards. An admin can **hand over** every dashboard of a person to someone else (`POST /transfer`); the admin console offers it when it deletes a person.
+  Folders and shares live in the same `builder` schema (`builder.folders`, and `shares`, `folder_id`, `deleted_at` on `saved_dashboards`): run `postgres/sync-builder.sh` once on an existing database.
 - **Tags.** The Save dialog has a **Tags** field (chips; Enter or a comma adds one; at most 5), and the owner of a saved dashboard has a **Tags** button for changing them
   later. The page never edits YAML: the request carries `tags` (`POST /saved`, `PUT /saved/{id}`), the service writes them into the spec after its description and runs the
   same validator as for every other field, so a bad tag is refused with the usual message (`'Board' is not lower case; write 'board'`) before anything is stored. An untouched

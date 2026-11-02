@@ -63,6 +63,10 @@ the console has a **Row rules** tab with the preview. A rule replaces the seed f
 - Tests: the `auth` tests gain group union and the seed fallback; a regression test that every existing role keeps exactly its current catalog.
 
 ## Phase 3: folders and dashboard management
+**Built (2026-11-03), with one deviation:** sharing, folders and the trash live in the builder's own schema and service (`builder.folders`; `shares`, `folder_id`, `deleted_at` on `saved_dashboards`; routes `/folders`, `/trash`, `/transfer`, and `shares`/`folder_id`/`owner` on `PUT /saved/{id}`), not in `access.grant`, because
+the builder already owns dashboards, its login can write them, and giving it write access to a general grants table would have let it write dataset grants too. Rules: view or edit shares to people and groups on a dashboard or a folder; edit changes the YAML and the title,
+the owner (or an admin) changes sharing, folder and owner; delete goes to a 30-day trash; an admin can hand a person's dashboards over (the console's delete-person dialog does it by default). Folders are flat (one level). The list page has the folder view,
+the Share dialog, the trash; names are typed (the builder cannot look people up). Original plan:
 - **Folders** (the "panes"): `access.folder (id, name, parent_id null, owner)`, one nesting level at first. A folder holds dashboards now and SQL-lab queries later. A grant on a folder
   covers what is inside it; a grant on a dashboard covers that one.
 - **Dashboards:** the `visibility / shared_roles` pair becomes grants (migration maps `private`, `roles`, `everyone` onto them and the old columns stay readable for one release). New: **share with a

@@ -26,6 +26,7 @@ const EN = {
   noDatasets: "No datasets yet: every cube works as its role allows.", nobodyYet: "Nobody has access yet: only admins can read these cubes.", grantType: { user: "A person", group: "A group", role: "A role" }, grantPick: "Choose…",
   grantAdd: "Give access", datasetSave: "Save dataset", datasetDelete: "Delete this dataset?", datasetDeleteWhy: (n) => `The cubes in ${n} are no longer governed by it: they go back to what each role allows, unless another dataset holds them.`,
   pickCube: "Choose at least one cube.", blockedCubes: "Cubes kept from this person by datasets", noneBlocked: "none",
+  handOver: (who) => `Hand their saved dashboards to ${who} first (otherwise they stay with a name nobody can sign in with)`,
   saved: "Saved.", failed: "Could not do that:", you: "you", rolesHint: { admin: "everything, and this console", manager: "sales, by territory", rep: "sales, own territory, no profit", purchasing: "inventory", marketing: "inventory, no supplier data" },
 };
 const TR = {
@@ -55,6 +56,7 @@ const TR = {
   noDatasets: "Henüz veri kümesi yok: her küp rolün izin verdiği gibi çalışır.", nobodyYet: "Henüz kimseye erişim verilmedi: bu küpleri yalnızca yöneticiler okuyabilir.", grantType: { user: "Bir kişi", group: "Bir grup", role: "Bir rol" }, grantPick: "Seçin…",
   grantAdd: "Erişim ver", datasetSave: "Veri kümesini kaydet", datasetDelete: "Bu veri kümesi silinsin mi?", datasetDeleteWhy: (n) => `${n} içindeki küpler artık onun tarafından yönetilmez: başka bir veri kümesinde değilse rolün izin verdiğine dönerler.`,
   pickCube: "En az bir küp seçin.", blockedCubes: "Veri kümelerinin bu kişiden sakladığı küpler", noneBlocked: "yok",
+  handOver: (who) => `Önce kayıtlı panolarını ${who} adlı kişiye devret (aksi halde kimsenin giremeyeceği bir adda kalırlar)`,
   saved: "Kaydedildi.", failed: "Yapılamadı:", you: "siz", rolesHint: { admin: "her şey ve bu sayfa", manager: "satış, bölgeye göre", rep: "satış, kendi bölgesi, kâr yok", purchasing: "envanter", marketing: "envanter, tedarikçi verisi yok" },
 };
 export const adminStrings = (lang) => ({ ...EN, ...(lang === "tr" ? TR : {}) });

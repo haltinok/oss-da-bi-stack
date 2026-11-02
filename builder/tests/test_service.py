@@ -22,8 +22,8 @@ main.jwks.get_signing_key_from_jwt = lambda raw: SimpleNamespace(key=KEY.public_
 client = TestClient(main.app)
 
 
-def token(role="manager", user="alice", azp="dashboard", issuer="http://kc/realms/spike", exp=3600):
-    claims = {"iss": issuer, "azp": azp, "preferred_username": user, "exp": int(time.time()) + exp, "realm_access": {"roles": [role] if role else []}}
+def token(role="manager", user="alice", azp="dashboard", issuer="http://kc/realms/spike", exp=3600, groups=()):
+    claims = {"iss": issuer, "azp": azp, "preferred_username": user, "exp": int(time.time()) + exp, "realm_access": {"roles": [role] if role else []}, "groups": list(groups)}
     return {"Authorization": "Bearer " + jwt.encode(claims, KEY, algorithm="RS256")}
 
 
@@ -385,3 +385,34 @@ def test_a_tabbed_dashboard_goes_through_the_service_like_any_other(memory_store
     bad["tabs"][1]["layout"].append(bad["tabs"][0]["layout"][0])
     refused = client.post("/validate", headers=h, json={"yaml": pyyaml.safe_dump(bad, sort_keys=False)}).json()
     assert refused["ok"] is False and any("is placed 2 times (tab 'one' and tab 'two')" in p for p in refused["problems"])
+
+
+def test_sharing_folders_trash_and_ownership_over_http(memory_store):
+    owner, bob, carol = token("manager", "olga"), token("manager", "bob"), token("manager", "carol", groups=["Ops"])
+    root = token("admin", "root")
+    yml = sales_yaml()
+    id_ = client.post("/saved", headers=owner, json={"yaml": yml, "title": "Shared one"}).json()["id"]
+    folder = client.post("/folders", headers=owner, json={"name": "Quarterly"})
+    assert folder.status_code == 201 and folder.json()["mine"]
+    fid = folder.json()["id"]
+    moved = client.put(f"/saved/{id_}", headers=owner, json={"folder_id": fid, "shares": [{"type": "user", "principal": "bob", "permission": "view"}, {"type": "group", "principal": "Ops", "permission": "edit"}]})
+    assert moved.status_code == 200 and moved.json()["folder_name"] == "Quarterly" and len(moved.json()["shares"]) == 2
+    assert [d["id"] for d in client.get("/saved", headers=bob).json()] == [id_] and client.get("/saved", headers=bob).json()[0]["shared_with_me"]
+    assert client.put(f"/saved/{id_}", headers=bob, json={"yaml": yml}).status_code == 403
+    assert client.put(f"/saved/{id_}", headers=carol, json={"title": "By Ops"}).status_code == 200
+    assert client.put(f"/saved/{id_}", headers=owner, json={"folder_id": None}).json()["folder_id"] is None, "null takes it out of the folder"
+    assert client.put(f"/saved/{id_}", headers=owner, json={"title": "Same folder?"}).status_code == 200
+    assert client.get("/folders", headers=bob).json() == [] and [f["id"] for f in client.get("/folders", headers=owner).json()] == [fid]
+    assert client.put(f"/folders/{fid}", headers=bob, json={"name": "x"}).status_code == 404
+    assert client.put(f"/folders/{fid}", headers=owner, json={"name": "Renamed", "shares": [{"type": "user", "principal": "bob", "permission": "view"}]}).json()["name"] == "Renamed"
+    assert [f["name"] for f in client.get("/folders", headers=bob).json()] == ["Renamed"]
+    assert client.delete(f"/folders/{fid}", headers=owner).status_code == 204
+    assert client.delete(f"/saved/{id_}", headers=owner).status_code == 204 and client.get(f"/saved/{id_}", headers=owner).status_code == 404
+    assert [d["id"] for d in client.get("/trash", headers=owner).json()] == [id_] and client.get("/trash", headers=bob).json() == []
+    assert client.post(f"/trash/{id_}/restore", headers=bob).status_code == 404
+    assert client.post(f"/trash/{id_}/restore", headers=owner).status_code == 200 and client.get(f"/saved/{id_}", headers=owner).status_code == 200
+    assert client.put(f"/saved/{id_}", headers=owner, json={"owner": "bob"}).json()["owner"] == "bob"
+    assert client.post("/transfer", headers=owner, json={"from_user": "bob", "to_user": "root"}).status_code == 403
+    assert client.post("/transfer", headers=root, json={"from_user": "bob", "to_user": "root"}).json() == {"transferred": 1}
+    client.delete(f"/saved/{id_}", headers=root)
+    assert client.delete(f"/trash/{id_}", headers=root).status_code == 204 and client.get("/trash", headers=root).json() == []

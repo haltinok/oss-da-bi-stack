@@ -106,7 +106,7 @@ def builder_answer(path, body, method="GET", query=None):
         if BUILDER["limit"]:
             return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
         return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin", focus=body.get("focus"))
-    if path.startswith("/saved"):
+    if path.startswith(("/saved", "/folders", "/trash", "/transfer")):
         if not BUILDER["saving"]:
             return 503, {"detail": "Saving is not set up on this server (BUILDER_DB_PASSWORD is empty)."}
         return saved_answer(path, body, method, c)
@@ -140,9 +140,28 @@ def saved_answer(path, body, method, c):
     from builder.store import MemoryStore
     if "saved_store" not in _builder_cache:
         _builder_cache["saved_store"] = MemoryStore()
-    store, catalog, who = _builder_cache["saved_store"], c["catalog"], saved.Who(name=USER["name"], role=ROLE["role"])
+    store, catalog, who = _builder_cache["saved_store"], c["catalog"], saved.Who(name=USER["name"], role=ROLE["role"], groups=list(USER.get("groups", [])))
     parts = [p for p in path.split("/") if p]
     try:
+        if parts == ["folders"] and method == "GET":
+            return 200, saved.list_folders(store, who)
+        if parts == ["folders"] and method == "POST":
+            return 201, saved.create_folder(store, who, body.get("name", ""))
+        if len(parts) == 2 and parts[0] == "folders" and method == "PUT":
+            kw = {"shares": body["shares"]} if "shares" in body else {}
+            return 200, saved.update_folder(store, who, parts[1], name=body.get("name"), **kw)
+        if len(parts) == 2 and parts[0] == "folders" and method == "DELETE":
+            saved.delete_folder(store, who, parts[1])
+            return 204, {}
+        if parts == ["trash"] and method == "GET":
+            return 200, saved.list_trash(store, catalog, who)
+        if len(parts) == 3 and parts[0] == "trash" and parts[2] == "restore":
+            return 200, saved.restore_trash(store, who, parts[1])
+        if len(parts) == 2 and parts[0] == "trash" and method == "DELETE":
+            saved.delete_forever(store, who, parts[1])
+            return 204, {}
+        if parts == ["transfer"] and method == "POST":
+            return 200, {"transferred": saved.transfer_all(store, who, body["from_user"], body["to_user"])}
         if parts == ["saved"] and method == "GET":
             return 200, saved.list_saved(store, catalog, who)
         if parts == ["saved"] and method == "POST":
@@ -150,7 +169,8 @@ def saved_answer(path, body, method, c):
         if len(parts) == 2 and method == "GET":
             return 200, saved.open_saved(store, catalog, who, parts[1])
         if len(parts) == 2 and method == "PUT":
-            return 200, saved.update_saved(store, catalog, who, parts[1], yaml_text=body.get("yaml"), title=body.get("title"), visibility=body.get("visibility"), shared_roles=body.get("shared_roles"), tags=body.get("tags"))
+            extra = {k: body[k] for k in ("shares", "folder_id", "owner") if k in body}
+            return 200, saved.update_saved(store, catalog, who, parts[1], yaml_text=body.get("yaml"), title=body.get("title"), visibility=body.get("visibility"), shared_roles=body.get("shared_roles"), tags=body.get("tags"), **extra)
         if len(parts) == 2 and method == "DELETE":
             saved.delete_saved(store, who, parts[1])
             return 204, {}

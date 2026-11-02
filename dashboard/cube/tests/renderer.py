@@ -191,7 +191,7 @@ with sync_playwright() as p:
     page.fill(box, "")
     check(savedn() == 4, "and the deleted dashboard is gone from the full list")
     page_requests = [u for u in requests if "/builder/" in u or "/dashboards/" in u]
-    check(len(page_requests) <= 3, f"typing asked the server for nothing: only the delete and its refresh went out ({[u.rsplit('/', 2)[-2:] for u in page_requests]})")
+    check(len(page_requests) <= 4, f"typing asked the server for nothing: only the delete and its refresh (saved, folders, trash) went out ({[u.rsplit('/', 2)[-2:] for u in page_requests]})")
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
     ctx, page = open_page(browser, "/d/", width=390)
