@@ -501,7 +501,7 @@ async function showDashboard() {
    * Returns true when the change was applied here.
    */
   function patch(next) {
-    const rest = (s) => JSON.stringify({ ...s, panels: undefined, members: undefined, cubes: undefined, layout: undefined, tabs: undefined });
+    const rest = (s) => JSON.stringify({ ...s, filters: s.filters?.map(({ default: _d, ...f }) => f), panels: undefined, members: undefined, cubes: undefined, layout: undefined, tabs: undefined });   // a filter's default is applied below
     const tabHeads = (s) => JSON.stringify(s.tabs ? s.tabs.map((t) => [t.id, t.title]) : null);
     if (rest(next) !== rest(spec) || tabHeads(next) !== tabHeads(spec) || next.panels.length !== spec.panels.length || next.panels.some((p, i) => p.id !== spec.panels[i].id)) return false;
     const changed = next.panels.map((def, i) => [def, i]).filter(([def, i]) => JSON.stringify(def) !== JSON.stringify(spec.panels[i]));
@@ -509,6 +509,12 @@ async function showDashboard() {
     if (changed.some(([def, i]) => def.type === "slicer" && !titleOnly(def, spec.panels[i]))) return false;                    // moving a filter between the bar and a slicer is left to a reload
     spec.members = next.members;
     spec.cubes = next.cubes;
+    const defaultsMoved = (next.filters || []).filter((f, i) => (f.default || "") !== (spec.filters[i].default || ""));
+    for (const f of defaultsMoved) {                         // a new default is where the filter stands now (the reader's own picks are what the designer is replacing)
+      const mine = spec.filters.find((x) => x.id === f.id);
+      if (f.default) mine.default = f.default; else delete mine.default;
+      values[mine.id] = mine.default || "";
+    }
     const rebuilt = [];
     for (const [def, i] of changed) {
       const { title: oldTitle, ...oldRest } = spec.panels[i], { title: newTitle, ...newRest } = def;
@@ -522,6 +528,7 @@ async function showDashboard() {
       ctx.attachPaneFilters?.(def.id);
       rebuilt.push(made);
     }
+    if (defaultsMoved.length) { for (const f of visibleFilters()) showValue(f); writeUrl(); }
     const moved = JSON.stringify([next.layout, next.tabs]) !== JSON.stringify([spec.layout, spec.tabs]);
     if (moved) {
       if (tabbed) next.tabs.forEach((t, i) => { tabs[i].layout = t.layout; }); else { spec.layout = next.layout; tabs[0].layout = next.layout; }
@@ -532,7 +539,7 @@ async function showDashboard() {
         grids.get(tab.id).replaceChildren(...roots);
       }
     }
-    if (moved) loadAll();                                    // cards that came into the open tab are loaded; the others only redraw to their new width (their data is cached)
+    if (moved || defaultsMoved.length) loadAll();            // cards that came into the open tab are loaded; the others only redraw to their new width (their data is cached)
     else {
       const open = new Set(openPanels());
       const now = rebuilt.filter((p) => open.has(p));

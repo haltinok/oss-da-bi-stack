@@ -359,8 +359,8 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .slicer-chip[aria-pressed="true"] { border-color: var(--focus); background: var(--focus); color: #fff; }
 .slicer-chip:focus-visible, .slicer-item:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
 .selection-bar { gap: 6px; }
-/* the drawer scrolls, not the list: one scrollbar; the box is told not to stretch like the text boxes */
-.designer .dz-default .slicer-list { max-height: none; overflow: visible; }
+/* a long list is cut at about half the screen and scrolls inside; the box is told not to stretch like the text boxes */
+.designer .dz-default .slicer-list { max-height: min(340px, 45vh); }
 .designer .dz-input input[type="checkbox"], .designer .dz-input input[type="radio"] { width: auto; padding: 0; margin: 0; flex: none; justify-self: start; }
 .designer .dz-addfield { display: flex; gap: 6px; margin-top: 6px; }
 .designer .dz-addfield select { flex: 1; min-width: 0; }

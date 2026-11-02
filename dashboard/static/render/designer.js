@@ -685,11 +685,11 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   });
   let place = state.ui || null;                                   // the place to go back to once the drawer is drawn; dropped at the first thing the reader does
   const forgetPlace = () => { if (place) { place = null; write({ ...read(), ui: null }); } };
-  function restorePlace() {
-    if (!place || !on) return;
-    drawer.scrollTop = place.top || 0;
-    drawer.querySelectorAll(".slicer-list").forEach((l, i) => { l.scrollTop = place.lists?.[i] || 0; });
-    if (place.focus >= 0) [...drawer.querySelectorAll(FOCUSABLE)][place.focus]?.focus({ preventScroll: true });
+  function restorePlace(at = place) {
+    if (!at || !on) return;
+    drawer.scrollTop = at.top || 0;
+    drawer.querySelectorAll(".slicer-list").forEach((l, i) => { l.scrollTop = at.lists?.[i] || 0; });
+    if (at.focus >= 0) [...drawer.querySelectorAll(FOCUSABLE)][at.focus]?.focus({ preventScroll: true });
   }
 
   /**
@@ -699,6 +699,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   async function commit(edit, { message, panel = selected } = {}) {
     if (busy) return false;
     if (edit.problem) { problems([dz.cannot[edit.problem] || edit.problem], "failed", dz.cannotTitle); return false; }
+    const here = placeInDrawer();                                                       // where the reader is in the drawer, for when it is drawn again
     busy = true;
     drawer.classList.add("busy");
     try {
@@ -714,6 +715,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         const focused = drawer.contains(document.activeElement) ? document.activeElement.dataset?.path : null;
         resync();
         draw();
+        restorePlace(here);
         if (focused) drawer.querySelector(`[data-path="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
         document.dispatchEvent(new CustomEvent("draft:changed"));
         return true;

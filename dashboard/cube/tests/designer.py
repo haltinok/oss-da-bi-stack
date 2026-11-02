@@ -716,9 +716,13 @@ with sync_playwright() as p:
     page.set_viewport_size({"width": 1440, "height": 420})
     page.locator(f"{card} .slicer-item input").nth(1).scroll_into_view_if_needed()
     top_before = page.evaluate("document.querySelector('#designer').scrollTop")
+    origin = page.evaluate("performance.timeOrigin")
     with changes(page):
         page.locator(f"{card} .slicer-item input").nth(1).check()
     settled(page)
+    check(page.evaluate("performance.timeOrigin") == origin, "ticking a default value does not load the page again")
+    page.wait_for_function("document.querySelector('#filters .fc .fc-btn')?.textContent.includes('2')", timeout=10000)
+    check(True, "and the page's own filter shows the two values at once")
     page.wait_for_selector(f"{card} .slicer-item", timeout=15000)
     page.wait_for_function("document.querySelector('#designer').scrollTop > 0", timeout=5000)
     top_after = page.evaluate("document.querySelector('#designer').scrollTop")
