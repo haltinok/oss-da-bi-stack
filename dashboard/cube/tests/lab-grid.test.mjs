@@ -33,6 +33,7 @@ test("tabs from storage are made safe and never empty", () => {
   assert.deepEqual(cleanTabs("junk"), [{ id: 1, sql: "" }]);
   assert.deepEqual(cleanTabs([{ id: 3, sql: "select 1" }, { id: "x", sql: "bad" }, null, { id: 4, sql: 5 }]), [{ id: 3, sql: "select 1" }]);
   assert.equal(cleanTabs(Array.from({ length: 30 }, (_, i) => ({ id: i, sql: "" }))).length, 12);
+  assert.deepEqual(cleanTabs([{ id: 1, sql: "select 1", queryId: "abc" }, { id: 2, sql: "x", queryId: 5 }, { id: 3, sql: "y", queryId: "" }]), [{ id: 1, sql: "select 1", queryId: "abc" }, { id: 2, sql: "x" }, { id: 3, sql: "y" }], "a tab remembers the saved query it is open on");
 });
 
 test("history keeps the newest first, no duplicates, at most the limit, nothing for an empty query", () => {

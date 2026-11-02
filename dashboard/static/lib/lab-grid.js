@@ -27,9 +27,10 @@ export function toTsv(columns, rows) {
   return [columns.map((c) => clean(c.name)).join("\t"), ...rows.map((r) => r.map((v, i) => clean(formatCell(v, columns[i]?.type))).join("\t"))].join("\n");
 }
 
-/** The tabs the lab keeps in the browser, made safe: at least one, each with a string `sql` and a numeric `id`. */
+/** The tabs the lab keeps in the browser, made safe: at least one, each with a string `sql`, a numeric `id`, and, if it is open on a saved query, that query's id. */
 export function cleanTabs(raw) {
-  const tabs = (Array.isArray(raw) ? raw : []).filter((t) => t && typeof t.sql === "string" && Number.isFinite(t.id)).slice(0, 12).map((t) => ({ id: t.id, sql: t.sql.slice(0, 20000) }));
+  const tabs = (Array.isArray(raw) ? raw : []).filter((t) => t && typeof t.sql === "string" && Number.isFinite(t.id)).slice(0, 12)
+    .map((t) => ({ id: t.id, sql: t.sql.slice(0, 20000), ...(typeof t.queryId === "string" && t.queryId && t.queryId.length <= 60 ? { queryId: t.queryId } : {}) }));
   return tabs.length ? tabs : [{ id: 1, sql: "" }];
 }
 

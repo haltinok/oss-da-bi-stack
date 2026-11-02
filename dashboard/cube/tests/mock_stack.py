@@ -327,11 +327,13 @@ def lab_answer(path, body, method):
     import sqlcheck
     has_lab = LAB["on"] or ROLE["role"] == "admin"
     if path == "/info":
-        return 200, {"user": USER["name"], "role": ROLE["role"], "lab": has_lab, "limits": {"row_limit": 10000, "timeout_seconds": 60, "per_user": 2, "max_sql": sqlcheck.MAX_SQL}}
+        return 200, {"user": USER["name"], "role": ROLE["role"], "lab": has_lab, "saving": LAB.get("saving", True), "limits": {"row_limit": 10000, "timeout_seconds": 60, "per_user": 2, "max_sql": sqlcheck.MAX_SQL, "export_rows": 100000}}
     if not has_lab:
         return 403, {"detail": "You have not been given the SQL lab. Ask an admin to give a dataset you use the SQL lab permission."}
     if path == "/schema":
         return 200, {"cubes": LAB_SCHEMA}
+    if path.startswith(("/queries", "/query-folders", "/transfer")):
+        return lab_queries_answer(path, body, method)
     if path == "/query" and method == "POST":
         try:
             sql = sqlcheck.check(body.get("sql", ""))
@@ -344,8 +346,49 @@ def lab_answer(path, body, method):
             return 200, {"columns": [{"name": "category", "type": "string"}], "rows": [], "row_count": 0, "truncated": False, "ms": 5}
         if "many" in sql:
             return 200, {"columns": [{"name": "n", "type": "number"}, {"name": "label", "type": "string"}], "rows": [[i, f"row {i}"] for i in range(1200)], "row_count": 1200, "truncated": False, "ms": 41}
+        scale = 0.0001 if USER["name"] == "bob" else 1                  # a person with fewer territories sees smaller numbers
         return 200, {"columns": [{"name": "category", "type": "string"}, {"name": "revenue", "type": "number"}, {"name": "last_order", "type": "time"}],
-                     "rows": [["Bikes", 4279788.58, "2026-06-30T10:00:00"], ["Accessories", 75418.41, "2026-06-29T00:00:00"], ["Clothing", 35949.7, None]], "row_count": 3, "truncated": False, "ms": 12}
+                     "rows": [["Bikes", round(4279788.58 * scale, 2), "2026-06-30T10:00:00"], ["Accessories", round(75418.41 * scale, 2), "2026-06-29T00:00:00"], ["Clothing", round(35949.7 * scale, 2), None]], "row_count": 3, "truncated": False, "ms": 12}
+    return 404, {"detail": "not found"}
+
+
+def lab_queries_answer(path, body, method):
+    """Saved queries on an in-memory store, through the same rules (lab/queries.py) the service uses."""
+    import queries as labq
+    from store import MemoryStore as LabStore
+    if "lab_store" not in LAB:
+        LAB["lab_store"] = LabStore()
+        LAB["lab_store"].folder_rows.update({"f-q4": {"id": "f-q4", "name": "Quarterly", "owner": "alice", "shares": []}})
+    st, who = LAB["lab_store"], labq.Who(name=USER["name"], role=ROLE["role"], groups=list(USER.get("groups", [])))
+    parts = [p for p in path.split("/") if p]
+    try:
+        if parts == ["query-folders"]:
+            return 200, labq.list_folders(st, who)
+        if parts == ["queries"] and method == "GET":
+            return 200, labq.list_queries(st, who)
+        if parts == ["queries"] and method == "POST":
+            return 201, labq.create(st, who, title=body.get("title"), sql=body.get("sql", ""), description=body.get("description", ""), folder_id=body.get("folder_id"), shares=body.get("shares"))
+        if len(parts) == 2 and parts[0] == "queries" and method == "GET":
+            return 200, labq.get(st, who, parts[1])
+        if len(parts) == 2 and parts[0] == "queries" and method == "PUT":
+            extra = {k: body[k] for k in ("shares", "folder_id", "owner") if k in body}
+            return 200, labq.update(st, who, parts[1], title=body.get("title"), description=body.get("description"), sql=body.get("sql"), **extra)
+        if len(parts) == 2 and parts[0] == "queries" and method == "DELETE":
+            labq.delete(st, who, parts[1])
+            return 204, {}
+        if len(parts) == 3 and parts[2] == "run":
+            q = labq.get(st, who, parts[1])
+            status, out = lab_answer("/query", {"sql": q["sql"]}, "POST")
+            if status != 200:
+                return status, out
+            snap = st.put_snapshot(parts[1], who.name, out, 24)
+            return 200, {**out, "snapshot": {"created_at": snap["created_at"], "expires_at": snap["expires_at"]}}
+        if len(parts) == 3 and parts[2] == "snapshot":
+            return 200, labq.snapshot_of(st, who, parts[1])
+        if parts == ["transfer"]:
+            return 200, {"transferred": labq.transfer_all(st, who, body["from_user"], body["to_user"])}
+    except labq.QueryError as e:
+        return e.status, {"detail": e.message}
     return 404, {"detail": "not found"}
 
 
@@ -401,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/lab-api/"):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
             status, answer = lab_answer(path[len("/lab-api"):], body, self.command)
-            return self._send(json.dumps(answer).encode(), status=status)
+            return self._send(b"" if status == 204 else json.dumps(answer).encode(), status=status)
         if path.startswith("/admin-api/"):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
             status, answer = admin_answer(path[len("/admin-api"):], body, self.command, parse_qs(urlparse(self.path).query))

@@ -316,6 +316,7 @@ function deleteDialog(u) {
     if (confirm !== u.username) throw new Error(t.deleteType);
     if (v.get("handover") && s.me && C.builder) {                       // their saved dashboards go to the admin first, so deleting the person deletes no work
       try { await call("POST", "/transfer", { from_user: u.username, to_user: s.me }, C.builder); } catch (e) { if (e.status !== 503) throw e; }       // 503: this install does not keep saved dashboards
+      if (C.lab) { try { await call("POST", "/transfer", { from_user: u.username, to_user: s.me }, C.lab); } catch (e) { if (e.status !== 503) throw e; } }    // and their saved SQL-lab queries
     }
     await call("DELETE", `/users/${u.id}?confirm=${encodeURIComponent(confirm)}`);
   });
