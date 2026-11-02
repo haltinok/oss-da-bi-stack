@@ -17,6 +17,8 @@ def kc(monkeypatch):
     fake.users_["me"] = {"id": "me", "username": "root", "enabled": True}
     fake.roles_["admin"].add("me")
     monkeypatch.setattr(main, "_kc", fake)
+    monkeypatch.setattr(main, "_rules", None)                                    # rules are off unless a test turns them on (whatever the environment says)
+    monkeypatch.setattr(main, "_seed", None)
     main.app.dependency_overrides[main.current_admin] = lambda: ME
     yield fake
     main.app.dependency_overrides.clear()
@@ -152,3 +154,81 @@ def test_only_an_admin_with_the_dashboard_token_gets_in(monkeypatch):
     monkeypatch.setattr(main.jwt, "decode", lambda *a, **k: {"azp": "dashboard", "sub": "1", "preferred_username": "x", "realm_access": {"roles": ["admin"]}})
     assert api.get("/roles", headers={"Authorization": "Bearer t"}).json() == {"roles": list(main.ROLES)}
     assert api.get("/healthz").status_code == 200
+
+
+# ---- row-level rules
+class FakeSeed:
+    def __init__(self, by_user):
+        self.by_user = by_user
+
+    def regions(self):
+        return ["Canada", "France", "Germany", "United States"]
+
+    def regions_of(self, username):
+        return self.by_user.get(username, [])
+
+
+@pytest.fixture()
+def ruled(api, kc, monkeypatch):
+    from access import MemoryRules
+    monkeypatch.setattr(main, "_rules", MemoryRules())
+    monkeypatch.setattr(main, "_seed", FakeSeed({"de_rep": ["Germany"]}))
+    return api
+
+
+def test_rules_are_off_without_a_store(api, monkeypatch):
+    monkeypatch.setattr(main, "_rules", None)
+    r = api.get("/rls/rules")
+    assert r.status_code == 503 and "ADMIN_DB_PASSWORD" in r.json()["detail"]
+
+
+def test_set_list_and_delete_a_rule_for_a_user_and_a_group(ruled, kc):
+    kc.add("de_rep", "rep")
+    gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
+    assert gid
+    assert ruled.put("/rls/rules/user/de_rep", json={"values": ["Germany", "France", "France"]}).json()["values"] == ["France", "Germany"]
+    assert ruled.put("/rls/rules/group/EU team", json={"values": ["France"]}).status_code == 200
+    out = ruled.get("/rls/rules").json()
+    assert [(r["type"], r["principal"], r["values"]) for r in out["rules"]] == [("group", "EU team", ["France"]), ("user", "de_rep", ["France", "Germany"])]
+    assert out["regions"] == ["Canada", "France", "Germany", "United States"]
+    assert ruled.delete("/rls/rules/user/de_rep").status_code == 204
+    assert ruled.delete("/rls/rules/user/de_rep").status_code == 404
+
+
+def test_a_rule_needs_a_real_person_or_group_and_real_territories(ruled, kc):
+    kc.add("de_rep", "rep")
+    assert ruled.put("/rls/rules/user/nobody", json={"values": ["France"]}).status_code == 404
+    assert ruled.put("/rls/rules/group/Nope", json={"values": ["France"]}).status_code == 404
+    assert ruled.put("/rls/rules/user/de_rep", json={"values": ["Atlantis"]}).status_code == 400
+    assert ruled.put("/rls/rules/user/de_rep", json={"values": []}).status_code == 422
+    assert ruled.put("/rls/rules/team/x", json={"values": ["France"]}).status_code == 400
+
+
+def test_preview_shows_the_union_of_the_rules_and_falls_back_to_the_seed(ruled, kc):
+    uid = kc.add("de_rep", "rep")
+    kc.add("na_manager", "manager")
+    gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
+    assert ruled.get("/rls/preview/de_rep").json()["territories"] == ["Germany"] and ruled.get("/rls/preview/de_rep").json()["source"] == "seed"
+    ruled.put("/rls/rules/group/EU team", json={"values": ["France"]})
+    ruled.put(f"/groups/{gid}/members/{uid}")
+    ruled.put("/rls/rules/user/de_rep", json={"values": ["Canada"]})
+    p = ruled.get("/rls/preview/de_rep").json()
+    assert p["source"] == "rules" and p["territories"] == ["Canada", "France"] and len(p["rules"]) == 2 and p["groups"] == ["EU team"]
+    none = ruled.get("/rls/preview/na_manager").json()
+    assert none["source"] == "none" and none["territories"] == []                        # no rule, nothing in the seed: they cannot sign in to sales data
+    assert ruled.get("/rls/preview/ghost").status_code == 404
+    kc.add("buyer", "purchasing")
+    assert ruled.get("/rls/preview/buyer").json()["applies"] is False
+
+
+def test_a_rule_follows_its_groups_name_and_goes_with_the_group_or_the_user(ruled, kc):
+    uid = kc.add("de_rep", "rep")
+    gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
+    ruled.put("/rls/rules/group/EU team", json={"values": ["France"]})
+    ruled.put("/rls/rules/user/de_rep", json={"values": ["Germany"]})
+    ruled.put(f"/groups/{gid}", json={"name": "Europe"})
+    assert [(r["type"], r["principal"]) for r in ruled.get("/rls/rules").json()["rules"]] == [("group", "Europe"), ("user", "de_rep")]
+    ruled.delete(f"/groups/{gid}")
+    assert [(r["type"], r["principal"]) for r in ruled.get("/rls/rules").json()["rules"]] == [("user", "de_rep")]
+    assert ruled.delete(f"/users/{uid}?confirm=de_rep").status_code == 204
+    assert ruled.get("/rls/rules").json()["rules"] == []                                 # a new "de_rep" must not inherit the old rule

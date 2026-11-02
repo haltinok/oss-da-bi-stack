@@ -50,6 +50,8 @@ BUILDER_DB_PASSWORD=$(openssl rand -hex 16)
 ACTIONS_SR_PASSWORD=$(openssl rand -hex 16)
 AGENT_CLIENT_SECRET=$(openssl rand -hex 16)
 ADMIN_CLIENT_SECRET=$(openssl rand -hex 16)
+ADMIN_DB_PASSWORD=$(openssl rand -hex 16)
+AUTH_PG_PASSWORD=$(openssl rand -hex 16)
 KEYCLOAK_ADMIN_PASSWORD=$(openssl rand -hex 16)
 TEST_USER_PASSWORD=$(openssl rand -hex 12)
 

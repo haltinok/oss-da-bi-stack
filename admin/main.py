@@ -10,6 +10,9 @@
   POST /users/{id}/reset-password          email Keycloak's "update password" link ({ email: true }) or set a temporary one and return it once
   DELETE /users/{id}?confirm=<username>    delete (deactivating is what the page suggests)
   GET|POST /groups, PUT|DELETE /groups/{id}, PUT|DELETE /groups/{id}/members/{userId}
+  GET  /rls/rules                          { rules, regions }: which territories each user or group may see (Postgres schema `access`)
+  PUT|DELETE /rls/rules/{user|group}/{name}  set (values: [region, ...]) or remove one
+  GET  /rls/preview/{username}             what that person will see now: their territories, and whether the rules or the dbt seed decided
 
 Every call needs a Keycloak access token of the dashboard client from a person with the `admin` role. The service signs in to Keycloak as its own client
 (`admin-console`), so the browser never holds a Keycloak admin token. Rules kept here, not only on the page: the last active admin cannot be deactivated, deleted or
@@ -28,7 +31,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from access import TYPES, PgRules
 from keycloak import Keycloak, KeycloakError
+from seed import Seed
 
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
@@ -52,6 +57,35 @@ def kc() -> Keycloak:
         _kc = Keycloak(os.environ.get("KEYCLOAK_ADMIN_URL", "http://keycloak:8080"), os.environ.get("KEYCLOAK_REALM", "spike"),
                        os.environ.get("ADMIN_CLIENT_ID", "admin-console"), os.environ["ADMIN_CLIENT_SECRET"])
     return _kc
+
+
+_rules: PgRules | None | str = "unset"
+_seed: Seed | None | str = "unset"
+TERRITORY_ROLES = ("admin", "manager", "rep")       # the roles the auth service scopes by territory (the others work on inventory)
+
+
+def rules() -> PgRules:
+    """The rules store (made on first use, so a test can replace it); 503 when no login for it is configured."""
+    global _rules
+    if _rules == "unset":
+        _rules = PgRules.from_env()
+    if _rules is None:
+        raise HTTPException(503, "row-level rules are off: set ADMIN_DB_PASSWORD and run postgres/sync-access.sh")
+    return _rules
+
+
+def rules_or_none():
+    try:
+        return rules()
+    except HTTPException:
+        return None
+
+
+def seed() -> Seed | None:
+    global _seed
+    if _seed == "unset":
+        _seed = Seed.from_env()
+    return _seed
 
 
 class Admin(BaseModel):
@@ -323,6 +357,8 @@ def delete_user(uid: str, who: Who, confirm: str = ""):
         if confirm != u["username"]:
             raise HTTPException(400, "type the username to confirm the deletion")
         keep_an_admin(who, uid, "delete")
+        if rules_or_none():
+            rules().delete("user", u["username"])                                     # a new person with the same username must not inherit it
         kc().delete_user(uid)
     except KeycloakError as exc:
         fail(exc)
@@ -350,7 +386,10 @@ def create_group(req: GroupRequest, who: Who) -> dict:
 @app.put("/groups/{gid}")
 def rename_group(gid: str, req: GroupRequest, who: Who) -> dict:
     try:
+        old = next((g["name"] for g in kc().groups() if g["id"] == gid), None)
         kc().rename_group(gid, req.name.strip())
+        if old and old != req.name.strip() and rules_or_none():
+            rules().rename("group", old, req.name.strip())                          # a rule follows its group's name
     except KeycloakError as exc:
         fail(exc)
     audit(who, "rename_group", group=req.name, id=gid)
@@ -360,6 +399,9 @@ def rename_group(gid: str, req: GroupRequest, who: Who) -> dict:
 @app.delete("/groups/{gid}", status_code=204, response_class=Response)
 def delete_group(gid: str, who: Who):
     try:
+        old = next((g["name"] for g in kc().groups() if g["id"] == gid), None)
+        if old and rules_or_none():
+            rules().delete("group", old)                                              # no rule outlives its group
         kc().delete_group(gid)
     except KeycloakError as exc:
         fail(exc)
@@ -382,3 +424,75 @@ def remove_member(gid: str, uid: str, who: Who):
     except KeycloakError as exc:
         fail(exc)
     audit(who, "remove_from_group", id=gid, user_id=uid)
+
+
+# -------------------------------------------------------------------------------------------------------------------- row-level rules
+class RuleRequest(BaseModel):
+    values: list[str] = Field(min_length=1, max_length=200)
+
+
+def known_regions() -> list[str] | None:
+    sd = seed()
+    return sd.regions() if sd else None
+
+
+@app.get("/rls/rules")
+def list_rules(_: Who) -> dict:
+    return {"rules": rules().list(), "regions": known_regions() or []}
+
+
+@app.put("/rls/rules/{type_}/{principal}")
+def put_rule(type_: str, principal: str, req: RuleRequest, who: Who) -> dict:
+    if type_ not in TYPES:
+        raise HTTPException(400, "a rule is for a user or a group")
+    store = rules()
+    try:
+        if type_ == "user":
+            if not any(u["username"] == principal for u in kc().users(search=principal)):
+                raise HTTPException(404, f"no user '{principal}'")
+        elif not any(g["name"] == principal for g in kc().groups()):
+            raise HTTPException(404, f"no group '{principal}'")
+    except KeycloakError as exc:
+        fail(exc)
+    regions = known_regions()
+    values = sorted(set(req.values))
+    if regions is not None:
+        unknown = [v for v in values if v not in regions]
+        if unknown:
+            raise HTTPException(400, f"unknown territory: {unknown[0]} (known: {', '.join(regions)})")
+    row = store.put(type_, principal, values, who.name)
+    audit(who, "set_rule", type=type_, principal=principal, values=values)
+    return row
+
+
+@app.delete("/rls/rules/{type_}/{principal}", status_code=204, response_class=Response)
+def delete_rule(type_: str, principal: str, who: Who):
+    if type_ not in TYPES:
+        raise HTTPException(400, "a rule is for a user or a group")
+    if not rules().delete(type_, principal):
+        raise HTTPException(404, "no such rule")
+    audit(who, "delete_rule", type=type_, principal=principal)
+
+
+@app.get("/rls/preview/{username}")
+def preview(username: str, _: Who) -> dict:
+    """What the auth service will give this person at their next sign-in: the union of the rules for them and their groups, else the dbt seed."""
+    store = rules()
+    try:
+        person = next((u for u in kc().users(search=username) if u["username"] == username), None)
+        if person is None:
+            raise HTTPException(404, f"no user '{username}'")
+        shaped = shape(person, role_map(), group_map()[0])
+    except KeycloakError as exc:
+        fail(exc)
+    names = [g["name"] for g in shaped["groups"]]
+    applying = [r for r in store.list() if (r["type"] == "user" and r["principal"] == username) or (r["type"] == "group" and r["principal"] in names)]
+    out = {"username": username, "role": shaped["role"], "groups": names, "applies": shaped["role"] in TERRITORY_ROLES,
+           "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying]}
+    if applying:
+        return {**out, "territories": sorted({v for r in applying for v in r["values"]}), "source": "rules"}
+    sd = seed()
+    seeded = sd.regions_of(username) if sd else None
+    if seeded is None:
+        return {**out, "territories": [], "source": "unknown"}
+    return {**out, "territories": seeded, "source": "seed" if seeded else "none"}

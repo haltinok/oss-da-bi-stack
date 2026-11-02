@@ -40,7 +40,7 @@ async function call(method, path, body) {
   throw new Error("not signed in");
 }
 
-const s = { tab: "users", users: [], total: 0, groups: [], roles: [], me: null, q: "", role: "", group: "", status: "" };
+const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], regions: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
 const main = $("#main");
 const dlg = $("#dlg");
 const nameOf = (u) => [u.firstName, u.lastName].filter(Boolean).join(" ");
@@ -50,15 +50,16 @@ async function load() {
   const qs = new URLSearchParams({ max: "200", ...(s.q ? { search: s.q } : {}), ...(s.role ? { role: s.role } : {}), ...(s.group ? { group: s.group } : {}), ...(s.status ? { enabled: s.status === "active" } : {}) });
   const [u, g] = await Promise.all([call("GET", `/users?${qs}`), call("GET", "/groups")]);
   s.users = u.users; s.total = u.total; s.groups = g.groups;
+  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.rulesOff = true; }
 }
 async function refresh() { try { await load(); draw(); show(""); } catch (e) { show(`${t.failed} ${e.message}`); } }
 
 // ------------------------------------------------------------------------------------------------------------------ the page
 function draw() {
-  const tabs = `<div class="adm-tabs" role="tablist"><button role="tab" data-tab="users" aria-selected="${s.tab === "users"}">${esc(t.users)}</button><button role="tab" data-tab="groups" aria-selected="${s.tab === "groups"}">${esc(t.groups)}</button></div>`;
-  main.innerHTML = `<div class="adm-page">${tabs}${s.tab === "users" ? usersHtml() : groupsHtml()}</div>`;
+  const tabs = `<div class="adm-tabs" role="tablist"><button role="tab" data-tab="users" aria-selected="${s.tab === "users"}">${esc(t.users)}</button><button role="tab" data-tab="groups" aria-selected="${s.tab === "groups"}">${esc(t.groups)}</button><button role="tab" data-tab="rules" aria-selected="${s.tab === "rules"}">${esc(t.rules)}</button></div>`;
+  main.innerHTML = `<div class="adm-page">${tabs}${s.tab === "users" ? usersHtml() : s.tab === "groups" ? groupsHtml() : rulesHtml()}</div>`;
   main.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { s.tab = b.dataset.tab; draw(); }));
-  if (s.tab === "users") wireUsers(); else wireGroups();
+  if (s.tab === "users") wireUsers(); else if (s.tab === "groups") wireGroups(); else wireRules();
 }
 
 const opts = (items, current, first) => `${first ? `<option value="">${esc(first)}</option>` : ""}${items.map(([v, label]) => `<option value="${esc(v)}"${v === current ? " selected" : ""}>${esc(label)}</option>`).join("")}`;
@@ -107,6 +108,67 @@ function wireGroups() {
     ({ members: () => membersDialog(g), rename: () => nameDialog(t.rename, g.name, t.saveUser, (name) => call("PUT", `/groups/${g.id}`, { name })),
       delete: () => confirmDialog(t.deleteGroup, `${t.deleteGroupWhy} (${g.name})`, t.delete, () => call("DELETE", `/groups/${g.id}`)) })[b.dataset.act]();
   }));
+}
+
+// ------------------------------------------------------------------------------------------------------------------ row rules
+function rulesHtml() {
+  if (s.rulesOff) return `<p class="adm-empty" role="status">${esc(t.rulesOff)}</p>`;
+  const rows = s.rules.map((r) => `<tr data-type="${esc(r.type)}" data-principal="${esc(r.principal)}"><td><span class="adm-badge">${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)}</span> <strong>${esc(r.principal)}</strong></td>
+      <td>${r.values.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("")}</td><td class="hide-s hint">${esc(r.updated_by)}</td>
+      <td class="adm-act"><button class="adm-btn mini" data-act="edit">${esc(t.edit)}</button><button class="adm-btn mini danger" data-act="delete">${esc(t.delete)}</button></td></tr>`).join("");
+  return `<p class="hint">${esc(t.rulesHint)}</p><div class="adm-bar"><span class="spacer"></span><button class="adm-btn primary" id="new-rule">${esc(t.newRule)}</button></div>
+    ${s.rules.length ? `<table class="adm-table"><thead><tr><th>${esc(t.ruleWho)}</th><th>${esc(t.ruleTerritories)}</th><th class="hide-s">${esc(t.ruleUpdated)}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="adm-empty">${esc(t.noRules)}</p>`}
+    <section class="adm-preview" aria-labelledby="pv-h"><h3 id="pv-h">${esc(t.preview)}</h3>
+      <div class="adm-bar"><select id="pv-user" aria-label="${esc(t.previewPick)}"><option value="">${esc(t.previewPick)}</option></select><button class="adm-btn" id="pv-go">${esc(t.previewGo)}</button></div>
+      <div id="pv-out" role="status" aria-live="polite">${s.preview ? previewHtml(s.preview) : ""}</div></section>`;
+}
+
+function previewHtml(p) {
+  if (!p.applies) return `<p class="hint">${esc(t.previewNa)}</p>`;
+  const chips = p.territories.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("") || `<span class="hint">${esc(t.none)}</span>`;
+  const via = p.rules.length ? `<p class="hint">${esc(t.previewVia)}: ${p.rules.map((r) => `${esc(r.principal)} (${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)})`).join(", ")}</p>` : "";
+  return `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>${via}`;
+}
+
+function wireRules() {
+  if (s.rulesOff) return;
+  $("#new-rule").addEventListener("click", () => ruleDialog());
+  main.querySelectorAll("tr[data-type] [data-act]").forEach((b) => b.addEventListener("click", () => {
+    const tr = b.closest("tr"), r = s.rules.find((x) => x.type === tr.dataset.type && x.principal === tr.dataset.principal);
+    if (b.dataset.act === "edit") ruleDialog(r);
+    else confirmDialog(t.ruleDelete, t.ruleDeleteWhy(r.principal), t.delete, () => call("DELETE", `/rls/rules/${r.type}/${encodeURIComponent(r.principal)}`));
+  }));
+  call("GET", "/users?max=200").then((r) => {
+    const sel = $("#pv-user");
+    if (!sel) return;
+    sel.innerHTML = `<option value="">${esc(t.previewPick)}</option>${opts(r.users.map((u) => [u.username, u.username]), s.preview?.username || "")}`;
+  });
+  $("#pv-go").addEventListener("click", async () => {
+    const who = $("#pv-user").value;
+    if (!who) return;
+    try { s.preview = await call("GET", `/rls/preview/${encodeURIComponent(who)}`); $("#pv-out").innerHTML = previewHtml(s.preview); show(""); } catch (e) { show(`${t.failed} ${e.message}`); }
+  });
+}
+
+async function ruleDialog(rule) {
+  const all = (await call("GET", "/users?max=200")).users;
+  const type = rule?.type || "user";
+  const picked = new Set(rule?.values || []);
+  const regionBoxes = s.regions.length
+    ? `<div class="groups-pick" role="group" aria-label="${esc(t.ruleTerritories)}">${s.regions.map((r) => `<label><input type="checkbox" name="r" value="${esc(r)}"${picked.has(r) ? " checked" : ""}> ${esc(r)}</label>`).join("")}</div>`
+    : `<input name="regions" value="${esc([...picked].join(", "))}"><p class="hint">${esc(t.regionsHint)}</p>`;
+  const principals = (ty) => (ty === "user" ? all.map((u) => [u.username, u.username]) : s.groups.map((g) => [g.name, g.name]));
+  const form = openForm(`<h2>${esc(rule ? `${t.edit}: ${rule.principal}` : t.newRule)}</h2>
+    <label>${esc(t.ruleFor)}<select name="type"${rule ? " disabled" : ""}>${opts([["user", t.ruleUser], ["group", t.ruleGroup]], type)}</select></label>
+    <label>${esc(t.ruleWho)}<select name="principal"${rule ? " disabled" : ""}>${opts(principals(type), rule?.principal || "")}</select></label>
+    <label>${esc(t.ruleTerritories)}${regionBoxes}</label>${foot(t.ruleSave)}`, async (f) => {
+    const v = Object.fromEntries(new FormData(f));
+    const type_ = rule?.type || v.type, principal = rule?.principal || v.principal;
+    const values = s.regions.length ? [...f.querySelectorAll("[name=r]:checked")].map((c) => c.value) : (v.regions || "").split(",").map((x) => x.trim()).filter(Boolean);
+    if (!values.length) throw new Error(t.pickOne);
+    await call("PUT", `/rls/rules/${type_}/${encodeURIComponent(principal)}`, { values });
+  });
+  form.querySelector("[name=type]").addEventListener("change", (e) => { form.querySelector("[name=principal]").innerHTML = opts(principals(e.target.value), ""); });
 }
 
 // ------------------------------------------------------------------------------------------------------------------ dialogs

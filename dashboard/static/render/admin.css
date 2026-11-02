@@ -39,3 +39,5 @@
 .adm-members { display: grid; gap: 4px; max-height: 260px; overflow: auto; }
 .adm-members .m { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--border); }
 @media (max-width: 720px) { .adm-table .hide-s { display: none; } }
+.adm-preview { margin-top: 22px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.adm-preview h3 { margin: 0 0 8px; font-size: 14px; }

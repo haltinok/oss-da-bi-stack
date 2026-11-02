@@ -17,6 +17,17 @@ browser ── Keycloak token ──> admin service (admin/) ── its own clie
 - **Groups:** create, rename, delete, add and remove people. The people in a deleted group stay.
 - **Roles:** one of `admin`, `manager`, `rep`, `purchasing`, `marketing` per person, as today. The role decides which data the person may read (see [dashboards.md](dashboards.md#roles-and-security)).
 
+## Row rules
+Which sales territories (regions) a person or a group may see, set on the **Row rules** tab. A person sees the **union** of the rules for them and for their groups. With **no rule at all**
+the dbt seed (`rls.user_regions`) still decides, exactly as before, so nothing changes until a rule is written. A rule *replaces* the seed for that person: it does not add to it.
+
+- **New rule:** choose a person or a group, tick the territories (the list comes from the seed's regions).
+- **What will this person see?** Pick a person and the page shows the territories they will get at their next sign-in, whether the rules or the seed decided, and which rules applied.
+- **Follows its owner:** renaming a group renames its rule; deleting a group or a person deletes their rule (a new person with the same username does not inherit it).
+- **Where it takes effect:** the auth service reads the rules when it mints the Cube token (15 minutes by default), and Cube applies the territories as before. A change shows at the person's next token.
+- **Fails closed:** if the rules database cannot be read, the sign-in fails (503) instead of falling back to the seed, which could give someone more than their rule allows.
+- Only the territory dimension exists for now. Inventory roles (`purchasing`, `marketing`) have no territories.
+
 ## Rules the service keeps (not only the page)
 - The **last active admin** cannot be deactivated, deleted or demoted.
 - Nobody can deactivate, delete or demote **their own** account.
@@ -31,6 +42,9 @@ they are what datasets, row-level rules and sharing will point at (see `PLAN-acc
 - A new install gets everything from `keycloak/realm-spike.json` (the `admin-console` client and the group mapper) and `scripts/generate-env.sh` (`ADMIN_CLIENT_SECRET`).
 - An existing install: add `ADMIN_CLIENT_SECRET=<random>` to `.env`, run `keycloak/sync-users.sh` (it creates the client, gives its service account only `manage-users`, `view-users`, `query-users`,
   `query-groups` and `view-realm`, and adds the mapper), then `docker compose --profile starrocks up -d --build admin dashboard-cube`.
+- Row rules need two Postgres logins on the `access` schema: add `ADMIN_DB_PASSWORD` and `AUTH_PG_PASSWORD` to `.env` (generate-env.sh does for a new install), run `postgres/sync-access.sh` once on an
+  existing database (new volumes get the schema from `postgres/init/04_access_schema.sql` and `05_access_users.sh`), then `docker compose --profile starrocks up -d --build admin auth`.
+  Without the passwords the tab says rules are off and sign-in works as before.
 - Behind Caddy the service is `/admin-api/*`; the page is `/admin/`. The admin console of Keycloak itself stays unreachable from the internet.
 
 ## Limits
