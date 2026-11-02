@@ -65,6 +65,7 @@ async function start() {
     { href: "/d/", title: w.describe, hint: w.describeHint },
     { href: "/", title: w.sales, hint: w.salesHint },
     { href: "/d/", title: w.allDashboards, hint: w.allDashboardsHint },
+    ...(session.lab ? [{ href: "/lab/", title: w.lab, hint: w.labHint }] : []),
     ...(session.role === "admin" ? [{ href: "/admin/", title: w.console, hint: w.consoleHint }] : []),
   ];
 

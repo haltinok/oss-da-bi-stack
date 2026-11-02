@@ -74,16 +74,62 @@ function checkAuth(req, auth) {
   req.securityContext = claims;
 }
 
+// The SQL API (the SQL lab, lab/): a connection signs in as the user with the same Cube token the REST API takes, as the password. The token's claims become the
+// security context, so every statement goes through queryRewrite below exactly like a dashboard's query: role rules, territories, blocked cubes.
+async function checkSqlAuth(req, user, password) {
+  let claims;
+  try {
+    claims = jwt.verify(String(password || ''), SECRET, { algorithms: ['HS256'] });
+  } catch (e) {
+    throw unauthorized();
+  }
+  if (!claims.user_id || !claims.role || claims.user_id !== user) {
+    throw unauthorized();
+  }
+  return { password, securityContext: claims };
+}
+
+// The SQL API (and only it) sends a member as an object when the statement uses an expression instead of a name: COUNT(*), COUNT(DISTINCT dim), or a dimension of a joined cube
+// ({ cubeName, name, expression: [...cubes the expression touches, 'return `<sql>`'] }). An object is turned back into the member names it stands for, so every rule below
+// applies to it as to a named member. Only these three forms are understood; any other expression is refused for everyone but an admin, because the rules cannot see inside it.
+const ADHOC = [
+  [/^\$\{(\w+)\.(\w+)\}$/, (m) => [`${m[1]}.${m[2]}`]],                         // a plain member reference
+  [/^COUNT\(\*\)$/i, () => []],                                                       // rows: the cubes it touches are what matter
+  [/^COUNT\(DISTINCT \$\{(\w+)\.(\w+)\}\)$/i, (m) => [`${m[1]}.${m[2]}`]],
+];
+function expandMember(m, role) {
+  if (typeof m === 'string') {
+    return [m];
+  }
+  const expr = m && Array.isArray(m.expression) ? m.expression : null;
+  if (!m || typeof m !== 'object' || !expr || expr.length < 2) {
+    throw forbidden('This kind of query is not available');
+  }
+  const cubes = [...new Set([m.cubeName, ...expr.slice(0, -1)].filter((c) => typeof c === 'string'))];
+  const sql = String(expr[expr.length - 1]).replace(/^return\s+/, '').trim().replace(/^`|`$/g, '');
+  const hit = ADHOC.map(([re, fn]) => [re.exec(sql), fn]).find(([r]) => r);
+  if (!hit) {
+    if (role === 'admin') {
+      return cubes.map((c) => `${c}.__expression`);
+    }
+    throw forbidden('This kind of expression is not available: use a measure (MEASURE(name)), a dimension, or COUNT');
+  }
+  return [...hit[1](hit[0]), ...cubes.map((c) => `${c}.__rows`)];
+}
+
 // Every member the query touches, including inside nested and/or filters.
-function membersOf(query) {
-  const out = [...(query.measures || []), ...(query.dimensions || [])];
-  (query.timeDimensions || []).forEach((t) => out.push(t.dimension));
-  (query.segments || []).forEach((s) => out.push(s));
+function membersOf(query, role) {
+  const out = [];
+  const add = (m) => expandMember(m, role).forEach((x) => out.push(x));
+  (query.measures || []).forEach(add);
+  (query.dimensions || []).forEach(add);
+  (query.timeDimensions || []).forEach((t) => add(t.dimension));
+  (query.segments || []).forEach(add);
   // order is {member: 'asc'} or [[member, 'asc'], ...]; ordering by a hidden measure leaks its ranking.
   const order = query.order || [];
-  (Array.isArray(order) ? order.map((o) => o[0]) : Object.keys(order)).forEach((m) => out.push(m));
+  (Array.isArray(order) ? order.map((o) => o[0]) : Object.keys(order)).forEach(add);
   const walk = (filters) => (filters || []).forEach((f) => {
-    if (f.member) out.push(f.member);
+    if (f.member) add(f.member);
     walk(f.and);
     walk(f.or);
   });
@@ -96,7 +142,7 @@ function queryRewrite(query, { securityContext }) {
   if (!sc.user_id || !sc.role) {
     throw unauthorized();
   }
-  const members = membersOf(query);
+  const members = membersOf(query, sc.role);
   const cubes = new Set(members.map((m) => m.split('.')[0]));
 
   // Datasets (admin console): a cube that is in a dataset the person has no grant on. The auth service puts the list in the token; no list, nothing blocked.
@@ -175,6 +221,7 @@ function datasetRepository() {
 module.exports = {
   dialectFactory: () => StarRocksQuery,
   checkAuth,
+  checkSqlAuth,
   queryRewrite,
   ...(SUFFIX && {
     repositoryFactory: datasetRepository,

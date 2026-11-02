@@ -36,6 +36,8 @@ services:
         condition: service_started
       admin:
         condition: service_started
+      lab:
+        condition: service_started
 
   keycloak:
     environment:
@@ -58,6 +60,11 @@ services:
       KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs
 
   builder:
+    environment:
+      KEYCLOAK_ISSUER: ${PUBLIC_URL:?set PUBLIC_URL}/kc/realms/spike
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs
+
+  lab:
     environment:
       KEYCLOAK_ISSUER: ${PUBLIC_URL:?set PUBLIC_URL}/kc/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/kc/realms/spike/protocol/openid-connect/certs

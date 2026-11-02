@@ -22,7 +22,7 @@ def load(monkeypatch):
     return importlib.import_module("main")
 
 
-def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",), blocked=()):
+def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",), blocked=(), lab=False):
     main = load(monkeypatch)
 
     class Key:
@@ -38,7 +38,7 @@ def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manage
         calls.append((user, role_, list(grps)))
         if isinstance(rules, Exception):
             raise rules
-        return list(rules or []), list(blocked)
+        return list(rules or []), list(blocked), lab
 
     monkeypatch.setattr(main, "read_access", fake_access)
     r = TestClient(main.app).post("/token", headers={"Authorization": "Bearer t"})
@@ -89,3 +89,14 @@ def test_the_cubes_a_person_may_not_read_travel_in_the_cube_token(monkeypatch):
 def test_without_a_rules_login_nothing_is_blocked(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=False, blocked=["internet_sales"])
     assert r.json()["blocked_cubes"] == []
+
+
+def test_the_sql_lab_claim_follows_the_grants_and_admins_always_have_it(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], lab=True)
+    assert r.json()["lab"] is True and REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["lab"] is True
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], lab=False)
+    assert r.json()["lab"] is False
+    r, _ = sign_in(monkeypatch, rules_on=False, role="manager")
+    assert r.json()["lab"] is False, "without the access database only admins have the lab"
+    r, _ = sign_in(monkeypatch, rules_on=False, role="admin")
+    assert r.json()["lab"] is True

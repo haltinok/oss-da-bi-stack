@@ -497,7 +497,8 @@ def preview(username: str, _: Who) -> dict:
     datasets, grants = store.resolve_input()
     out = {"username": username, "role": shaped["role"], "groups": names, "applies": shaped["role"] in TERRITORY_ROLES,
            "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying],
-           "blocked_cubes": access_resolve.blocked_cubes(datasets, grants, username, shaped["role"] or "", names)}
+           "blocked_cubes": access_resolve.blocked_cubes(datasets, grants, username, shaped["role"] or "", names),
+           "lab": access_resolve.lab_allowed(grants, username, shaped["role"] or "", names)}
     if applying:
         return {**out, "territories": sorted({v for r in applying for v in r["values"]}), "source": "rules"}
     sd = seed()
@@ -514,6 +515,7 @@ GRANT_ROLES = (*ROLES, "agent")
 class GrantIn(BaseModel):
     type: str
     principal: str = Field(min_length=1, max_length=120)
+    permission: str = "view"                                  # view: read the dataset's cubes; lab: also use the SQL lab
 
 
 class DatasetRequest(BaseModel):
@@ -539,15 +541,18 @@ def put_dataset(dataset_id: str, req: DatasetRequest, who: Who) -> dict:
         unknown = [c for c in req.cubes if c not in known]
         if unknown:
             raise HTTPException(400, f"no such cube: {unknown[0]}")
-    grants, seen = [], set()
+    grants, seen = [], {}
     try:
         users, groups = None, None
         for g in req.grants:
             if g.type not in ("user", "group", "role"):
                 raise HTTPException(400, "a grant is for a user, a group or a role")
+            if g.permission not in ("view", "lab"):
+                raise HTTPException(400, "a grant is view or lab")
             if (g.type, g.principal) in seen:
+                if g.permission == "lab":                                                   # the same person twice: lab includes view
+                    seen[(g.type, g.principal)]["permission"] = "lab"
                 continue
-            seen.add((g.type, g.principal))
             if g.type == "role" and g.principal not in GRANT_ROLES:
                 raise HTTPException(400, f"no such role: {g.principal}")
             if g.type == "user":
@@ -558,7 +563,8 @@ def put_dataset(dataset_id: str, req: DatasetRequest, who: Who) -> dict:
                 groups = groups if groups is not None else {x["name"] for x in kc().groups()}
                 if g.principal not in groups:
                     raise HTTPException(404, f"no group '{g.principal}'")
-            grants.append({"type": g.type, "principal": g.principal})
+            grants.append({"type": g.type, "principal": g.principal, "permission": g.permission})
+            seen[(g.type, g.principal)] = grants[-1]
     except KeycloakError as exc:
         fail(exc)
     row = store.put_dataset(dataset_id, req.name.strip(), req.description.strip(), sorted(set(req.cubes)), grants, who.name)

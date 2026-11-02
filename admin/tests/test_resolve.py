@@ -42,3 +42,16 @@ def test_admins_are_never_blocked():
 def test_the_three_services_ship_the_same_resolution_file():
     one = (ROOT / "auth" / "access_resolve.py").read_bytes()
     assert (ROOT / "builder" / "access_resolve.py").read_bytes() == one and (ROOT / "admin" / "access_resolve.py").read_bytes() == one
+
+
+def test_the_sql_lab_is_for_admins_and_those_granted_lab_on_any_dataset():
+    from access_resolve import lab_allowed
+    view = {**grant("sales", "user", "ayse"), "permission": "view"}
+    lab = {**grant("sales", "group", "Analysts"), "permission": "lab"}
+    role_lab = {**grant("inv", "role", "purchasing"), "permission": "lab"}
+    assert lab_allowed([], "root", "admin", []) is True
+    assert lab_allowed([view, lab], "ayse", "manager", []) is False, "view alone does not open the lab"
+    assert lab_allowed([view, lab], "ayse", "manager", ["Analysts"]) is True
+    assert lab_allowed([lab], "bob", "manager", ["Other"]) is False
+    assert lab_allowed([role_lab], "buyer", "purchasing", []) is True and lab_allowed([role_lab], "ayse", "manager", []) is False
+    assert lab_allowed([{**grant("x", "user", "ayse")}], "ayse", "manager", []) is False, "a grant without a permission is a view"

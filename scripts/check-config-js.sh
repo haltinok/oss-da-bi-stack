@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 render() {  # env assignments as arguments; prints the JS of config.js
-  docker run --rm "${@/#/-e}" -e KEYCLOAK_PORT=8180 -e AUTH_PORT=8200 -e CUBE_PORT=4000 -e ACTIONS_PORT=8300 -e BUILDER_PORT=8350 -e ADMIN_PORT=8400 \
+  docker run --rm "${@/#/-e}" -e KEYCLOAK_PORT=8180 -e AUTH_PORT=8200 -e CUBE_PORT=4000 -e ACTIONS_PORT=8300 -e BUILDER_PORT=8350 -e ADMIN_PORT=8400 -e LAB_PORT=8450 \
     -v "$PWD/dashboard/cube/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx:1.27-alpine \
     sh -c '/docker-entrypoint.d/20-envsubst-on-templates.sh >/dev/null 2>&1; nginx -t >/dev/null 2>&1 || { echo "nginx -t failed" >&2; exit 1; }; grep "return 200" /etc/nginx/conf.d/default.conf' \
     | sed -E "s/^ *return 200 '//; s/';\$//"
@@ -17,7 +17,7 @@ js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=live CUBE_250
 check "local, live" "$js" 'S.keycloak.url === "http://localhost:8180" && S.cube === "http://localhost:4000/cubejs-api/v1" && S.datasets.length === 1 && S.datasets[0].id === "live" && S.datasets[0].mart === "mart" && !S.datasets[0].readOnly'
 js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=250m CUBE_250M_PORT=)
 check "builder address, local" "$js" 'S.builder === "http://localhost:8350"'
-check "admin address, local" "$js" 'S.admin === "http://localhost:8400"'
+check "admin and lab addresses, local" "$js" 'S.admin === "http://localhost:8400" && S.lab === "http://localhost:8450"'
 check "local, 250m" "$js" 'S.datasets.length === 1 && S.datasets[0].id === "250m" && S.datasets[0].mart === "mart_250m" && S.datasets[0].readOnly === true && S.datasets[0].label === "250M benchmark" && S.datasets[0].cube === S.cube'
 js=$(render PUBLIC_URL=https://demo.example.test PATH_ROUTING=1 DATASET=250m CUBE_250M_PORT=)
 check "public, 250m" "$js" 'S.builder === "https://demo.example.test/builder-api" && S.keycloak.url === "https://demo.example.test/kc" && S.cube === "https://demo.example.test/cubejs-api/v1" && S.datasets[0].mart === "mart_250m" && S.datasets[0].readOnly === true'

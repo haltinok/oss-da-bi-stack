@@ -36,6 +36,10 @@
 		reverse_proxy actions:8300
 	}
 	# The dashboard builder (a prompt becomes a dashboard spec); every call needs the Keycloak token.
+	# The SQL lab (ad-hoc SELECTs over the semantic layer); every call needs a token of someone who has been given it.
+	handle_path /lab-api/* {
+		reverse_proxy lab:8450
+	}
 	# The admin console (users, groups, roles over Keycloak); every call needs an admin's token.
 	handle_path /admin-api/* {
 		reverse_proxy admin:8400
