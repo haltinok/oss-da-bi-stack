@@ -402,3 +402,4 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .calc-dialog button.calc-primary:not(.calc-m):not(.calc-op):not(.dz-close) { background: var(--focus); border-color: var(--focus); color: var(--on-focus, #fff); }
 .calc-dialog button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 760px) { .calc-body { grid-template-columns: 1fr; overflow: auto; } .calc-ops { flex-direction: row; flex-wrap: wrap; } }
+.limit-note { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; }

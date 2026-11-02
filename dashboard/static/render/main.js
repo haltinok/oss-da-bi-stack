@@ -364,6 +364,13 @@ async function showDashboard() {
     writeUrl();
     loadAll();
   }
+  /** A filter the designer limited (`allowed`) says so under its control, so a reader is not left wondering why a panel shows fewer values than the data has. */
+  function syncLimitNote(f) {
+    const node = filterEls.get(f.id);
+    if (!node) return;
+    node.querySelector(":scope > .limit-note")?.remove();
+    if (f.allowed?.length) node.append(el("small", { class: "limit-note", title: f.allowed.join(", ") }, esc(t.fc.limited(f.allowed.length))));
+  }
   function buildFilters() {
     if (!visibleFilters().length) return;
     bar.innerHTML = "";
@@ -411,6 +418,7 @@ async function showDashboard() {
       loadAll();
     });
     bar.append(reset);
+    for (const f of visibleFilters()) syncLimitNote(f);
     const dashboardBar = visibleFilters().some((f) => (!f.scope || f.scope === "dashboard") && !slicerOf.has(f.id) && !f.implicit);
     bar.hidden = !dashboardBar;                                                              // with only page and pane filters the header bar shows when Reset is needed
     ctx.syncReset = () => {
@@ -532,7 +540,7 @@ async function showDashboard() {
     }
     const filtersMoved = defaultsMoved.length + allowedMoved.length > 0;
     if (filtersMoved) {
-      for (const f of allowedMoved) fillOptions(spec.filters.find((x) => x.id === f.id));
+      for (const f of allowedMoved) { const mine = spec.filters.find((x) => x.id === f.id); fillOptions(mine); syncLimitNote(mine); }
       for (const f of visibleFilters()) showValue(f);
       writeUrl();
     }

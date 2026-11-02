@@ -557,7 +557,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const wrap = el("div", { class: "dz-field dz-default dz-allowed" }, `<span>${esc(dz.f.filterAllowed)}</span>`);
     const slot = el("span", { class: "dz-input" });
     slot.append(picker.el);
-    wrap.append(slot, el("p", { class: "hint" }, esc(dz.allowedHint)));
+    wrap.append(slot, el("p", { class: "hint dz-allowed-count", role: "status" }, `<strong>${esc(dz.allowedCount(f.allowed?.length || 0, known.length))}</strong> · ${esc(dz.allowedHint)}`));
     return [wrap];
   }
 

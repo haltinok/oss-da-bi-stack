@@ -737,6 +737,10 @@ with sync_playwright() as p:
     offered = page.locator("#filters .fc-list input").count()
     check(offered == 3, f"the page's own filter offers only those three values ({offered} listed)")
     page.keyboard.press("Escape")
+    note = page.locator("#filters .limit-note").first.inner_text()
+    check("3 value" in note, f"the page says the filter is limited ({note})")
+    count = page.locator(f"{card} .dz-allowed-count").inner_text()
+    check(count.startswith(f"3 of {n_all} values allowed"), f"the designer says how many values are allowed ({count[:30]})")
     with changes(page):
         page.select_option(f'{card} [data-path="type"]', "text")
     settled(page)
