@@ -1,28 +1,61 @@
 # Open-Source Data & Analytics Stack
 
+An open-source analytics stack where **dashboards are YAML files**: describe one in a sentence, click it together in a visual designer, or write it by hand. Every number is
+served from a **governed Cube model** (one definition of each metric, row-level security, pre-aggregated rollups) on StarRocks, so a dashboard is a reviewed file, not a new code base.
+
+**Live demo: <https://demo.eloha-da.com>**: 250M rows, panel p95 of 15 to 52 ms. Sign-in is required and no demo accounts are published here.
+
+![A dashboard built from a request: the draft bar with its Change box, a filter, key figures, a chart, and a table](docs/images/dashboards/builder.png)
+
+## What you can do
+
+- **Describe a dashboard** in plain words (English or Turkish) and get a validated draft; ask for changes the same way. A language model writes it (Claude, DeepSeek or any compatible server), or a rule-based stand-in when no key is set.
+- **Design it by clicking:** pick a panel and change its measure, grouping or style; drag to move and resize; add, duplicate and delete panels; filters of every kind (several values, text, number, dynamic dates), scopes (whole dashboard, one tab, one panel), slicers, calculations (formulas over measures), colour rules, themes and a logo. Undo and redo.
+- **Write it as YAML** and keep it in git: a schema and validator check every file, and the designer and the model write the same format.
+- **Tabbed, interactive dashboards:** tabs, pivot tables with totals and heat, time charts with drill-down, cross-filtering by clicking a chart, Excel export of any panel.
+- **Save, version and share** dashboards with roles; each viewer's role decides what they can read.
+- **Governed data:** a Cube semantic layer on StarRocks, Keycloak sign-in, and row-level security by territory, so everyone sees the same numbers they are allowed to see.
+- **Live data pipelines** from an OLTP simulator through Airflow, ingestr and dbt (plus an independent Kafka/Debezium CDC path into ClickHouse), and an inventory-actions service with a proposal agent.
+
+## Stack
+
+| Layer                | Tool                              |
+|----------------------|-----------------------------------|
+| Dashboards           | YAML specs (`dashboards/`), a validator and compiler (`dashspec`), a plain-JS renderer and visual designer (`dashboard/static`, served by nginx) |
+| Builder service      | FastAPI (`builder/`): prompt to dashboard, saved dashboards and versions, every answer checked by `dashspec` |
+| LLM providers        | Anthropic (default, `claude-opus-5-5`), DeepSeek (`BUILDER_PROVIDER=deepseek`), any Anthropic-compatible server (`ANTHROPIC_BASE_URL`); a rule-based stand-in with no key |
+| Semantic layer       | Cube (+ Cube Store pre-aggregations)  |
+| Warehouse / serving store | StarRocks 3.5 (separate frontend and backend) |
+| Transformation       | dbt-core + dbt-starrocks          |
+| Sign-in / row-level security | Keycloak 26 + a small auth service + `cube/cube.js` |
+| Public front door    | Caddy (automatic HTTPS, routes by path; `docker-compose.public.yml`) |
+| Orchestration        | Airflow 3.3.2 (LocalExecutor)     |
+| Ingestion            | ingestr (live AdventureWorks → StarRocks); dlt (orders, optional SQL Server load) |
+| Streaming / CDC      | Kafka (KRaft) + Kafka Connect + Debezium |
+| Real-time OLAP (CDC) | ClickHouse 25.8                   |
+| Inventory actions    | an actions service (`actions/`) and a weekly proposal agent (`agent/`) |
+| Kafka UI             | provectuslabs/kafka-ui            |
+| Data simulation      | Faker (Python)                    |
+| Source databases     | Postgres 16 (`wal_level=logical`) |
+
+## Documentation
+
+- [Dashboards as code](docs/dashboards.md): the guide: files, panels, filters, the designer, themes, roles.
+- [The builder](docs/builder.md): describing a dashboard to a model, the checks, saved dashboards.
+- [The semantic layer](docs/semantic-layer.md): the cubes, measures and dimensions a dashboard can use.
+- [Serving the demo](docs/deploy-demo.md): Caddy, `PUBLIC_URL` and the public overlay.
+- [Spec reference](docs/dashboard-spec-reference.md): every field of a dashboard file. The designer's plan: [`PLAN-designer.md`](PLAN-designer.md).
+
+To run it yourself, see [Setup](#setup); the sections below describe the data pipelines in detail.
+
+## The data pipelines
+
 An end-to-end ELT/CDC demo stack orchestrated by Airflow, built from open-source tools:
 
 - **Postgres `postgres_active`** (an AdventureWorks OLTP sandbox kept live by a Faker simulator) → (**ingestr**, every 5 min, Airflow) → **StarRocks** `raw` → (**dbt-core**) → `mart` → **Cube** (semantic layer, pre-aggregations, row-level security) → the **live sales dashboard** behind Keycloak sign-in: KPIs, cross-filtering and Excel export. See [StarRocks + Cube serving path](#starrocks--cube-serving-path-starrocks-profile) and [Live sales dashboard](#live-sales-dashboard).
 - **Postgres CDC source** (`postgres_active`) → (Debezium) → Kafka topic → **ClickHouse** (real-time OLAP): an independent path, see [Kafka / Debezium CDC](#kafka--debezium-cdc)
 - **SQL Server** (`AdventureWorks2016`) → (dlt) → Postgres `analytics.raw`: an optional one-time load
 - **AdventureWorks2016 OLTP sandbox** in `postgres_active` — a ~10% sample of the AdventureWorks tables, kept live by the `simulate_adventureworks` simulator, so you can practise against a churning OLTP database without the real SQL Server
-
-## Stack
-
-| Layer                | Tool                              |
-|----------------------|-----------------------------------|
-| Orchestration        | Airflow 3.3.2 (LocalExecutor)     |
-| Ingestion            | ingestr (live AdventureWorks → StarRocks); dlt (orders, optional SQL Server load) |
-| Streaming / CDC      | Kafka (KRaft) + Kafka Connect + Debezium |
-| Transformation       | dbt-core + dbt-starrocks          |
-| Warehouse / serving store | StarRocks 3.3                |
-| Semantic layer       | Cube (+ Cube Store pre-aggregations) |
-| Sign-in / row-level security | Keycloak + a small auth service + `cube/cube.js` |
-| Dashboard            | the live sales dashboard (`dashboard/static`, served by nginx) |
-| Real-time OLAP (CDC) | ClickHouse 25.8                   |
-| Kafka UI             | provectuslabs/kafka-ui            |
-| Data simulation      | Faker (Python)                    |
-| Change-data-capture source | Postgres 16 (`wal_level=logical`) |
 
 ## Databases & containers
 
@@ -509,6 +542,7 @@ uv run --with playwright python -I dashboard/cube/tests/e2e.py                  
 ```
 oss-da-bi-stack/
 ├── docker-compose.yml
+├── docker-compose.public.yml # overlay for a public demo: Caddy, HTTPS, PUBLIC_URL (see docs/deploy-demo.md)
 ├── .env.example              # required secrets; copy to .env or use the generator
 ├── scripts/
 │   ├── generate-env.sh               # writes .env with strong random secrets
@@ -523,7 +557,27 @@ oss-da-bi-stack/
 ├── SECURITY.md               # how secrets are handled, guard rails, reporting
 ├── skills/                   # agent skills for working with this stack
 ├── docs/
-│   └── adventureworks claude dashboard app.png
+│   ├── dashboards.md         # the guide: dashboards as code, the designer, filters, themes
+│   ├── builder.md            # prompt to dashboard, the checks, saved dashboards
+│   ├── semantic-layer.md     # generated from the Cube model: what a dashboard can use
+│   ├── dashboard-spec-reference.md  # generated from the schema: every field
+│   ├── deploy-demo.md        # serving the public demo behind Caddy
+│   └── images/               # screenshots (generated by dashboard/cube/tests/gallery.py)
+├── PLAN-*.md                 # design plans and build records (the designer, pivot, tabs, search)
+├── dashboards/               # dashboards as code
+│   ├── *.yml                 #   the example dashboards
+│   ├── schema/dashboard.schema.json  # the schema every file is checked against
+│   ├── dashspec/             #   validator, compiler, filter and query logic (also: scripts/dashspec)
+│   └── build/                #   compiled dashboards served at /d/<id>
+├── builder/                  # FastAPI service: describe a dashboard to a model, checks every answer
+│   ├── composer.py, provider.py, standin.py   # the model call, its providers, the rule-based stand-in
+│   └── saved.py, store.py    #   saved dashboards, versions and who may see them (Postgres)
+├── actions/                  # inventory actions service: validates and stores proposals for approval
+├── agent/                    # weekly proposal agent (rules or Claude) that drafts inventory actions
+├── auth/                     # Keycloak token in, short-lived Cube token out (role + territories)
+├── keycloak/                 # the realm (roles, clients, users) and its helper scripts
+├── caddy/
+│   └── Caddyfile             # public front door: HTTPS and path routing for the demo
 ├── .github/
 │   ├── dependabot.yml          # monthly grouped updates: actions, pip, Docker images
 │   └── workflows/
@@ -589,7 +643,8 @@ oss-da-bi-stack/
 │       ├── 01_init.sql       # orders: Kafka engine + history + current-state + rejected views
 │       └── 02_adventureworks_cdc.sql  # AW: multi-topic Kafka table + aw_events + typed tables
 ├── dashboard/
-│   └── static/               # index.html, app.js (the sales dashboard), lib/ (shared ES modules: format, charts, tooltip, table, xlsx), style.css
+│   ├── static/               # the pages: index.html (live sales), d.html (a dashboard), render/ (renderer, designer, builder bar), lib/ (shared ES modules), style.css, themes.css
+│   └── cube/                 # nginx template, the Cube client, and the browser tests (tests/)
 ├── spike/                    # the StarRocks + Cube spike: benchmarks, results, and the pieces
 │   ├── results.md            #   not yet moved out: auth/, keycloak/, dashboard/ (Cube data source)
 │   └── ...
