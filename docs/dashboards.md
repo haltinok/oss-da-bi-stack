@@ -256,6 +256,11 @@ body and secondary text at 4.5:1 on the page, the cards and the shaded cells, se
 A dashboard's own `theme.colors` (its brand) still win over the viewer's theme, so a branded dashboard keeps its colours in every theme. The categorical palette of
 the treemap, the pie and the heat shades is the same in every theme.
 
+## The start page
+`/home/` gathers what a person can open and do: a launcher (describe a new dashboard, the live sales dashboard, all dashboards, and the admin console for admins), **pick up where you left off** (the dashboards you opened lately, kept in
+this browser only), what is **shared with you**, your own saved dashboards and folders, and the sample dashboards your role may open. The search box searches all of them at once (the same forgiving search as the dashboards list). Everything shown
+comes from the services that decide access (the role's samples, the builder's saved dashboards and shares), so the page never shows what you could not open. The house icon in the header of the dashboards pages leads back to it.
+
 ## Finding a dashboard
 Every dashboard page has a **Dashboards** link above its title that leads back to the list at `/d/`. On the list, the search box above the dashboards filters
 as you type: the built dashboards and, when the builder keeps them, your saved ones and those shared with you. It looks at the title and description (and, for

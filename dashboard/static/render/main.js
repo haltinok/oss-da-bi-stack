@@ -17,6 +17,7 @@ import { createControl, createSlicer } from "./filter-controls.js";
 import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builder.js";
 import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
+import { noteRecent } from "../lib/recent.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -57,6 +58,7 @@ function localizeChrome(t, locale) {
   $("#f-dataset").setAttribute("aria-label", t.datasetLabel);
   $("#theme").title = t.themeToggle;
   $("#theme").setAttribute("aria-label", t.themeToggle);
+  if ($("#home-start")) { $("#home-start").title = t.home; $("#home-start").setAttribute("aria-label", t.home); }
   const who = $("#who");
   if (who) {
     who.title = t.signedInAs(who.dataset.user, who.dataset.role);
@@ -147,6 +149,7 @@ async function showDashboard() {
     spec = await res.json();
   }
   const role = client.session().role;
+  if (id !== "draft") noteRecent({ kind: id.startsWith("s/") ? "saved" : "built", id: id.startsWith("s/") ? id.slice(2) : id, title: spec.title });        // for the start page's "pick up where you left off"
   const locale = uiLocale(spec.locale || "en-US");              // the person's choice (EN | TR), else the dashboard's own locale
   const t = stringsFor(locale);
   setHomeLink(t);

@@ -383,6 +383,8 @@ class Handler(BaseHTTPRequestHandler):
             path = "/d.html"
         if path == "/admin" or path.startswith("/admin/"):  # the admin console
             path = "/admin.html"
+        if path == "/home" or path.startswith("/home/"):    # the start page
+            path = "/home.html"
         for base, strip in ((ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
             if path.startswith(strip):
                 rel = path[len(strip):] or "index.html"

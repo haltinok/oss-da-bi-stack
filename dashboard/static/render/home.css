@@ -1,0 +1,15 @@
+/* The start page (/home/). Reuses the page's tokens so every theme works. */
+.home-search { display: block; width: 100%; margin: 4px 0 18px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 15px; }
+.home-sec { margin: 0 0 26px; }
+.home-sec h2 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: baseline; gap: 10px; }
+.home-sec h2 a { font-size: 12.5px; font-weight: 400; color: var(--muted); }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.home-card { display: block; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none; }
+.home-card:hover { border-color: var(--focus); }
+.home-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.home-card strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
+.home-card .hint { color: var(--muted); font-size: 12.5px; }
+.home-card.start { background: var(--surface-2); }
+.home-empty { color: var(--muted); font-size: 13.5px; margin: 0; }
+.home-folders { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-folders a { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 13px; }
