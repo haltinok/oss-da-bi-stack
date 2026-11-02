@@ -101,6 +101,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       card.append(field({ path: "type", kind: "choice", key: "filterType", options: typesFor(dimensionTypeOf(catalog, f.dimension)) }, { ...f, type: typ },
         (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
       if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
+      card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
       card.append(defaultRow(f, typ, (v) => edit("default", v)));
       // Where it applies and whether the reader sees it.
       const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
@@ -541,9 +542,28 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     return wrap;
   }
 
+  /** The designer's limit on a filter: the values the reader can choose from on the page (nothing ticked: all of them). Only a select or multiselect with a list of real values has one. */
+  function allowedRow(f, typ, set) {
+    const known = (typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : [];
+    if (!known.length) return [];
+    const picker = createSlicer({ ...f, type: "multiselect", label: dz.f.filterAllowed }, t, "list");
+    picker.setOptions(known.map((value) => ({ value })));
+    picker.show(f.allowed?.length ? formatValue({ op: "in", args: f.allowed }) : "");
+    picker.onChange = (v) => {
+      const m = parseValue(v);
+      set(!m ? [] : m.op === "not" ? known.filter((x) => !m.args.includes(x)) : m.args);          // "all except these" is stored as the list it stands for
+    };
+    picker.el.classList.add("dz-default");
+    const wrap = el("div", { class: "dz-field dz-default dz-allowed" }, `<span>${esc(dz.f.filterAllowed)}</span>`);
+    const slot = el("span", { class: "dz-input" });
+    slot.append(picker.el);
+    wrap.append(slot, el("p", { class: "hint" }, esc(dz.allowedHint)));
+    return [wrap];
+  }
+
   /** The row for a filter's default value: the filter's own control for the types that have one, and plain boxes for a select (a value) and a multiselect (values; the options come from data the designer does not read). */
   function defaultRow(f, typ, set) {
-    const known = (typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : [];
+    const known = ((typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : []).filter((v) => !f.allowed?.length || f.allowed.includes(v));          // only what the reader can choose can be the default
     if (known.length) {                                        // the real values, picked from a list (one for a select, several for a multiselect)
       const picker = createSlicer({ ...f, label: dz.f.filterDefault }, t, "list");
       picker.setOptions(known.map((value) => ({ value })));

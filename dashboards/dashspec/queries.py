@@ -21,8 +21,16 @@ def active_filters(spec, values, panel, env=None):
     implicit = {f["id"] for f in spec.get("filters", []) if f.get("implicit")}
     ignored = set(panel.get("ignore_filters", [])) | {i for i in own if i in implicit or i in values.get("_clicked", [])}          # the choice a click made; a header choice narrows every panel (see clickedIds in plan.js)
     env = env or default_env(spec)
-    return [c for f in spec.get("filters", []) if f["id"] not in ignored and applies(spec, f, panel.get("id")) and effective_value(f, values) not in (None, "")
-            for c in to_cube(f, effective_value(f, values), env)]
+    chosen = [c for f in spec.get("filters", []) if f["id"] not in ignored and applies(spec, f, panel.get("id")) and effective_value(f, values) not in (None, "")
+              for c in to_cube(f, effective_value(f, values), env)]
+    return chosen + allowed_filters(spec, panel)
+
+
+def allowed_filters(spec, panel):
+    """The designer's limit on a filter's values (`allowed`): it holds whatever the reader picked, even nothing, and only a panel's `ignore_filters` leaves it out."""
+    ignored = set(panel.get("ignore_filters", []))
+    return [{"member": f["dimension"], "operator": "equals", "values": list(f["allowed"])}
+            for f in spec.get("filters", []) if f.get("allowed") and f["id"] not in ignored and applies(spec, f, panel.get("id"))]
 
 
 def term_members(m):
