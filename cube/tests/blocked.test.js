@@ -19,3 +19,15 @@ for (const [cube, q] of [['internet_sales', sales], ['products', sales], ['dates
 assert(ask({ ...base, blocked_cubes: ['reseller_sales'] }, sales).ok, 'a blocked cube the query does not touch changes nothing');
 assert(ask({ user_id: 'a', role: 'admin', blocked_cubes: [] }, sales).ok, 'an admin is blocked from nothing (the auth service sends an empty list for admins)');
 console.log('blocked cubes: ok');
+
+// single fields a dataset holds
+{
+  const sc = { ...base, blocked_members: ['internet_sales.gross_profit'] };
+  assert(ask(sc, { measures: ['internet_sales.revenue'] }).ok, 'the rest of the cube is open');
+  const r = ask(sc, { measures: ['internet_sales.gross_profit'] });
+  assert(r.error && /dataset/.test(r.error.message), 'a blocked field is refused');
+  assert(ask(sc, { measures: ['internet_sales.revenue'], order: { 'internet_sales.gross_profit': 'desc' } }).error, 'also when only ordered by');
+  assert(ask(sc, { measures: ['internet_sales.revenue'], filters: [{ member: 'internet_sales.gross_profit', operator: 'gt', values: ['1'] }] }).error, 'or filtered on');
+  assert(ask({ user_id: 'a', role: 'admin', blocked_members: [] }, { measures: ['internet_sales.gross_profit'] }).ok, 'admins are blocked from nothing');
+  console.log('blocked fields: ok');
+}

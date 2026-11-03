@@ -90,6 +90,17 @@ TOOLS = [
 
 
 # ------------------------------------------------------------------------------------------------------------------ what a role may see
+def without_members(catalog: cat.Catalog, blocked) -> cat.Catalog:
+    """The catalog without single fields (cube.member) a person may not read because of datasets; a cube keeps its other fields."""
+    gone = set(blocked)
+    if not gone:
+        return catalog
+    cubes = {}
+    for n, c in catalog.cubes.items():
+        cubes[n] = {**c, "measures": {m: t for m, t in c["measures"].items() if f"{n}.{m}" not in gone}, "dimensions": {d: t for d, t in c["dimensions"].items() if f"{n}.{d}" not in gone}}
+    return cat.Catalog(cubes)
+
+
 def without_cubes(catalog: cat.Catalog, blocked) -> cat.Catalog:
     """The catalog without the cubes a person may not read because of datasets (access_resolve.blocked_cubes); a join to one is dropped, as in visible_catalog."""
     gone = set(blocked)
@@ -324,4 +335,4 @@ def check_catalog(model_dir: str) -> cat.Catalog:
     return cat.from_model(model_dir)
 
 
-__all__ = ["run_build", "check_submission", "visible_catalog", "without_cubes", "catalog_text", "system_blocks", "ROLES", "ROLE_CUBES", "json"]
+__all__ = ["run_build", "check_submission", "visible_catalog", "without_cubes", "without_members", "catalog_text", "system_blocks", "ROLES", "ROLE_CUBES", "json"]

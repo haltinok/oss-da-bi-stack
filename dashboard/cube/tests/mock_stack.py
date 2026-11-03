@@ -185,7 +185,7 @@ def saved_answer(path, body, method, c):
 
 # ---- the admin service (admin/) on an in-memory directory: the same endpoints and refusals the page relies on
 ADMIN = {"users": {}, "groups": {}, "rules": {}, "datasets": {}, "rules_off": False, "n": 0}
-CUBES = [{"name": n, "description": f"The {n} cube", "measures": 3, "dimensions": 5} for n in ("customers", "dates", "internet_sales", "inventory_health", "products", "reseller_sales", "territories")]
+CUBES = [{"name": n, "description": f"The {n} cube", "measures": 3, "dimensions": 5, "fields": [{"name": "revenue", "kind": "measure"}, {"name": "gross_profit", "kind": "measure"}, {"name": "category", "kind": "dimension"}]} for n in ("customers", "dates", "internet_sales", "inventory_health", "products", "reseller_sales", "territories")]
 REGIONS = ["Canada", "France", "Germany", "United States"]
 SEED_REGIONS = {"admin": REGIONS, "na_manager": ["Canada", "United States"], "de_rep": ["Germany"]}
 ROLES = ["admin", "manager", "rep", "purchasing", "marketing"]
@@ -226,7 +226,9 @@ def admin_answer(path, body, method, query):
             known = {c["name"] for c in CUBES}
             if any(c not in known for c in body["cubes"]):
                 return 400, {"detail": "no such cube"}
-            sets[parts[1]] = {"id": parts[1], "name": body["name"], "description": body.get("description", ""), "cubes": sorted(set(body["cubes"])), "grants": body.get("grants", [])}
+            if not body["cubes"] and not body.get("members"):
+                return 422, {"detail": "a dataset holds at least one cube or one field"}
+            sets[parts[1]] = {"id": parts[1], "name": body["name"], "description": body.get("description", ""), "cubes": sorted(set(body["cubes"])), "members": sorted(set(body.get("members", []))), "grants": body.get("grants", [])}
             return 200, sets[parts[1]]
         if len(parts) == 2 and method == "DELETE":
             return (204, None) if sets.pop(parts[1], None) is not None else (404, {"detail": "no such dataset"})

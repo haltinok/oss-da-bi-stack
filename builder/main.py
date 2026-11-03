@@ -51,11 +51,11 @@ if MODE not in ("auto", "llm", "standin"):
     raise SystemExit(f"BUILDER_MODE must be auto, llm or standin, got {MODE!r}")
 
 
-def blocked_for(user: "User") -> list[str]:
-    """The cubes this person may not read because of datasets (access_resolve.blocked_cubes), from the access schema through the builder's own login. Cube enforces it on
+def blocked_for(user: "User") -> tuple[list[str], list[str]]:
+    """The cubes and the single fields this person may not read because of datasets (access_resolve), from the access schema through the builder's own login. Cube enforces both on
     every query whatever this says; this only keeps the builder from offering what would be refused. Without the database, or when it cannot be read, nothing is left out."""
     if STORE is None or user.role == "admin":
-        return []
+        return [], []
     try:
         import psycopg2
         conn = psycopg2.connect(**{**STORE.dsn, "connect_timeout": 3})
@@ -64,15 +64,21 @@ def blocked_for(user: "User") -> list[str]:
                 datasets, grants = access_resolve.load(cur)
         finally:
             conn.close()
-        return access_resolve.blocked_cubes(datasets, grants, user.name, user.role, user.groups)
+        return (access_resolve.blocked_cubes(datasets, grants, user.name, user.role, user.groups),
+                access_resolve.blocked_members(datasets, grants, user.name, user.role, user.groups))
     except Exception as exc:                                                       # noqa: BLE001 (the builder still works; Cube is the one that refuses)
         print(json.dumps({"event": "access", "warning": f"datasets could not be read: {exc}"[:200]}), flush=True)
-        return []
+        return [], []
 
 
 def catalog_for(user: "User"):
-    blocked = blocked_for(user)
-    return core.without_cubes(CATALOG, blocked) if blocked else CATALOG
+    cubes, fields = blocked_for(user)
+    out = CATALOG
+    if cubes:
+        out = core.without_cubes(out, cubes)
+    if fields:
+        out = core.without_members(out, fields)
+    return out
 
 
 def mode() -> str:

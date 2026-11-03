@@ -26,7 +26,7 @@ const EN = {
   noDatasets: "No datasets yet: every cube works as its role allows.", nobodyYet: "Nobody has access yet: only admins can read these cubes.", grantType: { user: "A person", group: "A group", role: "A role" }, grantPick: "Choose…",
   grantAdd: "Give access", datasetSave: "Save dataset", datasetDelete: "Delete this dataset?", datasetDeleteWhy: (n) => `The cubes in ${n} are no longer governed by it: they go back to what each role allows, unless another dataset holds them.`,
   grantLab: "Also give the SQL lab", grantLabHint: "A person, group or role with the SQL lab on any dataset gets the lab (what they can read in it is what the dashboards let them read).", grantLabShort: "SQL lab", labOn: "Has the SQL lab.", labOff: "Does not have the SQL lab.",
-  pickCube: "Choose at least one cube.", blockedCubes: "Cubes kept from this person by datasets", noneBlocked: "none",
+  datasetFields: "Individual fields", datasetFieldsHint: "A field in a dataset (profit, say) needs a grant even where its cube is open to everybody.", fieldPickCube: "A cube…", fieldPick: "A field…", fieldAdd: "Add field", pickCube: "Choose at least one cube or field.", blockedCubes: "Cubes kept from this person by datasets", noneBlocked: "none",
   handOver: (who) => `Hand their saved dashboards to ${who} first (otherwise they stay with a name nobody can sign in with)`,
   saved: "Saved.", failed: "Could not do that:", you: "you", rolesHint: { admin: "everything, and this console", manager: "sales, by territory", rep: "sales, own territory, no profit", viewer: "views dashboards only (no building, SQL lab or admin), no profit", purchasing: "inventory", marketing: "inventory, no supplier data" },
 };
@@ -57,7 +57,7 @@ const TR = {
   noDatasets: "Henüz veri kümesi yok: her küp rolün izin verdiği gibi çalışır.", nobodyYet: "Henüz kimseye erişim verilmedi: bu küpleri yalnızca yöneticiler okuyabilir.", grantType: { user: "Bir kişi", group: "Bir grup", role: "Bir rol" }, grantPick: "Seçin…",
   grantAdd: "Erişim ver", datasetSave: "Veri kümesini kaydet", datasetDelete: "Bu veri kümesi silinsin mi?", datasetDeleteWhy: (n) => `${n} içindeki küpler artık onun tarafından yönetilmez: başka bir veri kümesinde değilse rolün izin verdiğine dönerler.`,
   grantLab: "SQL laboratuvarını da ver", grantLabHint: "Herhangi bir veri kümesinde SQL laboratuvarı izni olan kişi, grup ya da rol laboratuvarı alır (içinde okuyabildiği, panoların okumasına izin verdiğidir).", grantLabShort: "SQL lab", labOn: "SQL laboratuvarı var.", labOff: "SQL laboratuvarı yok.",
-  pickCube: "En az bir küp seçin.", blockedCubes: "Veri kümelerinin bu kişiden sakladığı küpler", noneBlocked: "yok",
+  datasetFields: "Tekil alanlar", datasetFieldsHint: "Bir veri kümesindeki alan (örneğin kâr), küpü herkese açık olsa bile izin ister.", fieldPickCube: "Bir küp…", fieldPick: "Bir alan…", fieldAdd: "Alan ekle", pickCube: "En az bir küp ya da alan seçin.", blockedCubes: "Veri kümelerinin bu kişiden sakladığı küpler", noneBlocked: "yok",
   handOver: (who) => `Önce kayıtlı panolarını ${who} adlı kişiye devret (aksi halde kimsenin giremeyeceği bir adda kalırlar)`,
   saved: "Kaydedildi.", failed: "Yapılamadı:", you: "siz", rolesHint: { admin: "her şey ve bu sayfa", manager: "satış, bölgeye göre", rep: "satış, kendi bölgesi, kâr yok", viewer: "yalnızca panoları görüntüler (oluşturma, SQL lab, yönetim yok), kâr yok", purchasing: "envanter", marketing: "envanter, tedarikçi verisi yok" },
 };

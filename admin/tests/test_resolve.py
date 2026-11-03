@@ -61,3 +61,15 @@ def test_a_viewer_never_has_the_lab_whatever_is_granted():
     from access_resolve import lab_allowed
     g = [{**grant("sales", "role", "viewer"), "permission": "lab"}, {**grant("sales", "user", "vera"), "permission": "lab"}]
     assert lab_allowed(g, "vera", "viewer", []) is False
+
+
+def test_a_single_field_in_a_dataset_needs_a_grant_even_when_its_cube_is_open():
+    from access_resolve import blocked_members
+    profit = {"id": "profit", "cubes": [], "members": ["internet_sales.gross_profit", "reseller_sales.gross_profit"]}
+    sales = {"id": "sales", "cubes": ["internet_sales"], "members": []}
+    ds = [profit, sales]
+    assert blocked_members(ds, [], "ayse", "manager", []) == ["internet_sales.gross_profit", "reseller_sales.gross_profit"]
+    assert blocked_members(ds, [grant("profit", "group", "Finance")], "ayse", "manager", ["Finance"]) == []
+    assert blocked_members(ds, [grant("sales", "user", "ayse")], "ayse", "manager", []) == ["internet_sales.gross_profit", "reseller_sales.gross_profit"], "a grant on the cube's dataset does not open its governed fields"
+    assert blocked_members(ds, [], "root", "admin", []) == [] and blocked_members([sales], [], "ayse", "rep", []) == []
+    assert blocked_cubes(ds, [], "ayse", "manager", []) == ["internet_sales"], "a dataset with only fields governs no cube"

@@ -12,7 +12,8 @@ def cubes() -> list[dict]:
         try:
             from dashspec import catalog as cat
             c = cat.from_model(os.environ.get("ADMIN_MODEL_DIR", "/app/cube-model"))
-            _cache = [{"name": n, "description": v.get("description", ""), "measures": len(v["measures"]), "dimensions": len(v["dimensions"])} for n, v in sorted(c.cubes.items())]
+            _cache = [{"name": n, "description": v.get("description", ""), "measures": len(v["measures"]), "dimensions": len(v["dimensions"]),
+                       "fields": [{"name": m, "kind": "measure"} for m in sorted(v["measures"])] + [{"name": d, "kind": "dimension"} for d in sorted(v["dimensions"])]} for n, v in sorted(c.cubes.items())]
         except (ImportError, SystemExit, OSError):
             _cache = []
     return _cache

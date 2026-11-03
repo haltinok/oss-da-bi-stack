@@ -25,11 +25,11 @@ class MemoryRules:
     # datasets and who may use them
     def datasets(self) -> list[dict]:
         with self.lock:
-            return [{**d, "cubes": list(d["cubes"]), "grants": [{"permission": "view", **g} for g in self.grants.get(d["id"], [])]} for d in sorted(self.sets.values(), key=lambda d: d["name"].lower())]
+            return [{**d, "cubes": list(d["cubes"]), "members": list(d.get("members", [])), "grants": [{"permission": "view", **g} for g in self.grants.get(d["id"], [])]} for d in sorted(self.sets.values(), key=lambda d: d["name"].lower())]
 
-    def put_dataset(self, id_: str, name: str, description: str, cubes: list[str], grants: list[dict], by: str) -> dict:
+    def put_dataset(self, id_: str, name: str, description: str, cubes: list[str], grants: list[dict], by: str, members: list[str] | None = None) -> dict:
         with self.lock:
-            self.sets[id_] = {"id": id_, "name": name, "description": description, "cubes": list(cubes), "updated_by": by, "updated_at": _now()}
+            self.sets[id_] = {"id": id_, "name": name, "description": description, "cubes": list(cubes), "members": list(members or []), "updated_by": by, "updated_at": _now()}
             self.grants[id_] = [dict(g) for g in grants]
         return next(d for d in self.datasets() if d["id"] == id_)
 
@@ -53,7 +53,7 @@ class MemoryRules:
     def resolve_input(self) -> tuple[list[dict], list[dict]]:
         """(datasets, grants) in the shape access_resolve.blocked_cubes wants."""
         with self.lock:
-            return ([{"id": d["id"], "cubes": list(d["cubes"])} for d in self.sets.values()],
+            return ([{"id": d["id"], "cubes": list(d["cubes"]), "members": list(d.get("members", []))} for d in self.sets.values()],
                     [{"object_id": k, "principal_type": g["type"], "principal": g["principal"], "permission": g.get("permission", "view")} for k, gs in self.grants.items() for g in gs])
 
     def list(self) -> list[dict]:
@@ -126,19 +126,20 @@ class PgRules:
     # datasets and who may use them
     def datasets(self) -> list[dict]:
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT id, name, description, cubes, updated_by, updated_at FROM access.dataset ORDER BY lower(name)")
+            cur.execute("SELECT id, name, description, cubes, members, updated_by, updated_at FROM access.dataset ORDER BY lower(name)")
             rows = cur.fetchall()
             cur.execute("SELECT object_id, principal_type, principal, permission FROM access.\"grant\" WHERE object_type = 'dataset' ORDER BY principal_type, lower(principal)")
             grants: dict[str, list[dict]] = {}
             for g in cur.fetchall():
                 grants.setdefault(g["object_id"], []).append({"type": g["principal_type"], "principal": g["principal"], "permission": g["permission"]})
-        return [{"id": r["id"], "name": r["name"], "description": r["description"], "cubes": list(r["cubes"]), "updated_by": r["updated_by"],
+        return [{"id": r["id"], "name": r["name"], "description": r["description"], "cubes": list(r["cubes"]), "members": list(r["members"]), "updated_by": r["updated_by"],
                  "updated_at": r["updated_at"].astimezone(datetime.timezone.utc).isoformat(timespec="seconds"), "grants": grants.get(r["id"], [])} for r in rows]
 
-    def put_dataset(self, id_: str, name: str, description: str, cubes: list[str], grants: list[dict], by: str) -> dict:
+    def put_dataset(self, id_: str, name: str, description: str, cubes: list[str], grants: list[dict], by: str, members: list[str] | None = None) -> dict:
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute("INSERT INTO access.dataset (id, name, description, cubes, updated_by) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
-                        "name = EXCLUDED.name, description = EXCLUDED.description, cubes = EXCLUDED.cubes, updated_by = EXCLUDED.updated_by, updated_at = now()", (id_, name, description, list(cubes), by))
+            cur.execute("INSERT INTO access.dataset (id, name, description, cubes, members, updated_by) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
+                        "name = EXCLUDED.name, description = EXCLUDED.description, cubes = EXCLUDED.cubes, members = EXCLUDED.members, updated_by = EXCLUDED.updated_by, updated_at = now()",
+                        (id_, name, description, list(cubes), list(members or []), by))
             cur.execute("DELETE FROM access.\"grant\" WHERE object_type = 'dataset' AND object_id = %s", (id_,))
             for g in grants:
                 cur.execute("INSERT INTO access.\"grant\" (object_type, object_id, principal_type, principal, permission, granted_by) VALUES ('dataset', %s, %s, %s, %s, %s)",
@@ -161,8 +162,8 @@ class PgRules:
 
     def resolve_input(self) -> tuple[list[dict], list[dict]]:
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT id, cubes FROM access.dataset")
-            datasets = [{"id": r["id"], "cubes": list(r["cubes"])} for r in cur.fetchall()]
+            cur.execute("SELECT id, cubes, members FROM access.dataset")
+            datasets = [{"id": r["id"], "cubes": list(r["cubes"]), "members": list(r["members"])} for r in cur.fetchall()]
             cur.execute("SELECT object_id, principal_type, principal, permission FROM access.\"grant\" WHERE object_type = 'dataset'")
             grants = [{"object_id": r["object_id"], "principal_type": r["principal_type"], "principal": r["principal"], "permission": r["permission"]} for r in cur.fetchall()]
         return datasets, grants
