@@ -321,3 +321,45 @@ def test_a_dataset_can_hold_single_fields_and_they_are_checked_against_the_model
     assert any(f["name"] == "gross_profit" for c in ruled.get("/datasets").json()["cubes"] if c["name"] == "internet_sales" for f in c["fields"])
     p = ruled.get("/rls/preview/na_manager").json()
     assert p["blocked_members"] == ["internet_sales.gross_profit", "reseller_sales.gross_profit"] and p["blocked_cubes"] == []
+
+
+# ------------------------------------------------------------------------------------------------------------------ more than one dimension
+@pytest.fixture()
+def two_dimensions(ruled, monkeypatch):
+    monkeypatch.setattr(main, "DIMENSIONS", [*main.DIMENSIONS, {"id": "channel", "labels": {"en": "Channels"}, "member": "x.channel", "cubes": ["x"], "values": {"kind": "list", "values": ["Internet", "Reseller"]}, "when_empty": "deny"}])
+    return ruled
+
+
+def test_rules_list_the_dimensions_and_their_values(two_dimensions):
+    out = two_dimensions.get("/rls/rules").json()
+    assert [d["id"] for d in out["dimensions"]] == ["territory", "channel"] and out["dimensions"][1]["values"] == ["Internet", "Reseller"]
+
+
+def test_a_rule_is_per_dimension_and_checked_against_that_dimensions_values(two_dimensions, kc):
+    kc.add("de_rep", "editor")
+    api = two_dimensions
+    assert api.put("/rls/rules/user/de_rep", json={"values": ["Germany"]}).json()["dimension"] == "territory", "no dimension: territory, as before"
+    r = api.put("/rls/rules/user/de_rep?dimension=channel", json={"values": ["Internet"]})
+    assert r.status_code == 200 and r.json()["dimension"] == "channel"
+    assert api.put("/rls/rules/user/de_rep?dimension=channel", json={"values": ["Germany"]}).status_code == 400, "a territory is not a channel"
+    assert api.put("/rls/rules/user/de_rep?dimension=planet", json={"values": ["Mars"]}).status_code == 400
+    assert sorted((r["dimension"], r["values"][0]) for r in api.get("/rls/rules").json()["rules"]) == [("channel", "Internet"), ("territory", "Germany")]
+    assert api.delete("/rls/rules/user/de_rep?dimension=channel").status_code == 204
+    assert [r["dimension"] for r in api.get("/rls/rules").json()["rules"]] == ["territory"], "deleting one dimension's rule leaves the other"
+
+
+def test_preview_gives_every_dimension_and_deleting_a_person_clears_all_their_rules(two_dimensions, kc):
+    kc.add("de_rep", "editor")
+    api = two_dimensions
+    api.put("/rls/rules/user/de_rep?dimension=channel", json={"values": ["Reseller"]})
+    p = api.get("/rls/preview/de_rep").json()
+    assert p["dimensions"]["channel"] == {"values": ["Reseller"], "source": "rules"} and p["dimensions"]["territory"]["source"] == "seed" and p["territories"] == ["Germany"]
+    api.put("/rls/rules/user/de_rep", json={"values": ["Germany"]})
+    main.rules().delete("user", "de_rep")
+    assert api.get("/rls/rules").json()["rules"] == []
+
+
+def test_the_dimensions_file_is_the_one_cube_reads():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    assert (root / "admin" / "rls_dimensions.json").read_text() == (root / "cube" / "rls_dimensions.json").read_text()

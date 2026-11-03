@@ -146,6 +146,8 @@ jobs:
           docker run --rm --entrypoint node -e NODE_PATH=/cube/node_modules -v "$PWD:/work:ro" -w /work \
             cubejs/cube:latest cube/tests/blocked.test.js
           docker run --rm --entrypoint node -e NODE_PATH=/cube/node_modules -v "$PWD:/work:ro" -w /work \
+            cubejs/cube:latest cube/tests/rls.test.js
+          docker run --rm --entrypoint node -e NODE_PATH=/cube/node_modules -v "$PWD:/work:ro" -w /work \
             cubejs/cube:latest cube/tests/sqlapi.test.js
       - name: validate the Caddyfile
         run: |

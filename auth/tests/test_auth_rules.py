@@ -38,7 +38,7 @@ def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="editor
         calls.append((user, role_, list(grps)))
         if isinstance(rules, Exception):
             raise rules
-        return list(rules or []), list(blocked), lab, list(fields)
+        return ({"territory": list(rules)} if rules else {}), list(blocked), lab, list(fields)
 
     monkeypatch.setattr(main, "read_access", fake_access)
     r = TestClient(main.app).post("/token", headers={"Authorization": "Bearer t"})
@@ -115,3 +115,16 @@ def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypat
     assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["blocked_members"] == ["internet_sales.gross_profit"]
     r, _ = sign_in(monkeypatch, rules_on=False, fields=["x.y"])
     assert r.json()["blocked_members"] == []
+
+
+def test_the_token_carries_the_values_of_every_dimension_in_rls(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"])
+    assert r.json()["rls"] == {"territory": ["Germany"]} and r.json()["territories"] == ["Germany"]
+    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"] == {"territory": ["Germany"]}
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[])
+    assert r.json()["rls"] == {"territory": ["Canada"]}, "the seed still decides the territory when no rule applies"
+
+
+def test_the_dimensions_file_is_the_one_cube_reads():
+    root = pathlib.Path(__file__).resolve().parents[2]
+    assert (root / "auth" / "rls_dimensions.json").read_text() == (root / "cube" / "rls_dimensions.json").read_text() == (root / "admin" / "rls_dimensions.json").read_text()

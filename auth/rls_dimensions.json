@@ -1,0 +1,15 @@
+{
+  "_": "The row-level dimensions. A rule (admin console) lists the values of one dimension a person or group may see; cube.js adds `member in values` to every query that touches one of `cubes`. Different dimensions are ANDed, the values of one are ORed. This file is the source: auth/ and admin/ keep identical copies (a test checks it, and that each member is reachable from each cube). `when_empty`: deny = a person with no value gets nothing from those cubes, allow = no value means no restriction. `values`: seed_regions = the territories of the dbt seed, list = the fixed values given, cube = the distinct values of the member.",
+  "dimensions": [
+    {
+      "id": "territory",
+      "labels": {"en": "Territories", "tr": "Bölgeler"},
+      "member": "territories.region",
+      "cubes": ["internet_sales", "reseller_sales", "territories"],
+      "values": {"kind": "seed_regions"},
+      "seed": true,
+      "when_empty": "deny",
+      "empty_message": "No territories assigned"
+    }
+  ]
+}

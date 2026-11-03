@@ -19,7 +19,7 @@ browser ── Keycloak token ──> admin service (admin/) ── its own clie
 - **Moving from the old roles** (`manager`, `rep`, `purchasing`, `marketing`): run `postgres/sync-access.sh` (it adds the starter datasets and grants for the groups Managers, Reps, Purchasing and Marketing), then `keycloak/migrate-roles.sh` (each person becomes an `editor` in the matching group), then restart the auth service. The old roles are no longer recognised.
 
 ## Row rules
-Which sales territories (regions) a person or a group may see, set on the **Row rules** tab. A person sees the **union** of the rules for them and for their groups. With **no rule at all**
+Which rows a person or a group may see, set on the **Row rules** tab: by **territory** (sales regions) and by any other **dimension** listed in `cube/rls_dimensions.json`. A person sees the **union** of the rules for them and for their groups. With **no rule at all**
 the dbt seed (`rls.user_regions`) still decides, exactly as before, so nothing changes until a rule is written. A rule *replaces* the seed for that person: it does not add to it.
 
 - **New rule:** choose a person or a group, tick the territories (the list comes from the seed's regions).
@@ -27,7 +27,10 @@ the dbt seed (`rls.user_regions`) still decides, exactly as before, so nothing c
 - **Follows its owner:** renaming a group renames its rule; deleting a group or a person deletes their rule (a new person with the same username does not inherit it).
 - **Where it takes effect:** the auth service reads the rules when it mints the Cube token (15 minutes by default), and Cube applies the territories as before. A change shows at the person's next token.
 - **Fails closed:** if the rules database cannot be read, the sign-in fails (503) instead of falling back to the seed, which could give someone more than their rule allows.
-- Only the territory dimension exists for now. A person with no territory (no rule, not in the seed) gets no sales data: Cube refuses the sales cubes and the territory dimension for them.
+- **Dimensions:** `cube/rls_dimensions.json` lists them (id, the Cube member it filters, the cubes it applies to, where its values come from, and `when_empty`). Today it holds `territory` (`territories.region`; the sales cubes). Adding one is adding an entry (the member must exist in the model and be reachable from each listed cube: a test checks), then copying the file to `auth/` and `admin/` (a test keeps the three equal). With more than one dimension the tab shows a **Dimension** picker and the table and preview list each one.
+- **How they combine:** inside a dimension a person gets the union of the values from the rules for them and their groups; every dimension that applies to a query narrows it further (AND). `when_empty: deny` (territory) means a person with no value for it gets nothing from those cubes; `allow` means no value, no restriction. The token carries them as `rls: {dimension: [values]}` (the `territories` claim stays for older pages).
+- **API:** `PUT|DELETE /rls/rules/{user|group}/{name}?dimension=<id>` (default `territory`); `GET /rls/rules` also returns `dimensions` with their values.
+- Only the territory dimension has a dbt-seed fallback. A person with no territory (no rule, not in the seed) gets no sales data: Cube refuses the sales cubes and the territory dimension for them.
 
 ## Datasets
 A **dataset** is a named set of cubes (for example *Sales facts*: `internet_sales`, `reseller_sales`). On the **Datasets** tab you choose its cubes and **who may use it**: people, groups or roles.

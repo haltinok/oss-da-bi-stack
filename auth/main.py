@@ -9,7 +9,9 @@ POST /token   Authorization: Bearer <Keycloak access token>
 Cube re-verifies that signature and applies the territory filter in queryRewrite
 (cube/cube.js), so a client can neither widen its territories nor extend the token.
 """
+import json
 import os
+import pathlib
 import re
 import time
 
@@ -47,6 +49,9 @@ REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE") or f"rls{DATASET_SUFFIX}.us
 PG = {"host": os.environ.get("AUTH_PG_HOST", "postgres"), "port": int(os.environ.get("AUTH_PG_PORT", "5432")), "dbname": os.environ.get("AUTH_PG_DB", "postgres"),
       "user": os.environ.get("AUTH_PG_USER", "access_auth"), "password": os.environ.get("AUTH_PG_PASSWORD", "")}
 RULES_ON = bool(PG["password"]) and PG["password"] != "REPLACE_ME"
+
+# The row-level dimensions (territory, ...): cube/rls_dimensions.json, a copy of which sits next to this file. Cube adds the filters; here the values of each are worked out.
+DIMENSIONS = json.loads((pathlib.Path(__file__).parent / "rls_dimensions.json").read_text(encoding="utf-8"))["dimensions"]
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="spike-auth")
@@ -97,16 +102,20 @@ def _territories_for(username: str) -> list[str]:
         conn.close()
 
 
-def read_access(username: str, role: str, groups: list[str]) -> tuple[list[str], list[str], bool, list[str]]:
-    """From the access schema: the territories the rules give this person (union over the rules for them and for their groups; [] when none applies), the cubes
+def read_access(username: str, role: str, groups: list[str]) -> tuple[dict[str, list[str]], list[str], bool, list[str]]:
+    """From the access schema: the values the rules give this person for each dimension (union over the rules for them and for their groups; a dimension with no rule is absent), the cubes
     they may not read because of datasets (access_resolve.blocked_cubes), and whether they may use the SQL lab (access_resolve.lab_allowed)."""
     import psycopg2
     conn = psycopg2.connect(connect_timeout=5, **PG)
     try:
         with conn.cursor() as cur:
-            cur.execute("select \"values\" from access.rls_rule where dimension = 'territory' and ((principal_type = 'user' and principal = %s) "
+            cur.execute("select dimension, \"values\" from access.rls_rule where ((principal_type = 'user' and principal = %s) "
                         "or (principal_type = 'group' and principal = any(%s)))", (username, groups))
-            territories = sorted({v for (vals,) in cur.fetchall() for v in vals})
+            ruled: dict[str, set[str]] = {}
+            for dim, vals in cur.fetchall():
+                ruled.setdefault(dim, set()).update(vals)
+            known = {d["id"] for d in DIMENSIONS}
+            territories = {d: sorted(v) for d, v in ruled.items() if d in known}
             datasets, grants = access_resolve.load(cur)
         return (territories, access_resolve.blocked_cubes(datasets, grants, username, role, groups), access_resolve.lab_allowed(grants, username, role, groups),
                 access_resolve.blocked_members(datasets, grants, username, role, groups))
@@ -142,7 +151,7 @@ def token(authorization: str = Header(default="")) -> dict:
         raise HTTPException(403, "no dashboard role")
     user = claims["preferred_username"]
     groups = sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str))       # Keycloak's group-membership mapper (the `dashboard` client)
-    ruled: list[str] = []
+    ruled: dict[str, list[str]] = {}
     blocked: list[str] = []
     blocked_fields: list[str] = []
     lab = role == "admin"                                                                            # without the access database only admins have the SQL lab
@@ -151,14 +160,19 @@ def token(authorization: str = Header(default="")) -> dict:
             ruled, blocked, lab, blocked_fields = read_access(user, role, groups)
         except Exception as exc:                                                                  # noqa: BLE001 (any failure to read the rules fails the sign-in)
             raise HTTPException(503, "the access rules cannot be read right now") from exc
-    territories: list[str] = []
-    if role != "agent":                                                                              # the agent works on inventory, which is not territory-bound
-        territories = ruled or territories_for(user)                                              # no rule for this person or their groups: the dbt seed decides; none at all is fine (cube.js refuses sales data then)
+    rls: dict[str, list[str]] = {}
+    if role != "agent":                                                                              # the agent works on inventory, which is not row-bound
+        for dim in DIMENSIONS:
+            values = ruled.get(dim["id"], [])                                                         # a rule for this person or their groups decides ...
+            if not values and dim.get("seed"):
+                values = territories_for(user)                                                        # ... else the dbt seed (territory only); none at all is fine (cube.js then denies or allows by `when_empty`)
+            rls[dim["id"]] = values
+    territories = rls.get("territory", [])                                                            # the claim the older pages read
 
     now = int(time.time())
     cube_token = jwt.encode(
-        {"user_id": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
+        {"user_id": user, "role": role, "territories": territories, "rls": rls, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
         CUBE_SECRET,
         algorithm="HS256",
     )
-    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab}
+    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "rls": rls, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab}

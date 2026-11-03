@@ -110,3 +110,17 @@ def test_a_dataset_of_single_fields_on_postgres(store):
     with pytest.raises(psycopg2.errors.CheckViolation):
         store.put_dataset("empty", "Empty", "", [], [], "root", members=[])
     store.delete_dataset("profit")
+
+
+def test_a_rule_is_per_dimension(store):
+    import psycopg2
+    store.put("user", "ayse", ["Germany"], "root")
+    store.put("user", "ayse", ["Internet"], "root", "channel")
+    assert sorted((r["dimension"], r["values"]) for r in store.list()) == [("channel", ["Internet"]), ("territory", ["Germany"])]
+    store.rename("user", "ayse", "ayse2")
+    assert {r["principal"] for r in store.list()} == {"ayse2"}
+    assert store.delete("user", "ayse2", "channel") and [r["dimension"] for r in store.list()] == ["territory"]
+    store.put("user", "ayse2", ["Internet"], "root", "channel")
+    assert store.delete("user", "ayse2") and store.list() == [], "no dimension: all of them"
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        store.put("user", "x", ["A"], "root", "Not A Dimension")
