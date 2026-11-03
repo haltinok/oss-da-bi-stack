@@ -13,7 +13,10 @@ served from a **governed Cube model** (one definition of each metric, row-level 
 - **Design it by clicking:** pick a panel and change its measure, grouping or style; drag to move and resize; add, duplicate and delete panels; filters of every kind (several values, text, number, dynamic dates), scopes (whole dashboard, one tab, one panel), slicers, calculations (formulas over measures), colour rules, themes and a logo. Undo and redo.
 - **Write it as YAML** and keep it in git: a schema and validator check every file, and the designer and the model write the same format.
 - **Tabbed, interactive dashboards:** tabs, pivot tables with totals and heat, time charts with drill-down, cross-filtering by clicking a chart, Excel export of any panel.
-- **Save, version and share** dashboards with roles; each viewer's role decides what they can read.
+- **Save, version and share** dashboards with roles, named people or groups (view or edit); keep them in **folders**, with a trash; hand them over. Each viewer's role decides what they can read.
+- **A start page** (`/home/`) with what you opened lately, what is shared with you, and one search over it all.
+- **Run it as a team:** an **admin console** (`/admin/`) for people, groups and roles over Keycloak, **row rules** (which territories a person or group sees) and **datasets** (which cubes need a grant).
+- **Ask in SQL:** a **SQL lab** (`/lab/`) for analysts, with saved and shared queries and CSV/Excel export, running through Cube as the signed-in person so the dashboards' rules apply.
 - **Governed data:** a Cube semantic layer on StarRocks, Keycloak sign-in, and row-level security by territory, so everyone sees the same numbers they are allowed to see.
 - **Live data pipelines** from an OLTP simulator through Airflow, ingestr and dbt (plus an independent Kafka/Debezium CDC path into ClickHouse), and an inventory-actions service with a proposal agent.
 
@@ -28,6 +31,8 @@ served from a **governed Cube model** (one definition of each metric, row-level 
 | Warehouse / serving store | StarRocks 3.5 (separate frontend and backend) |
 | Transformation       | dbt-core + dbt-starrocks          |
 | Sign-in / row-level security | Keycloak 26 + a small auth service + `cube/cube.js` |
+| Access and administration | `admin/` service (users, groups, rules, datasets over Keycloak and Postgres schema `access`) |
+| SQL lab | `lab/` service on Cube's SQL API; saved queries in Postgres schema `lab` |
 | Public front door    | Caddy (automatic HTTPS, routes by path; `docker-compose.public.yml`) |
 | Orchestration        | Airflow 3.3.2 (LocalExecutor)     |
 | Ingestion            | ingestr (live AdventureWorks → StarRocks); dlt (orders, optional SQL Server load) |
@@ -43,6 +48,7 @@ served from a **governed Cube model** (one definition of each metric, row-level 
 - [Dashboards as code](docs/dashboards.md): the guide: files, panels, filters, the designer, themes, roles.
 - [The builder](docs/builder.md): describing a dashboard to a model, the checks, saved dashboards.
 - [The semantic layer](docs/semantic-layer.md): the cubes, measures and dimensions a dashboard can use.
+- [The start page and dashboards](docs/dashboards.md#the-start-page): `/home/`.
 - [The admin console](docs/admin.md): people, groups and roles, row rules and datasets, over Keycloak.
 - [The SQL lab](docs/lab.md): ad-hoc SQL over the semantic layer, under the dashboards' rules.
 - [Serving the demo](docs/deploy-demo.md): Caddy, `PUBLIC_URL` and the public overlay.
@@ -343,6 +349,7 @@ postgres_active --(ingestr, every 5 min, Airflow)--> StarRocks raw --(dbt-starro
 | `starrocks-fe`, `starrocks-be`, `starrocks-init` | StarRocks (separate frontend and backend; the init job registers the backend by hostname, creates the schemas and the read-only users) |
 | `cube`, `cubestore`, `cubestore-worker` | the semantic layer (`cube/`), pre-aggregations, and row-level security in `cube/cube.js` |
 | `keycloak`, `auth` | sign-in (demo realm in `keycloak/`; the realm is still named `spike`, renaming it would orphan existing Keycloak volumes), and the service (`auth/`) that turns a Keycloak login into a 15-minute Cube token carrying the user's territories |
+| `admin`, `lab` | the admin console's service (people, groups, row rules, datasets) and the SQL lab's service (see [docs/admin.md](docs/admin.md), [docs/lab.md](docs/lab.md)); `lab` needs `cube` restarted for its SQL API |
 | `dashboard-cube` | the same dashboard UI as `dashboard`, with the Cube data source injected in front of `app.js` |
 
 ```bash
