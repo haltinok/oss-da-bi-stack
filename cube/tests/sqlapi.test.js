@@ -7,8 +7,9 @@ const { queryRewrite } = require('../cube.js');
 
 const ask = (sc, query) => { try { return { ok: queryRewrite(query, { securityContext: sc }) }; } catch (e) { return { error: e }; } };
 const adhoc = (cube, sql, touched = [cube]) => ({ cubeName: cube, name: 'x', expression: [...touched, `return \`${sql}\``] });
-const manager = { user_id: 'm', role: 'editor', territories: ['Canada'] };
-const rep = { ...manager, user_id: 'r', territories: ['Germany'], blocked_members: ['internet_sales.gross_profit', 'internet_sales.product_cost'] };
+const cat = { product_category: ['Bikes'] };                                  // the product categories the people below may see (a second row-level dimension)
+const manager = { user_id: 'm', role: 'editor', territories: ['Canada'], rls: cat };
+const rep = { ...manager, user_id: 'r', territories: ['Germany'], rls: cat, blocked_members: ['internet_sales.gross_profit', 'internet_sales.product_cost'] };
 
 // COUNT(*) is a measure by another name: the cube rules still apply to the cube it counts
 let r = ask(manager, { measures: [adhoc('internet_sales', 'COUNT(*)')] });
@@ -27,7 +28,7 @@ r = ask(rep, { measures: [adhoc('internet_sales', 'COUNT(DISTINCT ${internet_sal
 assert(r.error && /dataset/.test(r.error.message), 'a person without profit cannot reach it through COUNT(DISTINCT ...)');
 r = ask(rep, { dimensions: [adhoc('internet_sales', '${internet_sales.product_cost}')] });
 assert(r.error && /dataset/.test(r.error.message), 'nor through a plain member reference');
-const noSupplier = { user_id: 'k', role: 'editor', territories: ['Canada'], blocked_members: ['inventory_health.vendor_name'] };
+const noSupplier = { user_id: 'k', role: 'editor', territories: ['Canada'], rls: cat, blocked_members: ['inventory_health.vendor_name'] };
 assert(ask(noSupplier, { dimensions: [adhoc('inventory_health', '${inventory_health.vendor_name}')] }).error, 'supplier data is unreachable through an expression too');
 assert(ask(noSupplier, { measures: [adhoc('inventory_health', 'COUNT(*)')] }).ok, 'but inventory rows may be counted');
 
@@ -53,7 +54,7 @@ console.log('sql api members: ok');
 
 // a viewer is scoped like anyone else: by datasets and territory, and without territories sees no sales data
 {
-  const viewer = { user_id: 'v', role: 'viewer', territories: ['Canada'], blocked_members: ['internet_sales.gross_profit'] };
+  const viewer = { user_id: 'v', role: 'viewer', territories: ['Canada'], rls: cat, blocked_members: ['internet_sales.gross_profit'] };
   assert(ask(viewer, { measures: ['internet_sales.revenue'] }).ok, 'a viewer may read revenue');
   assert(ask(viewer, { measures: ['internet_sales.gross_profit'] }).error, 'but not a field no dataset gives them');
   assert(ask({ user_id: 'v', role: 'viewer' }, { measures: ['internet_sales.revenue'] }).error, 'and a viewer without territories sees no sales data');

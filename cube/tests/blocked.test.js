@@ -6,7 +6,7 @@ const { queryRewrite } = require('../cube.js');
 
 const ask = (sc, query) => { try { return { ok: queryRewrite(query, { securityContext: sc }) }; } catch (e) { return { error: e }; } };
 const sales = { measures: ['internet_sales.revenue'], dimensions: ['products.category'] };
-const base = { user_id: 'u', role: 'editor', territories: ['Canada'] };
+const base = { user_id: 'u', role: 'editor', territories: ['Canada'], rls: { product_category: ['Bikes'] } };
 
 assert(ask(base, sales).ok, 'no blocked_cubes claim: nothing is blocked (an older token)');
 assert(ask({ ...base, blocked_cubes: [] }, sales).ok, 'an empty list blocks nothing');

@@ -3,13 +3,46 @@
   "dimensions": [
     {
       "id": "territory",
-      "labels": {"en": "Territories", "tr": "Bölgeler"},
+      "labels": {
+        "en": "Territories",
+        "tr": "Bölgeler"
+      },
       "member": "territories.region",
-      "cubes": ["internet_sales", "reseller_sales", "territories"],
-      "values": {"kind": "seed_regions"},
+      "cubes": [
+        "internet_sales",
+        "reseller_sales",
+        "territories"
+      ],
+      "values": {
+        "kind": "seed_regions"
+      },
       "seed": true,
       "when_empty": "deny",
       "empty_message": "No territories assigned"
+    },
+    {
+      "id": "product_category",
+      "labels": {
+        "en": "Product categories",
+        "tr": "Ürün kategorileri"
+      },
+      "member": "products.category",
+      "cubes": [
+        "internet_sales",
+        "reseller_sales"
+      ],
+      "values": {
+        "kind": "list",
+        "values": [
+          "Accessories",
+          "Bikes",
+          "Clothing",
+          "Components",
+          "Uncategorized"
+        ]
+      },
+      "when_empty": "deny",
+      "empty_message": "No product categories assigned"
     }
   ]
 }

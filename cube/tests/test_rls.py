@@ -372,3 +372,30 @@ def test_a_dashboard_token_cannot_be_turned_into_the_agent(tokens):
     # a person's token maps to a person's role, never to agent
     claims = jwt.decode(tokens["na_manager"], options={"verify_signature": False})
     assert claims["role"] == "editor"
+
+
+# --- product categories: a second row-level dimension (cube/rls_dimensions.json; denies when a person has no value) -------------------------------
+
+def test_a_category_rule_limits_the_sales_a_person_sees_and_no_rule_means_no_sales():
+    import subprocess
+    pg = os.environ.get("LAB_PG_CONTAINER", "oss_postgres")
+
+    def psql(q):
+        subprocess.run(["docker", "exec", pg, "psql", "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-c", q], check=True, capture_output=True)
+
+    ask = {"measures": ["internet_sales.revenue"], "dimensions": ["products.category"]}
+    every = "array['Accessories', 'Bikes', 'Clothing', 'Components', 'Uncategorized']"
+    # de_rep is in the Reps group, whose starter rule gives every category (the union of a person's rules): take that rule away while a rule of their own says Bikes only
+    psql("delete from access.rls_rule where principal_type = 'group' and principal = 'Reps' and dimension = 'product_category'")
+    psql("insert into access.rls_rule (principal_type, principal, dimension, \"values\", updated_by) values ('user', 'de_rep', 'product_category', array['Bikes'], 'ci') on conflict (principal_type, principal, dimension) do update set \"values\" = excluded.\"values\"")
+    try:
+        status, body = load(ask, Token(cube_token("de_rep")))
+        assert status == 200, body
+        assert body["data"] and {r["products.category"] for r in body["data"]} == {"Bikes"}, "only the category the rule names"
+    finally:
+        psql("delete from access.rls_rule where principal_type = 'user' and principal = 'de_rep' and dimension = 'product_category'")
+        psql(f"insert into access.rls_rule (principal_type, principal, dimension, \"values\", updated_by) values ('group', 'Reps', 'product_category', {every}, 'defaults') on conflict do nothing")
+    # a person with a territory but no category value is refused the sales cubes (when_empty: deny)
+    tok = jwt.encode({"user_id": "x", "role": "editor", "rls": {"territory": ["Canada"]}, "exp": int(time.time()) + 600}, SECRET, algorithm="HS256")
+    status, body = load(ask, tok)
+    assert rejected(status, body), body
