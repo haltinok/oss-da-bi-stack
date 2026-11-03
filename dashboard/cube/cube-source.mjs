@@ -34,7 +34,7 @@ window.dashboardData.datasets = DATASETS;
 const client = createCubeClient({
   stack: C, apiUrl: dataset.cube,
   onSession(session) {
-    window.dashboardData.noProfit = session.role === "rep"; // profit/margin are not available to reps
+    window.dashboardData.noProfit = session.role === "rep" || session.role === "viewer"; // profit/margin are not available to reps and viewers
     window.dashboardData.role = session.role;
     showWho(session);
   },

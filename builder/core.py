@@ -30,7 +30,7 @@ MAX_TOKENS = 8000
 MAX_PROMPT = 2000
 MAX_YAML = 30_000
 LINK = re.compile(r"\[([^\]]*)\]\(\s*[a-zA-Z][a-zA-Z0-9+.-]*:[^)]*\)")      # [text](scheme:...) -> text
-ROLES = ("admin", "manager", "rep", "purchasing", "marketing")
+ROLES = ("admin", "manager", "rep", "viewer", "purchasing", "marketing")
 
 SPEC_GUIDE = """\
 A dashboard is one YAML file. Top level: spec: 1, id, title, description, tags?, locale (en-US | tr-TR), currency (USD | TRY), time, filters, panels, layout (or tabs).

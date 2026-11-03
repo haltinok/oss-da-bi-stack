@@ -100,3 +100,10 @@ def test_the_sql_lab_claim_follows_the_grants_and_admins_always_have_it(monkeypa
     assert r.json()["lab"] is False, "without the access database only admins have the lab"
     r, _ = sign_in(monkeypatch, rules_on=False, role="admin")
     assert r.json()["lab"] is True
+
+
+def test_a_viewer_is_scoped_by_territory_like_a_rep_and_never_has_the_lab(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=["Canada"], role="viewer", lab=False)
+    assert r.status_code == 200 and r.json()["role"] == "viewer" and r.json()["territories"] == ["Canada"] and r.json()["lab"] is False
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], seed=(), role="viewer")
+    assert r.status_code == 403, "like a rep: no territory, no sales data"

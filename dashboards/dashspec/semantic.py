@@ -2,7 +2,7 @@
 join, who may read what), as JSON for the builder's page and as docs/semantic-layer.md (generated: a test keeps it current)."""
 from .validate import INVENTORY_CUBES, PROFIT_MEMBERS, ROLE_CUBES, SUPPLIER_MEMBERS, denied
 
-ROLES = ("admin", "manager", "rep", "purchasing", "marketing")
+ROLES = ("admin", "manager", "rep", "viewer", "purchasing", "marketing")
 FACTS = ("internet_sales", "reseller_sales")
 
 

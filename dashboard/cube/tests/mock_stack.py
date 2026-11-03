@@ -120,14 +120,14 @@ def reset_saved():
     _builder_cache.pop("saved_store", None)
 
 
-def seed_saved(title, description, *, owner="admin", role="admin", visibility="private", shared_roles=(), tags=("sales",)):
+def seed_saved(title, description, *, owner="admin", role="admin", visibility="private", shared_roles=(), tags=("sales",), source="sales-overview.yml"):
     """Put a saved dashboard in the in-memory store as `owner`, without going through the page (for tests of the list)."""
     import re
     builder_answer("/info", {})                              # makes sure the builder pieces (catalog, checks) are loaded
     from builder import saved
     from builder.store import MemoryStore
     store = _builder_cache.setdefault("saved_store", MemoryStore())
-    text = (ROOT / "dashboards" / "sales-overview.yml").read_text()
+    text = (ROOT / "dashboards" / source).read_text()
     line = f"description: {json.dumps(description, ensure_ascii=False)}"
     text = re.sub(r"(?m)^description: .*$", lambda _: line, text, count=1)      # a function: the text may hold backslashes
     text = re.sub(r"(?m)^tags: .*\n", f"tags: {json.dumps(list(tags), ensure_ascii=False)}\n" if tags else "", text, count=1)

@@ -257,6 +257,7 @@ A dashboard's own `theme.colors` (its brand) still win over the viewer's theme, 
 the treemap, the pie and the heat shades is the same in every theme.
 
 ## The start page
+Everyone lands here: a sign-in that begins at the site root (`/`) returns to `/home/` (a sign-in that begins at a dashboard comes back to that dashboard).
 `/home/` gathers what a person can open and do: a launcher (describe a new dashboard, the live sales dashboard, all dashboards, and the admin console for admins), **pick up where you left off** (the dashboards you opened lately, kept in
 this browser only), what is **shared with you**, your own saved dashboards and folders, and the sample dashboards your role may open. The search box searches all of them at once (the same forgiving search as the dashboards list). Everything shown
 comes from the services that decide access (the role's samples, the builder's saved dashboards and shares), so the page never shows what you could not open. The house icon in the header of the dashboards pages leads back to it.
@@ -375,8 +376,8 @@ On a phone every panel takes a full row:
 - Data access is **Cube's**: the page sends the user's own token, `cube/cube.js` filters rows by territory and refuses what a role may not
   read. The spec cannot widen it, and the renderer adds nothing to it.
 - `roles:` decides who sees the dashboard listed (and gets "not available for your role" if they open it anyway; no query is sent).
-  The validator checks each listed role against the same rules as Cube (a rep has no profit members, purchasing and marketing only
-  inventory data, marketing no supplier data, managers and reps no inventory), so a page that would show an error to a role it lists does
+  The validator checks each listed role against the same rules as Cube (a rep or viewer has no profit members, purchasing and marketing only
+  inventory data, marketing no supplier data, managers, reps and viewers no inventory), so a page that would show an error to a role it lists does
   not validate. A test keeps that list equal to `cube/cube.js`.
 - A tile or panel whose query Cube refuses shows Cube's message ("Profit and margin are not available for your role") instead of a
   number; the rest of the page still draws.

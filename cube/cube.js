@@ -153,7 +153,7 @@ function queryRewrite(query, { securityContext }) {
   }
 
   // Cost/profit are hidden from reps, whichever cube asks for them.
-  if (sc.role === 'rep' && members.some((m) => PROFIT_MEMBERS.has(m.split('.')[1]))) {
+  if ((sc.role === 'rep' || sc.role === 'viewer') && members.some((m) => PROFIT_MEMBERS.has(m.split('.')[1]))) {
     throw forbidden('Profit and margin are not available for your role');
   }
   if (sc.role === 'admin') {

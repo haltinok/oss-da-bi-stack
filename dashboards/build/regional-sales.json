@@ -11,7 +11,8 @@
   "currency": "USD",
   "roles": [
     "manager",
-    "rep"
+    "rep",
+    "viewer"
   ],
   "time": {
     "dimension": "dates.full_date",

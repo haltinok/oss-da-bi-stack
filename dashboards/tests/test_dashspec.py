@@ -491,7 +491,7 @@ def test_catalog_json_hides_what_a_role_cannot_read():
     assert "vendor_name" not in {d["name"] for d in mk["inventory_health"]["dimensions"]}
     admin = {c["cube"]: c for c in catalog_json(CATALOG)}
     gp = next(m for m in admin["internet_sales"]["measures"] if m["name"] == "gross_profit")
-    assert gp["hidden_from"] == ["rep", "purchasing", "marketing"] and gp["description"]
+    assert gp["hidden_from"] == ["rep", "viewer", "purchasing", "marketing"] and gp["description"]
     assert admin["internet_sales"]["joins"] == ["customers", "dates", "due_dates", "products", "ship_dates", "territories"] and admin["internet_sales"]["fact"]
 
 
@@ -1717,3 +1717,19 @@ def test_allowed_values_limit_every_panel_the_filter_applies_to_even_with_nothin
     assert active_filters(spec, {}, {"id": "p"}) == [limit]
     assert active_filters(spec, {"m": "in:A"}, {"id": "p"}) == [{"member": "products.category", "operator": "equals", "values": ["A"]}, limit]       # the pick narrows inside the limit
     assert active_filters(spec, {}, spec["panels"][1]) == []
+
+
+# ---- the viewer role: reads sales like a rep (no profit, no customers, no inventory) and nothing more
+def test_a_viewer_cannot_read_profit_customers_or_inventory():
+    from dashspec.validate import denied
+    assert denied("viewer", "internet_sales.gross_profit") and "viewers" in denied("viewer", "internet_sales.margin_pct")
+    assert denied("viewer", "customers.email_address") and denied("viewer", "inventory_health.on_hand")
+    assert denied("viewer", "internet_sales.revenue") is None and denied("viewer", "products.category") is None
+
+
+def test_the_viewer_is_a_role_a_dashboard_can_name_and_its_profit_rule_is_checked():
+    errors = run(lambda s: s.update(roles=["viewer"]))                                     # the sales overview shows profit
+    assert errors and all("viewer" in e for e in errors) and any("gross_profit" in e and "hidden from viewers" in e for e in errors)
+    assert not any("is not one of" in e or "enum" in e for e in errors), "viewer is a valid role in the schema"
+    spec = yaml.safe_load((REPO / "dashboards" / "regional-sales.yml").read_text())        # no profit: a viewer may open it
+    assert "viewer" in spec["roles"] and validate(spec, CATALOG)[0] == []

@@ -121,7 +121,7 @@ async function showList() {
   $("#export-label").textContent = t.exportAll;
   setStatus(`<strong>${esc(t.signedIn)}</strong>`);
   const api = createBuilderApi({ stack: C, client, t });
-  mountList({ main: $("#main"), mine, api, t });
+  mountList({ main: $("#main"), mine, api, t, viewer: role === "viewer" });
 }
 
 // ------------------------------------------------------------------ one dashboard
@@ -580,7 +580,8 @@ async function showDashboard() {
   });
   $("#refresh").hidden = false;
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
-  if (draft || savedDash) {
+  if (role === "viewer" && draft) throw new Error(t0.noDraft);                       // a viewer builds nothing: no drafts
+  if ((draft || savedDash) && role !== "viewer") {                                    // ... and has no builder bar or designer on a dashboard
     const api = createBuilderApi({ stack: C, client, t });
     if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); if (draft) { mountDraftBar(host, api, t, draft); mountDesigner({ api, t, draft, spec, panels, host }); } else mountSavedBar(host, api, t, savedDash); }
   }

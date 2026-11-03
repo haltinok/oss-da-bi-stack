@@ -176,6 +176,16 @@ class BuildRequest(BaseModel):
 User_ = Annotated[User, Depends(current_user)]
 
 
+def current_editor(user: User_) -> User:
+    """Everything that builds, changes or keeps something: not for a viewer, who may only look at dashboards (list, open) and read what is shared with them."""
+    if user.role == "viewer":
+        raise HTTPException(403, "Viewers can only view dashboards.")
+    return user
+
+
+Editor_ = Annotated[User, Depends(current_editor)]
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True}
@@ -189,13 +199,13 @@ def info(user: User_, lang: str = "en") -> dict:
 
 
 @app.get("/usage")
-def usage(user: User_) -> dict:
+def usage(user: Editor_) -> dict:
     return {"builds_last_hour": _builds_last_hour(user), "builds_per_hour": RATE_LIMIT, "tokens_today": _tokens_today(user), "tokens_per_day": DAILY_TOKENS,
             "concurrent": MAX_CONCURRENT, "mode": mode(), "saving": STORE is not None}
 
 
 @app.get("/catalog")
-def catalog(user: User_) -> list[dict]:
+def catalog(user: Editor_) -> list[dict]:
     return catalog_json(catalog_for(user), user.role)
 
 
@@ -251,7 +261,7 @@ def saved_list(user: User_, everything: bool = False) -> list[dict]:
 
 
 @app.post("/saved", status_code=201)
-def saved_create(req: SaveRequest, user: User_) -> dict:
+def saved_create(req: SaveRequest, user: Editor_) -> dict:
     out = saved_call(saved.save_new, need_store(), catalog_for(user), who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED, folder_id=req.folder_id, shares=req.shares)
     audit({"user": user.name, "role": user.role, "id": out["id"], "visibility": out["visibility"], "shared_roles": out["shared_roles"], "title": out["title"][:80]}, "saved")
     return out
@@ -263,7 +273,7 @@ def saved_open(id: str, user: User_, version: int | None = None) -> dict:
 
 
 @app.put("/saved/{id}")
-def saved_update(id: str, req: UpdateRequest, user: User_) -> dict:
+def saved_update(id: str, req: UpdateRequest, user: Editor_) -> dict:
     given = req.model_fields_set                                    # "folder_id": null means out of any folder; leaving it out means leave it
     extra = {"shares": req.shares if req.shares is not None else []} if "shares" in given else {}
     if "folder_id" in given:
@@ -277,19 +287,19 @@ def saved_update(id: str, req: UpdateRequest, user: User_) -> dict:
 
 
 @app.delete("/saved/{id}", status_code=204, response_class=Response)
-def saved_delete(id: str, user: User_) -> Response:
+def saved_delete(id: str, user: Editor_) -> Response:
     saved_call(saved.delete_saved, need_store(), who(user), id)
     audit({"user": user.name, "role": user.role, "id": id}, "saved_delete")
     return Response(status_code=204)
 
 
 @app.get("/saved/{id}/versions")
-def saved_versions(id: str, user: User_) -> list[dict]:
+def saved_versions(id: str, user: Editor_) -> list[dict]:
     return saved_call(saved.versions, need_store(), who(user), id)
 
 
 @app.post("/saved/{id}/restore")
-def saved_restore(id: str, req: RestoreRequest, user: User_) -> dict:
+def saved_restore(id: str, req: RestoreRequest, user: Editor_) -> dict:
     out = saved_call(saved.restore, need_store(), catalog_for(user), who(user), id, req.version)
     audit({"user": user.name, "role": user.role, "id": id, "restored": req.version, "version": out["version"]}, "saved_restore")
     return out
@@ -311,14 +321,14 @@ def folders_list(user: User_) -> list[dict]:
 
 
 @app.post("/folders", status_code=201)
-def folders_create(req: FolderRequest, user: User_) -> dict:
+def folders_create(req: FolderRequest, user: Editor_) -> dict:
     out = saved_call(saved.create_folder, need_store(), who(user), req.name or "")
     audit({"user": user.name, "role": user.role, "id": out["id"], "name": out["name"]}, "folder_create")
     return out
 
 
 @app.put("/folders/{id}")
-def folders_update(id: str, req: FolderRequest, user: User_) -> dict:
+def folders_update(id: str, req: FolderRequest, user: Editor_) -> dict:
     kw = {"name": req.name}
     if "shares" in req.model_fields_set:
         kw["shares"] = req.shares if req.shares is not None else []
@@ -328,26 +338,26 @@ def folders_update(id: str, req: FolderRequest, user: User_) -> dict:
 
 
 @app.delete("/folders/{id}", status_code=204, response_class=Response)
-def folders_delete(id: str, user: User_) -> Response:
+def folders_delete(id: str, user: Editor_) -> Response:
     saved_call(saved.delete_folder, need_store(), who(user), id)
     audit({"user": user.name, "role": user.role, "id": id}, "folder_delete")
     return Response(status_code=204)
 
 
 @app.get("/trash")
-def trash_list(user: User_) -> list[dict]:
+def trash_list(user: Editor_) -> list[dict]:
     return saved_call(saved.list_trash, need_store(), catalog_for(user), who(user))
 
 
 @app.post("/trash/{id}/restore")
-def trash_restore(id: str, user: User_) -> dict:
+def trash_restore(id: str, user: Editor_) -> dict:
     out = saved_call(saved.restore_trash, need_store(), who(user), id)
     audit({"user": user.name, "role": user.role, "id": id}, "saved_undelete")
     return out
 
 
 @app.delete("/trash/{id}", status_code=204, response_class=Response)
-def trash_delete(id: str, user: User_) -> Response:
+def trash_delete(id: str, user: Editor_) -> Response:
     saved_call(saved.delete_forever, need_store(), who(user), id)
     audit({"user": user.name, "role": user.role, "id": id}, "saved_purge")
     return Response(status_code=204)
@@ -366,13 +376,13 @@ class ValidateRequest(BaseModel):
 
 
 @app.post("/validate")
-def validate(req: ValidateRequest, user: User_) -> dict:
+def validate(req: ValidateRequest, user: Editor_) -> dict:
     built, problems = core.check_submission(req.yaml, catalog_for(user), user.role)
     return {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "source": built and built["source"], "notes": built["notes"] if built else [], "problems": problems}
 
 
 @app.post("/build")
-def build(req: BuildRequest, user: User_) -> dict:
+def build(req: BuildRequest, user: Editor_) -> dict:
     m = mode()
     rate_limit(user)
     if not _slots.acquire(blocking=False):

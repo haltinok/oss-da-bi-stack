@@ -301,3 +301,10 @@ def test_a_grant_can_be_view_or_lab_and_the_preview_says_whether_the_lab_is_open
     assert r.status_code == 200 and {(g["type"], g["principal"], g["permission"]) for g in r.json()["grants"]} == {("user", "de_rep", "lab"), ("role", "manager", "view")}
     assert ruled.put("/datasets/sales", json={"name": "S", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "manager", "permission": "own"}]}).status_code == 400
     assert ruled.get("/rls/preview/de_rep").json()["lab"] is True and ruled.get("/rls/preview/na_manager").json()["lab"] is False and ruled.get("/rls/preview/root").json()["lab"] is True
+
+
+def test_viewer_is_a_role_an_admin_can_give(api, kc):
+    assert "viewer" in api.get("/roles").json()["roles"]
+    u = api.post("/users", json={**NEW, "username": "vera", "role": "viewer"}).json()
+    assert u["role"] == "viewer"
+    assert api.put(f"/users/{u['id']}", json={"role": "manager"}).json()["role"] == "manager"

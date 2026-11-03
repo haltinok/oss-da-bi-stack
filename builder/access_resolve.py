@@ -31,5 +31,7 @@ def lab_allowed(grants: list[dict], user: str, role: str, groups: list[str]) -> 
     What they can read in the lab is exactly what the dashboards let them read: the lab runs through Cube, which applies the role rules, territories and blocked cubes."""
     if role == "admin":
         return True
+    if role == "viewer":                                         # a viewer only views dashboards: no SQL lab, whatever they are granted
+        return False
     return any(g.get("permission") == "lab" and ((g["principal_type"] == "user" and g["principal"] == user) or (g["principal_type"] == "role" and g["principal"] == role)
                                                   or (g["principal_type"] == "group" and g["principal"] in groups)) for g in grants)

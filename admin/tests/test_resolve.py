@@ -55,3 +55,9 @@ def test_the_sql_lab_is_for_admins_and_those_granted_lab_on_any_dataset():
     assert lab_allowed([lab], "bob", "manager", ["Other"]) is False
     assert lab_allowed([role_lab], "buyer", "purchasing", []) is True and lab_allowed([role_lab], "ayse", "manager", []) is False
     assert lab_allowed([{**grant("x", "user", "ayse")}], "ayse", "manager", []) is False, "a grant without a permission is a view"
+
+
+def test_a_viewer_never_has_the_lab_whatever_is_granted():
+    from access_resolve import lab_allowed
+    g = [{**grant("sales", "role", "viewer"), "permission": "lab"}, {**grant("sales", "user", "vera"), "permission": "lab"}]
+    assert lab_allowed(g, "vera", "viewer", []) is False
