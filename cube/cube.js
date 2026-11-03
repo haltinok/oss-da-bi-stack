@@ -35,9 +35,10 @@ class StarRocksQuery extends MysqlQuery {
 // checkAuth verifies them itself (rather than relying on dev-mode defaults) so a missing,
 // expired or tampered token is always rejected.
 const SECRET = process.env.CUBEJS_API_SECRET;
-const FACT_CUBES = new Set(['internet_sales', 'reseller_sales']);
 // What a person may read is decided by datasets and grants (blocked_cubes, blocked_members in the token), not by their role; the rules below are the ones that need no configuration: the sales facts
 // are limited to the person's territories, and the proposal agent (a service account, not a person) may only read the two inventory cubes and the products.
+// The row-level dimensions (territory, ...): cube/rls_dimensions.json, also read by the auth service and the admin console.
+const RLS_DIMENSIONS = require('./rls_dimensions.json').dimensions;
 const AGENT_CUBES = new Set(['inventory_health', 'offer_performance', 'products']);
 
 // Cube turns a thrown CubejsHandlerError into its HTTP status; any other error is a 500
@@ -157,15 +158,17 @@ function queryRewrite(query, { securityContext }) {
     return query;
   }
 
-  // Row-level security: the sales facts (and the territories themselves) only for the person's own territories.
-  if ([...cubes].some((c) => FACT_CUBES.has(c)) || cubes.has('territories')) {
-    const territories = Array.isArray(sc.territories) ? sc.territories : [];
-    if (territories.length === 0) {
-      throw forbidden('No territories assigned');
+  // Row-level security (rls_dimensions.json): for each dimension whose cubes the query touches, only the person's own values. Dimensions are ANDed; the values of one are ORed.
+  // The token's `rls` holds the values per dimension (an older token only has `territories`). Nobody listed for a `deny` dimension gets nothing from its cubes.
+  for (const dim of RLS_DIMENSIONS) {
+    if (!dim.cubes.some((c) => cubes.has(c))) continue;
+    const mine = sc.rls && Array.isArray(sc.rls[dim.id]) ? sc.rls[dim.id] : (dim.id === 'territory' && Array.isArray(sc.territories) ? sc.territories : []);
+    if (mine.length === 0) {
+      if (dim.when_empty === 'allow') continue;
+      throw forbidden(dim.empty_message || `No ${dim.id} values assigned`);
     }
-    // ANDed with whatever the client asked for, so asking for another region yields nothing.
-    query.filters = [...(query.filters || []),
-      { member: 'territories.region', operator: 'equals', values: territories }];
+    // ANDed with whatever the client asked for, so asking for another value yields nothing.
+    query.filters = [...(query.filters || []), { member: dim.member, operator: 'equals', values: mine }];
   }
   return query;
 }

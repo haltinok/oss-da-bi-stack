@@ -40,7 +40,7 @@ async function call(method, path, body, base = C.admin) {
   throw new Error("not signed in");
 }
 
-const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], regions: [], datasets: [], cubes: [], grantRoles: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
+const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], regions: [], dimensions: [], datasets: [], cubes: [], grantRoles: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
 const main = $("#main");
 const dlg = $("#dlg");
 const nameOf = (u) => [u.firstName, u.lastName].filter(Boolean).join(" ");
@@ -50,7 +50,7 @@ async function load() {
   const qs = new URLSearchParams({ max: "200", ...(s.q ? { search: s.q } : {}), ...(s.role ? { role: s.role } : {}), ...(s.group ? { group: s.group } : {}), ...(s.status ? { enabled: s.status === "active" } : {}) });
   const [u, g] = await Promise.all([call("GET", `/users?${qs}`), call("GET", "/groups")]);
   s.users = u.users; s.total = u.total; s.groups = g.groups;
-  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.rulesOff = true; }
+  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.dimensions = r.dimensions || []; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.dimensions = []; s.rulesOff = true; }
   if (!s.rulesOff) { const d = await call("GET", "/datasets"); s.datasets = d.datasets; s.cubes = d.cubes; s.grantRoles = d.roles; } else { s.datasets = []; }
 }
 async function refresh() { try { await load(); draw(); show(""); } catch (e) { show(`${t.failed} ${e.message}`); } }
@@ -114,13 +114,17 @@ function wireGroups() {
 }
 
 // ------------------------------------------------------------------------------------------------------------------ row rules
+const dimOf = (id) => s.dimensions.find((d) => d.id === id) || { id, labels: {}, values: [] };
+const dimLabel = (d) => d.labels?.[lang] || d.labels?.en || d.id;
+const manyDims = () => s.dimensions.length > 1;                          // with one dimension (territory) the page reads as it always did
+
 function rulesHtml() {
   if (s.rulesOff) return `<p class="adm-empty" role="status">${esc(t.rulesOff)}</p>`;
-  const rows = s.rules.map((r) => `<tr data-type="${esc(r.type)}" data-principal="${esc(r.principal)}"><td><span class="adm-badge">${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)}</span> <strong>${esc(r.principal)}</strong></td>
-      <td>${r.values.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("")}</td><td class="hide-s hint">${esc(r.updated_by)}</td>
+  const rows = s.rules.map((r) => `<tr data-type="${esc(r.type)}" data-principal="${esc(r.principal)}" data-dimension="${esc(r.dimension || "territory")}"><td><span class="adm-badge">${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)}</span> <strong>${esc(r.principal)}</strong></td>
+      ${manyDims() ? `<td>${esc(dimLabel(dimOf(r.dimension || "territory")))}</td>` : ""}<td>${r.values.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("")}</td><td class="hide-s hint">${esc(r.updated_by)}</td>
       <td class="adm-act"><button class="adm-btn mini" data-act="edit">${esc(t.edit)}</button><button class="adm-btn mini danger" data-act="delete">${esc(t.delete)}</button></td></tr>`).join("");
   return `<p class="hint">${esc(t.rulesHint)}</p><div class="adm-bar"><span class="spacer"></span><button class="adm-btn primary" id="new-rule">${esc(t.newRule)}</button></div>
-    ${s.rules.length ? `<table class="adm-table"><thead><tr><th>${esc(t.ruleWho)}</th><th>${esc(t.ruleTerritories)}</th><th class="hide-s">${esc(t.ruleUpdated)}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="adm-empty">${esc(t.noRules)}</p>`}
+    ${s.rules.length ? `<table class="adm-table"><thead><tr><th>${esc(t.ruleWho)}</th>${manyDims() ? `<th>${esc(t.ruleDimension)}</th>` : ""}<th>${esc(manyDims() ? t.ruleValues : t.ruleTerritories)}</th><th class="hide-s">${esc(t.ruleUpdated)}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="adm-empty">${esc(t.noRules)}</p>`}
     <section class="adm-preview" aria-labelledby="pv-h"><h3 id="pv-h">${esc(t.preview)}</h3>
       <div class="adm-bar"><select id="pv-user" aria-label="${esc(t.previewPick)}"><option value="">${esc(t.previewPick)}</option></select><button class="adm-btn" id="pv-go">${esc(t.previewGo)}</button></div>
       <div id="pv-out" role="status" aria-live="polite">${s.preview ? previewHtml(s.preview) : ""}</div></section>`;
@@ -128,20 +132,22 @@ function rulesHtml() {
 
 function previewHtml(p) {
   if (!p.applies) return `<p class="hint">${esc(t.previewNa)}</p><p class="hint">${esc(t.blockedCubes)}: ${(p.blocked_cubes || []).map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("") || esc(t.noneBlocked)}</p>`;
-  const chips = p.territories.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("") || `<span class="hint">${esc(t.none)}</span>`;
+  const chipsOf = (vals) => vals.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("") || `<span class="hint">${esc(t.none)}</span>`;
+  const chips = chipsOf(p.territories);
+  const perDim = manyDims() && p.dimensions ? s.dimensions.map((d) => `<p><strong>${esc(dimLabel(d))}</strong>: ${chipsOf(p.dimensions[d.id]?.values || [])} <span class="hint">${esc(t.previewSource[p.dimensions[d.id]?.source] || "")}</span></p>`).join("") : "";
   const via = p.rules.length ? `<p class="hint">${esc(t.previewVia)}: ${p.rules.map((r) => `${esc(r.principal)} (${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)})`).join(", ")}</p>` : "";
   const labLine = `<p class="hint">${esc(p.lab ? t.labOn : t.labOff)}</p>`;
   const blocked = `<p class="hint">${esc(t.blockedCubes)}: ${(p.blocked_cubes || []).map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("") || esc(t.noneBlocked)}</p>`;
-  return `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>${via}${blocked}${labLine}`;
+  return `${perDim ? `<p><strong>${esc(p.username)}</strong></p>${perDim}` : `<p><strong>${esc(p.username)}</strong>: ${chips}</p><p class="hint">${esc(t.previewSource[p.source] || p.source)}</p>`}${via}${blocked}${labLine}`;
 }
 
 function wireRules() {
   if (s.rulesOff) return;
   $("#new-rule").addEventListener("click", () => ruleDialog());
   main.querySelectorAll("tr[data-type] [data-act]").forEach((b) => b.addEventListener("click", () => {
-    const tr = b.closest("tr"), r = s.rules.find((x) => x.type === tr.dataset.type && x.principal === tr.dataset.principal);
+    const tr = b.closest("tr"), r = s.rules.find((x) => x.type === tr.dataset.type && x.principal === tr.dataset.principal && (x.dimension || "territory") === tr.dataset.dimension);
     if (b.dataset.act === "edit") ruleDialog(r);
-    else confirmDialog(t.ruleDelete, t.ruleDeleteWhy(r.principal), t.delete, () => call("DELETE", `/rls/rules/${r.type}/${encodeURIComponent(r.principal)}`));
+    else confirmDialog(t.ruleDelete, t.ruleDeleteWhy(r.principal), t.delete, () => call("DELETE", `/rls/rules/${r.type}/${encodeURIComponent(r.principal)}?dimension=${encodeURIComponent(r.dimension || "territory")}`));
   }));
   call("GET", "/users?max=200").then((r) => {
     const sel = $("#pv-user");
@@ -159,21 +165,27 @@ async function ruleDialog(rule) {
   const all = (await call("GET", "/users?max=200")).users;
   const type = rule?.type || "user";
   const picked = new Set(rule?.values || []);
-  const regionBoxes = s.regions.length
-    ? `<div class="groups-pick" role="group" aria-label="${esc(t.ruleTerritories)}">${s.regions.map((r) => `<label><input type="checkbox" name="r" value="${esc(r)}"${picked.has(r) ? " checked" : ""}> ${esc(r)}</label>`).join("")}</div>`
-    : `<input name="regions" value="${esc([...picked].join(", "))}"><p class="hint">${esc(t.regionsHint)}</p>`;
+  const boxesFor = (dimId) => {
+    const vals = dimId === "territory" ? s.regions : dimOf(dimId).values;                    // the territories come with the seed; any other dimension lists its own values
+    return vals.length
+      ? `<div class="groups-pick" role="group" aria-label="${esc(manyDims() ? t.ruleValues : t.ruleTerritories)}">${vals.map((r) => `<label><input type="checkbox" name="r" value="${esc(r)}"${picked.has(r) ? " checked" : ""}> ${esc(r)}</label>`).join("")}</div>`
+      : `<input name="regions" value="${esc([...picked].join(", "))}"><p class="hint">${esc(t.regionsHint)}</p>`;
+  };
   const principals = (ty) => (ty === "user" ? all.map((u) => [u.username, u.username]) : s.groups.map((g) => [g.name, g.name]));
+  const dim0 = rule?.dimension || "territory";
+  const dimPick = manyDims() ? `<label>${esc(t.ruleDimension)}<select name="dimension"${rule ? " disabled" : ""}>${opts(s.dimensions.map((d) => [d.id, dimLabel(d)]), dim0)}</select></label>` : "";
   const form = openForm(`<h2>${esc(rule ? `${t.edit}: ${rule.principal}` : t.newRule)}</h2>
     <label>${esc(t.ruleFor)}<select name="type"${rule ? " disabled" : ""}>${opts([["user", t.ruleUser], ["group", t.ruleGroup]], type)}</select></label>
     <label>${esc(t.ruleWho)}<select name="principal"${rule ? " disabled" : ""}>${opts(principals(type), rule?.principal || "")}</select></label>
-    <label>${esc(t.ruleTerritories)}${regionBoxes}</label>${foot(t.ruleSave)}`, async (f) => {
+    ${dimPick}<label>${esc(manyDims() ? t.ruleValues : t.ruleTerritories)}<span id="rule-values">${boxesFor(dim0)}</span></label>${foot(t.ruleSave)}`, async (f) => {
     const v = Object.fromEntries(new FormData(f));
-    const type_ = rule?.type || v.type, principal = rule?.principal || v.principal;
-    const values = s.regions.length ? [...f.querySelectorAll("[name=r]:checked")].map((c) => c.value) : (v.regions || "").split(",").map((x) => x.trim()).filter(Boolean);
+    const type_ = rule?.type || v.type, principal = rule?.principal || v.principal, dimension = rule?.dimension || v.dimension || "territory";
+    const values = f.querySelectorAll("[name=r]").length ? [...f.querySelectorAll("[name=r]:checked")].map((c) => c.value) : (v.regions || "").split(",").map((x) => x.trim()).filter(Boolean);
     if (!values.length) throw new Error(t.pickOne);
-    await call("PUT", `/rls/rules/${type_}/${encodeURIComponent(principal)}`, { values });
+    await call("PUT", `/rls/rules/${type_}/${encodeURIComponent(principal)}?dimension=${encodeURIComponent(dimension)}`, { values });
   });
   form.querySelector("[name=type]").addEventListener("change", (e) => { form.querySelector("[name=principal]").innerHTML = opts(principals(e.target.value), ""); });
+  form.querySelector("[name=dimension]")?.addEventListener("change", (e) => { picked.clear(); form.querySelector("#rule-values").innerHTML = boxesFor(e.target.value); });
 }
 
 // ------------------------------------------------------------------------------------------------------------------ datasets

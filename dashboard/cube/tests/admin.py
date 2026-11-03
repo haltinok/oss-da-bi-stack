@@ -205,6 +205,34 @@ with sync_playwright() as p:
     page.click('[data-tab="rules"]')
     check("Row rules are off" in page.inner_text(".adm-page"), "without a rules database the tab says so, and the other tabs still work")
     ms.ADMIN["rules_off"] = False
+
+    # ---- a second dimension (channel): the dialog offers it, its own values, the table and the preview show every dimension
+    ms.ADMIN["channel"] = True
+    page.reload()
+    page.click('[data-tab="rules"]')
+    check("Dimension" in page.inner_text(".adm-page") or "No rules yet" in page.inner_text(".adm-page"), "with two dimensions the rules tab still loads")
+    page.click("#new-rule")
+    page.wait_for_function("document.querySelector('#dlg').open")
+    page.wait_for_selector('#dlg select[name="principal"] option[value="de_rep"]', state="attached")
+    page.select_option('#dlg select[name="principal"]', "de_rep")
+    check(page.locator('#dlg input[value="France"]').count() == 1, "the dialog starts on territories")
+    page.select_option('#dlg select[name="dimension"]', "channel")
+    check(page.locator('#dlg input[value="France"]').count() == 0 and page.locator('#dlg input[value="Internet"]').count() == 1, "choosing channel swaps in the channel values")
+    page.check('#dlg input[value="Internet"]')
+    page.click("#dlg [data-go]")
+    page.wait_for_function("!document.querySelector('#dlg').open")
+    row = page.locator("tr[data-type='user'][data-principal='de_rep'][data-dimension='channel']")
+    check("Channels" in row.inner_text() and "Internet" in row.inner_text(), "a channel rule lists its dimension and values")
+    page.wait_for_selector("#pv-user option[value='de_rep']", state="attached")
+    page.select_option("#pv-user", "de_rep")
+    page.click("#pv-go")
+    page.wait_for_function("document.querySelector('#pv-out').innerText.includes('Channels')")
+    check("Territories" in page.inner_text("#pv-out") and "Internet" in page.inner_text("#pv-out"), "the preview lists every dimension")
+    row.locator('[data-act="delete"]').click()
+    page.click("#dlg [data-go]")
+    page.wait_for_function("document.querySelectorAll(\"tr[data-dimension='channel']\").length === 0")
+    check(True, "a channel rule is removed on its own")
+    ms.ADMIN["channel"] = False
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors on the rules tab {page.problems[:1]}")
     ctx.close()
 

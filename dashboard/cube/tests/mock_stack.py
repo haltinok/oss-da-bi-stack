@@ -190,7 +190,7 @@ def saved_answer(path, body, method, c):
 
 
 # ---- the admin service (admin/) on an in-memory directory: the same endpoints and refusals the page relies on
-ADMIN = {"users": {}, "groups": {}, "rules": {}, "datasets": {}, "rules_off": False, "n": 0}
+ADMIN = {"users": {}, "groups": {}, "rules": {}, "rules_dim": {}, "channel": False, "datasets": {}, "rules_off": False, "n": 0}
 CUBES = [{"name": n, "description": f"The {n} cube", "measures": 3, "dimensions": 5, "fields": [{"name": "revenue", "kind": "measure"}, {"name": "gross_profit", "kind": "measure"}, {"name": "category", "kind": "dimension"}]} for n in ("customers", "dates", "internet_sales", "inventory_health", "products", "reseller_sales", "territories")]
 REGIONS = ["Canada", "France", "Germany", "United States"]
 SEED_REGIONS = {"admin": REGIONS, "na_manager": ["Canada", "United States"], "de_rep": ["Germany"]}
@@ -199,7 +199,7 @@ TEMP_VALUE = "x" * 14                                  # what the mock shows as 
 
 
 def reset_admin():
-    ADMIN.update(users={}, groups={}, rules={}, datasets={}, rules_off=False, n=0)
+    ADMIN.update(users={}, groups={}, rules={}, rules_dim={}, channel=False, datasets={}, rules_off=False, n=0)
     for name, role in (("admin", "admin"), ("na_manager", "editor"), ("de_rep", "viewer")):
         _add_user(name, role)
 
@@ -243,13 +243,24 @@ def admin_answer(path, body, method, query):
         if ADMIN["rules_off"]:
             return 503, {"detail": "row-level rules are off: set ADMIN_DB_PASSWORD and run postgres/sync-access.sh"}
         rules = ADMIN["rules"]
+        dim = q.get("dimension", "territory")
+        extra = ADMIN["rules_dim"]                                              # rules on dimensions other than territory: (type, principal, dimension) -> values
+        dims = [{"id": "territory", "labels": {"en": "Territories", "tr": "Bölgeler"}, "values": REGIONS}] + ([{"id": "channel", "labels": {"en": "Channels", "tr": "Kanallar"}, "values": ["Internet", "Reseller"]}] if ADMIN["channel"] else [])
         if parts == ["rls", "rules"] and method == "GET":
-            return 200, {"rules": [{"type": t, "principal": p, "values": v, "updated_by": "admin", "updated_at": "2026-11-02T10:00:00+00:00"} for (t, p), v in sorted(rules.items())], "regions": REGIONS}
+            rows = [{"type": t, "principal": p, "dimension": "territory", "values": v, "updated_by": "admin", "updated_at": "2026-11-02T10:00:00+00:00"} for (t, p), v in sorted(rules.items())]
+            rows += [{"type": t, "principal": p, "dimension": d, "values": v, "updated_by": "admin", "updated_at": "2026-11-02T10:00:00+00:00"} for (t, p, d), v in sorted(extra.items())]
+            return 200, {"rules": rows, "regions": REGIONS, "dimensions": dims}
+        if len(parts) == 4 and parts[1] == "rules" and dim not in [d["id"] for d in dims]:
+            return 400, {"detail": f"unknown dimension '{dim}'"}
         if len(parts) == 4 and parts[1] == "rules" and method == "PUT":
+            if dim != "territory":
+                extra[(parts[2], parts[3], dim)] = sorted(set(body["values"]))
+                return 200, {"type": parts[2], "principal": parts[3], "dimension": dim, "values": extra[(parts[2], parts[3], dim)]}
             rules[(parts[2], parts[3])] = sorted(set(body["values"]))
-            return 200, {"type": parts[2], "principal": parts[3], "values": rules[(parts[2], parts[3])]}
+            return 200, {"type": parts[2], "principal": parts[3], "dimension": "territory", "values": rules[(parts[2], parts[3])]}
         if len(parts) == 4 and parts[1] == "rules" and method == "DELETE":
-            return (204, None) if rules.pop((parts[2], parts[3]), None) is not None else (404, {"detail": "no such rule"})
+            gone = extra.pop((parts[2], parts[3], dim), None) if dim != "territory" else rules.pop((parts[2], parts[3]), None)
+            return (204, None) if gone is not None else (404, {"detail": "no such rule"})
         if len(parts) == 3 and parts[1] == "preview":
             u = next((x for x in users.values() if x["username"] == parts[2]), None)
             if u is None:
@@ -262,10 +273,13 @@ def admin_answer(path, body, method, query):
             blocked = [] if u["role"] == "admin" else sorted(gov - allowed)
             base = {"username": u["username"], "role": u["role"], "groups": names, "applies": True, "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked,
                     "lab": u["role"] == "admin" or any(g.get("permission") == "lab" and ((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names)) for d in ADMIN["datasets"].values() for g in d["grants"])}
-            if hits:
-                return 200, {**base, "territories": sorted({x for _, _, v in hits for x in v}), "source": "rules"}
             seeded = SEED_REGIONS.get(u["username"], [])
-            return 200, {**base, "territories": seeded, "source": "seed" if seeded else "none"}
+            terr = ({"values": sorted({x for _, _, v in hits for x in v}), "source": "rules"} if hits else {"values": seeded, "source": "seed" if seeded else "none"})
+            per = {"territory": terr}
+            if ADMIN["channel"]:
+                ch = [v for (t, p, d), v in extra.items() if d == "channel" and ((t == "user" and p == u["username"]) or (t == "group" and p in names))]
+                per["channel"] = {"values": sorted({x for v in ch for x in v}), "source": "rules" if ch else "none"}
+            return 200, {**base, "dimensions": per, "territories": terr["values"], "source": terr["source"]}
         return 404, {"detail": "not found"}
     if parts == ["users"] and method == "GET":
         rows = [u for u in users.values() if (not q.get("search") or q["search"].lower() in (u["username"] + u["email"]).lower()) and (not q.get("role") or u["role"] == q["role"])

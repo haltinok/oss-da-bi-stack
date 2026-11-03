@@ -1,6 +1,6 @@
 """The row-level rules the console edits (Postgres schema `access`: postgres/init/04_access_schema.sql), through the least-privilege login `access_admin`.
 
-A rule: for a user (by username) or a group (by name), the sales territories they may see. MemoryStore has the same interface for tests.
+A rule: for a user (by username) or a group (by name), the values of one dimension (territory, ... : cube/rls_dimensions.json) they may see. MemoryStore has the same interface for tests.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _now() -> str:
 
 class MemoryRules:
     def __init__(self):
-        self.rows: dict[tuple[str, str], dict] = {}
+        self.rows: dict[tuple[str, str, str], dict] = {}
         self.sets: dict[str, dict] = {}                              # datasets by id
         self.grants: dict[str, list[dict]] = {}                      # dataset id -> [{type, principal}]
         self.lock = threading.Lock()
@@ -60,22 +60,26 @@ class MemoryRules:
         with self.lock:
             return sorted((dict(r) for r in self.rows.values()), key=lambda r: (r["type"], r["principal"].lower()))
 
-    def put(self, type_: str, principal: str, values: list[str], by: str) -> dict:
+    def put(self, type_: str, principal: str, values: list[str], by: str, dimension: str = "territory") -> dict:
         with self.lock:
-            row = {"type": type_, "principal": principal, "values": list(values), "updated_by": by, "updated_at": _now()}
-            self.rows[(type_, principal)] = row
+            row = {"type": type_, "principal": principal, "dimension": dimension, "values": list(values), "updated_by": by, "updated_at": _now()}
+            self.rows[(type_, principal, dimension)] = row
             return dict(row)
 
-    def delete(self, type_: str, principal: str) -> bool:
+    def delete(self, type_: str, principal: str, dimension: str | None = None) -> bool:
+        """One dimension's rule, or (no dimension) all of the person's or group's rules."""
         with self.lock:
-            return self.rows.pop((type_, principal), None) is not None
+            gone = [k for k in self.rows if k[0] == type_ and k[1] == principal and dimension in (None, k[2])]
+            for k in gone:
+                del self.rows[k]
+            return bool(gone)
 
     def rename(self, type_: str, old: str, new: str) -> None:
         with self.lock:
-            row = self.rows.pop((type_, old), None)
-            if row:
+            for k in [k for k in self.rows if k[0] == type_ and k[1] == old]:
+                row = self.rows.pop(k)
                 row["principal"] = new
-                self.rows[(type_, new)] = row
+                self.rows[(type_, new, k[2])] = row
 
 
 class PgRules:
@@ -99,24 +103,25 @@ class PgRules:
 
     @staticmethod
     def _row(r: dict) -> dict:
-        return {"type": r["principal_type"], "principal": r["principal"], "values": list(r["values"]), "updated_by": r["updated_by"],
+        return {"type": r["principal_type"], "principal": r["principal"], "dimension": r["dimension"], "values": list(r["values"]), "updated_by": r["updated_by"],
                 "updated_at": r["updated_at"].astimezone(datetime.timezone.utc).isoformat(timespec="seconds")}
 
     def list(self) -> list[dict]:
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute('SELECT principal_type, principal, "values", updated_by, updated_at FROM access.rls_rule ORDER BY principal_type, lower(principal)')
+            cur.execute('SELECT principal_type, principal, dimension, "values", updated_by, updated_at FROM access.rls_rule ORDER BY principal_type, lower(principal), dimension')
             return [self._row(r) for r in cur.fetchall()]
 
-    def put(self, type_: str, principal: str, values: list[str], by: str) -> dict:
+    def put(self, type_: str, principal: str, values: list[str], by: str, dimension: str = "territory") -> dict:
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute('INSERT INTO access.rls_rule (principal_type, principal, "values", updated_by) VALUES (%s, %s, %s, %s) '
+            cur.execute('INSERT INTO access.rls_rule (principal_type, principal, dimension, "values", updated_by) VALUES (%s, %s, %s, %s, %s) '
                         'ON CONFLICT (principal_type, principal, dimension) DO UPDATE SET "values" = EXCLUDED."values", updated_by = EXCLUDED.updated_by, updated_at = now() '
-                        'RETURNING principal_type, principal, "values", updated_by, updated_at', (type_, principal, list(values), by))
+                        'RETURNING principal_type, principal, dimension, "values", updated_by, updated_at', (type_, principal, dimension, list(values), by))
             return self._row(cur.fetchone())
 
-    def delete(self, type_: str, principal: str) -> bool:
+    def delete(self, type_: str, principal: str, dimension: str | None = None) -> bool:
+        """One dimension's rule, or (no dimension) all of the person's or group's rules."""
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute("DELETE FROM access.rls_rule WHERE principal_type = %s AND principal = %s", (type_, principal))
+            cur.execute("DELETE FROM access.rls_rule WHERE principal_type = %s AND principal = %s AND (%s::text IS NULL OR dimension = %s)", (type_, principal, dimension, dimension))
             return cur.rowcount > 0
 
     def rename(self, type_: str, old: str, new: str) -> None:

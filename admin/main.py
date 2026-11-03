@@ -25,6 +25,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import pathlib
 import secrets
 from typing import Annotated
 
@@ -437,6 +438,27 @@ class RuleRequest(BaseModel):
     values: list[str] = Field(min_length=1, max_length=200)
 
 
+# The row-level dimensions (territory, ...): cube/rls_dimensions.json, a copy of which sits next to this file.
+DIMENSIONS = json.loads((pathlib.Path(__file__).parent / "rls_dimensions.json").read_text(encoding="utf-8"))["dimensions"]
+
+
+def dimension_of(id_: str) -> dict:
+    dim = next((d for d in DIMENSIONS if d["id"] == id_), None)
+    if dim is None:
+        raise HTTPException(400, f"unknown dimension '{id_}' (known: {', '.join(d['id'] for d in DIMENSIONS)})")
+    return dim
+
+
+def dimension_values(dim: dict) -> list[str] | None:
+    """The values a rule on this dimension may name; None when they cannot be listed (then any text is accepted)."""
+    kind = dim.get("values", {}).get("kind")
+    if kind == "seed_regions":
+        return known_regions()
+    if kind == "list":
+        return list(dim["values"].get("values", []))
+    return None
+
+
 def known_regions() -> list[str] | None:
     sd = seed()
     return sd.regions() if sd else None
@@ -444,13 +466,15 @@ def known_regions() -> list[str] | None:
 
 @app.get("/rls/rules")
 def list_rules(_: Who) -> dict:
-    return {"rules": rules().list(), "regions": known_regions() or []}
+    return {"rules": rules().list(), "regions": known_regions() or [],
+            "dimensions": [{"id": d["id"], "labels": d.get("labels", {}), "values": dimension_values(d) or []} for d in DIMENSIONS]}
 
 
 @app.put("/rls/rules/{type_}/{principal}")
-def put_rule(type_: str, principal: str, req: RuleRequest, who: Who) -> dict:
+def put_rule(type_: str, principal: str, req: RuleRequest, who: Who, dimension: str = "territory") -> dict:
     if type_ not in TYPES:
         raise HTTPException(400, "a rule is for a user or a group")
+    dim = dimension_of(dimension)
     store = rules()
     try:
         if type_ == "user":
@@ -460,29 +484,30 @@ def put_rule(type_: str, principal: str, req: RuleRequest, who: Who) -> dict:
             raise HTTPException(404, f"no group '{principal}'")
     except KeycloakError as exc:
         fail(exc)
-    regions = known_regions()
+    known = dimension_values(dim)
     values = sorted(set(req.values))
-    if regions is not None:
-        unknown = [v for v in values if v not in regions]
+    if known is not None:
+        unknown = [v for v in values if v not in known]
         if unknown:
-            raise HTTPException(400, f"unknown territory: {unknown[0]} (known: {', '.join(regions)})")
-    row = store.put(type_, principal, values, who.name)
-    audit(who, "set_rule", type=type_, principal=principal, values=values)
+            raise HTTPException(400, f"unknown {dim['id']} value: {unknown[0]} (known: {', '.join(known)})")
+    row = store.put(type_, principal, values, who.name, dim["id"])
+    audit(who, "set_rule", type=type_, principal=principal, dimension=dim["id"], values=values)
     return row
 
 
 @app.delete("/rls/rules/{type_}/{principal}", status_code=204, response_class=Response)
-def delete_rule(type_: str, principal: str, who: Who):
+def delete_rule(type_: str, principal: str, who: Who, dimension: str = "territory"):
     if type_ not in TYPES:
         raise HTTPException(400, "a rule is for a user or a group")
-    if not rules().delete(type_, principal):
+    dim = dimension_of(dimension)
+    if not rules().delete(type_, principal, dim["id"]):
         raise HTTPException(404, "no such rule")
-    audit(who, "delete_rule", type=type_, principal=principal)
+    audit(who, "delete_rule", type=type_, principal=principal, dimension=dim["id"])
 
 
 @app.get("/rls/preview/{username}")
 def preview(username: str, _: Who) -> dict:
-    """What the auth service will give this person at their next sign-in: the union of the rules for them and their groups, else the dbt seed."""
+    """What the auth service will give this person at their next sign-in, per dimension: the union of the rules for them and their groups, else (territory only) the dbt seed."""
     store = rules()
     try:
         person = next((u for u in kc().users(search=username) if u["username"] == username), None)
@@ -495,17 +520,23 @@ def preview(username: str, _: Who) -> dict:
     applying = [r for r in store.list() if (r["type"] == "user" and r["principal"] == username) or (r["type"] == "group" and r["principal"] in names)]
     datasets, grants = store.resolve_input()
     out = {"username": username, "role": shaped["role"], "groups": names, "applies": True,
-           "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying],
+           "rules": [{"type": r["type"], "principal": r["principal"], "dimension": r.get("dimension", "territory"), "values": r["values"]} for r in applying],
            "blocked_cubes": access_resolve.blocked_cubes(datasets, grants, username, shaped["role"] or "", names),
            "blocked_members": access_resolve.blocked_members(datasets, grants, username, shaped["role"] or "", names),
            "lab": access_resolve.lab_allowed(grants, username, shaped["role"] or "", names)}
-    if applying:
-        return {**out, "territories": sorted({v for r in applying for v in r["values"]}), "source": "rules"}
-    sd = seed()
-    seeded = sd.regions_of(username) if sd else None
-    if seeded is None:
-        return {**out, "territories": [], "source": "unknown"}
-    return {**out, "territories": seeded, "source": "seed" if seeded else "none"}
+    dims = {}
+    for d in DIMENSIONS:
+        mine = [r for r in applying if r.get("dimension", "territory") == d["id"]]
+        if mine:
+            dims[d["id"]] = {"values": sorted({v for r in mine for v in r["values"]}), "source": "rules"}
+        elif d.get("seed"):
+            sd = seed()
+            seeded = sd.regions_of(username) if sd else None
+            dims[d["id"]] = {"values": seeded or [], "source": "unknown" if seeded is None else ("seed" if seeded else "none")}
+        else:
+            dims[d["id"]] = {"values": [], "source": "none"}
+    first = dims.get("territory", {"values": [], "source": "none"})
+    return {**out, "dimensions": dims, "territories": first["values"], "source": first["source"]}
 
 
 # -------------------------------------------------------------------------------------------------------------------- datasets

@@ -2,12 +2,12 @@
 -- Idempotent: it runs on a fresh volume (this directory is the image's init directory) and postgres/sync-access.sh runs it on one that exists.
 CREATE SCHEMA IF NOT EXISTS access;
 
--- A rule says which sales territories (regions) a person or a group may see. A person's territories are the union of the rules for them and for their groups;
--- with no rule at all, the dbt seed (rls.user_regions in StarRocks) still decides, as before.
+-- A rule says which values of one dimension (cube/rls_dimensions.json: territory, ...) a person or a group may see. A person's values are the union of the rules for them and for their groups;
+-- for the territory dimension, with no rule at all, the dbt seed (rls.user_regions in StarRocks) still decides, as before.
 CREATE TABLE IF NOT EXISTS access.rls_rule (
     principal_type text        NOT NULL CHECK (principal_type IN ('user', 'group')),
     principal      text        NOT NULL CHECK (char_length(principal) BETWEEN 1 AND 120),     -- the Keycloak username, or the group's name
-    dimension      text        NOT NULL DEFAULT 'territory' CHECK (dimension IN ('territory')),
+    dimension      text        NOT NULL DEFAULT 'territory' CHECK (dimension ~ '^[a-z][a-z0-9_]{0,39}$'),      -- an id from cube/rls_dimensions.json (admin and auth check it there)
     "values"       text[]      NOT NULL CHECK (cardinality("values") BETWEEN 1 AND 200),
     updated_by     text        NOT NULL,
     updated_at     timestamptz NOT NULL DEFAULT now(),
@@ -49,3 +49,8 @@ ALTER TABLE access.dataset ALTER COLUMN cubes SET DEFAULT '{}';
 ALTER TABLE access.dataset DROP CONSTRAINT IF EXISTS dataset_cubes_check;
 ALTER TABLE access.dataset DROP CONSTRAINT IF EXISTS dataset_has_content;
 ALTER TABLE access.dataset ADD CONSTRAINT dataset_has_content CHECK (cardinality(cubes) + cardinality(members) BETWEEN 1 AND 300);
+
+-- An install that has the table from before there could be more than one dimension: the check allowed only 'territory' (idempotent).
+ALTER TABLE access.rls_rule DROP CONSTRAINT IF EXISTS rls_rule_dimension_check;
+ALTER TABLE access.rls_rule DROP CONSTRAINT IF EXISTS rls_rule_dimension_id;
+ALTER TABLE access.rls_rule ADD CONSTRAINT rls_rule_dimension_id CHECK (dimension ~ '^[a-z][a-z0-9_]{0,39}$');
