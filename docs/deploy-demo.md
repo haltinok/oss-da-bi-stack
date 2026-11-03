@@ -46,6 +46,32 @@ every 5 minutes). For the weekly proposal agent also unpause `inventory_weekly_p
 
 The demo users (`admin`, `na_manager`, `de_rep`, `buyer`, `marketer`) all use `TEST_USER_PASSWORD` from `.env`.
 
+## Update a running server
+For a server deployed as above (`COMPOSE_FILE` and `PUBLIC_URL` are in `.env`). **The order matters**: the auth service reads the access rules from Postgres and fails the sign-in (503) rather than guess, so the database schemas must exist before it restarts with the new code.
+
+```bash
+cd oss-da-bi-stack && git pull
+
+# 1. new secrets the access features need (once; Compose refuses to start without ADMIN_CLIENT_SECRET)
+for v in ADMIN_CLIENT_SECRET ADMIN_DB_PASSWORD AUTH_PG_PASSWORD LAB_DB_PASSWORD; do
+  grep -q "^$v=" .env || echo "$v=$(openssl rand -hex 16)" >> .env
+done
+
+# 2. recreate Postgres and Keycloak with the new variables, then bring the data stores and Keycloak up to date (all idempotent; nothing is deleted)
+docker compose --profile starrocks up -d postgres keycloak
+postgres/sync-builder.sh        # folders, shares, trash for saved dashboards
+postgres/sync-access.sh         # row rules, datasets and grants
+postgres/sync-lab.sh            # the SQL lab's saved queries
+keycloak/sync-users.sh          # the admin-console client and the groups claim
+
+# 3. rebuild and restart everything else (auth, builder, admin, lab, dashboard-cube, cube pick up the new code and settings)
+docker compose --profile starrocks up -d --build
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile      # the new /admin-api and /lab-api routes
+```
+Check: `curl -s -o /dev/null -w '%{http_code}\n' https://demo.eloha-da.com/home/` (200), `.../admin-api/healthz` and `.../lab-api/healthz` (200), `.../admin-api/users` (401: it wants a token); sign in as `admin` and open **Admin** and **SQL lab**.
+Nothing in StarRocks or the dbt models changes, and the schema changes only add (a rollback is `git checkout` of the old version and the same `up -d --build`). People and groups you create in the console live in Keycloak's data volume, so keep it
+in your backups; the saved dashboards, queries, rules and datasets are in the Postgres volume.
+
 ## Check it
 ```bash
 curl -sI https://demo.eloha-da.com/ | head -1                                              # HTTP/2 200
