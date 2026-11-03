@@ -111,16 +111,18 @@ async function showList() {
   document.title = "Dashboards";
   const index = await (await fetch("/dashboards/index.json", { cache: "no-store" })).json().catch(() => []);
   const role = client.session().role;
-  const mine = index.filter((d) => !d.roles?.length || d.roles.includes(role));
   const locale = uiLocale(navigator.language);
   const t = stringsFor(locale);
+  const api = createBuilderApi({ stack: C, client, t });
+  let readable = null;                                                          // the samples this person can open (what datasets leave them); all of them when the builder cannot say
+  if (api.available) { try { readable = new Set((await api.samples()).filter((x) => x.readable).map((x) => x.id)); } catch { readable = null; } }
+  const mine = index.filter((d) => !readable || readable.has(d.id));
   setHomeLink(t, true);
   localizeChrome(t, locale);
   document.title = t.dashboards;
   $("#title").textContent = t.dashboards;
   $("#export-label").textContent = t.exportAll;
   setStatus(`<strong>${esc(t.signedIn)}</strong>`);
-  const api = createBuilderApi({ stack: C, client, t });
   mountList({ main: $("#main"), mine, api, t, viewer: role === "viewer" });
 }
 
@@ -155,7 +157,6 @@ async function showDashboard() {
   setHomeLink(t);
   localizeChrome(t, locale);
   $("#filters").setAttribute("aria-label", t.filters);
-  if (spec.roles?.length && !spec.roles.includes(role)) throw new Error(t.notForRole(spec.title, role));
   applyTheme(spec.theme);
   $("#export-label").textContent = t.exportAll;
   $("#refresh").title = $("#refresh").ariaLabel = t.refresh;

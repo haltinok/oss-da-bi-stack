@@ -29,7 +29,7 @@ def api(kc):
     return TestClient(main.app)
 
 
-NEW = {"username": "ayse", "email": "ayse@example.com", "firstName": "Ayse", "lastName": "Y", "role": "manager", "password": "a-long-password-1"}
+NEW = {"username": "ayse", "email": "ayse@example.com", "firstName": "Ayse", "lastName": "Y", "role": "editor", "password": "a-long-password-1"}
 
 
 def test_create_gives_a_role_groups_and_a_temporary_password(api, kc):
@@ -37,7 +37,7 @@ def test_create_gives_a_role_groups_and_a_temporary_password(api, kc):
     r = api.post("/users", json={**NEW, "groups": [gid]})
     assert r.status_code == 201
     u = r.json()
-    assert u["username"] == "ayse" and u["role"] == "manager" and [g["name"] for g in u["groups"]] == ["Sales team"] and u["enabled"]
+    assert u["username"] == "ayse" and u["role"] == "editor" and [g["name"] for g in u["groups"]] == ["Sales team"] and u["enabled"]
     assert kc.passwords[u["id"]] == ("a-long-password-1", True)
 
 
@@ -49,14 +49,14 @@ def test_create_refuses_a_short_password_an_unknown_role_and_a_taken_username(ap
 
 
 def test_list_searches_filters_and_counts(api, kc):
-    kc.add("na_manager", "manager", email="na@x.com")
-    kc.add("de_rep", "rep")
-    kc.add("old", "rep", enabled=False)
+    kc.add("na_manager", "editor", email="na@x.com")
+    kc.add("de_rep", "viewer")
+    kc.add("old", "viewer", enabled=False)
     gid = api.post("/groups", json={"name": "EU"}).json()["id"]
     api.put(f"/groups/{gid}/members/{next(u for u in kc.users_ if kc.users_[u]['username'] == 'de_rep')}")
     everyone = api.get("/users").json()
     assert everyone["total"] == 4 and [u["username"] for u in everyone["users"]] == ["de_rep", "na_manager", "old", "root"]
-    assert [u["username"] for u in api.get("/users?role=rep").json()["users"]] == ["de_rep", "old"]
+    assert [u["username"] for u in api.get("/users?role=viewer").json()["users"]] == ["de_rep", "old"]
     assert [u["username"] for u in api.get("/users?enabled=false").json()["users"]] == ["old"]
     assert [u["username"] for u in api.get(f"/users?group={gid}").json()["users"]] == ["de_rep"]
     assert [u["username"] for u in api.get("/users?search=na@").json()["users"]] == ["na_manager"]
@@ -66,9 +66,9 @@ def test_list_searches_filters_and_counts(api, kc):
 def test_edit_changes_the_role_to_exactly_one_and_the_groups(api, kc):
     uid = api.post("/users", json=NEW).json()["id"]
     g1, g2 = api.post("/groups", json={"name": "A"}).json()["id"], api.post("/groups", json={"name": "B"}).json()["id"]
-    r = api.put(f"/users/{uid}", json={"role": "rep", "groups": [g1, g2], "lastName": "Z"}).json()
-    assert r["role"] == "rep" and r["lastName"] == "Z" and {g["name"] for g in r["groups"]} == {"A", "B"}
-    assert [role for role, ids in kc.roles_.items() if uid in ids] == ["rep"]
+    r = api.put(f"/users/{uid}", json={"role": "editor", "groups": [g1, g2], "lastName": "Z"}).json()
+    assert r["role"] == "editor" and r["lastName"] == "Z" and {g["name"] for g in r["groups"]} == {"A", "B"}
+    assert [role for role, ids in kc.roles_.items() if uid in ids] == ["editor"]
     r = api.put(f"/users/{uid}", json={"groups": [g2]}).json()
     assert [g["name"] for g in r["groups"]] == ["B"]
     assert api.put(f"/users/{uid}", json={"groups": ["nope"]}).status_code == 400
@@ -85,7 +85,7 @@ def test_the_last_active_admin_and_your_own_account_are_protected(api, kc):
     assert api.delete("/users/me?confirm=root").status_code == 409
     other = api.post("/users", json={**NEW, "username": "boss", "role": "admin"}).json()["id"]
     assert api.post(f"/users/{other}/disable").status_code == 200                              # root is still active, so this admin may go
-    assert api.put(f"/users/{other}", json={"role": "rep"}).status_code == 200
+    assert api.put(f"/users/{other}", json={"role": "editor"}).status_code == 200
     kc.roles_["admin"].add(other)
     ME2 = main.Admin(id=other, name="boss")
     main.app.dependency_overrides[main.current_admin] = lambda: ME2
@@ -93,11 +93,11 @@ def test_the_last_active_admin_and_your_own_account_are_protected(api, kc):
     kc.users_["me"]["enabled"] = False                                                         # boss is now the only active admin
     third = api.post("/users", json={**NEW, "username": "third", "role": "admin"}).json()["id"]
     kc.users_[third]["enabled"] = False
-    assert api.put("/users/me", json={"role": "rep"}).status_code == 200                      # root is inactive: demoting it leaves boss, fine
+    assert api.put("/users/me", json={"role": "editor"}).status_code == 200                      # root is inactive: demoting it leaves boss, fine
     kc.roles_["admin"] = {other}
     main.app.dependency_overrides[main.current_admin] = lambda: main.Admin(id="someone-else", name="x")
     assert api.post(f"/users/{other}/disable").status_code == 409                              # nobody else is active
-    assert api.put(f"/users/{other}", json={"role": "rep"}).status_code == 409
+    assert api.put(f"/users/{other}", json={"role": "editor"}).status_code == 409
     assert api.delete(f"/users/{other}?confirm=boss").status_code == 409
 
 
@@ -109,7 +109,7 @@ def test_set_password_and_reset(api, kc):
     r = api.post(f"/users/{uid}/reset-password").json()
     assert not r["emailed"] and len(r["temporary_password"]) >= 12 and kc.passwords[uid] == (r["temporary_password"], True)
     assert api.post(f"/users/{uid}/reset-password", json={"email": True}).json() == {"ok": True, "emailed": True} and kc.emailed == [uid]
-    bare = kc.add("noemail", "rep")
+    bare = kc.add("noemail", "editor")
     assert api.post(f"/users/{bare}/reset-password", json={"email": True}).status_code == 400
 
 
@@ -147,7 +147,7 @@ def test_only_an_admin_with_the_dashboard_token_gets_in(monkeypatch):
             return Key()
 
     monkeypatch.setattr(main, "jwks", Jwks())
-    for claims, status in [({"azp": "dashboard", "sub": "1", "preferred_username": "x", "realm_access": {"roles": ["manager"]}}, 403),
+    for claims, status in [({"azp": "dashboard", "sub": "1", "preferred_username": "x", "realm_access": {"roles": ["editor"]}}, 403),
                            ({"azp": "other", "sub": "1", "preferred_username": "x", "realm_access": {"roles": ["admin"]}}, 401)]:
         monkeypatch.setattr(main.jwt, "decode", lambda *a, _c=claims, **k: _c)
         assert api.get("/roles", headers={"Authorization": "Bearer t"}).status_code == status
@@ -183,7 +183,7 @@ def test_rules_are_off_without_a_store(api, monkeypatch):
 
 
 def test_set_list_and_delete_a_rule_for_a_user_and_a_group(ruled, kc):
-    kc.add("de_rep", "rep")
+    kc.add("de_rep", "editor")
     gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
     assert gid
     assert ruled.put("/rls/rules/user/de_rep", json={"values": ["Germany", "France", "France"]}).json()["values"] == ["France", "Germany"]
@@ -196,7 +196,7 @@ def test_set_list_and_delete_a_rule_for_a_user_and_a_group(ruled, kc):
 
 
 def test_a_rule_needs_a_real_person_or_group_and_real_territories(ruled, kc):
-    kc.add("de_rep", "rep")
+    kc.add("de_rep", "editor")
     assert ruled.put("/rls/rules/user/nobody", json={"values": ["France"]}).status_code == 404
     assert ruled.put("/rls/rules/group/Nope", json={"values": ["France"]}).status_code == 404
     assert ruled.put("/rls/rules/user/de_rep", json={"values": ["Atlantis"]}).status_code == 400
@@ -205,8 +205,8 @@ def test_a_rule_needs_a_real_person_or_group_and_real_territories(ruled, kc):
 
 
 def test_preview_shows_the_union_of_the_rules_and_falls_back_to_the_seed(ruled, kc):
-    uid = kc.add("de_rep", "rep")
-    kc.add("na_manager", "manager")
+    uid = kc.add("de_rep", "editor")
+    kc.add("na_manager", "editor")
     gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
     assert ruled.get("/rls/preview/de_rep").json()["territories"] == ["Germany"] and ruled.get("/rls/preview/de_rep").json()["source"] == "seed"
     ruled.put("/rls/rules/group/EU team", json={"values": ["France"]})
@@ -217,12 +217,12 @@ def test_preview_shows_the_union_of_the_rules_and_falls_back_to_the_seed(ruled, 
     none = ruled.get("/rls/preview/na_manager").json()
     assert none["source"] == "none" and none["territories"] == []                        # no rule, nothing in the seed: they cannot sign in to sales data
     assert ruled.get("/rls/preview/ghost").status_code == 404
-    kc.add("buyer", "purchasing")
-    assert ruled.get("/rls/preview/buyer").json()["applies"] is False
+    kc.add("buyer", "editor")
+    assert ruled.get("/rls/preview/buyer").json()["applies"] is True
 
 
 def test_a_rule_follows_its_groups_name_and_goes_with_the_group_or_the_user(ruled, kc):
-    uid = kc.add("de_rep", "rep")
+    uid = kc.add("de_rep", "editor")
     gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
     ruled.put("/rls/rules/group/EU team", json={"values": ["France"]})
     ruled.put("/rls/rules/user/de_rep", json={"values": ["Germany"]})
@@ -241,10 +241,10 @@ def test_datasets_are_off_without_a_store(api, monkeypatch):
 
 
 def test_create_a_dataset_with_grants_and_list_it(ruled, kc):
-    kc.add("de_rep", "rep")
+    kc.add("de_rep", "editor")
     ruled.post("/groups", json={"name": "Finance"})
     r = ruled.put("/datasets/sales", json={"name": "Sales", "description": "revenue facts", "cubes": ["reseller_sales", "internet_sales", "internet_sales"],
-                                           "grants": [{"type": "user", "principal": "de_rep"}, {"type": "group", "principal": "Finance"}, {"type": "role", "principal": "manager"}, {"type": "role", "principal": "manager"}]})
+                                           "grants": [{"type": "user", "principal": "de_rep"}, {"type": "group", "principal": "Finance"}, {"type": "role", "principal": "editor"}, {"type": "role", "principal": "editor"}]})
     assert r.status_code == 200 and r.json()["cubes"] == ["internet_sales", "reseller_sales"] and len(r.json()["grants"]) == 3
     out = ruled.get("/datasets").json()
     assert [d["id"] for d in out["datasets"]] == ["sales"] and "internet_sales" in {c["name"] for c in out["cubes"]} and "agent" in out["roles"]
@@ -262,7 +262,7 @@ def test_a_dataset_needs_real_cubes_principals_and_a_clean_id(ruled, kc):
 
 
 def test_replacing_and_deleting_a_dataset(ruled):
-    body = {"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "manager"}]}
+    body = {"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "editor"}]}
     ruled.put("/datasets/sales", json=body)
     ruled.put("/datasets/sales", json={**body, "name": "Sales 2", "grants": []})
     d = ruled.get("/datasets").json()["datasets"]
@@ -272,8 +272,8 @@ def test_replacing_and_deleting_a_dataset(ruled):
 
 
 def test_preview_lists_the_cubes_datasets_keep_from_a_person(ruled, kc):
-    kc.add("de_rep", "rep")
-    kc.add("na_manager", "manager")
+    kc.add("de_rep", "editor")
+    kc.add("na_manager", "editor")
     ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales", "products"], "grants": [{"type": "user", "principal": "de_rep"}]})
     assert ruled.get("/rls/preview/de_rep").json()["blocked_cubes"] == []
     assert ruled.get("/rls/preview/na_manager").json()["blocked_cubes"] == ["internet_sales", "products"]
@@ -281,7 +281,7 @@ def test_preview_lists_the_cubes_datasets_keep_from_a_person(ruled, kc):
 
 
 def test_grants_follow_a_group_and_go_with_a_group_or_person(ruled, kc):
-    kc.add("de_rep", "rep")
+    kc.add("de_rep", "editor")
     gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
     ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "group", "principal": "EU team"}, {"type": "user", "principal": "de_rep"}]})
     ruled.put(f"/groups/{gid}", json={"name": "Europe"})
@@ -294,12 +294,12 @@ def test_grants_follow_a_group_and_go_with_a_group_or_person(ruled, kc):
 
 
 def test_a_grant_can_be_view_or_lab_and_the_preview_says_whether_the_lab_is_open(ruled, kc):
-    kc.add("de_rep", "rep")
-    kc.add("na_manager", "manager")
-    r = ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "user", "principal": "de_rep", "permission": "lab"}, {"type": "role", "principal": "manager"},
+    kc.add("de_rep", "editor")
+    kc.add("na_manager", "editor")
+    r = ruled.put("/datasets/sales", json={"name": "Sales", "cubes": ["internet_sales"], "grants": [{"type": "user", "principal": "de_rep", "permission": "lab"}, {"type": "role", "principal": "editor"},
                                                                                                     {"type": "user", "principal": "de_rep", "permission": "view"}]})
-    assert r.status_code == 200 and {(g["type"], g["principal"], g["permission"]) for g in r.json()["grants"]} == {("user", "de_rep", "lab"), ("role", "manager", "view")}
-    assert ruled.put("/datasets/sales", json={"name": "S", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "manager", "permission": "own"}]}).status_code == 400
+    assert r.status_code == 200 and {(g["type"], g["principal"], g["permission"]) for g in r.json()["grants"]} == {("user", "de_rep", "lab"), ("role", "editor", "view")}
+    assert ruled.put("/datasets/sales", json={"name": "S", "cubes": ["internet_sales"], "grants": [{"type": "role", "principal": "editor", "permission": "own"}]}).status_code == 400
     assert ruled.get("/rls/preview/de_rep").json()["lab"] is True and ruled.get("/rls/preview/na_manager").json()["lab"] is False and ruled.get("/rls/preview/root").json()["lab"] is True
 
 
@@ -307,11 +307,11 @@ def test_viewer_is_a_role_an_admin_can_give(api, kc):
     assert "viewer" in api.get("/roles").json()["roles"]
     u = api.post("/users", json={**NEW, "username": "vera", "role": "viewer"}).json()
     assert u["role"] == "viewer"
-    assert api.put(f"/users/{u['id']}", json={"role": "manager"}).json()["role"] == "manager"
+    assert api.put(f"/users/{u['id']}", json={"role": "editor"}).json()["role"] == "editor"
 
 
 def test_a_dataset_can_hold_single_fields_and_they_are_checked_against_the_model(ruled, kc):
-    kc.add("na_manager", "manager")
+    kc.add("na_manager", "editor")
     ok = {"name": "Profit", "members": ["internet_sales.gross_profit", "reseller_sales.gross_profit"], "grants": [{"type": "role", "principal": "admin"}]}
     r = ruled.put("/datasets/profit", json=ok)
     assert r.status_code == 200 and r.json()["members"] == ["internet_sales.gross_profit", "reseller_sales.gross_profit"] and r.json()["cubes"] == []

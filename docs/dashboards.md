@@ -300,7 +300,7 @@ title: Sales overview
 tags: [sales]                      # up to 5 short lower-case labels for finding and grouping on /d/ (optional)
 locale: en-US                      # number and date formats, and the page's own words (en, tr)
 currency: USD
-roles: [admin, manager]            # who sees it listed; what they may read is Cube's decision
+# roles: [...]                    # deprecated, ignored
 time: { dimension: dates.full_date, fiscal_year_start: 7 }
 filters:                           # selects above the panels
   - { id: fy, dimension: dates.fiscal_year, label: Fiscal year }
@@ -375,10 +375,8 @@ On a phone every panel takes a full row:
 ## Roles and security
 - Data access is **Cube's**: the page sends the user's own token, `cube/cube.js` filters rows by territory and refuses what a role may not
   read. The spec cannot widen it, and the renderer adds nothing to it.
-- `roles:` decides who sees the dashboard listed (and gets "not available for your role" if they open it anyway; no query is sent).
-  The validator checks each listed role against the same rules as Cube (a rep or viewer has no profit members, purchasing and marketing only
-  inventory data, marketing no supplier data, managers, reps and viewers no inventory), so a page that would show an error to a role it lists does
-  not validate. A test keeps that list equal to `cube/cube.js`.
+- `roles:` is deprecated and ignored: a role says what a person may *do*, not what data they may read. The start page and the list show the dashboards whose
+  members the person's datasets leave them (the builder's `/samples`); a panel whose data Cube refuses shows Cube's message.
 - A tile or panel whose query Cube refuses shows Cube's message ("Profit and margin are not available for your role") instead of a
   number; the rest of the page still draws.
 - Demo data only until InfoSec has approved real data ([`SECURITY.md`](../SECURITY.md)).
@@ -413,7 +411,7 @@ a spec names cubes, never schemas, so every dashboard works on both. See [deploy
 | Spec: validator, compiler, roles, lint (stub Cube), the Python query mirror vs the page's own builders, the committed build is current | `PYTHONPATH=dashboards uv run --with pytest --with pyyaml --with 'jsonschema>=4.18' python -m pytest dashboards/tests -q` |
 | Page logic: formatting, chart geometry, queries, clicks, translations (node) | `node --test dashboard/cube/tests/*.test.mjs` |
 | The renderer in a real Chrome against a mock stack (every panel, filters, clicks, errors, roles, language, theme, widths) | `uv run --with playwright python -I dashboard/cube/tests/renderer.py` |
-| Look at any dashboard | `... dashboard/cube/tests/shot.py <id> --role rep --width 390` |
+| Look at any dashboard | `... dashboard/cube/tests/shot.py <id> --role editor --width 390` |
 | Regenerate this page's images / the field reference | `... dashboard/cube/tests/gallery.py` / `scripts/dashspec docs` |
 
 CI runs them in the `dashspec` and `dashboard-ui` jobs. Neither runs against the real Cube and Keycloak: after a deploy, open the page next to
@@ -424,7 +422,6 @@ CI runs them in the `dashspec` and `dashboard-ui` jobs. Neither runs against the
 |---|---|
 | The validator: `'x.y' is not in the Cube model (... has: ...)` | A member name is wrong, or the model lacks it: `scripts/dashspec meta`. |
 | The validator: `cube 'a' has no join to 'b' ... Add the filter id to this panel's ignore_filters` | A filter's dimension is not reachable from that panel's measures. |
-| The validator: `role 'rep' cannot read '...'` | The page lists a role Cube would refuse for that member. Remove the role or the member. |
 | A tile shows `—` and a message | Cube refused or failed that query (the message is Cube's; a role limit is a 403). |
 | A panel shows `⚠` and a message | The same, for a whole panel. The rest of the page is unaffected. |
 | A filter select is empty | No panel applies that filter (all ignore it), so there is nothing to read its values from. |

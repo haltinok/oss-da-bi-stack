@@ -7,6 +7,8 @@ The dashboard side is finished: a person can describe, write or click a dashboar
 administrators who can add people and take access away without editing a script, ways to share work with a person or a group (not only a role), a place to keep work in, a
 start page, and a SQL lab for analysts who need rows rather than charts. The product is for small and medium businesses (open source plus paid support), so the
 answer is a small, understandable system, not an enterprise IAM suite.
+> **Update 2026-11-03:** roles are now capabilities only (`admin`, `editor`, `viewer`, plus the `agent` service account); the data-role description below is how it was before. Data access is groups, datasets, grants and row rules.
+
 
 ## What the code gives us (reviewed 2026-11-02)
 - **Identity is Keycloak.** One realm (`keycloak/realm-spike.json`), clients `dashboard` and `inventory-agent`, realm roles `admin, manager, rep, purchasing, marketing, agent`. Users are made by

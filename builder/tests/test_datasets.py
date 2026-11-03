@@ -29,10 +29,10 @@ def test_a_spec_that_uses_a_blocked_cube_is_refused_for_that_person_only():
 
 def test_the_catalog_endpoint_leaves_out_blocked_cubes(monkeypatch):
     monkeypatch.setattr(main, "blocked_for", lambda user: (["reseller_sales"], []))
-    names = {c["cube"] for c in client.get("/catalog", headers=token("manager")).json()}
+    names = {c["cube"] for c in client.get("/catalog", headers=token("editor")).json()}
     assert "reseller_sales" not in names and "internet_sales" in names
     monkeypatch.setattr(main, "blocked_for", lambda user: ([], []))
-    assert "reseller_sales" in {c["cube"] for c in client.get("/catalog", headers=token("manager")).json()}
+    assert "reseller_sales" in {c["cube"] for c in client.get("/catalog", headers=token("editor")).json()}
 
 
 def test_validate_refuses_a_spec_on_a_blocked_cube(monkeypatch):
@@ -43,7 +43,7 @@ def test_validate_refuses_a_spec_on_a_blocked_cube(monkeypatch):
 
 def test_without_a_database_nothing_is_left_out_and_admins_are_never_checked(monkeypatch):
     monkeypatch.setattr(main, "STORE", None)
-    assert main.blocked_for(main.User(name="a", role="manager")) == ([], [])
+    assert main.blocked_for(main.User(name="a", role="editor")) == ([], [])
     monkeypatch.setattr(main, "STORE", object())                                        # a store that would fail if asked
     assert main.blocked_for(main.User(name="root", role="admin")) == ([], [])
 
@@ -53,7 +53,7 @@ def test_a_database_that_cannot_be_read_is_not_fatal(monkeypatch):
         dsn = {"host": "127.0.0.1", "port": 1, "dbname": "x", "user": "x", "password": "x"}
 
     monkeypatch.setattr(main, "STORE", Down())
-    assert main.blocked_for(main.User(name="a", role="manager")) == ([], [])
+    assert main.blocked_for(main.User(name="a", role="editor")) == ([], [])
 
 
 def test_the_resolution_module_is_the_one_the_builder_ships():
@@ -75,5 +75,5 @@ def test_a_spec_that_uses_a_blocked_field_is_refused_for_that_person_only():
 
 def test_the_catalog_endpoint_leaves_out_blocked_fields(monkeypatch):
     monkeypatch.setattr(main, "blocked_for", lambda user: ([], ["internet_sales.gross_profit"]))
-    cubes = {c["cube"]: c for c in client.get("/catalog", headers=token("manager")).json()}
+    cubes = {c["cube"]: c for c in client.get("/catalog", headers=token("editor")).json()}
     assert "gross_profit" not in {m["name"] for m in cubes["internet_sales"]["measures"]} and "revenue" in {m["name"] for m in cubes["internet_sales"]["measures"]}

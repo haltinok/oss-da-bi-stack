@@ -172,8 +172,9 @@ def retag(yaml_text: str, tags: list[str]) -> str:
 
 
 def readable_by(yaml_text: str, catalog) -> list[str]:
-    """The roles that can open this YAML (every member readable by them): shown to the owner who is about to share it."""
-    return [r for r in core.ROLES if core.check_submission(yaml_text, catalog, r)[0] is not None]
+    """The roles that can open this YAML. A role no longer decides what data a person may read (datasets, grants and rules do, per person), so every role can open it; what a given
+    reader may not read shows as Cube's refusal in that panel, or as 'your role cannot open this one' when the spec is checked against their own catalog."""
+    return list(core.ROLES)
 
 
 def list_saved(store, catalog, who: Who, *, everything: bool = False) -> list[dict]:

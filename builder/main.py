@@ -20,6 +20,7 @@ import collections
 import datetime
 import json
 import os
+import pathlib
 import threading
 import time
 from typing import Annotated
@@ -202,6 +203,20 @@ def info(user: User_, lang: str = "en") -> dict:
     m = mode()
     return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role, lang), "saving": STORE is not None,
             "note": f"A language model ({provider.label()}, {provider.model()}) reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
+
+
+SAMPLES_DIR = os.environ.get("BUILDER_SAMPLES_DIR", "/app/dashboards-src")
+
+
+@app.get("/samples")
+def samples(user: User_) -> list[dict]:
+    """Which of the checked-in sample dashboards this person can open: those whose members are all in the catalog they hold (what datasets leave them). Open to a viewer too."""
+    cat = catalog_for(user)
+    out = []
+    for path in sorted(pathlib.Path(SAMPLES_DIR).glob("*.yml")) if pathlib.Path(SAMPLES_DIR).is_dir() else []:
+        built, problems = core.check_submission(path.read_text(encoding="utf-8"), cat, user.role)
+        out.append({"id": path.stem, "readable": built is not None, **({} if built else {"problems": problems[:2]})})
+    return out
 
 
 @app.get("/usage")

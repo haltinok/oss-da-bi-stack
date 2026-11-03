@@ -6,8 +6,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=dashboards dashspec ./dashspec
 COPY --from=dashboards schema ./schema
 COPY --from=cubemodel cubes ./cube-model/cubes
+COPY --from=dashboards *.yml ./dashboards-src/
 COPY . ./builder
-ENV PYTHONPATH=/app BUILDER_MODEL_DIR=/app/cube-model
+ENV PYTHONPATH=/app BUILDER_MODEL_DIR=/app/cube-model BUILDER_SAMPLES_DIR=/app/dashboards-src
 USER nobody
 EXPOSE 8350
 CMD ["uvicorn", "builder.main:app", "--host", "0.0.0.0", "--port", "8350"]

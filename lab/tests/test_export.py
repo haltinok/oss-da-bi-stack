@@ -18,7 +18,7 @@ ROWS = [["Bisiklet, \"kırmızı\"", 1234.5, "2026-01-02T00:00:00"], ["=HYPERLIN
 @pytest.fixture()
 def api(monkeypatch):
     main.app.dependency_overrides[main.current_caller] = lambda: ME
-    monkeypatch.setattr(main, "cube_session", lambda caller: {"token": "t", "user": "ayse", "role": "manager", "lab": True, "blocked_cubes": []})
+    monkeypatch.setattr(main, "cube_session", lambda caller: {"token": "t", "user": "ayse", "role": "editor", "lab": True, "blocked_cubes": []})
     monkeypatch.setattr(main, "_per_user", {})
     lines = []
     monkeypatch.setattr(main, "audit", lambda entry: lines.append(entry))
@@ -71,7 +71,7 @@ def test_an_export_is_refused_like_a_query(api, monkeypatch):
     assert client.post("/export", json={"sql": "drop table x"}).status_code == 400
     assert client.post("/export", json={"sql": "select 1; select 2"}).status_code == 400
     assert client.post("/export", json={"sql": "select 1", "format": "pdf"}).status_code == 400
-    monkeypatch.setattr(main, "cube_session", lambda caller: {"token": "t", "role": "manager", "lab": False})
+    monkeypatch.setattr(main, "cube_session", lambda caller: {"token": "t", "role": "editor", "lab": False})
     r = client.post("/export", json={"sql": "select 1", "format": "csv"})
     assert r.status_code == 403 and "SQL lab" in r.json()["detail"]
 

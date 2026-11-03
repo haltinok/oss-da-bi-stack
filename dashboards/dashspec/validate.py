@@ -462,7 +462,6 @@ def semantic_errors(spec, catalog):
         _join_errors(spec, p, w, catalog, errs)
 
     _layout_errors(spec, panel_ids, errs)
-    _role_errors(spec, errs)
     return errs, used
 
 
@@ -590,55 +589,11 @@ def _layout_errors(spec, panel_ids, errs):
             errs.append(f"{'tabs' if tabs else 'layout'}: panel '{pid}' is placed {len(where)} times{names}, it must be placed once")
 
 
-# What each role may read, mirrored from cube/cube.js (a test compares the two): a dashboard listing a role must not ask for what Cube
-# refuses that role, or the panel would show an error for every reader.
-PROFIT_MEMBERS = {"gross_profit", "margin_pct", "product_cost"}
-INVENTORY_CUBES = {"inventory_health", "offer_performance"}
-ROLE_CUBES = {"purchasing": {"inventory_health", "products"}, "marketing": {"inventory_health", "offer_performance", "products"}}
-SUPPLIER_MEMBERS = {
-    "vendor_id", "vendor_name", "unit_cost", "lead_time_days", "replenishment_type", "suggested_order_qty", "suggested_order_value",
-    "suggested_order_qty_total", "suggested_order_value_total", "min_order_qty", "max_order_qty",
-}
-
-
+# Who may read what is not a property of a role any more: it is decided by datasets, grants and row rules (the admin console), enforced by Cube on every query, and the builder leaves
+# what a person may not read out of the catalog it checks their drafts against. So a dashboard spec is not checked per role here; `denied` stays as a no-op for the callers that
+# asked "may this role read this member?" and now get "yes" (the catalog they hold already excludes what the person may not read).
 def denied(role, member):
-    """Why Cube would refuse `role` this member, or None. The per-member part of the role rules (a panel must also reach an inventory cube
-    for purchasing and marketing: see _role_errors)."""
-    cube, _, name = member.partition(".")
-    if role in ("rep", "viewer") and name in PROFIT_MEMBERS:
-        return f"profit and margin are hidden from {role}s"
-    if role in ROLE_CUBES:
-        if cube not in ROLE_CUBES[role]:
-            return f"cube '{cube}' is not available to {role}"
-        if role == "marketing" and cube == "inventory_health" and name in SUPPLIER_MEMBERS:
-            return "supplier and order data are not available to marketing"
-    if role in ("manager", "rep", "viewer"):
-        if cube in INVENTORY_CUBES:
-            return "inventory data is not available for this role"
-        if cube == "customers":
-            return "customer data is admin-only"
     return None
-
-
-def _role_errors(spec, errs):
-    calcs = calculations.of_spec(spec)
-    for p in spec["panels"]:
-        w = f"panel '{p['id']}' ({p['type']})"
-        members = calculations.real_members(calcs, [m for _, m, _ in _panel_members(p)])          # a calculation is as readable as the measures it reads
-        ignored = set(p.get("ignore_filters", []))
-        members += [f["dimension"] for f in spec.get("filters", []) if f["id"] not in ignored and filters_mod.applies(spec, f, p["id"])] if members else []
-        if p["type"] == "timeseries" or (p["type"] == "kpi" and "sparkline" in p):
-            members.append(p.get("time_dimension") or spec["time"]["dimension"])
-        if not members:
-            continue
-        cubes = {m.partition(".")[0] for m in members}
-        for role in spec.get("roles", []):
-            for m in dict.fromkeys(members):
-                why = denied(role, m)
-                if why:
-                    errs.append(f"{w}: role '{role}' cannot read '{m}' ({why}): remove the role from `roles` or the member from the panel")
-            if role in ROLE_CUBES and not cubes & INVENTORY_CUBES:
-                errs.append(f"{w}: role '{role}' cannot read '{members[0]}' ({role} may only query inventory data): remove the role from `roles` or the member from the panel")
 
 
 def validate(spec, catalog):

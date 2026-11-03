@@ -8,10 +8,6 @@
   ],
   "locale": "en-US",
   "currency": "USD",
-  "roles": [
-    "admin",
-    "manager"
-  ],
   "time": {
     "dimension": "dates.full_date",
     "fiscal_year_start": 7

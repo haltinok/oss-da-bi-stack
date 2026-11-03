@@ -34,8 +34,14 @@ window.dashboardData.datasets = DATASETS;
 const client = createCubeClient({
   stack: C, apiUrl: dataset.cube,
   onSession(session) {
-    window.dashboardData.noProfit = session.role === "rep" || session.role === "viewer"; // profit/margin are not available to reps and viewers
+    const cubes = session.blocked_cubes || [], fields = session.blocked_members || [];           // what this person's datasets leave out (the token says)
+    window.dashboardData.noProfit = fields.includes("internet_sales.gross_profit") || cubes.includes("internet_sales");
     window.dashboardData.role = session.role;
+    window.dashboardData.views = {
+      sales: !cubes.includes("internet_sales"),
+      reorder: !cubes.includes("inventory_health") && !fields.includes("inventory_health.suggested_order_value"),
+      overstock: !cubes.includes("inventory_health") && !cubes.includes("offer_performance"),
+    };
     showWho(session);
   },
 });

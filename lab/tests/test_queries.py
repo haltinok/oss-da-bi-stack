@@ -15,7 +15,7 @@ SQL = "select category, measure(revenue) from internet_sales cross join products
 OUT = {"columns": [{"name": "category", "type": "string"}], "rows": [["Bikes"]], "row_count": 1, "truncated": False, "ms": 5}
 
 
-def who(name="alice", role="manager", groups=()):
+def who(name="alice", role="editor", groups=()):
     return queries.Who(name=name, role=role, groups=list(groups))
 
 

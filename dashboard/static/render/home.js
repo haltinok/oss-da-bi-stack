@@ -52,7 +52,8 @@ async function start() {
     api.available ? api.listFolders().catch(() => []) : [],
   ]);
   if (problems.length) show(`${w.failed} ${problems.join(", ")}`);
-  const built = index.filter((d) => !d.roles?.length || d.roles.includes(session.role)).map((d) => ({ ...d, kind: "built" }));
+  const readable = api.available ? await api.samples().then((r) => new Set(r.filter((x) => x.readable).map((x) => x.id))).catch(() => null) : null;           // what datasets leave this person
+  const built = index.filter((d) => !readable || readable.has(d.id)).map((d) => ({ ...d, kind: "built" }));
   const savedItems = saved.filter((d) => d.readable).map((d) => ({ ...d, kind: "saved" }));
   const mine = savedItems.filter((d) => d.mine), shared = savedItems.filter((d) => !d.mine);
   const known = new Map([...built, ...savedItems].map((d) => [`${d.kind}:${d.id}`, d]));

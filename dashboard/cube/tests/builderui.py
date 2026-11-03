@@ -55,7 +55,8 @@ with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
 
     # ---- the prompt box
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
+    ms.BUILDER["blocked_cubes"] = ("customers", "inventory_health", "offer_performance")                  # the person's datasets leave these out
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector("#bb-prompt", timeout=20000)
     page.wait_for_selector(".bb-examples .chip", timeout=10000)
@@ -160,7 +161,7 @@ with sync_playwright() as p:
         settled(page)
 
     ms.reset_saved()
-    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ms.ROLE["role"], ms.USER["name"] = "editor", "olga"
     ctx, page = open_page(browser, "/d/")
     build_and_open(page, "revenue by region")
     with page.expect_download(timeout=10000) as dl:
@@ -195,7 +196,7 @@ with sync_playwright() as p:
     settled(page)
     check("Everyone" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "now it is shared with everyone")
     ctx.close()
-    ms.ROLE["role"], ms.USER["name"] = "manager", "otto"
+    ms.ROLE["role"], ms.USER["name"] = "editor", "otto"
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".saved", timeout=10000)
     check("Shared with you" in page.inner_text("#drafts-host") and "olga" in page.inner_text("#drafts-host"), "another user sees it under 'Shared with you', with its owner")
@@ -231,27 +232,8 @@ with sync_playwright() as p:
     check(page.locator(".saved").count() == 3, "and the list shows both copies (one from the list, one from the page) and the shared one")
     ctx.close()
 
-    # a dashboard with profit, shared with everyone: a rep sees why it cannot be opened
-    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
-    ctx, page = open_page(browser, "/d/")
-    build_and_open(page, "revenue and profit by month")
-    save_as(page, "With profit", "everyone")
-    profit_url = page.url
-    check("Everyone" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone") and "rep" in page.inner_text("#tab-share") if page.locator("#tab-share").is_visible() else True, "saved")
-    page.click('[data-tab="share"]')
-    check("Roles that cannot" in page.inner_text("#tab-share"), "the owner is told which roles cannot open it (a member they cannot read)")
-    ctx.close()
-    ms.ROLE["role"], ms.USER["name"] = "rep", "rita"
-    ctx, page = open_page(browser, "/d/")
-    page.wait_for_selector(".saved", timeout=10000)
-    check(page.locator(".saved.unreadable").count() == 1 and "Your role cannot open this one" in page.inner_text(".saved.unreadable") and page.locator(".saved.unreadable a").count() == 0, "a rep sees it greyed, with the reason, and cannot open it")
-    page.goto(profit_url)
-    page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
-    check("cannot open" in page.inner_text("#error") and "gross_profit" in page.inner_text("#error"), "opening it directly says why")
-    ctx.close()
-
     # edit a saved dashboard: a new version, versions, restore, delete
-    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ms.ROLE["role"], ms.USER["name"] = "editor", "olga"
     ctx, page = open_page(browser, saved_url.replace(BASE, ""))
     page.on("dialog", lambda d: d.accept())
     settled(page)
@@ -292,7 +274,7 @@ with sync_playwright() as p:
     with page.expect_navigation():
         page.click("#sb-delete")
     page.wait_for_url("**/d/")
-    page.wait_for_selector(".saved", timeout=10000)
+    page.wait_for_selector(".dlist a", timeout=10000)
     check("Olga's regions" not in page.inner_text("#drafts-host"), "deleting removes it from the list")
     ctx.close()
 
@@ -303,7 +285,7 @@ with sync_playwright() as p:
     check(page.locator("#bd-save-tab").is_hidden() and "Saving is not set up" in page.inner_text("#bd-msg"), "without a database the Save button is hidden and the page says why")
     ctx.close()
     ms.BUILDER["saving"] = True
-    ms.ROLE["role"], ms.USER["name"] = "manager", "admin"
+    ms.ROLE["role"], ms.USER["name"] = "editor", "admin"
 
     # ---- the semantic layer before building anything
     ctx, page = open_page(browser, "/d/")
@@ -319,41 +301,33 @@ with sync_playwright() as p:
     check("no draft yet" in page.inner_text("#error").lower(), "/d/draft without a draft says to describe one")
     ctx.close()
 
-    # ---- roles: what is refused, what each sees
-    ms.ROLE["role"] = "rep"
+    # ---- datasets: what is refused, what each sees
+    ms.ROLE["role"] = "editor"
+    ms.BUILDER["blocked_members"] = ("internet_sales.gross_profit", "internet_sales.margin_pct", "internet_sales.product_cost", "reseller_sales.gross_profit", "reseller_sales.margin_pct", "reseller_sales.product_cost")
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector("#bb-prompt")
     page.fill("#bb-prompt", "profit by region")
     page.click("#bb-go")
     page.wait_for_selector("#bb-out:not([hidden])", timeout=20000)
     out = page.inner_text("#bb-out")
-    check("Cannot be built" in out and "hidden from reps" in out and page.url.endswith("/d/"), "a request the role cannot have is refused with the reason, and nothing is drawn")
+    check(("is not in the Cube model" in out or "Cannot be built" in out) and page.url.endswith("/d/"), "a request that needs a field the datasets leave out is refused, and nothing is drawn")
     check(page.is_enabled("#bb-go"), "the button is usable again")
     page.click("#sem-wrap summary")
     page.wait_for_selector(".sem-cube")
     page.locator('.sem-cube[data-cube="internet_sales"] summary').click()
     members = page.locator('.sem-cube[data-cube="internet_sales"] .sem-members .member').all_inner_texts()
-    check("gross_profit" not in members and "margin_pct" not in members and "revenue" in members, "a rep's semantic layer has no profit members")
+    check("gross_profit" not in members and "margin_pct" not in members and "revenue" in members, "the semantic layer has no profit members")
     page.fill("#bb-prompt", "revenue and orders by region and country")
     page.click("#bb-go")
     page.wait_for_url("**/d/draft")
     settled(page)
-    check("gross_profit" not in page.evaluate("localStorage.getItem('builder.draft')") and page.locator("[data-panel] .panel-error").count() == 0, "the rep's draft draws with no profit member and no error")
+    check("gross_profit" not in page.evaluate("localStorage.getItem('builder.draft')") and page.locator("[data-panel] .panel-error").count() == 0, "the draft draws with no profit member and no error")
     page.evaluate("() => { const d = JSON.parse(localStorage.getItem('builder.draft')); d.spec.filters = (d.spec.filters || []).filter((f) => !f.implicit); d.spec.panels.forEach((p) => { delete p.on_click; }); localStorage.setItem('builder.draft', JSON.stringify(d)); }")
     page.reload()
     settled(page)
     check(page.evaluate("JSON.parse(localStorage.getItem('builder.draft')).spec.panels.some((p) => p.on_click)"), "a draft stored with an old compiled page is compiled again when it opens (cross-filtering included)")
     ctx.close()
-    ms.ROLE["role"] = "purchasing"
-    ctx, page = open_page(browser, "/d/")
-    page.wait_for_selector(".bb-examples .chip")
-    check(all("stock" in c.lower() or "envanter" in c.lower() for c in page.locator(".bb-examples .chip").all_inner_texts()), "purchasing is offered inventory examples")
-    page.click(".bb-examples .chip >> nth=0")
-    page.click("#bb-go")
-    page.wait_for_url("**/d/draft")
-    settled(page)
-    check(page.locator("[data-panel] .panel-error").count() == 0 and page.locator("[data-panel]").count() >= 3, "and the inventory draft draws")
-    ctx.close()
+    ms.BUILDER["blocked_cubes"] = ms.BUILDER["blocked_members"] = ()
     ms.ROLE["role"] = "admin"
 
     # ---- a rate limit, and Turkish
@@ -421,7 +395,7 @@ with sync_playwright() as p:
         ctx.close()
     # ---- the Tags field of the Save dialog, and the Tags tab of a saved dashboard
     ms.reset_saved()
-    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ms.ROLE["role"], ms.USER["name"] = "editor", "olga"
     ctx, page = open_page(browser, "/d/")
     build_and_open(page, "revenue by region")
     page.click('[data-tab="save"]')
@@ -525,7 +499,7 @@ with sync_playwright() as p:
     ms.reset_saved()
     # ---- a tabbed dashboard in the builder: edited in the YAML tab, drawn with a tab bar, saved, reopened, and not flattened by the stand-in
     ms.reset_saved()
-    ms.ROLE["role"], ms.USER["name"] = "manager", "olga"
+    ms.ROLE["role"], ms.USER["name"] = "editor", "olga"
     ctx, page = open_page(browser, "/d/")
     build_and_open(page, "monthly revenue by channel and the top 5 products, a table of latest orders and a treemap")
     page.click('[data-tab="yaml"]')

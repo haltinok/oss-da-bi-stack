@@ -5,7 +5,6 @@ description: Stok durumu, yeniden sipariş önerileri ve fazla stok. Yalnızca o
 tags: [envanter, stok]
 locale: tr-TR
 currency: TRY
-roles: [admin, purchasing]
 time:
   dimension: inventory_health.last_sale_date
 filters:

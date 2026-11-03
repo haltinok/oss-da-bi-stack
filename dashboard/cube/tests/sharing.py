@@ -42,10 +42,10 @@ ms.BENCH["on"] = False
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
     ms.reset_saved()
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.USER["name"] = "alice"
     ms.USER["groups"] = []
-    ms.seed_saved("Alice sales", "regional", owner="alice", role="manager")
+    ms.seed_saved("Alice sales", "regional", owner="alice", role="editor")
 
     # ---- alice: a folder, then share the dashboard with bob (edit) and a group, and put it in the folder
     ctx, page = open_page(browser)

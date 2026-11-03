@@ -38,10 +38,11 @@ with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
     ms.reset_saved()
     ms.LAB["on"] = False
-    ms.ROLE["role"], ms.USER["name"], ms.USER["groups"] = "manager", "olga", []
-    shared = ms.seed_saved("Shared with viewers", "for the team", owner="olga", role="manager", visibility="everyone", source="regional-sales.yml")["id"]
+    ms.ROLE["role"], ms.USER["name"], ms.USER["groups"] = "editor", "olga", []
+    shared = ms.seed_saved("Shared with viewers", "for the team", owner="olga", role="editor", visibility="everyone", source="regional-sales.yml")["id"]
     ms.ROLE["role"], ms.USER["name"] = "viewer", "vera"
 
+    ms.BUILDER["unreadable_samples"] = ("envanter-sagligi", "sales-overview")
     # ---- the dashboards list: no prompt box, no semantic layer, no Copy, no New folder, no Share or Delete; what may be opened is listed
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".lsec-shared .saved")

@@ -6,7 +6,7 @@ import main
 from store import MemoryStore
 
 SQL = "select category, measure(revenue) from internet_sales cross join products group by 1"
-PEOPLE = {"alice": {"token": "cube-token-alice", "role": "manager", "groups": []}, "bob": {"token": "cube-token-bob", "role": "rep", "groups": ["Ops"]}, "root": {"token": "cube-token-root", "role": "admin", "groups": []}}
+PEOPLE = {"alice": {"token": "cube-token-alice", "role": "editor", "groups": []}, "bob": {"token": "cube-token-bob", "role": "editor", "groups": ["Ops"]}, "root": {"token": "cube-token-root", "role": "admin", "groups": []}}
 
 
 @pytest.fixture()
@@ -30,7 +30,7 @@ def api(monkeypatch):
 
 def test_saving_off_says_so_and_info_tells_the_page(monkeypatch):
     main.app.dependency_overrides[main.current_caller] = lambda: main.Caller(name="alice", raw="kc")
-    monkeypatch.setattr(main, "cube_session", lambda caller: {"token": "t", "role": "manager", "lab": True})
+    monkeypatch.setattr(main, "cube_session", lambda caller: {"token": "t", "role": "editor", "lab": True})
     monkeypatch.setattr(main, "STORE", None)
     client = TestClient(main.app)
     assert client.get("/info").json()["saving"] is False

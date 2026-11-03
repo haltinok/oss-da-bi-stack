@@ -10,7 +10,7 @@ class FakeKeycloak:
     def __init__(self):
         self.n = itertools.count(1)
         self.users_: dict[str, dict] = {}
-        self.roles_: dict[str, set[str]] = {r: set() for r in ("admin", "manager", "rep", "viewer", "purchasing", "marketing", "agent")}
+        self.roles_: dict[str, set[str]] = {r: set() for r in ("admin", "editor", "viewer", "agent")}
         self.groups_: dict[str, dict] = {}
         self.passwords: dict[str, tuple[str, bool]] = {}
         self.emailed: list[str] = []

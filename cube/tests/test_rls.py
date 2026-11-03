@@ -262,7 +262,7 @@ def test_token_without_role_rejected():
 
 
 def test_non_admin_token_with_no_territories_rejected():
-    tok = jwt.encode({"user_id": "x", "role": "manager", "territories": [], "exp": int(time.time()) + 600}, SECRET, algorithm="HS256")
+    tok = jwt.encode({"user_id": "x", "role": "editor", "territories": [], "exp": int(time.time()) + 600}, SECRET, algorithm="HS256")
     assert rejected(*load(QUERY, tok))
 
 
@@ -275,7 +275,7 @@ def test_auth_service_rejects_bad_keycloak_tokens():
     assert requests.post(f"{AUTH}/token", headers={"Authorization": f"Bearer {forged}"}, timeout=10).status_code == 401
 
 
-# --- inventory roles: purchasing, marketing, admin; managers and reps see no inventory ---------
+# --- inventory groups: Purchasing, Marketing (datasets), admin; the Managers and Reps groups see no inventory ---------
 
 INV = {"measures": ["inventory_health.stockout_items", "inventory_health.excess_value_total"]}
 SUPPLIER = ["inventory_health.vendor_name", "inventory_health.unit_cost", "inventory_health.suggested_order_value",
@@ -371,4 +371,4 @@ def test_agent_reads_inventory_in_full_but_nothing_else():
 def test_a_dashboard_token_cannot_be_turned_into_the_agent(tokens):
     # a person's token maps to a person's role, never to agent
     claims = jwt.decode(tokens["na_manager"], options={"verify_signature": False})
-    assert claims["role"] == "manager"
+    assert claims["role"] == "editor"

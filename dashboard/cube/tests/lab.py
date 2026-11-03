@@ -43,7 +43,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
 
     # ---- a person without the lab is told how to get it, and gets no editor
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.LAB["on"] = False
     ctx, page = open_page(browser)
     page.wait_for_selector(".home-sec")
@@ -139,7 +139,7 @@ with sync_playwright() as p:
     ms.LAB.pop("lab_store", None)
     ms.USER["name"] = "alice"
     ms.USER["groups"] = []
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.LAB["on"] = True
     ctx, page = open_page(browser)
     page.wait_for_selector("#sql")
@@ -207,7 +207,7 @@ with sync_playwright() as p:
     ms.LAB["on"] = False
 
     # ---- the start page offers it, and an admin always has it
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.LAB["on"] = True
     ctx, page = open_page(browser, path="/home/")
     page.wait_for_selector(".home-sec")
@@ -221,7 +221,7 @@ with sync_playwright() as p:
     ctx.close()
 
     # ---- Turkish
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.LAB["on"] = True
     ctx, page = open_page(browser, lang="tr")
     page.wait_for_selector("#sql")

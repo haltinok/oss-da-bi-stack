@@ -279,7 +279,7 @@ function userDialog(u) {
     ${edit ? "" : `<label>${esc(t.username)}<input name="username" required autocomplete="off" maxlength="60"></label>`}
     <div class="row"><label>${esc(t.firstName)}<input name="firstName" value="${esc(u?.firstName || "")}"></label><label>${esc(t.lastName)}<input name="lastName" value="${esc(u?.lastName || "")}"></label></div>
     <label>${esc(t.email)}<input name="email" type="email" value="${esc(u?.email || "")}"></label>
-    <label>${esc(t.role)}<select name="role">${opts(s.roles.map((r) => [r, `${r}: ${t.rolesHint[r] || ""}`]), u?.role || "rep")}</select></label>
+    <label>${esc(t.role)}<select name="role">${opts(s.roles.map((r) => [r, `${r}: ${t.rolesHint[r] || ""}`]), u?.role || "viewer")}</select></label>
     <label>${esc(t.groupsLabel)}${groupsPick}</label>
     ${edit ? "" : `<label>${esc(t.tempPassword)}<input name="password" type="text" required autocomplete="new-password" minlength="10"></label><p class="hint">${esc(t.tempNote)}</p>`}
     ${foot(edit ? t.saveUser : t.createUser)}`, async (f) => {

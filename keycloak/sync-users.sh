@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Add the roles and users that keycloak/realm-spike.json defines to a Keycloak that already imported the
 # realm. `--import-realm` only runs when the realm does not exist yet, so an existing Keycloak volume keeps
-# its old users and misses later additions (here: the purchasing and marketing roles and the buyer and
+# its old users and misses later additions (here: the editor and viewer roles, the data-access groups, the buyer and
 # marketer users, and the proposal agent's `inventory-agent` client and `agent` role). Idempotent; nothing is deleted or overwritten. Reads secrets from .env.
 #
 #   keycloak/sync-users.sh
@@ -11,19 +11,26 @@ set -a; . "${ENV_FILE:-./.env}"; set +a
 . keycloak/lib.sh
 kc_login
 
-for role in purchasing marketing agent viewer; do
+# A role says what a person may DO (admin, editor, viewer; `agent` is the proposal agent's). What data they read comes from groups, datasets and row rules (the admin console).
+for role in editor viewer agent; do
   kc create roles -r spike -s "name=$role" >/dev/null 2>&1 && echo "role $role: created" || echo "role $role: exists"
 done
-for pair in buyer:purchasing marketer:marketing; do
-  user=${pair%%:*}; role=${pair##*:}
+for group in Managers Reps Purchasing Marketing; do
+  kc create groups -r spike -s "name=$group" >/dev/null 2>&1 && echo "group $group: created" || echo "group $group: exists"
+done
+for pair in buyer:Purchasing marketer:Marketing; do
+  user=${pair%%:*}; group=${pair##*:}
   if [ -n "$(kc get users -r spike -q "username=$user" --fields id --format csv --noquotes)" ]; then
     echo "user $user: exists"
   else
     kc create users -r spike -s "username=$user" -s enabled=true -s emailVerified=true \
       -s "email=$user@spike.local" -s "firstName=${user^^}" -s lastName=Spike >/dev/null
     kc set-password -r spike --username "$user" --new-password "${TEST_USER_PASSWORD:?}" >/dev/null
-    kc add-roles -r spike --uusername "$user" --rolename "$role" >/dev/null
-    echo "user $user: created with role $role"
+    kc add-roles -r spike --uusername "$user" --rolename editor >/dev/null
+    gid=$(kc get groups -r spike -q "search=$group" --fields id --format csv --noquotes | head -1)
+    uid=$(kc get users -r spike -q "username=$user" --fields id --format csv --noquotes)
+    kc update "users/$uid/groups/$gid" -r spike -s realm=spike -n >/dev/null 2>&1 || true
+    echo "user $user: created as editor in the $group group"
   fi
 done
 

@@ -37,7 +37,7 @@ class Script:
         return SimpleNamespace(content=content, stop_reason=stop, usage=SimpleNamespace(input_tokens=100, output_tokens=50))
 
 
-def run(model, role="manager", prompt="regional sales", **kw):
+def run(model, role="editor", prompt="regional sales", **kw):
     return core.run_build(model, CATALOG, role, prompt, **kw)
 
 
@@ -52,8 +52,8 @@ def test_a_valid_submission_is_accepted_and_compiled():
 def test_the_service_sets_id_and_roles_whatever_the_model_wrote():
     spec = yaml.safe_load(GOOD)
     spec.update(id="whatever", roles=["admin"])
-    out = run(Script([submit(yaml.safe_dump(spec))]), role="rep")
-    assert out["status"] == "ok" and out["spec"]["id"] == "draft" and out["spec"]["roles"] == ["rep"]
+    out = run(Script([submit(yaml.safe_dump(spec))]), role="editor")
+    assert out["status"] == "ok" and out["spec"]["id"] == "draft" and "roles" not in out["spec"]
 
 
 def test_problems_go_back_to_the_model_and_a_fixed_file_is_accepted():
@@ -70,14 +70,6 @@ def test_it_gives_up_after_three_failed_submissions_and_says_why():
     out = run(Script([submit(bad)], [submit(bad)], [submit(bad)], [submit(GOOD)]))
     assert out["status"] == "failed" and out["attempts"] == 3 and out["spec"] is None
     assert any("not in the Cube model" in p for p in out["problems"]) and "3 tries" in out["message"]
-
-
-def test_a_role_cannot_get_members_it_may_not_read_whatever_the_model_does():
-    spec = yaml.safe_load(GOOD)
-    spec["panels"][0]["measures"].append({"member": "internet_sales.gross_profit", "label": "Profit", "format": "money"})
-    out = run(Script([submit(yaml.safe_dump(spec))], [submit(yaml.safe_dump(spec))], [submit(yaml.safe_dump(spec))]), role="rep")
-    assert out["status"] == "failed" and any("role 'rep' cannot read 'internet_sales.gross_profit'" in p for p in out["problems"])
-    assert run(Script([submit(yaml.safe_dump(spec))]), role="manager")["status"] == "ok"
 
 
 def test_cannot_build_passes_the_reason_on():
@@ -129,25 +121,6 @@ def test_refining_hands_the_model_the_current_file_and_the_request():
     run(model, prompt="make the trend a line", current_yaml=GOOD)
     first = model.calls[0]["messages"][0]["content"]
     assert first.startswith("make the trend a line") and "```yaml" in first and "id: regional-sales" in first
-
-
-def test_the_model_is_shown_only_what_the_role_may_read_with_descriptions():
-    def system(role):
-        return core.system_blocks(CATALOG, role)[0]["text"]
-    rep, mk, admin = system("rep"), system("marketing"), system("admin")
-    assert "measure internet_sales.revenue [sum]: Sales amount of the order lines." in rep
-    assert "gross_profit" not in rep and "margin_pct" not in rep and "inventory_health" not in rep and "customers" not in rep
-    assert "inventory_health.status" in mk and "vendor_name" not in mk and "suggested_order_value" not in mk and "internet_sales" not in mk
-    assert "customers.last_name" in admin and "internet_sales.gross_profit" in admin
-    assert "fiscal_year" in rep and "named after the year it ends in" in rep
-    assert "cannot_build" in rep and "sum:" in rep and "- reseller_sales.revenue" in rep      # the example is composed for this role
-    assert core.system_blocks(CATALOG, "rep")[0]["cache_control"] == {"type": "ephemeral"}
-
-
-def test_the_visible_catalog_drops_joins_to_cubes_a_role_cannot_see():
-    rep = core.visible_catalog(CATALOG, "rep")
-    assert "customers" not in rep.cubes["internet_sales"]["joins"] and rep.cubes["internet_sales"]["joins"] == {"dates", "due_dates", "products", "ship_dates", "territories"}
-    assert set(core.visible_catalog(CATALOG, "purchasing").cubes) == {"inventory_health", "products"}
 
 
 def test_an_unknown_role_is_refused():
@@ -207,14 +180,8 @@ def test_both_layout_and_tabs_is_sent_back_with_the_one_of_message():
     assert "needs exactly one of: layout, tabs" in model.calls[1]["messages"][-1]["content"][0]["content"]
 
 
-def test_a_role_cannot_get_members_it_may_not_read_on_any_tab():
-    spec = tabbed((REPO / "dashboards" / "sales-overview.yml").read_text(), split=2)             # its KPI row has profit: a rep may not read it, on any tab
-    out = run(Script([submit(yaml.safe_dump(spec))], [submit(yaml.safe_dump(spec))], [submit(yaml.safe_dump(spec))]), role="rep")
-    assert out["status"] == "failed" and any("role 'rep' cannot read" in p for p in out["problems"])
-
-
 def test_the_model_is_told_when_to_use_tabs_and_shown_how():
-    for role in ("admin", "rep", "purchasing"):
+    for role in ("admin", "editor", "editor"):
         text = core.system_blocks(CATALOG, role)[0]["text"]
         assert "tabs: INSTEAD of layout" in text and "ONLY when the request asks for pages" in text and "about 8 panels" in text
         assert "the same dashboard on two tabs" in text and "id: overview" in text, role
@@ -245,7 +212,7 @@ def test_the_source_comes_back_and_round_trips_as_json_for_the_designer():
             built, problems = core.check_submission(text, CATALOG, role)
             if built is None:
                 continue                                       # a dashboard this role cannot read: nothing to design
-            assert built["source"]["id"] == "draft" and built["source"]["roles"] == [role]
+            assert built["source"]["id"] == "draft" and "roles" not in built["source"]
             assert "members" not in built["source"] and "cubes" not in built["source"], "the source has no compiled keys"
             again, problems = core.check_submission(json.dumps(built["source"]), CATALOG, role)
             assert again is not None, (path.name, role, problems)

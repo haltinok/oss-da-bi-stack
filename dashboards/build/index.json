@@ -3,10 +3,7 @@
     "id": "envanter-sagligi",
     "title": "Envanter sağlığı",
     "description": "Stok durumu, yeniden sipariş önerileri ve fazla stok. Yalnızca okunur; onay işlemleri satış panosundaki envanter bölümündedir.",
-    "roles": [
-      "admin",
-      "purchasing"
-    ],
+    "roles": [],
     "tags": [
       "envanter",
       "stok"
@@ -16,10 +13,7 @@
     "id": "pivot-gallery",
     "title": "Pivot gallery",
     "description": "Cross-tabs of internet sales, one for each way a pivot can be read: totals, groups, a month heatmap, two measures side by side and shares. Three tabs: only the one you open is loaded.",
-    "roles": [
-      "admin",
-      "manager"
-    ],
+    "roles": [],
     "tags": [
       "sales",
       "reference"
@@ -29,11 +23,7 @@
     "id": "regional-sales",
     "title": "Regional sales",
     "description": "Revenue and orders by territory and product. No cost or profit figures, so it is the same for a manager and a rep; each sees only their own territories.",
-    "roles": [
-      "manager",
-      "rep",
-      "viewer"
-    ],
+    "roles": [],
     "tags": [
       "sales",
       "regional"
@@ -43,10 +33,7 @@
     "id": "sales-drilldown",
     "title": "Sales drill-down",
     "description": "Revenue over time that drills from year to month to day, a donut by subcategory and columns by category. Every click filters the rest.",
-    "roles": [
-      "admin",
-      "manager"
-    ],
+    "roles": [],
     "tags": [
       "sales"
     ]
@@ -55,10 +42,7 @@
     "id": "sales-overview",
     "title": "Sales overview",
     "description": "Revenue, margin and orders by channel, product and territory.",
-    "roles": [
-      "admin",
-      "manager"
-    ],
+    "roles": [],
     "tags": [
       "sales"
     ]

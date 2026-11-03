@@ -10,23 +10,15 @@
         "name": "admin"
       },
       {
-        "name": "manager"
-      },
-      {
-        "name": "rep"
-      },
-      {
-        "name": "purchasing"
-      },
-      {
-        "name": "marketing"
-      },
-      {
-        "name": "agent"
+        "name": "editor",
+        "description": "Builds, changes and shares dashboards (and uses the SQL lab if given it). What data they read comes from their groups' datasets and row rules."
       },
       {
         "name": "viewer",
-        "description": "Can only view dashboards: no building, designing, saving, SQL lab or administration"
+        "description": "Can only view dashboards: no building, designing, saving, SQL lab or administration."
+      },
+      {
+        "name": "agent"
       }
     ]
   },
@@ -118,7 +110,10 @@
         }
       ],
       "realmRoles": [
-        "manager"
+        "editor"
+      ],
+      "groups": [
+        "Managers"
       ]
     },
     {
@@ -136,7 +131,10 @@
         }
       ],
       "realmRoles": [
-        "rep"
+        "editor"
+      ],
+      "groups": [
+        "Reps"
       ]
     },
     {
@@ -154,7 +152,10 @@
         }
       ],
       "realmRoles": [
-        "purchasing"
+        "editor"
+      ],
+      "groups": [
+        "Purchasing"
       ]
     },
     {
@@ -172,7 +173,10 @@
         }
       ],
       "realmRoles": [
-        "marketing"
+        "editor"
+      ],
+      "groups": [
+        "Marketing"
       ]
     },
     {
@@ -196,6 +200,20 @@
           "view-realm"
         ]
       }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Managers"
+    },
+    {
+      "name": "Reps"
+    },
+    {
+      "name": "Purchasing"
+    },
+    {
+      "name": "Marketing"
     }
   ]
 }

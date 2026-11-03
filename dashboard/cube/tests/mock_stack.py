@@ -17,7 +17,7 @@ BENCH = {"on": True}
 USER = {"name": "admin"}     # who the mock auth service says is signed in (the owner of what they save)
 ROLE = {"role": "admin"}  # what the mock auth service says the signed-in user is
 FAIL = {"members": set(), "message": "Profit and margin are not available for your role"}   # queries naming these members answer 403
-BUILDER = {"limit": False, "saving": True}   # True: /builder/build answers 429, as the service does when a user has built too often
+BUILDER = {"limit": False, "saving": True, "unreadable_samples": (), "blocked_cubes": (), "blocked_members": ()}   # what the person's datasets leave out   # True: /builder/build answers 429, as the service does when a user has built too often
 FAKE = {"on": False}      # True: the Cube mocks answer every query with generated rows instead of none (see fake_rows)
 
 POOLS = {
@@ -96,12 +96,18 @@ def builder_answer(path, body, method="GET", query=None):
         from dashspec import catalog as cat
         from dashspec.semantic import catalog_json
         _builder_cache.update(core=core, standin=StandInClient, catalog=cat.from_model(ROOT / "cube" / "model"), catalog_json=catalog_json)
-    c, role = _builder_cache, ROLE["role"]
+    c, role = dict(_builder_cache), ROLE["role"]
+    if BUILDER["blocked_cubes"]:
+        c["catalog"] = c["core"].without_cubes(c["catalog"], BUILDER["blocked_cubes"])
+    if BUILDER["blocked_members"]:
+        c["catalog"] = c["core"].without_members(c["catalog"], BUILDER["blocked_members"])
     if path == "/info":
         return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role, (query or {}).get("lang", ["en"])[0]),
                      "saving": BUILDER["saving"], "builds_left": 20, "note": "A rule-based stand-in answers."}
     if path == "/catalog":
         return 200, c["catalog_json"](c["catalog"], role)
+    if path == "/samples":
+        return 200, [{"id": f.stem, "readable": f.stem not in BUILDER["unreadable_samples"]} for f in sorted((ROOT / "dashboards").glob("*.yml"))]
     if path == "/build":
         if BUILDER["limit"]:
             return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
@@ -188,13 +194,13 @@ ADMIN = {"users": {}, "groups": {}, "rules": {}, "datasets": {}, "rules_off": Fa
 CUBES = [{"name": n, "description": f"The {n} cube", "measures": 3, "dimensions": 5, "fields": [{"name": "revenue", "kind": "measure"}, {"name": "gross_profit", "kind": "measure"}, {"name": "category", "kind": "dimension"}]} for n in ("customers", "dates", "internet_sales", "inventory_health", "products", "reseller_sales", "territories")]
 REGIONS = ["Canada", "France", "Germany", "United States"]
 SEED_REGIONS = {"admin": REGIONS, "na_manager": ["Canada", "United States"], "de_rep": ["Germany"]}
-ROLES = ["admin", "manager", "rep", "purchasing", "marketing"]
+ROLES = ["admin", "editor", "viewer"]
 TEMP_VALUE = "x" * 14                                  # what the mock shows as a reset's temporary value (not a secret)
 
 
 def reset_admin():
     ADMIN.update(users={}, groups={}, rules={}, datasets={}, rules_off=False, n=0)
-    for name, role in (("admin", "admin"), ("na_manager", "manager"), ("de_rep", "rep")):
+    for name, role in (("admin", "admin"), ("na_manager", "editor"), ("de_rep", "viewer")):
         _add_user(name, role)
 
 
@@ -254,7 +260,7 @@ def admin_answer(path, body, method, query):
             mine = {d["id"] for d in ADMIN["datasets"].values() if any((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names) for g in d["grants"])}
             allowed = {c for d in ADMIN["datasets"].values() if d["id"] in mine for c in d["cubes"]}
             blocked = [] if u["role"] == "admin" else sorted(gov - allowed)
-            base = {"username": u["username"], "role": u["role"], "groups": names, "applies": u["role"] in ("admin", "manager", "rep"), "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked,
+            base = {"username": u["username"], "role": u["role"], "groups": names, "applies": True, "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked,
                     "lab": u["role"] == "admin" or any(g.get("permission") == "lab" and ((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names)) for d in ADMIN["datasets"].values() for g in d["grants"])}
             if hits:
                 return 200, {**base, "territories": sorted({x for _, _, v in hits for x in v}), "source": "rules"}

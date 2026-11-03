@@ -48,11 +48,11 @@ with sync_playwright() as p:
     # ---- the start page and the dashboards list with folders, for a manager with the lab
     ms.reset_saved()
     ms.LAB.pop("lab_store", None)
-    ms.ROLE["role"], ms.USER["name"], ms.USER["groups"], ms.LAB["on"] = "manager", "ayse", [], True
-    mine = ms.seed_saved("Regional sales, last quarter", "North America and Europe", owner="ayse", role="manager")["id"]
-    ms.seed_saved("Stock cover by vendor", "what to reorder", owner="ayse", role="manager")
-    theirs = ms.seed_saved("Weekly revenue review", "shared by Mehmet", owner="mehmet", role="manager", visibility="everyone")["id"]
-    built = [d["id"] for d in INDEX if not d.get("roles") or "manager" in d["roles"]][:2]
+    ms.ROLE["role"], ms.USER["name"], ms.USER["groups"], ms.LAB["on"] = "editor", "ayse", [], True
+    mine = ms.seed_saved("Regional sales, last quarter", "North America and Europe", owner="ayse", role="editor")["id"]
+    ms.seed_saved("Stock cover by vendor", "what to reorder", owner="ayse", role="editor")
+    theirs = ms.seed_saved("Weekly revenue review", "shared by Mehmet", owner="mehmet", role="editor", visibility="everyone")["id"]
+    built = [d["id"] for d in INDEX if not d.get("roles") or "editor" in d["roles"]][:2]
     now = 1_700_000_000_000
     recent = [{"kind": "saved", "id": theirs, "title": "x", "at": now + 3}, {"kind": "saved", "id": mine, "title": "x", "at": now + 2}] + [{"kind": "built", "id": b, "title": "x", "at": now + 1} for b in built]
     ctx, page = open_page(browser, "/home/", recent=recent)
@@ -79,7 +79,7 @@ with sync_playwright() as p:
     # ---- the admin console as an admin
     ms.ROLE["role"], ms.USER["name"] = "admin", "admin"
     ms.reset_admin()
-    for name, role in (("ayse", "manager"), ("mehmet", "manager"), ("buyer", "purchasing"), ("marketer", "marketing"), ("zeynep", "rep")):
+    for name, role in (("ayse", "editor"), ("mehmet", "editor"), ("buyer", "editor"), ("marketer", "editor"), ("zeynep", "editor")):
         ms._add_user(name, role)
     ms.ADMIN["users"][next(i for i, u in ms.ADMIN["users"].items() if u["username"] == "zeynep")]["enabled"] = False
     ms.ADMIN["n"] += 1
@@ -93,8 +93,8 @@ with sync_playwright() as p:
     ms.ADMIN["rules"].update({("user", "de_rep"): ["Germany"], ("group", "EU sales"): ["France", "Germany"], ("user", "na_manager"): ["Canada", "United States"]})
     ms.ADMIN["datasets"].update({
         "sales": {"id": "sales", "name": "Sales facts", "description": "Revenue and orders", "cubes": ["internet_sales", "reseller_sales", "products", "dates", "territories"],
-                  "grants": [{"type": "role", "principal": "manager", "permission": "lab"}, {"type": "group", "principal": "Finance", "permission": "view"}]},
-        "inventory": {"id": "inventory", "name": "Inventory", "description": "Stock and reorder", "cubes": ["inventory_health", "offer_performance"], "grants": [{"type": "role", "principal": "purchasing", "permission": "view"}]}})
+                  "grants": [{"type": "role", "principal": "editor", "permission": "lab"}, {"type": "group", "principal": "Finance", "permission": "view"}]},
+        "inventory": {"id": "inventory", "name": "Inventory", "description": "Stock and reorder", "cubes": ["inventory_health", "offer_performance"], "grants": [{"type": "role", "principal": "editor", "permission": "view"}]}})
     ctx, page = open_page(browser, "/admin/")
     page.wait_for_selector(".adm-table")
     shot(page, "admin-users.png", "#app")
@@ -110,7 +110,7 @@ with sync_playwright() as p:
     ctx.close()
 
     # ---- the SQL lab
-    ms.ROLE["role"], ms.USER["name"], ms.USER["groups"] = "manager", "ayse", []
+    ms.ROLE["role"], ms.USER["name"], ms.USER["groups"] = "editor", "ayse", []
     ms.LAB["on"] = True
     ctx, page = open_page(browser, "/lab/", height=860)
     page.wait_for_selector("#sql")

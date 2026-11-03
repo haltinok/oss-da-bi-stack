@@ -38,7 +38,7 @@ data) would go there. Treat it like any external service: check it against your 
 | Sent to the Anthropic API | Never sent |
 |---|---|
 | The request text (and, when changing a draft, the current YAML) | Data rows, figures, customer or product values |
-| The spec format guide, and one valid example composed for the user's role | Other roles' catalogs: a rep's catalog has no profit members and no inventory |
+| The spec format guide, and one valid example composed for the user's role | Other people's catalogs: what their datasets leave out is not in the catalog |
 | The catalog the role may read: cube, measure and dimension **names, types and descriptions**, and which cubes join | Tokens, passwords, the API key of anyone else, anything from `.env` except the key itself |
 
 Member names and descriptions describe your data model, so **use demo data only until you are happy to send those names to the provider** ([`SECURITY.md`](../SECURITY.md)). Without
@@ -47,7 +47,7 @@ Member names and descriptions describe your data model, so **use demo data only 
 ## Why a draft is safe to show
 1. **Role.** The service takes the role from the Keycloak token, sets the draft's `roles` to it (whatever the model wrote), and the validator refuses every member that
    role cannot read (the same rules as `cube/cube.js`; a test keeps them equal). Cube enforces them again on every query.
-2. **Row-level security** is Cube's and is untouched: a rep's draft shows that rep's territories, whatever the model asked for.
+2. **Row-level security** is Cube's and is untouched: a draft shows the person's territories, whatever the model asked for.
 3. **Validation.** Nothing is returned that dashspec has not accepted: wrong members, joins Cube cannot do, impossible click rules, bad layouts all go back to the model.
 4. **No invented metrics.** The model must call `cannot_build` for a metric the catalog lacks; the validator rejects a member that does not exist.
 5. **Output is text, not markup.** Everything the model writes is escaped when shown; links in text panels and a logo are removed from drafts, so a draft cannot point
@@ -74,8 +74,7 @@ A person can **Save…** a draft: it is stored in Postgres (schema `builder`, ta
 - **Private by default.** The owner can share with chosen roles or with everyone who is signed in, and change that later. A dashboard that is not shared with you
   looks like it does not exist (404). The one exception is the `admin` role, which can see (and share, rename or delete, not edit) every saved dashboard so it can
   moderate; say so to users, and keep that role small.
-- **Role rules still apply to the viewer.** Opening re-validates the YAML for the *viewer's* role: a rep cannot open a dashboard that reads profit, and the list
-  greys it out with the reason. The owner's share form shows which roles can open it. Cube's row-level security is untouched: a viewer sees their own territories.
+- **Datasets still apply to the viewer.** Cube refuses what the opener's datasets keep back (a panel shows its message), and their row-level security is untouched: a viewer sees their own territories.
 - **Who can do what.** Only the owner changes the YAML, restores a version or sees versions; the owner or an admin changes the sharing, the title, or deletes. A
   viewer can *Save a copy* or *Edit a copy* (their own private copy).
 - **Language.** `GET /info?lang=tr` returns the example requests in Turkish (`en` by default; any other language gets English); the page asks in the language of its EN | TR switch.
@@ -133,7 +132,7 @@ To switch a running stack to Claude: add the key to `.env`, then `docker compose
 | "… the model took too long" / "… not reachable right now" | the API timed out or is down; try again, or raise `BUILDER_TIMEOUT` |
 | "The builder is busy" | more than `BUILDER_MAX_CONCURRENT` builds at once |
 | 401 from `/builder-api` or the box shows an error | the Keycloak token expired (sign in again), or the public routing/issuer is wrong (`docker-compose.public.yml`) |
-| "Cannot be built" with a reason | the role cannot read what was asked (profit for a rep), or a metric does not exist; the reason says which |
+| "Cannot be built" with a reason | the catalog the person's datasets leave has no such field (profit, say), or a metric does not exist; the reason says which |
 | "Could not be built" with problems | the model could not produce a valid file in 3 tries; the problems are the validator's |
 | Nothing happens on Build | the service is down (`docker compose ps builder`) or `window.STACK.builder` is missing from `/cube/config.js` (the dashboard container needs `BUILDER_PORT`) |
 

@@ -55,8 +55,8 @@ def test_datasets_and_grants_on_postgres(store):
     with psycopg2.connect(DSN) as conn, conn.cursor() as cur:
         cur.execute('delete from access."grant"')
         cur.execute("delete from access.dataset")
-    row = store.put_dataset("sales", "Sales", "facts", ["internet_sales", "reseller_sales"], [{"type": "role", "principal": "manager"}, {"type": "group", "principal": "EU"}], "root")
-    assert row["cubes"] == ["internet_sales", "reseller_sales"] and {(g["type"], g["principal"]) for g in row["grants"]} == {("role", "manager"), ("group", "EU")}
+    row = store.put_dataset("sales", "Sales", "facts", ["internet_sales", "reseller_sales"], [{"type": "role", "principal": "editor"}, {"type": "group", "principal": "EU"}], "root")
+    assert row["cubes"] == ["internet_sales", "reseller_sales"] and {(g["type"], g["principal"]) for g in row["grants"]} == {("role", "editor"), ("group", "EU")}
     store.put_dataset("sales", "Sales 2", "", ["internet_sales"], [], "root")
     assert [(d["name"], d["grants"]) for d in store.datasets()] == [("Sales 2", [])]
     store.put_dataset("sales", "Sales 2", "", ["internet_sales"], [{"type": "group", "principal": "EU"}], "root")
@@ -91,10 +91,10 @@ def test_the_auth_and_builder_logins_read_datasets_but_cannot_write():
 
 def test_a_lab_grant_is_stored_and_a_bad_permission_refused(store):
     import psycopg2
-    row = store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "manager", "permission": "lab"}], "root")
-    assert row["grants"] == [{"type": "role", "principal": "manager", "permission": "lab"}]
+    row = store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "editor", "permission": "lab"}], "root")
+    assert row["grants"] == [{"type": "role", "principal": "editor", "permission": "lab"}]
     with pytest.raises(psycopg2.errors.CheckViolation):
-        store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "manager", "permission": "own"}], "root")
+        store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "editor", "permission": "own"}], "root")
     store.delete_dataset("labs")
 
 

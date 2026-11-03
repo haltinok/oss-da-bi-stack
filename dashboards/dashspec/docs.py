@@ -14,7 +14,7 @@ D = {  # "<section>.<field>": meaning
     "dashboard.tags": "Up to 5 short labels for finding and grouping dashboards on the list page: lower case, 1 to 24 characters, letters (of any language), digits, spaces and hyphens, no repeats. Put the most important first. Tags are visible to everyone who can see the dashboard, so they must not carry anything sensitive.",
     "dashboard.locale": "Number and date formats, month names, and the language of the page's own words (buttons, \"All\", status): `en` and `tr` exist, any other language shows English. Default `en-US`.",
     "dashboard.currency": "The currency sign on screen and in Excel files, an ISO code such as `USD` or `TRY`. Display only: nothing is converted. Default `USD`.",
-    "dashboard.roles": "Who may open the page: `admin`, `manager`, `rep`, `purchasing`, `marketing`. It decides what `/d/` lists; what each role can read is Cube's decision, and the validator rejects a page that would fail for a listed role. Default: everyone.",
+    "dashboard.roles": "Deprecated and ignored (kept so older files still validate). A role says what a person may do; what data they may read comes from datasets, grants and row rules, so a dashboard is shown to whoever can read everything it uses.",
     "dashboard.theme": "The dashboard's look (all optional).",
     "dashboard.time": "The time axis of the dashboard.",
     "dashboard.calculations": "Named formulas over measures, used like a measure as `calc.<id>` in any panel that takes a measure (a key figure, a series, a bar, a pie, a treemap, a table column, a pivot measure), also as the field a table or bar is sorted by. Up to 20. The formula reads in the browser on the numbers Cube returns, so it can mix measures of cubes that do not join (two fact cubes).",
@@ -222,10 +222,7 @@ def generate():
 - **Click rules:** a bar sets a filter on its `by` (one filter); a treemap's filters follow its `group` in order; a table row sets filters on the
   dimension columns it shows; a pivot cell sets filters on its `rows` and `columns` dimensions; a time chart sets a filter on a `fiscal_year` or `calendar_year` dimension (one filter).
 - `granularities` contains `granularity`; a `stack` is not combined with `split`.
-- **Roles:** a role in `roles` must be able to read every member the page uses: `rep` has no profit or margin members (`gross_profit`,
-  `margin_pct`, `product_cost`); `purchasing` and `marketing` read inventory data only (`inventory_health`, `offer_performance` for marketing,
-  and `products`), `marketing` no supplier or order members; `manager` and `rep` no inventory data and nobody but `admin` customer data.
-  These rules mirror `cube/cube.js`; a test keeps them equal.
+- **Who can read what** is not part of the file: it is decided per person by datasets, grants and row rules (see `docs/admin.md`) and enforced by Cube. A panel that uses something a reader may not read shows Cube's refusal for that panel.
 """)
     unused = {k for k in D if k not in used}
     if unused:
