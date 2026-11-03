@@ -50,3 +50,14 @@ for (const bad of [{}, { cubeName: 'internet_sales' }, { expression: [] }, 42, {
   assert(e && /not available/.test(e.message), `a malformed member is refused cleanly: ${JSON.stringify(bad)}`);
 }
 console.log('sql api members: ok');
+
+// a viewer is limited like a rep: no profit, nothing but sales by territory
+{
+  const viewer = { user_id: 'v', role: 'viewer', territories: ['Canada'] };
+  assert(ask(viewer, { measures: ['internet_sales.revenue'] }).ok, 'a viewer may read revenue');
+  assert(ask(viewer, { measures: ['internet_sales.gross_profit'] }).error, 'but not profit');
+  assert(ask(viewer, { measures: [adhoc('internet_sales', 'COUNT(DISTINCT ${internet_sales.gross_profit})')] }).error, 'not even through an expression');
+  assert(ask(viewer, { measures: ['inventory_health.on_hand'] }).error && ask(viewer, { dimensions: ['customers.email_address'] }).error, 'nor inventory or customers');
+  assert(ask({ user_id: 'v', role: 'viewer' }, { measures: ['internet_sales.revenue'] }).error, 'and a viewer without territories sees nothing');
+}
+console.log('viewer: ok');

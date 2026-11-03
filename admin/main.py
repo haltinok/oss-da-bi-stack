@@ -42,7 +42,7 @@ from seed import Seed
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
-ROLES = ("admin", "manager", "rep", "purchasing", "marketing")        # the dashboard roles a person holds (`agent` belongs to a service account)
+ROLES = ("admin", "manager", "rep", "viewer", "purchasing", "marketing")        # the dashboard roles a person holds (`agent` belongs to a service account)
 MIN_PASSWORD = 10
 MAX_USERS = 1000
 
@@ -65,7 +65,7 @@ def kc() -> Keycloak:
 
 _rules: PgRules | None | str = "unset"
 _seed: Seed | None | str = "unset"
-TERRITORY_ROLES = ("admin", "manager", "rep")       # the roles the auth service scopes by territory (the others work on inventory)
+TERRITORY_ROLES = ("admin", "manager", "rep", "viewer")       # the roles the auth service scopes by territory (the others work on inventory)
 
 
 def rules() -> PgRules:

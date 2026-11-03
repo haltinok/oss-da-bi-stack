@@ -62,7 +62,7 @@ async function start() {
   const sec = (title, body, more) => `<section class="home-sec"><h2>${esc(title)}${more ? ` <a href="${esc(more)}">${esc(w.more)} →</a>` : ""}</h2>${body}</section>`;
   const grid = (items, fn, none) => (items.length ? `<div class="home-grid">${items.map(fn).join("")}</div>` : `<p class="home-empty">${esc(none)}</p>`);
   const starters = [
-    { href: "/d/", title: w.describe, hint: w.describeHint },
+    ...(session.role === "viewer" ? [] : [{ href: "/d/", title: w.describe, hint: w.describeHint }]),
     { href: "/", title: w.sales, hint: w.salesHint },
     { href: "/d/", title: w.allDashboards, hint: w.allDashboardsHint },
     ...(session.lab ? [{ href: "/lab/", title: w.lab, hint: w.labHint }] : []),

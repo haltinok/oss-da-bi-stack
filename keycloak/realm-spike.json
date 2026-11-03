@@ -23,6 +23,10 @@
       },
       {
         "name": "agent"
+      },
+      {
+        "name": "viewer",
+        "description": "Can only view dashboards: no building, designing, saving, SQL lab or administration"
       }
     ]
   },

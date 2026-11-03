@@ -15,7 +15,7 @@ browser ── Keycloak token ──> admin service (admin/) ── its own clie
 - **Passwords:** *set* one (temporary or permanent), or *reset*: make a temporary password (shown once) or email Keycloak's "update password" link (needs the realm's email settings).
 - **Delete:** needs the username typed. Deactivating is what the page suggests: it keeps their dashboards and history.
 - **Groups:** create, rename, delete, add and remove people. The people in a deleted group stay.
-- **Roles:** one of `admin`, `manager`, `rep`, `purchasing`, `marketing` per person, as today. The role decides which data the person may read (see [dashboards.md](dashboards.md#roles-and-security)).
+- **Roles:** one of `admin`, `manager`, `rep`, `viewer`, `purchasing`, `marketing` per person. A **viewer** only views: they can open the sample dashboards their role may open and the saved dashboards shared with them, and nothing that builds, changes or keeps (no describe/Design/Save, no folders, no SQL lab, no console; the builder service refuses their write calls with 403). A viewer reads sales like a rep: only their territories, no profit or margin, no customers, no inventory. A dashboard names the roles that may open it (`roles:`), so add `viewer` to the ones a viewer should see. The role decides which data the person may read (see [dashboards.md](dashboards.md#roles-and-security)).
 
 ## Row rules
 Which sales territories (regions) a person or a group may see, set on the **Row rules** tab. A person sees the **union** of the rules for them and for their groups. With **no rule at all**

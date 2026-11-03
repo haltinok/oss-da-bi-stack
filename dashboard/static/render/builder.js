@@ -54,7 +54,7 @@ export const drafts = {
   },
 };
 
-const ROLES = ["admin", "manager", "rep", "purchasing", "marketing"];
+const ROLES = ["admin", "manager", "rep", "viewer", "purchasing", "marketing"];
 
 // ------------------------------------------------------------------------------------------------------------------ the service
 export function createBuilderApi({ stack, client, t }) {
@@ -172,7 +172,7 @@ const visBadge = (d, t) => (d.visibility === "private" ? t.badgePrivate : d.visi
  * many are left. The handle's `render()` draws the lists again from what it already has (no request), `items()` gives them all (for the tag bar).
  * Resolves to null when the server keeps no dashboards.
  */
-export async function mountSavedList(host, api, t, { query = () => "", tags = () => [], group = () => false, onCount = () => {}, onTag = () => {} } = {}) {
+export async function mountSavedList(host, api, t, { query = () => "", tags = () => [], group = () => false, onCount = () => {}, onTag = () => {}, readOnly = false } = {}) {
   let list = [], folders = [], trash = [];
   const w = words(t);
   const load = async () => {
@@ -187,7 +187,7 @@ export async function mountSavedList(host, api, t, { query = () => "", tags = ()
         <div class="hint">${esc(d.description || "")}${d.description ? " · " : ""}${d.mine ? "" : `${esc(t.by)} ${esc(d.owner)} · `}${esc(t.updated)} ${esc(new Date(d.updated_at).toLocaleString(t.dateLocale))}</div>
         ${tagsOf(d).length ? `<div class="tagrow">${chipsHtml(tagsOf(d), tags(), label)}</div>` : ""}
         ${d.readable ? "" : `<div class="hint warn">${esc(t.cannotOpen)}: ${esc(d.problems[0] || "")}</div>`}</div>
-      ${!d.mine && d.readable ? `<button type="button" data-act="copy">${esc(t.copy)}</button>` : ""}${d.can_manage ? `<button type="button" class="mini" data-act="share">${esc(w.share)}</button>` : ""}${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
+      ${!d.mine && d.readable && !readOnly ? `<button type="button" data-act="copy">${esc(t.copy)}</button>` : ""}${d.can_manage ? `<button type="button" class="mini" data-act="share">${esc(w.share)}</button>` : ""}${d.can_manage ? `<button type="button" data-act="delete">${esc(t.deleteBtn)}</button>` : ""}</li>`;
   const folderHead = (f, name, count) => `<div class="folder-h" data-folder="${esc(f?.id || "")}"><strong>${f ? "📁 " : ""}${esc(name)}</strong> <span class="hint">(${count})</span><span class="spacer"></span>
       ${f?.can_manage ? `<button type="button" data-act="folder-share">${esc(w.share)}</button><button type="button" data-act="folder-rename">${esc(w.rename)}</button><button type="button" data-act="folder-delete">${esc(w.delete)}</button>` : ""}</div>`;
   /** Drawn by folder: each folder (yours, or shared with you) with what is in it, then what is in none. `emptyToo` keeps your own empty folders so they can be shared or deleted. */
@@ -210,7 +210,7 @@ export async function mountSavedList(host, api, t, { query = () => "", tags = ()
     const body = (shown, mineSection = false) => (group()
       ? groupByFirstTag(shown).map((g) => `<h3 class="tg-h">${esc(g.tag ?? t.untagged)} <span class="hint">(${g.items.length})</span></h3><ul class="drafts">${g.items.map(card).join("")}</ul>`).join("")
       : folders.length || mineSection && shown.some((d) => d.folder_id) ? byFolder(shown, mineSection && !filtering) : `<ul class="drafts">${shown.map(card).join("")}</ul>`);
-    const section = (kind, text, hint, shown, all, none) => `<section class="lsec lsec-${kind}">${heading(text, hint, shown, all)}${kind === "mine" ? `<div class="lsec-bar"><button type="button" data-act="folder-new">📁 ${esc(w.newFolder)}</button></div>` : ""}${shown.length || (kind === "mine" && folders.some((f) => f.mine) && !filtering) ? body(shown, kind === "mine") : `<p class="hint">${esc(none)}</p>`}</section>`;
+    const section = (kind, text, hint, shown, all, none) => `<section class="lsec lsec-${kind}">${heading(text, hint, shown, all)}${kind === "mine" && !readOnly ? `<div class="lsec-bar"><button type="button" data-act="folder-new">📁 ${esc(w.newFolder)}</button></div>` : ""}${shown.length || (kind === "mine" && folders.some((f) => f.mine) && !filtering) ? body(shown, kind === "mine") : `<p class="hint">${esc(none)}</p>`}</section>`;
     host.innerHTML = section("mine", t.yourSaved, t.yourSavedHint, mineShown, mine, mine.length ? t.searchNoSaved : t.noSaved)
       + (others.length && (othersShown.length || !filtering) ? section("shared", t.sharedWithYou, t.sharedHint, othersShown, others, t.searchNoSaved) : "")
       + `<details class="trash" id="trash"${trash.length ? "" : " hidden"}><summary>${esc(w.trash(trash.length))}</summary><p class="hint">${esc(w.trashHint)}</p><ul>${trash.map((d) => `<li data-id="${esc(d.id)}"><span>${esc(d.title)}</span><span class="spacer"></span><button type="button" data-act="restore">${esc(w.restore)}</button><button type="button" data-act="forever">${esc(w.deleteForever)}</button></li>`).join("")}</ul></details>`;

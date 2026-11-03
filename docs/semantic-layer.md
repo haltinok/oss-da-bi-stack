@@ -35,20 +35,20 @@ Readable by: `admin`.
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
-| `customers.count` | count | Number of customers. | `manager`, `rep`, `purchasing`, `marketing` |
+| `customers.count` | count | Number of customers. | `manager`, `rep`, `viewer`, `purchasing`, `marketing` |
 
 ### Dimensions
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
-| `customers.key` | number | Customer key. | `manager`, `rep`, `purchasing`, `marketing` |
-| `customers.last_name` | string | Customer last name (personal data, admin only). | `manager`, `rep`, `purchasing`, `marketing` |
+| `customers.key` | number | Customer key. | `manager`, `rep`, `viewer`, `purchasing`, `marketing` |
+| `customers.last_name` | string | Customer last name (personal data, admin only). | `manager`, `rep`, `viewer`, `purchasing`, `marketing` |
 
 ## `dates`
 
 The calendar: join target for a time axis and fiscal years.
 
-Readable by: `admin`, `manager`, `rep`.
+Readable by: `admin`, `manager`, `rep`, `viewer`.
 
 ### Dimensions
 
@@ -78,7 +78,7 @@ The calendar in the role of the due date: the date an order line was due to be d
 
 A role of `dates`: the same calendar table and fields, joined by its own key; the fields are named "Due ..." in reports (e.g. "Due month name").
 
-Readable by: `admin`, `manager`, `rep`.
+Readable by: `admin`, `manager`, `rep`, `viewer`.
 
 ### Dimensions
 
@@ -108,7 +108,7 @@ Internet (online) channel order lines of the sales fact: one row per product on 
 
 Joins: `customers`, `dates`, `due_dates`, `products`, `ship_dates`, `territories`.
 
-Readable by: `admin`, `manager`, `rep`.
+Readable by: `admin`, `manager`, `rep`, `viewer`.
 
 ### Measures
 
@@ -116,12 +116,12 @@ Readable by: `admin`, `manager`, `rep`.
 |---|---|---|---|
 | `internet_sales.aov` | number | Revenue per placed order (a ratio inside one cube; across both channels use a ratio of revenue over orders). | `purchasing`, `marketing` |
 | `internet_sales.discount` | sum | Discount amount given on the order lines. | `purchasing`, `marketing` |
-| `internet_sales.gross_profit` | sum | Revenue minus product cost. Hidden from reps. | `rep`, `purchasing`, `marketing` |
+| `internet_sales.gross_profit` | sum | Revenue minus product cost. Hidden from reps. | `rep`, `viewer`, `purchasing`, `marketing` |
 | `internet_sales.lines` | count | Number of order lines. | `purchasing`, `marketing` |
-| `internet_sales.margin_pct` | number | Gross profit as a percentage of revenue, 0-100 (not a fraction). Hidden from reps. For a margin across both channels use a ratio of gross_profit over revenue with format pct. | `rep`, `purchasing`, `marketing` |
+| `internet_sales.margin_pct` | number | Gross profit as a percentage of revenue, 0-100 (not a fraction). Hidden from reps. For a margin across both channels use a ratio of gross_profit over revenue with format pct. | `rep`, `viewer`, `purchasing`, `marketing` |
 | `internet_sales.orders` | count_distinct | Exact number of distinct orders. Right under any filter, but a rollup cannot serve it, so it can be slow at large scale. | `purchasing`, `marketing` |
 | `internet_sales.orders_placed` | sum | Orders counted once, on their first line: exact and fast for any grouping or filter on the order's own date, territory or channel. Not the number of orders containing a given product: use orders for that. | `purchasing`, `marketing` |
-| `internet_sales.product_cost` | sum | Standard cost of the products sold. Hidden from reps. | `rep`, `purchasing`, `marketing` |
+| `internet_sales.product_cost` | sum | Standard cost of the products sold. Hidden from reps. | `rep`, `viewer`, `purchasing`, `marketing` |
 | `internet_sales.revenue` | sum | Sales amount of the order lines. | `purchasing`, `marketing` |
 | `internet_sales.units` | sum | Quantity sold. | `purchasing`, `marketing` |
 
@@ -146,42 +146,42 @@ Readable by: `admin`, `purchasing`, `marketing`.
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
-| `inventory_health.dead_stock_items` | count | Dead stock only: in stock, no recent sale. | `manager`, `rep` |
-| `inventory_health.excess_units_total` | sum | Units of all excess stock. | `manager`, `rep` |
-| `inventory_health.excess_value_total` | sum | Value of all excess stock. | `manager`, `rep` |
-| `inventory_health.items_at_risk` | count | Stockouts plus products to reorder now. | `manager`, `rep` |
-| `inventory_health.overstock_items` | count | Overstock plus dead stock products. | `manager`, `rep` |
-| `inventory_health.product_count` | count | Number of products. | `manager`, `rep` |
-| `inventory_health.reorder_items` | count | Products with status reorder_now. | `manager`, `rep` |
-| `inventory_health.stockout_items` | count | Products with status stockout. | `manager`, `rep` |
-| `inventory_health.suggested_order_qty_total` | sum | Sum of the suggested order quantities. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.suggested_order_value_total` | sum | Sum of the suggested order values. Supplier data. | `manager`, `rep`, `marketing` |
+| `inventory_health.dead_stock_items` | count | Dead stock only: in stock, no recent sale. | `manager`, `rep`, `viewer` |
+| `inventory_health.excess_units_total` | sum | Units of all excess stock. | `manager`, `rep`, `viewer` |
+| `inventory_health.excess_value_total` | sum | Value of all excess stock. | `manager`, `rep`, `viewer` |
+| `inventory_health.items_at_risk` | count | Stockouts plus products to reorder now. | `manager`, `rep`, `viewer` |
+| `inventory_health.overstock_items` | count | Overstock plus dead stock products. | `manager`, `rep`, `viewer` |
+| `inventory_health.product_count` | count | Number of products. | `manager`, `rep`, `viewer` |
+| `inventory_health.reorder_items` | count | Products with status reorder_now. | `manager`, `rep`, `viewer` |
+| `inventory_health.stockout_items` | count | Products with status stockout. | `manager`, `rep`, `viewer` |
+| `inventory_health.suggested_order_qty_total` | sum | Sum of the suggested order quantities. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.suggested_order_value_total` | sum | Sum of the suggested order values. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
 
 ### Dimensions
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
-| `inventory_health.daily_demand` | number | Average units sold per day over the demand window. | `manager`, `rep` |
-| `inventory_health.days_of_cover` | number | Days the stock lasts at the current demand. | `manager`, `rep` |
-| `inventory_health.excess_units` | number | Units above the target stock (overstock and dead stock). | `manager`, `rep` |
-| `inventory_health.excess_value` | number | Value of the excess units. | `manager`, `rep` |
-| `inventory_health.key` | number | Product key. | `manager`, `rep` |
-| `inventory_health.last_sale_date` | time | Date of the product's last sale (a time dimension). | `manager`, `rep` |
-| `inventory_health.lead_time_days` | number | Days from order to delivery. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.max_order_qty` | number | Vendor maximum order quantity. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.min_order_qty` | number | Vendor minimum order quantity. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.on_hand` | number | Units in stock. | `manager`, `rep` |
-| `inventory_health.on_order` | number | Units on open purchase or work orders. | `manager`, `rep` |
-| `inventory_health.product_name` | string | Product name. | `manager`, `rep` |
-| `inventory_health.reason` | string | Why the status was given (in words). | `manager`, `rep` |
-| `inventory_health.replenishment_type` | string | How it is replenished: purchase, manufacture or none. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.status` | string | Stock status: stockout, reorder_now, dead_stock, overstock, healthy, not_stocked or discontinued. | `manager`, `rep` |
-| `inventory_health.suggested_discount_pct` | number | Suggested discount depth for the excess, in percent. | `manager`, `rep` |
-| `inventory_health.suggested_order_qty` | number | Suggested quantity to order or make. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.suggested_order_value` | number | Suggested quantity times unit cost. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.unit_cost` | number | Cost per unit. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.vendor_id` | number | Vendor key. Supplier data. | `manager`, `rep`, `marketing` |
-| `inventory_health.vendor_name` | string | Vendor name. Supplier data. | `manager`, `rep`, `marketing` |
+| `inventory_health.daily_demand` | number | Average units sold per day over the demand window. | `manager`, `rep`, `viewer` |
+| `inventory_health.days_of_cover` | number | Days the stock lasts at the current demand. | `manager`, `rep`, `viewer` |
+| `inventory_health.excess_units` | number | Units above the target stock (overstock and dead stock). | `manager`, `rep`, `viewer` |
+| `inventory_health.excess_value` | number | Value of the excess units. | `manager`, `rep`, `viewer` |
+| `inventory_health.key` | number | Product key. | `manager`, `rep`, `viewer` |
+| `inventory_health.last_sale_date` | time | Date of the product's last sale (a time dimension). | `manager`, `rep`, `viewer` |
+| `inventory_health.lead_time_days` | number | Days from order to delivery. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.max_order_qty` | number | Vendor maximum order quantity. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.min_order_qty` | number | Vendor minimum order quantity. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.on_hand` | number | Units in stock. | `manager`, `rep`, `viewer` |
+| `inventory_health.on_order` | number | Units on open purchase or work orders. | `manager`, `rep`, `viewer` |
+| `inventory_health.product_name` | string | Product name. | `manager`, `rep`, `viewer` |
+| `inventory_health.reason` | string | Why the status was given (in words). | `manager`, `rep`, `viewer` |
+| `inventory_health.replenishment_type` | string | How it is replenished: purchase, manufacture or none. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.status` | string | Stock status: stockout, reorder_now, dead_stock, overstock, healthy, not_stocked or discontinued. | `manager`, `rep`, `viewer` |
+| `inventory_health.suggested_discount_pct` | number | Suggested discount depth for the excess, in percent. | `manager`, `rep`, `viewer` |
+| `inventory_health.suggested_order_qty` | number | Suggested quantity to order or make. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.suggested_order_value` | number | Suggested quantity times unit cost. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.unit_cost` | number | Cost per unit. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.vendor_id` | number | Vendor key. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
+| `inventory_health.vendor_name` | string | Vendor name. Supplier data. | `manager`, `rep`, `viewer`, `marketing` |
 
 ## `offer_performance`
 
@@ -193,31 +193,31 @@ Readable by: `admin`, `marketing`.
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
-| `offer_performance.avg_lift` | avg | Average of the per-offer lift (offers with no baseline are skipped; one offer with a tiny baseline can dominate it). | `manager`, `rep`, `purchasing` |
-| `offer_performance.days_during` | sum | Days offers ran. | `manager`, `rep`, `purchasing` |
-| `offer_performance.offers` | count | Number of offers. | `manager`, `rep`, `purchasing` |
-| `offer_performance.units_before` | sum | Units sold in the 28 days before offers. | `manager`, `rep`, `purchasing` |
-| `offer_performance.units_during` | sum | Units sold during offers. | `manager`, `rep`, `purchasing` |
+| `offer_performance.avg_lift` | avg | Average of the per-offer lift (offers with no baseline are skipped; one offer with a tiny baseline can dominate it). | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.days_during` | sum | Days offers ran. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.offers` | count | Number of offers. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.units_before` | sum | Units sold in the 28 days before offers. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.units_during` | sum | Units sold during offers. | `manager`, `rep`, `viewer`, `purchasing` |
 
 ### Dimensions
 
 | Member | Type | Meaning | Hidden from |
 |---|---|---|---|
-| `offer_performance.description` | string | Offer description. | `manager`, `rep`, `purchasing` |
-| `offer_performance.discount_band` | string | Discount depth band. | `manager`, `rep`, `purchasing` |
-| `offer_performance.discount_pct` | number | Discount in percent. | `manager`, `rep`, `purchasing` |
-| `offer_performance.end_date` | time | Offer end (a time dimension). | `manager`, `rep`, `purchasing` |
-| `offer_performance.key` | number | Offer key. | `manager`, `rep`, `purchasing` |
-| `offer_performance.lift` | number | Units per day during the offer over units per day in the 28 days before. | `manager`, `rep`, `purchasing` |
-| `offer_performance.offer_category` | string | Offer category. | `manager`, `rep`, `purchasing` |
-| `offer_performance.offer_type` | string | Type of offer. | `manager`, `rep`, `purchasing` |
-| `offer_performance.start_date` | time | Offer start (a time dimension). | `manager`, `rep`, `purchasing` |
+| `offer_performance.description` | string | Offer description. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.discount_band` | string | Discount depth band. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.discount_pct` | number | Discount in percent. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.end_date` | time | Offer end (a time dimension). | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.key` | number | Offer key. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.lift` | number | Units per day during the offer over units per day in the 28 days before. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.offer_category` | string | Offer category. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.offer_type` | string | Type of offer. | `manager`, `rep`, `viewer`, `purchasing` |
+| `offer_performance.start_date` | time | Offer start (a time dimension). | `manager`, `rep`, `viewer`, `purchasing` |
 
 ## `products`
 
 Products and their categories: join target for both sales facts and the inventory cube.
 
-Readable by: `admin`, `manager`, `rep`, `purchasing`, `marketing`.
+Readable by: `admin`, `manager`, `rep`, `viewer`, `purchasing`, `marketing`.
 
 ### Dimensions
 
@@ -235,7 +235,7 @@ Reseller channel order lines of the sales fact: one row per product on an order.
 
 Joins: `dates`, `due_dates`, `products`, `ship_dates`, `territories`.
 
-Readable by: `admin`, `manager`, `rep`.
+Readable by: `admin`, `manager`, `rep`, `viewer`.
 
 ### Measures
 
@@ -243,12 +243,12 @@ Readable by: `admin`, `manager`, `rep`.
 |---|---|---|---|
 | `reseller_sales.aov` | number | Revenue per placed order (a ratio inside one cube; across both channels use a ratio of revenue over orders). | `purchasing`, `marketing` |
 | `reseller_sales.discount` | sum | Discount amount given on the order lines. | `purchasing`, `marketing` |
-| `reseller_sales.gross_profit` | sum | Revenue minus product cost. Hidden from reps. | `rep`, `purchasing`, `marketing` |
+| `reseller_sales.gross_profit` | sum | Revenue minus product cost. Hidden from reps. | `rep`, `viewer`, `purchasing`, `marketing` |
 | `reseller_sales.lines` | count | Number of order lines. | `purchasing`, `marketing` |
-| `reseller_sales.margin_pct` | number | Gross profit as a percentage of revenue, 0-100 (not a fraction). Hidden from reps. For a margin across both channels use a ratio of gross_profit over revenue with format pct. | `rep`, `purchasing`, `marketing` |
+| `reseller_sales.margin_pct` | number | Gross profit as a percentage of revenue, 0-100 (not a fraction). Hidden from reps. For a margin across both channels use a ratio of gross_profit over revenue with format pct. | `rep`, `viewer`, `purchasing`, `marketing` |
 | `reseller_sales.orders` | count_distinct | Exact number of distinct orders. Right under any filter, but a rollup cannot serve it, so it can be slow at large scale. | `purchasing`, `marketing` |
 | `reseller_sales.orders_placed` | sum | Orders counted once, on their first line: exact and fast for any grouping or filter on the order's own date, territory or channel. Not the number of orders containing a given product: use orders for that. | `purchasing`, `marketing` |
-| `reseller_sales.product_cost` | sum | Standard cost of the products sold. Hidden from reps. | `rep`, `purchasing`, `marketing` |
+| `reseller_sales.product_cost` | sum | Standard cost of the products sold. Hidden from reps. | `rep`, `viewer`, `purchasing`, `marketing` |
 | `reseller_sales.revenue` | sum | Sales amount of the order lines. | `purchasing`, `marketing` |
 | `reseller_sales.units` | sum | Quantity sold. | `purchasing`, `marketing` |
 
@@ -267,7 +267,7 @@ The calendar in the role of the ship date: the date an order line shipped. Same 
 
 A role of `dates`: the same calendar table and fields, joined by its own key; the fields are named "Ship ..." in reports (e.g. "Ship month name").
 
-Readable by: `admin`, `manager`, `rep`.
+Readable by: `admin`, `manager`, `rep`, `viewer`.
 
 ### Dimensions
 
@@ -295,7 +295,7 @@ Readable by: `admin`, `manager`, `rep`.
 
 Sales territories: join target for the sales facts. The unit of row-level security.
 
-Readable by: `admin`, `manager`, `rep`.
+Readable by: `admin`, `manager`, `rep`, `viewer`.
 
 ### Dimensions
 

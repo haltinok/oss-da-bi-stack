@@ -25,13 +25,13 @@ TTL = int(os.environ.get("CUBE_JWT_TTL_SECONDS", "900"))
 ISSUER = os.environ["KEYCLOAK_ISSUER"]                 # as it appears in tokens (public URL)
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]             # reachable from this container
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
-ROLE_ORDER = ("admin", "purchasing", "marketing", "manager", "rep")
+ROLE_ORDER = ("admin", "purchasing", "marketing", "manager", "rep", "viewer")
 # The proposal agent is a Keycloak service account (client-credentials grant) of its own client: it may only
 # ever be the `agent` role, and the dashboard client may never be. Neither can borrow the other's roles.
 AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
 # Only these roles are scoped by territory. purchasing and marketing work on inventory, which is not
 # territory-bound; cube/cube.js keeps them away from the sales cubes.
-TERRITORY_ROLES = ("admin", "manager", "rep")   # the agent has none either
+TERRITORY_ROLES = ("admin", "manager", "rep", "viewer")   # the agent has none either
 # DATASET picks the schema the territories come from: rls (live) or rls_<dataset> (e.g. rls_250m, built by dbt with
 # mart_suffix _250m). AUTH_REGIONS_TABLE overrides it. Operator-set, not user input, and checked before it reaches SQL.
 DATASET = os.environ.get("DATASET", "live").lower()

@@ -416,3 +416,16 @@ def test_sharing_folders_trash_and_ownership_over_http(memory_store):
     assert client.post("/transfer", headers=root, json={"from_user": "bob", "to_user": "root"}).json() == {"transferred": 1}
     client.delete(f"/saved/{id_}", headers=root)
     assert client.delete(f"/trash/{id_}", headers=root).status_code == 204 and client.get("/trash", headers=root).json() == []
+
+
+def test_a_viewer_may_look_at_dashboards_and_nothing_else(memory_store):
+    owner, viewer = token("manager", "olga"), token("viewer", "vera")
+    id_ = client.post("/saved", headers=owner, json={"yaml": sales_yaml(), "title": "For viewers", "shares": [{"type": "user", "principal": "vera", "permission": "view"}]}).json()["id"]
+    assert client.get("/info", headers=viewer).json()["role"] == "viewer"
+    assert [d["id"] for d in client.get("/saved", headers=viewer).json()] == [id_] and client.get("/folders", headers=viewer).status_code == 200
+    assert client.get(f"/saved/{id_}", headers=viewer).status_code in (200, 422), "opening is allowed (422 only if the dashboard shows profit, which a viewer does not read)"
+    for method, path, body in (("get", "/catalog", None), ("get", "/usage", None), ("post", "/build", {"prompt": "revenue by month"}), ("post", "/validate", {"yaml": "a: 1"}),
+                               ("post", "/saved", {"yaml": sales_yaml()}), ("put", f"/saved/{id_}", {"title": "x"}), ("delete", f"/saved/{id_}", None), ("post", f"/saved/{id_}/restore", {"version": 1}),
+                               ("get", f"/saved/{id_}/versions", None), ("post", "/folders", {"name": "x"}), ("get", "/trash", None), ("post", f"/trash/{id_}/restore", None)):
+        r = getattr(client, method)(path, headers=viewer, **({"json": body} if body is not None else {}))
+        assert r.status_code == 403 and "Viewers" in r.json()["detail"], (method, path, r.status_code)

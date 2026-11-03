@@ -11,7 +11,7 @@ set -a; . "${ENV_FILE:-./.env}"; set +a
 . keycloak/lib.sh
 kc_login
 
-for role in purchasing marketing agent; do
+for role in purchasing marketing agent viewer; do
   kc create roles -r spike -s "name=$role" >/dev/null 2>&1 && echo "role $role: created" || echo "role $role: exists"
 done
 for pair in buyer:purchasing marketer:marketing; do

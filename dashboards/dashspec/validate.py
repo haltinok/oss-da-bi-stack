@@ -605,14 +605,14 @@ def denied(role, member):
     """Why Cube would refuse `role` this member, or None. The per-member part of the role rules (a panel must also reach an inventory cube
     for purchasing and marketing: see _role_errors)."""
     cube, _, name = member.partition(".")
-    if role == "rep" and name in PROFIT_MEMBERS:
-        return "profit and margin are hidden from reps"
+    if role in ("rep", "viewer") and name in PROFIT_MEMBERS:
+        return f"profit and margin are hidden from {role}s"
     if role in ROLE_CUBES:
         if cube not in ROLE_CUBES[role]:
             return f"cube '{cube}' is not available to {role}"
         if role == "marketing" and cube == "inventory_health" and name in SUPPLIER_MEMBERS:
             return "supplier and order data are not available to marketing"
-    if role in ("manager", "rep"):
+    if role in ("manager", "rep", "viewer"):
         if cube in INVENTORY_CUBES:
             return "inventory data is not available for this role"
         if cube == "customers":

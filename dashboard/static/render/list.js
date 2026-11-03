@@ -10,7 +10,7 @@ const GROUP_KEY = "dashGroupByTag";                              // a per-viewer
 const readGroup = () => { try { return localStorage.getItem(GROUP_KEY) === "1"; } catch { return false; } };
 const writeGroup = (on) => { try { localStorage.setItem(GROUP_KEY, on ? "1" : "0"); } catch { /* storage unavailable: the switch still works for this visit */ } };
 
-export function mountList({ main, mine, api, t }) {
+export function mountList({ main, mine, api, t, viewer = false }) {
   const start = parseListUrl(location.search);
   let query = start.q, selected = start.tags, group = readGroup(), saved = null;
   const counts = { built: { shown: mine.length, total: mine.length }, saved: { shown: 0, total: 0 } };
@@ -24,10 +24,10 @@ export function mountList({ main, mine, api, t }) {
         <span class="tag-chips" id="tag-chips" data-scope="bar" role="group" aria-labelledby="tag-bar-label"></span>
         <button type="button" id="group-switch" class="tag-switch" aria-pressed="false">${esc(t.groupByTag)}</button></div>
       <div id="list-q-none" class="empty" hidden></div>`
-    + (api.available ? `<div id="builder-host"></div>` : "")
+    + (api.available && !viewer ? `<div id="builder-host"></div>` : "")
     + (api.available ? `<div id="drafts-host" class="drafts-host" data-scope="saved" hidden></div>` : "")
     + `<section class="lsec lsec-samples"><h2>${esc(t.samples)}</h2><p class="hint lsec-hint">${esc(t.samplesHint)}</p><div id="built-host" data-scope="built"></div></section>`
-    + (api.available ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
+    + (api.available && !viewer ? `<details class="card sem-wrap" id="sem-wrap"><summary>${esc(t.semantic)}</summary><div id="sem-host"></div></details>` : "");
   const box = $("#list-q"), clear = $("#list-q-clear"), status = $("#list-q-status"), none = $("#list-q-none"), bar = $("#tag-bar"), chips = $("#tag-chips"), sw = $("#group-switch");
   box.value = query;
 
@@ -104,10 +104,11 @@ export function mountList({ main, mine, api, t }) {
   });
   apply();
   if (!api.available) return;
-  mountPromptBox($("#builder-host"), api, t);
+  if (!viewer) mountPromptBox($("#builder-host"), api, t);
   mountSavedList($("#drafts-host"), api, t, {
+    readOnly: viewer,
     query: () => query, tags: () => selected, group: () => group, onTag: toggleTag,
     onCount: (c) => { counts.saved = c; showStatus(); },
   }).then((h) => { saved = h; apply(); });
-  $("#sem-wrap").addEventListener("toggle", () => { if ($("#sem-wrap").open && !$("#sem-host").dataset.ready) { $("#sem-host").dataset.ready = "1"; mountSemantic($("#sem-host"), api, t); } });
+  if (!viewer) $("#sem-wrap").addEventListener("toggle", () => { if ($("#sem-wrap").open && !$("#sem-host").dataset.ready) { $("#sem-host").dataset.ready = "1"; mountSemantic($("#sem-host"), api, t); } });
 }

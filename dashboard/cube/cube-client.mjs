@@ -20,6 +20,9 @@ const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replac
  * @param redirect   where Keycloak sends the browser back to; must be a redirect URI of the Keycloak client (default: the site root)
  * @param onSession  called with { token, expires, user, role, territories } each time a new Cube token is minted
  */
+/** Where Keycloak sends the browser back after a sign-in that began at `pathname`: the start page when the person came in at the site root (the default landing page for everybody), otherwise the page they were on. */
+export const loginRedirect = (pathname, origin, redirect) => (pathname === "/" ? `${origin}/home/` : redirect);
+
 export function createCubeClient({ stack, apiUrl, redirect = `${location.origin}/`, onSession = () => {} }) {
   const KC = `${stack.keycloak.url}/realms/${stack.keycloak.realm}/protocol/openid-connect`;
   const clientId = stack.keycloak.clientId;
@@ -30,7 +33,7 @@ export function createCubeClient({ stack, apiUrl, redirect = `${location.origin}
     const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
     store.set("pkce", { verifier, state });
     const p = new URLSearchParams({
-      client_id: clientId, redirect_uri: redirect, response_type: "code", scope: "openid",
+      client_id: clientId, redirect_uri: loginRedirect(location.pathname, location.origin, redirect), response_type: "code", scope: "openid",
       code_challenge: challenge, code_challenge_method: "S256", state,
     });
     location.assign(`${KC}/auth?${p}`);
