@@ -10,3 +10,10 @@ kc_login() {
   kc config credentials --server "$(kc_server)" --realm master \
     --user "${KEYCLOAK_ADMIN:-admin}" --password "${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}" >/dev/null
 }
+# Keycloak sometimes gives a service-account client its built-in mappers (Client ID, Client Host, Client IP Address) twice; any later
+# update of that client then fails with "Duplicate key openid-connect%Client ID" (unknown_error). Keep the first of each name.
+kc_dedupe_mappers() {
+  kc get "clients/$1/protocol-mappers/models" -r spike --fields id,name --format csv --noquotes \
+    | awk -F, 'seen[$2]++ {print $1}' \
+    | while read -r mid; do kc delete "clients/$1/protocol-mappers/models/$mid" -r spike </dev/null >/dev/null && echo "client $2: duplicate mapper removed"; done
+}

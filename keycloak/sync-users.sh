@@ -2,7 +2,7 @@
 # Add the roles and users that keycloak/realm-spike.json defines to a Keycloak that already imported the
 # realm. `--import-realm` only runs when the realm does not exist yet, so an existing Keycloak volume keeps
 # its old users and misses later additions (here: the editor and viewer roles, the data-access groups, the buyer and
-# marketer users, and the proposal agent's `inventory-agent` client and `agent` role). Idempotent; nothing is deleted or overwritten. Reads secrets from .env.
+# marketer users, and the proposal agent's `inventory-agent` client and `agent` role). Idempotent; nothing is deleted or overwritten (except duplicate client mappers, see kc_dedupe_mappers in lib.sh). Reads secrets from .env.
 #
 #   keycloak/sync-users.sh
 set -euo pipefail
@@ -41,6 +41,7 @@ if [ -z "$cid" ]; then
     -s standardFlowEnabled=false -s directAccessGrantsEnabled=false -s "secret=${AGENT_CLIENT_SECRET:?}" >/dev/null
   echo "client inventory-agent: created"
 else
+  kc_dedupe_mappers "$cid" inventory-agent
   kc update "clients/$cid" -r spike -s "secret=${AGENT_CLIENT_SECRET:?}" >/dev/null
   echo "client inventory-agent: exists (secret refreshed)"
 fi
@@ -53,6 +54,7 @@ if [ -z "$cid" ]; then
     -s standardFlowEnabled=false -s directAccessGrantsEnabled=false -s "secret=${ADMIN_CLIENT_SECRET:?}" >/dev/null
   echo "client admin-console: created"
 else
+  kc_dedupe_mappers "$cid" admin-console
   kc update "clients/$cid" -r spike -s "secret=${ADMIN_CLIENT_SECRET:?}" >/dev/null
   echo "client admin-console: exists (secret refreshed)"
 fi
