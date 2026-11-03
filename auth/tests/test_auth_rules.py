@@ -119,10 +119,10 @@ def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypat
 
 def test_the_token_carries_the_values_of_every_dimension_in_rls(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"])
-    assert r.json()["rls"] == {"territory": ["Germany"]} and r.json()["territories"] == ["Germany"]
-    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"] == {"territory": ["Germany"]}
+    assert r.json()["rls"] == {"territory": ["Germany"], "product_category": []} and r.json()["territories"] == ["Germany"]
+    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"] == {"territory": ["Germany"], "product_category": []}
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[])
-    assert r.json()["rls"] == {"territory": ["Canada"]}, "the seed still decides the territory when no rule applies"
+    assert r.json()["rls"] == {"territory": ["Canada"], "product_category": []}, "the seed still decides the territory when no rule applies"
 
 
 def test_the_dimensions_file_is_the_one_cube_reads():

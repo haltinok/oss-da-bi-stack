@@ -332,7 +332,7 @@ def two_dimensions(ruled, monkeypatch):
 
 def test_rules_list_the_dimensions_and_their_values(two_dimensions):
     out = two_dimensions.get("/rls/rules").json()
-    assert [d["id"] for d in out["dimensions"]] == ["territory", "channel"] and out["dimensions"][1]["values"] == ["Internet", "Reseller"]
+    assert [d["id"] for d in out["dimensions"]] == ["territory", "product_category", "channel"] and out["dimensions"][2]["values"] == ["Internet", "Reseller"] and "Bikes" in out["dimensions"][1]["values"]
 
 
 def test_a_rule_is_per_dimension_and_checked_against_that_dimensions_values(two_dimensions, kc):
@@ -363,3 +363,10 @@ def test_the_dimensions_file_is_the_one_cube_reads():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[2]
     assert (root / "admin" / "rls_dimensions.json").read_text() == (root / "cube" / "rls_dimensions.json").read_text()
+
+
+def test_product_category_rules_take_only_known_categories(ruled, kc):
+    kc.add("de_rep", "editor")
+    assert ruled.put("/rls/rules/user/de_rep?dimension=product_category", json={"values": ["Bikes", "Clothing"]}).status_code == 200
+    r = ruled.put("/rls/rules/user/de_rep?dimension=product_category", json={"values": ["Spaceships"]})
+    assert r.status_code == 400 and "Spaceships" in r.json()["detail"]

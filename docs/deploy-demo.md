@@ -60,7 +60,7 @@ done
 # 2. recreate Postgres and Keycloak with the new variables, then bring the data stores and Keycloak up to date (all idempotent; nothing is deleted)
 docker compose --profile starrocks up -d postgres keycloak
 postgres/sync-builder.sh        # folders, shares, trash for saved dashboards
-postgres/sync-access.sh         # row rules, datasets and grants
+postgres/sync-access.sh         # row rules, datasets and grants (and, once, a product-category rule for the groups Managers and Reps: without one nobody but an admin sees sales)
 postgres/sync-lab.sh            # the SQL lab's saved queries
 keycloak/sync-users.sh          # the admin-console client, the groups claim, the editor/viewer roles and the starter groups
 keycloak/migrate-roles.sh       # ONCE, if people still hold the old roles (manager, rep, purchasing, marketing): each becomes an editor in the matching group
