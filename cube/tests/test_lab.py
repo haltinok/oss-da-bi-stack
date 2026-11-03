@@ -83,7 +83,7 @@ def test_with_the_lab_a_manager_gets_the_dashboards_rules_territories_and_all(la
     assert 0 < manager.json()["rows"][0][0] < admin, "a manager's revenue is only their territories' (the admin's is everyone's)"
     for sql, why in (("select count(*) from customers", "customer data is admin-only"), ("select count(*) from inventory_health", "inventory is not for managers")):
         r = query("na_manager", sql)
-        assert r.status_code == 400 and "not available" in r.json()["detail"], why
+        assert r.status_code == 400 and "no access" in r.json()["detail"], why
     schema = requests.get(f"{LAB}/schema", headers=kc("na_manager"), timeout=60).json()["cubes"]
     names = {c["name"] for c in schema}
     assert "internet_sales" in names and "customers" not in names and "inventory_health" not in names

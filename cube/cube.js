@@ -133,13 +133,14 @@ function queryRewrite(query, { securityContext }) {
   const cubes = new Set(members.map((m) => m.split('.')[0]));
 
   // Datasets (admin console): a cube that is in a dataset the person has no grant on. The auth service puts the list in the token; no list, nothing blocked.
-  const blockedCubes = Array.isArray(sc.blocked_cubes) ? sc.blocked_cubes : [];
+  // The proposal agent is a service account with its own fixed list of cubes (below); datasets are for people.
+  const blockedCubes = sc.role !== 'agent' && Array.isArray(sc.blocked_cubes) ? sc.blocked_cubes : [];
   const hidden = [...cubes].find((c) => blockedCubes.includes(c));
   if (hidden) {
     throw forbidden(`'${hidden}' is in a dataset you have no access to`);
   }
   // ... and single fields a dataset holds (profit, say): the same rule for a member named in the query or inside an expression.
-  const blockedMembers = Array.isArray(sc.blocked_members) ? sc.blocked_members : [];
+  const blockedMembers = sc.role !== 'agent' && Array.isArray(sc.blocked_members) ? sc.blocked_members : [];
   const hiddenField = members.find((m) => blockedMembers.includes(m));
   if (hiddenField) {
     throw forbidden(`'${hiddenField}' is in a dataset you have no access to`);
