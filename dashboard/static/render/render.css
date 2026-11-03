@@ -13,10 +13,13 @@
 .kpi .delta { color: var(--warn, #b45309); }
 
 /* Filters: one even grid, label above each select, as on the sales dashboard. */
-.filters.rfilters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: end; gap: 6px 10px; }
+.filters.rfilters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: start; gap: 6px 10px; }         /* labels line up at the top, whatever a control or a note under it adds */
+.filters.rfilters .field.fc:has(.fc-boxes input:nth-of-type(2)) { grid-column: span 2; }                                                     /* a range (from ... and ... to) gets two columns, so its boxes sit side by side */
+.filters.rfilters .field.fc .fc-boxes { flex-wrap: nowrap; }
+.filters.rfilters .field.fc .fc-boxes input[type="date"], .filters.rfilters .field.fc .fc-boxes input[type="number"]:not(.fc-n) { min-width: 0; }
 .filters.rfilters .field { flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; font-size: 11.5px; }
 .filters.rfilters .field select { width: 100%; max-width: none; }
-.filters.rfilters .reset { justify-self: start; align-self: end; }
+.filters.rfilters .reset { justify-self: start; align-self: end; margin-top: 14px; }
 
 .panel-error { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-2); font-size: 13px; }
 .panel-error::before { content: "⚠ "; color: var(--warn, #b45309); }
