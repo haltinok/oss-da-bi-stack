@@ -20,6 +20,29 @@ served from a **governed Cube model** (one definition of each metric, row-level 
 - **Governed data:** a Cube semantic layer on StarRocks, Keycloak sign-in, and row-level security by territory, so everyone sees the same numbers they are allowed to see.
 - **Live data pipelines** from an OLTP simulator through Airflow, ingestr and dbt (plus an independent Kafka/Debezium CDC path into ClickHouse), and an inventory-actions service with a proposal agent.
 
+## A tour
+
+Screenshots from the demo stack's mock data (re-made by `dashboard/cube/tests/pages_gallery.py`).
+
+**Start page** (`/home/`): what you opened lately, what is shared with you, your dashboards, one search.
+
+![The start page: a launcher, pick up where you left off, shared with you, your dashboards](docs/images/pages/home.png)
+
+**Dashboards, folders and sharing:** folders hold dashboards; share with named people or groups, for view or edit.
+
+![The dashboards list with a folder, and the share dialog](docs/images/pages/folders.png)
+![The share dialog: people and groups, view or edit, folder, owner](docs/images/pages/share.png)
+
+**Admin console** (`/admin/`): people and groups over Keycloak, row rules (which territories a person or group sees, with a preview), and datasets (which cubes need a grant, and who has the SQL lab).
+
+![The admin console: people](docs/images/pages/admin-users.png)
+![The admin console: row rules and the preview of what a person will see](docs/images/pages/admin-rules.png)
+![The admin console: datasets and who may use them](docs/images/pages/admin-datasets.png)
+
+**SQL lab** (`/lab/`): SQL over the semantic layer, run as you, so the dashboards' rules apply; saved queries, CSV and Excel export.
+
+![The SQL lab: schema browser, editor, result grid](docs/images/pages/lab.png)
+
 ## Stack
 
 | Layer                | Tool                              |
