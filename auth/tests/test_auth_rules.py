@@ -22,7 +22,7 @@ def load(monkeypatch):
     return importlib.import_module("main")
 
 
-def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",), blocked=(), lab=False, fields=()):
+def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="editor", groups=("Sales",), blocked=(), lab=False, fields=()):
     main = load(monkeypatch)
 
     class Key:
@@ -52,7 +52,7 @@ def cube_territories(r):
 def test_a_rule_replaces_the_seed(monkeypatch):
     r, calls = sign_in(monkeypatch, rules_on=True, rules=["Germany", "France"])
     assert r.status_code == 200 and r.json()["territories"] == cube_territories(r) == ["Germany", "France"]
-    assert calls == [("ayse", "manager", ["Sales"])]                                      # the person and their groups are what the rules are asked about
+    assert calls == [("ayse", "editor", ["Sales"])]                                      # the person and their groups are what the rules are asked about
 
 
 def test_with_no_rule_the_seed_still_decides(monkeypatch):
@@ -70,14 +70,14 @@ def test_a_rules_database_that_cannot_be_read_fails_the_sign_in_instead_of_widen
     assert r.status_code == 503
 
 
-def test_nobody_in_a_territory_role_without_rule_or_seed_gets_in(monkeypatch):
+def test_nobody_with_no_rule_or_seed_gets_no_territories_and_cube_refuses_sales_data(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[], seed=())
-    assert r.status_code == 403
-
-
-def test_inventory_roles_have_no_territories_even_when_a_rule_names_some(monkeypatch):
-    r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"], role="purchasing")
     assert r.status_code == 200 and r.json()["territories"] == []
+
+
+def test_a_rule_gives_an_editor_its_territories(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"], role="editor")
+    assert r.status_code == 200 and r.json()["territories"] == ["Germany"]
 
 
 def test_the_cubes_a_person_may_not_read_travel_in_the_cube_token(monkeypatch):
@@ -96,7 +96,7 @@ def test_the_sql_lab_claim_follows_the_grants_and_admins_always_have_it(monkeypa
     assert r.json()["lab"] is True and REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["lab"] is True
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[], lab=False)
     assert r.json()["lab"] is False
-    r, _ = sign_in(monkeypatch, rules_on=False, role="manager")
+    r, _ = sign_in(monkeypatch, rules_on=False, role="editor")
     assert r.json()["lab"] is False, "without the access database only admins have the lab"
     r, _ = sign_in(monkeypatch, rules_on=False, role="admin")
     assert r.json()["lab"] is True
@@ -106,7 +106,7 @@ def test_a_viewer_is_scoped_by_territory_like_a_rep_and_never_has_the_lab(monkey
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Canada"], role="viewer", lab=False)
     assert r.status_code == 200 and r.json()["role"] == "viewer" and r.json()["territories"] == ["Canada"] and r.json()["lab"] is False
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[], seed=(), role="viewer")
-    assert r.status_code == 403, "like a rep: no territory, no sales data"
+    assert r.status_code == 200 and r.json()["territories"] == [], "no territory: cube.js refuses the sales cubes"
 
 
 def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypatch):

@@ -6,7 +6,7 @@ const { queryRewrite } = require('../cube.js');
 
 const ask = (sc, query) => { try { return { ok: queryRewrite(query, { securityContext: sc }) }; } catch (e) { return { error: e }; } };
 const sales = { measures: ['internet_sales.revenue'], dimensions: ['products.category'] };
-const base = { user_id: 'u', role: 'manager', territories: ['Canada'] };
+const base = { user_id: 'u', role: 'editor', territories: ['Canada'] };
 
 assert(ask(base, sales).ok, 'no blocked_cubes claim: nothing is blocked (an older token)');
 assert(ask({ ...base, blocked_cubes: [] }, sales).ok, 'an empty list blocks nothing');
@@ -31,3 +31,7 @@ console.log('blocked cubes: ok');
   assert(ask({ user_id: 'a', role: 'admin', blocked_members: [] }, { measures: ['internet_sales.gross_profit'] }).ok, 'admins are blocked from nothing');
   console.log('blocked fields: ok');
 }
+
+// the proposal agent works from its own list of cubes: a dataset (here inventory) does not block it
+assert(ask({ user_id: 'agent', role: 'agent', blocked_cubes: ['inventory_health'], blocked_members: ['inventory_health.vendor_name'] }, { measures: ['inventory_health.stockout_items'], dimensions: ['inventory_health.vendor_name'] }).ok, 'the agent is not blocked by datasets');
+console.log('agent: ok');

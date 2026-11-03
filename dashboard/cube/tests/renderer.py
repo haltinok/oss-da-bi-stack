@@ -83,6 +83,7 @@ with sync_playwright() as p:
 
     # ---- the list
     ms.ROLE["role"] = "admin"
+    ms.BUILDER["unreadable_samples"] = ("regional-sales",)
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".dlist a", timeout=20000)
     names = page.locator(".dlist h2").all_inner_texts()
@@ -91,11 +92,13 @@ with sync_playwright() as p:
     check(not page.problems, f"the list loads without console errors {page.problems[:2]}")
     ctx.close()
 
-    ms.ROLE["role"] = "rep"
+    ms.ROLE["role"] = "editor"
+    ms.BUILDER["unreadable_samples"] = ("envanter-sagligi", "pivot-gallery", "sales-drilldown", "sales-overview")        # what this person's datasets leave out
     ctx, page = open_page(browser, "/d/")
     page.wait_for_selector(".dlist a", timeout=20000)
-    check(page.locator(".dlist h2").all_inner_texts() == ["Regional sales"], "a rep is offered only the dashboard made for reps")
+    check(page.locator(".dlist h2").all_inner_texts() == ["Regional sales"], "a person whose datasets leave out most cubes is offered only the dashboards they can open")
     ctx.close()
+    ms.BUILDER["unreadable_samples"] = ("regional-sales",)                # the rest of this file counts four built dashboards
     ms.ROLE["role"] = "admin"
 
     # ---- the way back to the list
@@ -114,7 +117,7 @@ with sync_playwright() as p:
         page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
         check(page.locator(home).is_visible() and page.get_attribute(home, "href") == "/d/", f"an error page still leads back to the list ({why})")
         ctx.close()
-    ms.ROLE["role"] = "purchasing"
+    ms.ROLE["role"] = "editor"
     ctx, page = open_page(browser, "/d/envanter-sagligi")
     settled(page)
     check(page.inner_text(home).strip() == "Panolar" and page.get_attribute(home, "title") == "Panolar", "the link speaks the dashboard's language (Turkish)")
@@ -365,7 +368,7 @@ with sync_playwright() as p:
     ctx.close()
 
     # a dashboard written in Turkish starts in Turkish and can be read in English
-    ms.ROLE["role"] = "purchasing"
+    ms.ROLE["role"] = "editor"
     ctx, page = open_page(browser, "/d/envanter-sagligi")
     settled(page)
     check(pressed(page) == ["tr"] and "₺4.200" in page.inner_text('[data-panel="siparis"]'), "with no choice made, a Turkish dashboard shows TR pressed and Turkish number formats")
@@ -1158,7 +1161,7 @@ with sync_playwright() as p:
         errors, used = _validate(src, catalog)
         assert errors == [], errors
         out = _compile(src, used, catalog)
-        out["roles"] = ["admin", "manager"]
+        out["roles"] = ["admin", "editor"]
         return out
 
     ctx, page = open_page(browser, "/d/sales-overview", routes=[("**/dashboards/sales-overview.json", serve(compiled_with_aggregates()))])
@@ -1506,7 +1509,7 @@ with sync_playwright() as p:
     ctx.close()
 
     # ---- language, currency, theme
-    ms.ROLE["role"] = "purchasing"
+    ms.ROLE["role"] = "editor"
     ctx, page = open_page(browser, "/d/envanter-sagligi")
     settled(page)
     check(not page.problems, f"the Turkish dashboard loads without console errors {page.problems[:2]}")
@@ -1522,11 +1525,6 @@ with sync_playwright() as p:
     xl = zipfile.ZipFile(io.BytesIO(pathlib.Path(dl.value.path()).read_bytes()))
     styles = xl.read("xl/styles.xml").decode()
     check("&quot;₺&quot;#,##0.00" in styles and "&quot;$&quot;" not in styles, "the Excel file formats money with the lira sign")
-    ctx.close()
-    ms.ROLE["role"] = "rep"
-    ctx, page = open_page(browser, "/d/envanter-sagligi")
-    page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
-    check("rolünüz (rep) için kullanılamaz" in page.inner_text("#error"), "the role message is Turkish too")
     ctx.close()
     ms.ROLE["role"] = "admin"
 
@@ -1724,12 +1722,6 @@ with sync_playwright() as p:
     ctx, page = open_page(browser, "/d/nope")
     page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
     check("no dashboard 'nope'" in page.inner_text("#error"), "an unknown id says so")
-    ctx.close()
-    ms.ROLE["role"] = "rep"
-    ctx, page = open_page(browser, "/d/sales-overview")
-    page.wait_for_function("!document.querySelector('#error').hidden", timeout=20000)
-    check("not available for your role (rep)" in page.inner_text("#error") and page.locator(".kpi").count() == 0, "a role the dashboard is not for gets a message, and no data is requested")
-    check(not [u for u in page.queries], "no Cube query is sent")
     ctx.close()
     ms.ROLE["role"] = "admin"
 

@@ -62,7 +62,9 @@ docker compose --profile starrocks up -d postgres keycloak
 postgres/sync-builder.sh        # folders, shares, trash for saved dashboards
 postgres/sync-access.sh         # row rules, datasets and grants
 postgres/sync-lab.sh            # the SQL lab's saved queries
-keycloak/sync-users.sh          # the admin-console client and the groups claim
+keycloak/sync-users.sh          # the admin-console client, the groups claim, the editor/viewer roles and the starter groups
+keycloak/migrate-roles.sh       # ONCE, if people still hold the old roles (manager, rep, purchasing, marketing): each becomes an editor in the matching group
+                                # (after sync-access.sh, which seeds the datasets those groups are granted; before the new auth restarts: it refuses the old roles)
 
 # 3. rebuild and restart everything else (auth, builder, admin, lab, dashboard-cube, cube pick up the new code and settings)
 docker compose --profile starrocks up -d --build

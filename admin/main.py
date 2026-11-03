@@ -42,7 +42,7 @@ from seed import Seed
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
-ROLES = ("admin", "manager", "rep", "viewer", "purchasing", "marketing")        # the dashboard roles a person holds (`agent` belongs to a service account)
+ROLES = ("admin", "editor", "viewer")        # what a person may DO: administer, build and share dashboards, or only view them (what data they may read is the datasets and rules) (`agent` belongs to a service account)
 MIN_PASSWORD = 10
 MAX_USERS = 1000
 
@@ -65,7 +65,6 @@ def kc() -> Keycloak:
 
 _rules: PgRules | None | str = "unset"
 _seed: Seed | None | str = "unset"
-TERRITORY_ROLES = ("admin", "manager", "rep", "viewer")       # the roles the auth service scopes by territory (the others work on inventory)
 
 
 def rules() -> PgRules:
@@ -495,7 +494,7 @@ def preview(username: str, _: Who) -> dict:
     names = [g["name"] for g in shaped["groups"]]
     applying = [r for r in store.list() if (r["type"] == "user" and r["principal"] == username) or (r["type"] == "group" and r["principal"] in names)]
     datasets, grants = store.resolve_input()
-    out = {"username": username, "role": shaped["role"], "groups": names, "applies": shaped["role"] in TERRITORY_ROLES,
+    out = {"username": username, "role": shaped["role"], "groups": names, "applies": True,
            "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying],
            "blocked_cubes": access_resolve.blocked_cubes(datasets, grants, username, shaped["role"] or "", names),
            "blocked_members": access_resolve.blocked_members(datasets, grants, username, shaped["role"] or "", names),

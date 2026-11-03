@@ -25,13 +25,13 @@ TTL = int(os.environ.get("CUBE_JWT_TTL_SECONDS", "900"))
 ISSUER = os.environ["KEYCLOAK_ISSUER"]                 # as it appears in tokens (public URL)
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]             # reachable from this container
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
-ROLE_ORDER = ("admin", "purchasing", "marketing", "manager", "rep", "viewer")
+# A role says what a person may DO in the app (admin: everything; editor: build, change and share dashboards; viewer: only view them). What data they may read is not a role matter:
+# it comes from datasets, grants and row rules (the access schema), which this service puts in the Cube token. The old data roles (manager, rep, purchasing, marketing) are
+# not recognised: a person who still has only one of them must be moved to editor plus a group first (keycloak/migrate-roles.sh), or their sign-in is refused.
+ROLE_ORDER = ("admin", "editor", "viewer")
 # The proposal agent is a Keycloak service account (client-credentials grant) of its own client: it may only
 # ever be the `agent` role, and the dashboard client may never be. Neither can borrow the other's roles.
 AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
-# Only these roles are scoped by territory. purchasing and marketing work on inventory, which is not
-# territory-bound; cube/cube.js keeps them away from the sales cubes.
-TERRITORY_ROLES = ("admin", "manager", "rep", "viewer")   # the agent has none either
 # DATASET picks the schema the territories come from: rls (live) or rls_<dataset> (e.g. rls_250m, built by dbt with
 # mart_suffix _250m). AUTH_REGIONS_TABLE overrides it. Operator-set, not user input, and checked before it reaches SQL.
 DATASET = os.environ.get("DATASET", "live").lower()
@@ -152,10 +152,8 @@ def token(authorization: str = Header(default="")) -> dict:
         except Exception as exc:                                                                  # noqa: BLE001 (any failure to read the rules fails the sign-in)
             raise HTTPException(503, "the access rules cannot be read right now") from exc
     territories: list[str] = []
-    if role in TERRITORY_ROLES:
-        territories = ruled or territories_for(user)                                              # no rule for this person or their groups: the dbt seed decides
-        if not territories:
-            raise HTTPException(403, "no territories assigned")
+    if role != "agent":                                                                              # the agent works on inventory, which is not territory-bound
+        territories = ruled or territories_for(user)                                              # no rule for this person or their groups: the dbt seed decides; none at all is fine (cube.js refuses sales data then)
 
     now = int(time.time())
     cube_token = jwt.encode(

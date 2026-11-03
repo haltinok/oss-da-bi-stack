@@ -1,20 +1,19 @@
 """The semantic layer for people who write dashboards: what the Cube model offers (cubes, measures, dimensions, what each means, which cubes
 join, who may read what), as JSON for the builder's page and as docs/semantic-layer.md (generated: a test keeps it current)."""
-from .validate import INVENTORY_CUBES, PROFIT_MEMBERS, ROLE_CUBES, SUPPLIER_MEMBERS, denied
+from .validate import denied
 
-ROLES = ("admin", "manager", "rep", "viewer", "purchasing", "marketing")
+ROLES = ("admin", "editor", "viewer")
 FACTS = ("internet_sales", "reseller_sales")
 
 
 def _members(name, c, kind, role):
     rows = []
     for m, t in sorted(c[kind].items()):
-        hidden = [r for r in ROLES if denied(r, f"{name}.{m}")]
-        if role and role in hidden:
+        if role and denied(role, f"{name}.{m}"):
             continue
         key = c.get("sort_by", {}).get(m) if kind == "dimensions" else None
         label = f"{c['label_prefix']} {m.replace('_', ' ')}" if c.get("label_prefix") else None
-        rows.append({"name": m, "member": f"{name}.{m}", "type": t, "description": c.get("docs", {}).get(m, ""), "hidden_from": hidden, **({"sort_by": f"{name}.{key}"} if key else {}), **({"label": label} if label else {})})
+        rows.append({"name": m, "member": f"{name}.{m}", "type": t, "description": c.get("docs", {}).get(m, ""), **({"sort_by": f"{name}.{key}"} if key else {}), **({"label": label} if label else {})})
     return rows
 
 
@@ -26,9 +25,8 @@ def catalog_json(catalog, role=None):
         ms, ds = _members(name, c, "measures", role), _members(name, c, "dimensions", role)
         if role and not (ms or ds):
             continue
-        readers = [r for r in ROLES if any(not denied(r, f"{name}.{m}") for m in [*c["measures"], *c["dimensions"]])]
         out.append({"cube": name, **({"extends": c["extends"]} if c.get("extends") else {}), **({"label_prefix": c["label_prefix"]} if c.get("label_prefix") else {}), "description": c.get("description", ""), "joins": sorted(j for j in (c["joins"] or ()) if j in readable),
-                    "fact": name in FACTS, "measures": ms, "dimensions": ds, "readers": readers})
+                    "fact": name in FACTS, "measures": ms, "dimensions": ds})
     return out
 
 
@@ -48,32 +46,26 @@ def generate(catalog):
            "(fast, right for date, territory and channel, wrong for product filters).",
            "- `margin_pct` is in percentage points (0-100). For a percentage in a spec use a `ratio` of `gross_profit` over `revenue` with `format: pct`.",
            "- A text dimension with a natural order (a month's name, a quarter's, a weekday's) **sorts by another dimension** of its cube, declared in the model as `meta: { sort_by: <number field> }` and shown below as \"Sorted by\": tables, pivots, filter lists and slicers order by that field, so months run January to December, not alphabetically.",
-           "- Row-level security: reps and managers only get the territories assigned to them, whatever the dashboard asks for.", "",
+           "- Row-level security: a person only gets the territories assigned to them (by a rule for them or their groups, else the dbt seed), whatever the dashboard asks for.", "",
            "## Who can read what", "",
-           "| Role | Can read |", "|---|---|",
-           "| `admin` | everything |",
-           "| `manager` | the sales facts and their dimensions, profit included; not inventory or customers; own territories only |",
-           f"| `rep` | like a manager but **no profit members** ({', '.join(f'`{m}`' for m in sorted(PROFIT_MEMBERS))}); own territories only |",
-           f"| `purchasing` | inventory data only (`{'`, `'.join(sorted(ROLE_CUBES['purchasing']))}`) |",
-           f"| `marketing` | inventory and offer data (`{'`, `'.join(sorted(ROLE_CUBES['marketing']))}`), **no supplier or order-size members** ({', '.join(f'`{m}`' for m in sorted(SUPPLIER_MEMBERS))}) |",
-           "", "A dashboard that lists a role must only use members that role can read; the validator checks it. Customer data is admin-only.", ""]
+           "Not decided by a role: a person's **role** says what they may *do* (`viewer` views dashboards, `editor` also builds and shares them, `admin` administers), and what data they may read comes from the "
+           "**datasets** and grants and the **row rules** in the admin console (see [admin.md](admin.md)): a cube or single field that sits in a dataset needs a grant, and the sales facts are limited to the person's territories. "
+           "Cube enforces it on every query, so a dashboard that uses something a reader may not read shows Cube's refusal in that panel. Customer data and profit are examples of what a dataset can keep back.", ""]
     for c in catalog_json(catalog):
         out += [f"## `{c['cube']}`" + (" (fact)" if c["fact"] else ""), "", c["description"], ""]
         if c.get("extends"):
             out += [f"A role of `{c['extends']}`: the same calendar table and fields, joined by its own key; the fields are named \"{c['label_prefix']} ...\" in reports (e.g. \"{c['label_prefix']} month name\").", ""]
         if c["joins"]:
             out += [f"Joins: {', '.join(f'`{j}`' for j in c['joins'])}.", ""]
-        out += [f"Readable by: {', '.join(f'`{r}`' for r in c['readers'])}.", ""]
         for title, key in (("Measures", "measures"), ("Dimensions", "dimensions")):
             if not c[key]:
                 continue
-            out += [f"### {title}", "", "| Member | Type | Meaning | Hidden from |", "|---|---|---|---|"]
+            out += [f"### {title}", "", "| Member | Type | Meaning |", "|---|---|---|"]
             for m in c[key]:
-                hidden = ", ".join(f"`{r}`" for r in m["hidden_from"]) or ""
                 meaning = m["description"] + (f" Sorted by `{m['sort_by']}`." if m.get("sort_by") else "")
-                out.append(f"| `{m['member']}` | {m['type']} | {meaning} | {hidden} |")
+                out.append(f"| `{m['member']}` | {m['type']} | {meaning} |")
             out.append("")
     return "\n".join(out).rstrip() + "\n"
 
 
-__all__ = ["catalog_json", "generate", "INVENTORY_CUBES"]
+__all__ = ["catalog_json", "generate"]

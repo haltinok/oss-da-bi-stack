@@ -47,8 +47,10 @@ ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
 AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
-ROLE_ORDER = ("admin", "purchasing", "marketing")
-# What each role may create. The agent creates none: it only drafts proposals.
+# Who may create what is not a Keycloak role any more (a role says what a person may do in the app: admin, editor, viewer): an admin may create anything; otherwise membership of the
+# group "Purchasing" or "Marketing" (the token's `groups` claim) decides. The internal labels below ("purchasing", "marketing") are what the log and the proposals keep.
+ROLE_GROUPS = (("Purchasing", "purchasing"), ("Marketing", "marketing"))
+# What each kind of actor may create. The agent creates none: it only drafts proposals.
 KINDS = {"admin": ("purchase_order", "work_order", "campaign"), "purchasing": ("purchase_order", "work_order"),
          "marketing": ("campaign",), "agent": ()}
 
@@ -101,11 +103,12 @@ def current_user(authorization: str = Header(default="")) -> User:
     if azp == AGENT_CLIENT_ID:
         role = "agent" if "agent" in roles else None     # the agent client can only ever be the agent
     elif azp == CLIENT_ID:
-        role = next((r for r in ROLE_ORDER if r in roles), None)
+        groups = {g.strip("/") for g in claims.get("groups", []) if isinstance(g, str)}
+        role = "admin" if "admin" in roles else next((label for group, label in ROLE_GROUPS if group in groups), None)
     else:
         raise HTTPException(401, "token was not issued to a known client")
     if role is None:
-        raise HTTPException(403, "your role has no inventory actions")
+        raise HTTPException(403, "you have no inventory actions: ask an admin to add you to the Purchasing or Marketing group")
     return User(name=claims["preferred_username"], role=role)
 
 

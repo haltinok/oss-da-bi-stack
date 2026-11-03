@@ -25,8 +25,8 @@ SHOTS = [
     ("treemap.png", "sales-overview", "admin", '[data-panel="mix"]', 1280),
     ("bar.png", "sales-overview", "admin", '[data-panel="top"]', 1280),
     ("table.png", "sales-overview", "admin", '[data-panel="lines"]', 1280),
-    ("text.png", "envanter-sagligi", "purchasing", '[data-panel="not"]', 1280),
-    ("turkish.png", "envanter-sagligi", "purchasing", None, 1100),
+    ("text.png", "envanter-sagligi", "editor", '[data-panel="not"]', 1280),
+    ("turkish.png", "envanter-sagligi", "editor", None, 1100),
     ("pivot.png", "pivot-gallery", "admin", '[data-panel="crosstab"]', 1280),
     ("tabs.png", "pivot-gallery", "admin", "#main", 1280),                                         # the tab bar and the open tab
     ("pivot-groups.png", "pivot-gallery", "admin", '[data-panel="groups"]', 1280, lambda page: page.click("#tab-groups")),
@@ -36,7 +36,7 @@ SHOTS = [
     ("list.png", "", "admin", "#main", 1100, lambda page: (page.click("#group-switch"), page.evaluate("document.querySelector('#builder-host').hidden = true"))),          # the list page: tags, the tag bar, grouped by the first tag
     ("pie.png", "sales-drilldown", "admin", '[data-panel="donut"]', 1280),
     ("drill.png", "sales-drilldown", "admin", '[data-panel="trend"]', 1280, lambda page: page.locator('[data-panel="trend"] .hit').nth(1).click()),
-    ("phone.png", "regional-sales", "rep", None, 390),
+    ("phone.png", "regional-sales", "editor", None, 390),
 ]
 ms.start()
 ms.seed_saved("Quarterly review", "Numbers for the board", tags=["management", "sales"])      # saved dashboards for the list page's picture

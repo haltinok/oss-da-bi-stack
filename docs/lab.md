@@ -25,7 +25,7 @@ The result grid sorts by column, and **Copy** puts it on the clipboard as tab-se
 
 ## Who gets it, and what they see
 - **Who:** admins always. Anyone else needs the **SQL lab** permission on a dataset: in the admin console (**Datasets**), tick *Also give the SQL lab* when adding a person, group or role to a dataset. A person with a grant on any dataset with the lab permission has the lab. Off by default.
-- **What they see:** the same as on a dashboard. A rep cannot reach profit or margin; a manager cannot reach customers or inventory; territories limit every number to the person's regions; cubes in a dataset they have no grant on are refused. This is not re-implemented in the lab:
+- **What they see:** the same as on a dashboard. A field or cube kept back by a dataset (profit, customers, inventory, say) is refused; territories limit every number to the person's regions; cubes in a dataset they have no grant on are refused. This is not re-implemented in the lab:
   the statement is sent to Cube's SQL API signed in as the person with their own Cube token as the password, and Cube applies `queryRewrite` to it like any other query. Warehouse tables behind the cubes are not reachable at all (Cube only knows the cubes).
 - A change to someone's grants or rules shows at their next token (15 minutes by default).
 

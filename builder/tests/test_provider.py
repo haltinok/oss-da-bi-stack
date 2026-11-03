@@ -67,10 +67,6 @@ def test_the_prompt_carries_the_field_reference_and_examples_the_role_can_use():
     assert "The complete field reference" in system and "| `drill` |" in system and "| `by_label` |" in system and "| `sum` |" in system and "pie" in system
     assert "Rules the validator enforces" in system, "the validator's rules are in the prompt too"
     assert "drill:" in system and "type: pie" in system and "locale: tr-TR" in system, "an example with a drill-down and a pie, with Turkish labels"
-    rep = core.system_blocks(CATALOG, "rep")[0]["text"]
-    assert "gross_profit" not in rep and "margin_pct" not in rep and "type: pie" in rep, "a rep's prompt never names a profit member, not even in the rules"
-    mk = core.system_blocks(CATALOG, "marketing")[0]["text"]
-    assert "internet_sales" not in mk and "vendor_name" not in mk and "lead_time_days" not in mk, "a marketing user's prompt names no sales member and no supplier member"
 
 
 def test_the_reference_can_be_left_out_to_save_tokens(monkeypatch):
@@ -80,7 +76,7 @@ def test_the_reference_can_be_left_out_to_save_tokens(monkeypatch):
 
 def test_a_code_fence_around_the_yaml_is_tolerated():
     for wrapped in (f"```yaml\n{GOOD}```", f"```\n{GOOD}\n```", f"  ```yml\n{GOOD}\n```  "):
-        built, problems = core.check_submission(wrapped, CATALOG, "manager")
+        built, problems = core.check_submission(wrapped, CATALOG, "editor")
         assert built is not None, problems
 
 
@@ -119,7 +115,7 @@ def run_against_fake(monkeypatch, **env):
         monkeypatch.setenv(k, v)
     try:
         client = provider.make_client(30)
-        return core.run_build(client, CATALOG, "manager", "regional sales", mode="llm"), FakeAnthropic.seen[0]
+        return core.run_build(client, CATALOG, "editor", "regional sales", mode="llm"), FakeAnthropic.seen[0]
     finally:
         server.shutdown()
 

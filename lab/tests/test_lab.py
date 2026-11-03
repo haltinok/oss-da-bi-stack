@@ -17,7 +17,7 @@ ME = main.Caller(name="ayse", raw="kc-token")
 
 
 def session(**kw):
-    return {"token": "cube-token", "user": "ayse", "role": "manager", "territories": ["Canada"], "blocked_cubes": [], "lab": True, **kw}
+    return {"token": "cube-token", "user": "ayse", "role": "editor", "territories": ["Canada"], "blocked_cubes": [], "lab": True, **kw}
 
 
 @pytest.fixture()
@@ -52,7 +52,7 @@ def test_a_query_runs_as_the_person_with_their_cube_token_and_is_audited(api, mo
     r = client.post("/query", json={"sql": "select n, s from internet_sales;"})
     assert r.status_code == 200 and r.json()["rows"] == [[1, "a"], [2, "b"]] and r.json()["row_count"] == 2 and r.json()["truncated"] is False and r.json()["ms"] >= 0
     assert run.calls == [("ayse", "cube-token", "select n, s from internet_sales", main.ROW_LIMIT)]
-    assert lines[0]["user"] == "ayse" and lines[0]["role"] == "manager" and lines[0]["rows"] == 2 and "select n, s" in lines[0]["sql"]
+    assert lines[0]["user"] == "ayse" and lines[0]["role"] == "editor" and lines[0]["rows"] == 2 and "select n, s" in lines[0]["sql"]
 
 
 def test_without_the_lab_nothing_runs_and_the_page_is_told_why(api, monkeypatch):
@@ -137,16 +137,16 @@ def test_each_role_sees_the_cubes_and_members_it_may_query(api, monkeypatch):
 
     admin = schema_as(role="admin")
     assert {"internet_sales", "customers", "inventory_health", "products"} <= set(admin)
-    manager = schema_as(role="manager")
-    assert "customers" not in manager and "inventory_health" not in manager and "internet_sales" in manager
-    assert "gross_profit" in {m["name"] for m in manager["internet_sales"]["measures"]}
-    rep = schema_as(role="rep")
-    assert "gross_profit" not in {m["name"] for m in rep["internet_sales"]["measures"]} and "margin_pct" not in {m["name"] for m in rep["internet_sales"]["measures"]}
-    buyer = schema_as(role="purchasing")
-    assert set(buyer) == {"inventory_health", "products"} and "vendor_name" in {d["name"] for d in buyer["inventory_health"]["dimensions"]}
-    marketing = schema_as(role="marketing")
-    assert "vendor_name" not in {d["name"] for d in marketing["inventory_health"]["dimensions"]}
-    blocked = schema_as(role="manager", blocked_cubes=["products"])
+    editor = schema_as(role="editor", blocked_cubes=["customers", "inventory_health"])
+    assert "customers" not in editor and "inventory_health" not in editor and "internet_sales" in editor
+    assert "gross_profit" in {m["name"] for m in editor["internet_sales"]["measures"]}
+    limited = schema_as(role="editor", blocked_members=["internet_sales.gross_profit", "internet_sales.margin_pct"])
+    assert "gross_profit" not in {m["name"] for m in limited["internet_sales"]["measures"]} and "margin_pct" not in {m["name"] for m in limited["internet_sales"]["measures"]}
+    buyer = schema_as(role="editor", blocked_cubes=["internet_sales", "reseller_sales", "customers", "territories"])
+    assert {"inventory_health", "products"} <= set(buyer) and "internet_sales" not in buyer and "vendor_name" in {d["name"] for d in buyer["inventory_health"]["dimensions"]}
+    hidden = schema_as(role="editor", blocked_members=["inventory_health.vendor_name"])
+    assert "vendor_name" not in {d["name"] for d in hidden["inventory_health"]["dimensions"]}
+    blocked = schema_as(role="editor", blocked_cubes=["products"])
     assert "products" not in blocked and "products" not in blocked["internet_sales"]["joins"], "a blocked cube is not listed, nor offered as a join"
 
 

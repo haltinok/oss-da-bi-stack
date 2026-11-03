@@ -5,7 +5,6 @@ description: "Cross-tabs of internet sales, one for each way a pivot can be read
 tags: [sales, reference]
 locale: en-US
 currency: USD
-roles: [admin, manager]
 time:
   dimension: dates.full_date
   fiscal_year_start: 7

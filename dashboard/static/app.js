@@ -1168,8 +1168,8 @@ async function loadInventory({ quiet = false } = {}) {
   }
 }
 
-// Which views the signed-in role gets (cube/cube.js enforces the same split): sales for everyone except
-// purchasing and marketing; the reorder list for admin and purchasing; overstock for admin and marketing.
+// Which views the signed-in person gets (cube/cube.js enforces the same split; the token's datasets decide): sales unless the sales cubes are left out for them; the reorder list when
+// inventory and supplier data are open to them; overstock when inventory and the offers are.
 // The dataset switch: shown only when the stack offers more than one. Changing it reloads the page on the other mart
 // (a clean start: filters, caches and in-flight queries all belong to one dataset).
 function initDataset() {
@@ -1220,8 +1220,9 @@ async function initRole() {
   initDataset();
   const role = window.dashboardData.role;
   state.role = role;
-  state.salesView = role !== "purchasing" && role !== "marketing";
-  state.inv = { reorder: role === "admin" || role === "purchasing", overstock: role === "admin" || role === "marketing" };
+  const views = window.dashboardData.views || { sales: true, reorder: role === "admin", overstock: role === "admin" };
+  state.salesView = views.sales;
+  state.inv = { reorder: views.reorder, overstock: views.overstock };
   document.body.classList.toggle("inv-only", !state.salesView);
   if (!state.salesView) $(".brand h1").textContent = "AdventureWorks Inventory";
   $("#inv").hidden = !(state.inv.reorder || state.inv.overstock);

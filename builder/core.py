@@ -17,7 +17,7 @@ from collections.abc import Callable
 import yaml
 from dashspec import catalog as cat
 from dashspec.compile import compile_spec
-from dashspec.validate import ROLE_CUBES, denied, validate
+from dashspec.validate import denied, validate
 
 from builder import provider
 
@@ -30,7 +30,7 @@ MAX_TOKENS = 8000
 MAX_PROMPT = 2000
 MAX_YAML = 30_000
 LINK = re.compile(r"\[([^\]]*)\]\(\s*[a-zA-Z][a-zA-Z0-9+.-]*:[^)]*\)")      # [text](scheme:...) -> text
-ROLES = ("admin", "manager", "rep", "viewer", "purchasing", "marketing")
+ROLES = ("admin", "editor", "viewer")
 
 SPEC_GUIDE = """\
 A dashboard is one YAML file. Top level: spec: 1, id, title, description, tags?, locale (en-US | tr-TR), currency (USD | TRY), time, filters, panels, layout (or tabs).
@@ -202,7 +202,7 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
         return None, ["the file must be a YAML mapping"]
     notes = []
     spec["id"] = "draft"
-    spec["roles"] = [role]                         # the role rules are checked for the user who asked, whatever the model wrote
+    spec.pop("roles", None)                        # a role is not a data rule any more: the catalog this person holds (what datasets leave them) is what the spec is checked against
     theme = spec.get("theme")
     if isinstance(theme, dict) and theme.get("logo") and not str(theme["logo"]).startswith("data:image/"):
         del theme["logo"]                          # a path or an address would make the page load something from elsewhere; an inline image (checked by the validator) loads nothing
@@ -327,12 +327,11 @@ EXAMPLES = {
 
 def examples_for(role: str, lang: str = "en") -> list[str]:
     """Requests that work for this role, in the page's language (the stand-in understands them; they are also good starting points for the model)."""
-    kind = EXAMPLES["inventory"] if role in ("purchasing", "marketing") else EXAMPLES["sales"]
-    return kind.get(lang, kind["en"])
+    return EXAMPLES["sales"].get(lang, EXAMPLES["sales"]["en"])
 
 
 def check_catalog(model_dir: str) -> cat.Catalog:
     return cat.from_model(model_dir)
 
 
-__all__ = ["run_build", "check_submission", "visible_catalog", "without_cubes", "without_members", "catalog_text", "system_blocks", "ROLES", "ROLE_CUBES", "json"]
+__all__ = ["run_build", "check_submission", "visible_catalog", "without_cubes", "without_members", "catalog_text", "system_blocks", "ROLES", "json"]

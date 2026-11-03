@@ -40,3 +40,8 @@ CREATE TABLE IF NOT EXISTS builder.folders (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saved_dashboards_folder ON builder.saved_dashboards (folder_id);
+
+-- Roles say what a person may do now (admin, editor, viewer): a dashboard shared with the old data roles is shared with editors (idempotent: nothing changes once it has run).
+UPDATE builder.saved_dashboards
+   SET shared_roles = ARRAY(SELECT DISTINCT CASE WHEN r IN ('manager', 'rep', 'purchasing', 'marketing') THEN 'editor' ELSE r END FROM unnest(shared_roles) AS r ORDER BY 1)
+ WHERE shared_roles && ARRAY['manager', 'rep', 'purchasing', 'marketing'];

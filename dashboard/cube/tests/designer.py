@@ -106,7 +106,7 @@ def panel_of(page, type_):
 ms.start()
 ms.FAKE["on"] = True
 ms.BENCH["on"] = False
-ms.ROLE["role"] = "manager"
+ms.ROLE["role"] = "editor"
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
     ctx, page = open_page(browser, "/d/")
@@ -402,7 +402,7 @@ with sync_playwright() as p:
     ctx.close()
 
     # ---- a role that may read less: the starting panels use only what it can read
-    for role in ("rep", "purchasing"):
+    for role in ("editor", "editor"):
         ms.ROLE["role"] = role
         ctx, page = open_page(browser, "/d/")
         page.wait_for_selector(".bb-examples .chip", timeout=20000)
@@ -426,12 +426,12 @@ with sync_playwright() as p:
             page.keyboard.press("Escape")
         check(all(ok for _, ok in made), f"as {role}: every type can be added ({', '.join(t for t, ok in made if not ok) or 'all accepted'})")
         new_panels = json.dumps(yaml_of(page)["panels"][-7:])
-        if role == "rep":
+        if role == "editor":
             check(not re.search(r"gross_profit|margin_pct|product_cost", new_panels), "as rep: the new panels hold no profit or cost member")
         else:
             check(all(c in ("inventory_health", "products", "offer_performance") for c in re.findall(r"\b([a-z_]+)\.[a-z_]+\b", new_panels)), "as purchasing: the new panels use only inventory and product members")
         ctx.close()
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
 
     # ---- the Change box and the designer together: with a panel picked, the model's change is about that panel only, and undo takes it back
     ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
@@ -1224,7 +1224,7 @@ with sync_playwright() as p:
     check(len(measures) == n0 + 3 and not page.locator("#dz-msg:not([hidden])").count(), f"Add a measure works three times in a row, with no refusal ({n0} became {len(measures)})")
     check(not any("customers." in str(m) for m in measures[n0:]), f"and none of the new ones is a customers measure ({[list(m.values())[0] if isinstance(m, dict) else m for m in measures[n0:]]})")
     ctx.close()
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
 
     # ---- on a phone the drawer is a sheet at the bottom
     ctx, page = open_page(browser, "/d/draft", width=390, draft=kept_draft)

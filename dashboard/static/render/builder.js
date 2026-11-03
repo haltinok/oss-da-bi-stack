@@ -54,7 +54,7 @@ export const drafts = {
   },
 };
 
-const ROLES = ["admin", "manager", "rep", "viewer", "purchasing", "marketing"];
+const ROLES = ["admin", "editor", "viewer"];
 
 // ------------------------------------------------------------------------------------------------------------------ the service
 export function createBuilderApi({ stack, client, t }) {
@@ -92,6 +92,7 @@ export function createBuilderApi({ stack, client, t }) {
     deleteSaved: (id) => call("DELETE", `/saved/${encodeURIComponent(id)}`),
     savedVersions: (id) => call("GET", `/saved/${encodeURIComponent(id)}/versions`),
     restoreSaved: (id, version) => call("POST", `/saved/${encodeURIComponent(id)}/restore`, { version }),
+    samples: () => call("GET", "/samples"),
     listFolders: () => call("GET", "/folders"),
     createFolder: (name) => call("POST", "/folders", { name }),
     updateFolder: (id, body) => call("PUT", `/folders/${encodeURIComponent(id)}`, body),
@@ -260,7 +261,7 @@ export function mountSemantic(host, api, t, { insert = () => {} } = {}) {
       <span class="sem-desc">${esc(c.description)}</span></summary>
       ${c.joins.length ? `<p class="hint">${esc(t.joins)}: ${c.joins.map((j) => `<code>${esc(j)}</code>`).join(", ")}</p>` : ""}
       <table class="sem-members"><tbody>${[...c.measures.map((m) => ({ ...m, kind: "measure" })), ...c.dimensions.map((m) => ({ ...m, kind: "dimension" }))].map((m) => `<tr data-text="${esc(`${m.member} ${m.description}`.toLowerCase())}">
-        <td><button type="button" class="member" data-member="${esc(m.member)}" title="${m.hidden_from.length ? esc(`not for: ${m.hidden_from.join(", ")}`) : ""}">${esc(m.name)}</button></td>
+        <td><button type="button" class="member" data-member="${esc(m.member)}">${esc(m.name)}</button></td>
         <td class="k">${esc(m.kind)} · ${esc(m.type)}</td><td>${esc(m.description)}</td></tr>`).join("")}</tbody></table></details>`).join("");
   }).catch((e) => { box.textContent = e.message; });
   box.addEventListener("click", async (ev) => {

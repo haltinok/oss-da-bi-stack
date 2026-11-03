@@ -36,7 +36,7 @@ def store(request):
             cur.execute("DELETE FROM builder.folders")
 
 
-def who(name="alice", role="manager", groups=()):
+def who(name="alice", role="editor", groups=()):
     return saved.Who(name=name, role=role, groups=list(groups))
 
 
@@ -46,11 +46,11 @@ def new(store, owner=None, yaml_text=GOOD, **kw):
 
 # ------------------------------------------------------------------------------------------------------------------ the store
 def test_the_store_creates_reads_lists_updates_and_deletes(store):
-    row = store.create(owner="alice", owner_role="manager", title="T", description="D", yaml="a: 1", visibility="private", shared_roles=[], max_saved=5)
+    row = store.create(owner="alice", owner_role="editor", title="T", description="D", yaml="a: 1", visibility="private", shared_roles=[], max_saved=5)
     assert row["version"] == 1 and row["owner"] == "alice" and store.get(row["id"])["yaml"] == "a: 1" and [r["id"] for r in store.list(owner="alice")] == [row["id"]]
     assert store.list(owner="bob") == []
-    up = store.update(row["id"], by="alice", yaml="a: 2", title="T2", visibility="roles", shared_roles=["rep"])
-    assert (up["version"], up["title"], up["visibility"], up["shared_roles"]) == (2, "T2", "roles", ["rep"])
+    up = store.update(row["id"], by="alice", yaml="a: 2", title="T2", visibility="roles", shared_roles=["editor"])
+    assert (up["version"], up["title"], up["visibility"], up["shared_roles"]) == (2, "T2", "roles", ["editor"])
     same = store.update(row["id"], by="alice", yaml="a: 2")
     assert same["version"] == 2, "an unchanged YAML is not a new version"
     assert [v["version"] for v in store.list_versions(row["id"])] == [2, 1] and store.get_version(row["id"], 1)["yaml"] == "a: 1"
@@ -63,71 +63,60 @@ def test_the_store_creates_reads_lists_updates_and_deletes(store):
 
 
 def test_the_store_keeps_the_last_versions_and_enforces_the_limit(store):
-    row = store.create(owner="alice", owner_role="manager", title="T", description="", yaml="v: 1", visibility="private", shared_roles=[], max_saved=2)
+    row = store.create(owner="alice", owner_role="editor", title="T", description="", yaml="v: 1", visibility="private", shared_roles=[], max_saved=2)
     for n in range(2, KEEP_VERSIONS + 5):
         store.update(row["id"], by="alice", yaml=f"v: {n}")
     versions = [v["version"] for v in store.list_versions(row["id"])]
     assert len(versions) == KEEP_VERSIONS and versions[0] == KEEP_VERSIONS + 4 and 1 not in versions
-    store.create(owner="alice", owner_role="manager", title="U", description="", yaml="b: 1", visibility="private", shared_roles=[], max_saved=2)
+    store.create(owner="alice", owner_role="editor", title="U", description="", yaml="b: 1", visibility="private", shared_roles=[], max_saved=2)
     with pytest.raises(Limit):
-        store.create(owner="alice", owner_role="manager", title="V", description="", yaml="c: 1", visibility="private", shared_roles=[], max_saved=2)
-    store.create(owner="bob", owner_role="manager", title="W", description="", yaml="d: 1", visibility="private", shared_roles=[], max_saved=2)
+        store.create(owner="alice", owner_role="editor", title="V", description="", yaml="c: 1", visibility="private", shared_roles=[], max_saved=2)
+    store.create(owner="bob", owner_role="editor", title="W", description="", yaml="d: 1", visibility="private", shared_roles=[], max_saved=2)
 
 
 # ------------------------------------------------------------------------------------------------------------------ the rules
 def test_a_saved_dashboard_is_private_until_it_is_shared(store):
     d = new(store, title="My sales")
-    assert d["visibility"] == "private" and d["title"] == "My sales" and d["mine"] and d["readable_by"] and "rep" in d["readable_by"]
+    assert d["visibility"] == "private" and d["title"] == "My sales" and d["mine"] and d["readable_by"] and "editor" in d["readable_by"]
     assert [x["id"] for x in saved.list_saved(store, CATALOG, who())] == [d["id"]]
-    assert saved.list_saved(store, CATALOG, who("bob", "manager")) == []
+    assert saved.list_saved(store, CATALOG, who("bob", "editor")) == []
     with pytest.raises(saved.SavedError) as e:
-        saved.open_saved(store, CATALOG, who("bob", "manager"), d["id"])
+        saved.open_saved(store, CATALOG, who("bob", "editor"), d["id"])
     assert e.value.status == 404, "the same answer for 'no such' and 'not yours'"
 
 
 def test_sharing_with_roles_and_with_everyone(store):
     d = new(store)
-    saved.update_saved(store, CATALOG, who(), d["id"], visibility="roles", shared_roles=["rep"])
-    assert saved.open_saved(store, CATALOG, who("rita", "rep"), d["id"])["meta"]["owner"] == "alice"
+    saved.update_saved(store, CATALOG, who(), d["id"], visibility="roles", shared_roles=["viewer"])
+    assert saved.open_saved(store, CATALOG, who("rita", "viewer"), d["id"])["meta"]["owner"] == "alice"
     with pytest.raises(saved.SavedError):
-        saved.open_saved(store, CATALOG, who("bob", "manager"), d["id"])
+        saved.open_saved(store, CATALOG, who("bob", "editor"), d["id"])
     saved.update_saved(store, CATALOG, who(), d["id"], visibility="everyone")
-    assert saved.open_saved(store, CATALOG, who("bob", "manager"), d["id"])["spec"]["id"] == "draft"
-    assert saved.open_saved(store, CATALOG, who("bob", "manager"), d["id"])["spec"]["roles"] == ["manager"], "validated and labelled for the opener"
-    assert any(x["id"] == d["id"] for x in saved.list_saved(store, CATALOG, who("bob", "manager")))
+    assert saved.open_saved(store, CATALOG, who("bob", "editor"), d["id"])["spec"]["id"] == "draft"
+    assert saved.open_saved(store, CATALOG, who("bob", "editor"), d["id"])["spec"].get("roles") is None, "validated for the opener"
+    assert any(x["id"] == d["id"] for x in saved.list_saved(store, CATALOG, who("bob", "editor")))
     saved.update_saved(store, CATALOG, who(), d["id"], visibility="private")
-    assert saved.list_saved(store, CATALOG, who("bob", "manager")) == []
-
-
-def test_a_role_that_cannot_read_the_dashboard_is_told_why_and_nothing_leaks(store):
-    d = new(store, yaml_text=PROFIT, visibility="everyone")
-    assert "rep" not in d["readable_by"] and "manager" in d["readable_by"]
-    listing = saved.list_saved(store, CATALOG, who("rita", "rep"))
-    assert listing[0]["readable"] is False and any("rep" in p and "gross_profit" in p for p in listing[0]["problems"])
-    with pytest.raises(saved.SavedError) as e:
-        saved.open_saved(store, CATALOG, who("rita", "rep"), d["id"])
-    assert e.value.status == 422 and any("role 'rep' cannot read 'internet_sales.gross_profit'" in p for p in e.value.problems)
-    assert saved.list_saved(store, CATALOG, who("bob", "manager"))[0]["readable"] is True
+    assert saved.list_saved(store, CATALOG, who("bob", "editor")) == []
 
 
 def test_what_is_saved_must_be_valid_for_the_saver(store):
-    for bad, role in ((PROFIT, "rep"), ("not: [valid", "manager"), ("- a", "manager")):
+    for bad, role in (("not: [valid", "editor"), ("- a", "editor")):
         with pytest.raises(saved.SavedError) as e:
             new(store, who("x", role), yaml_text=bad)
         assert e.value.status == 422
-    assert saved.list_saved(store, CATALOG, who("x", "rep")) == []
+    assert saved.list_saved(store, CATALOG, who("x", "editor")) == []
 
 
 def test_only_the_owner_changes_the_yaml_and_an_admin_can_unshare_and_delete(store):
     d = new(store, visibility="everyone")
     with pytest.raises(saved.SavedError) as e:
-        saved.update_saved(store, CATALOG, who("bob", "manager"), d["id"], yaml_text=GOOD)
+        saved.update_saved(store, CATALOG, who("bob", "editor"), d["id"], yaml_text=GOOD)
     assert e.value.status == 403
     with pytest.raises(saved.SavedError) as e:
-        saved.update_saved(store, CATALOG, who("bob", "manager"), d["id"], visibility="private")
+        saved.update_saved(store, CATALOG, who("bob", "editor"), d["id"], visibility="private")
     assert e.value.status == 403
     with pytest.raises(saved.SavedError) as e:
-        saved.delete_saved(store, who("bob", "manager"), d["id"])
+        saved.delete_saved(store, who("bob", "editor"), d["id"])
     assert e.value.status == 403
     saved.update_saved(store, CATALOG, who("root", "admin"), d["id"], visibility="private")
     assert store.get(d["id"])["visibility"] == "private"
@@ -136,7 +125,7 @@ def test_only_the_owner_changes_the_yaml_and_an_admin_can_unshare_and_delete(sto
     saved.delete_saved(store, who("root", "admin"), d["id"])
     assert store.get(d["id"])["deleted_at"], "deleting moves it to the trash"
     with pytest.raises(saved.SavedError) as gone:
-        saved.open_saved(store, CATALOG, who("alice", "manager"), d["id"])
+        saved.open_saved(store, CATALOG, who("alice", "editor"), d["id"])
     assert gone.value.status == 404
 
 
@@ -151,8 +140,8 @@ def test_versions_are_the_owners_and_can_be_restored(store):
     back = saved.restore(store, CATALOG, who(), d["id"], 1)
     assert back["version"] == 3 and saved.open_saved(store, CATALOG, who(), d["id"])["spec"]["title"] == "Regional sales"
     saved.update_saved(store, CATALOG, who(), d["id"], visibility="everyone")
-    for fn in (lambda: saved.versions(store, who("bob", "manager"), d["id"]), lambda: saved.open_saved(store, CATALOG, who("bob", "manager"), d["id"], version=1),
-               lambda: saved.restore(store, CATALOG, who("bob", "manager"), d["id"], 1)):
+    for fn in (lambda: saved.versions(store, who("bob", "editor"), d["id"]), lambda: saved.open_saved(store, CATALOG, who("bob", "editor"), d["id"], version=1),
+               lambda: saved.restore(store, CATALOG, who("bob", "editor"), d["id"], 1)):
         with pytest.raises(saved.SavedError) as e:
             fn()
         assert e.value.status == 403
@@ -193,12 +182,6 @@ def test_the_list_carries_the_tags_of_the_yaml_for_your_own_and_for_shared_dashb
     assert "Mine" not in listed(store, who("bob")), "tags do not make a private dashboard visible"
 
 
-def test_a_dashboard_your_role_cannot_open_still_shows_its_tags(store):
-    new(store, who("alice", "manager"), yaml_text=PROFIT, title="Profit", visibility="everyone")
-    row = listed(store, who("rep1", "rep"))["Profit"]
-    assert row["readable"] is False and row["tags"] == ["sales"]
-
-
 def test_a_new_version_shows_its_new_tags_and_a_yaml_without_tags_has_none(store):
     row = new(store, who("alice"), title="T")
     assert listed(store, who("alice"))["T"]["tags"] == ["sales", "regional"]
@@ -229,7 +212,7 @@ def test_what_comes_back_cannot_change_the_cache():
 
 def test_tags_survive_the_builder_checks_and_the_guide_explains_them():
     from builder import core
-    built, problems = core.check_submission(GOOD, CATALOG, "rep")
+    built, problems = core.check_submission(GOOD, CATALOG, "editor")
     assert built is not None and built["spec"]["tags"] == ["sales", "regional"] and "tags:" in built["yaml"], problems
     assert "tags?" in core.SPEC_GUIDE and "ONLY when the request names a topic" in core.SPEC_GUIDE
 
@@ -323,11 +306,11 @@ def tabbed_yaml(text=GOOD, split=1):
 
 def test_a_tabbed_dashboard_is_saved_opened_listed_and_shared_like_any_other(store):
     made = new(store, who("alice"), yaml_text=tabbed_yaml(), title="Two pages", visibility="everyone")
-    assert made["readable_by"] and "rep" in made["readable_by"], "the roles that can read its members can open it, tabs or not"
-    opened = saved.open_saved(store, CATALOG, who("bob", "rep"), made["id"])
+    assert made["readable_by"] and "editor" in made["readable_by"], "the roles that can read its members can open it, tabs or not"
+    opened = saved.open_saved(store, CATALOG, who("bob", "editor"), made["id"])
     assert "layout" not in opened["spec"] and [t["id"] for t in opened["spec"]["tabs"]] == ["overview", "details"]
     assert opened["spec"]["tabs"][1]["layout"], "each tab carries its compiled rows"
-    row = next(d for d in saved.list_saved(store, CATALOG, who("bob", "rep")) if d["title"] == "Two pages")
+    row = next(d for d in saved.list_saved(store, CATALOG, who("bob", "editor")) if d["title"] == "Two pages")
     assert row["readable"] is True and row["tags"] == ["sales", "regional"]
     assert "tabs:" in store.get(made["id"])["yaml"]
 
@@ -347,16 +330,6 @@ def test_changing_a_dashboard_to_tabs_is_a_new_version_and_the_old_version_keeps
     assert "tabs" in now and "layout" in old and "tabs" not in old
     back = saved.restore(store, CATALOG, who("alice"), made["id"], 1)
     assert back["version"] == 3 and "layout" in saved.open_saved(store, CATALOG, who("alice"), made["id"])["spec"]
-
-
-def test_a_tabbed_dashboard_with_a_member_a_role_cannot_read_is_refused_for_that_role(store):
-    profit = tabbed_yaml((REPO / "dashboards" / "sales-overview.yml").read_text(), split=2)
-    with pytest.raises(saved.SavedError) as e:
-        new(store, who("rita", "rep"), yaml_text=profit)
-    assert e.value.status == 422 and any("role 'rep' cannot read" in p for p in e.value.problems)
-    made = new(store, who("alice", "manager"), yaml_text=profit, visibility="everyone")
-    assert "rep" not in made["readable_by"]
-    assert saved.list_saved(store, CATALOG, who("rita", "rep"))[0]["readable"] is False
 
 
 def test_tags_and_tabs_together(store):

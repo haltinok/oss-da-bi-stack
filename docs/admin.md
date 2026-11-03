@@ -15,7 +15,8 @@ browser ── Keycloak token ──> admin service (admin/) ── its own clie
 - **Passwords:** *set* one (temporary or permanent), or *reset*: make a temporary password (shown once) or email Keycloak's "update password" link (needs the realm's email settings).
 - **Delete:** needs the username typed. Deactivating is what the page suggests: it keeps their dashboards and history.
 - **Groups:** create, rename, delete, add and remove people. The people in a deleted group stay.
-- **Roles:** one of `admin`, `manager`, `rep`, `viewer`, `purchasing`, `marketing` per person. A **viewer** only views: they can open the sample dashboards their role may open and the saved dashboards shared with them, and nothing that builds, changes or keeps (no describe/Design/Save, no folders, no SQL lab, no console; the builder service refuses their write calls with 403). A viewer reads sales like a rep: only their territories, no profit or margin, no customers, no inventory. A dashboard names the roles that may open it (`roles:`), so add `viewer` to the ones a viewer should see. The role decides which data the person may read (see [dashboards.md](dashboards.md#roles-and-security)).
+- **Roles** say what a person may **do** in the app, nothing about data: `admin` can do anything (create, change and delete dashboards, users, groups, datasets and rules, and use the SQL lab); `editor` builds, changes and shares dashboards (and can use the SQL lab when a dataset gives it to them); `viewer` only views: they can open the sample dashboards they can read and the saved dashboards shared with them, and nothing that builds, changes or keeps (no describe/Design/Save, no folders, no SQL lab, no console; the builder service refuses their write calls with 403). What data a person may read comes from their **groups**, the **datasets** and grants below, and the **row rules**: the same for every role except that an admin reads everything.
+- **Moving from the old roles** (`manager`, `rep`, `purchasing`, `marketing`): run `postgres/sync-access.sh` (it adds the starter datasets and grants for the groups Managers, Reps, Purchasing and Marketing), then `keycloak/migrate-roles.sh` (each person becomes an `editor` in the matching group), then restart the auth service. The old roles are no longer recognised.
 
 ## Row rules
 Which sales territories (regions) a person or a group may see, set on the **Row rules** tab. A person sees the **union** of the rules for them and for their groups. With **no rule at all**
@@ -26,15 +27,15 @@ the dbt seed (`rls.user_regions`) still decides, exactly as before, so nothing c
 - **Follows its owner:** renaming a group renames its rule; deleting a group or a person deletes their rule (a new person with the same username does not inherit it).
 - **Where it takes effect:** the auth service reads the rules when it mints the Cube token (15 minutes by default), and Cube applies the territories as before. A change shows at the person's next token.
 - **Fails closed:** if the rules database cannot be read, the sign-in fails (503) instead of falling back to the seed, which could give someone more than their rule allows.
-- Only the territory dimension exists for now. Inventory roles (`purchasing`, `marketing`) have no territories.
+- Only the territory dimension exists for now. A person with no territory (no rule, not in the seed) gets no sales data: Cube refuses the sales cubes and the territory dimension for them.
 
 ## Datasets
 A **dataset** is a named set of cubes (for example *Sales facts*: `internet_sales`, `reseller_sales`). On the **Datasets** tab you choose its cubes and **who may use it**: people, groups or roles.
 
 - A cube that is in at least one dataset is **governed**: it can be read only by someone with access to a dataset that holds it. Admins always can.
 - A dataset can also hold **single fields** (`cube.field`, for example `internet_sales.gross_profit`): such a field needs a grant even where its cube is open to everybody, which is how profit, supplier data and the like are kept from people who may otherwise use the cube. A grant on a dataset of cubes does not open the fields another dataset holds.
-- A cube in **no** dataset works exactly as before: only the role rules decide. So nothing changes until the first dataset exists.
-- Access can only **narrow** what a role allows. Giving a `rep` access to a dataset does not let them see profit, and giving `purchasing` access to `internet_sales` does not let them query sales.
+- A cube in **no** dataset is open to everybody. The starter datasets (Sales, Profit and margin, Customers, Inventory, Offers, Supplier and order data) keep the cubes and fields the old data roles kept back; grant them to groups to give access.
+- Datasets only open up what they hold: giving someone the Sales dataset does not give them Profit while the Profit dataset is not granted to them, and sales are always limited to their territories.
 - A dataset nobody has access to is readable only by admins: the tab says so, so an empty list is never a surprise.
 - Tick **Also give the SQL lab** when adding someone to a dataset and they get the [SQL lab](lab.md) (admins always have it). The lab adds no access of its own: what they can read in it is what the dashboards let them read.
 - The **preview** on the Row rules tab also lists the cubes datasets keep from a person, and whether they have the SQL lab.

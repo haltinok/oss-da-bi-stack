@@ -36,22 +36,9 @@ class StarRocksQuery extends MysqlQuery {
 // expired or tampered token is always rejected.
 const SECRET = process.env.CUBEJS_API_SECRET;
 const FACT_CUBES = new Set(['internet_sales', 'reseller_sales']);
-const REFERENCE_CUBES = new Set(['products', 'dates', 'ship_dates', 'due_dates']);       // no territory-scoped data (the date roles are the same calendar)
-const PROFIT_MEMBERS = new Set(['gross_profit', 'margin_pct', 'product_cost']);
-// Inventory data is not territory-bound, so it is gated by role instead: purchasing sees the reorder
-// side, marketing sees stock and offers but nothing about suppliers or order sizes; managers and reps see neither.
-const INVENTORY_CUBES = new Set(['inventory_health', 'offer_performance']);
-const ROLE_CUBES = {
-  // the proposal agent (a service account): reads both inventory cubes in full, nothing else, and cannot write
-  agent: new Set(['inventory_health', 'offer_performance', 'products']),
-  purchasing: new Set(['inventory_health', 'products']),
-  marketing: new Set(['inventory_health', 'offer_performance', 'products']),
-};
-const SUPPLIER_MEMBERS = new Set([
-  'vendor_id', 'vendor_name', 'unit_cost', 'lead_time_days', 'replenishment_type',
-  'suggested_order_qty', 'suggested_order_value', 'suggested_order_qty_total', 'suggested_order_value_total',
-  'min_order_qty', 'max_order_qty',
-]);
+// What a person may read is decided by datasets and grants (blocked_cubes, blocked_members in the token), not by their role; the rules below are the ones that need no configuration: the sales facts
+// are limited to the person's territories, and the proposal agent (a service account, not a person) may only read the two inventory cubes and the products.
+const AGENT_CUBES = new Set(['inventory_health', 'offer_performance', 'products']);
 
 // Cube turns a thrown CubejsHandlerError into its HTTP status; any other error is a 500
 // (with a stack trace in dev mode). Messages stay generic: they go back to the caller.
@@ -146,52 +133,36 @@ function queryRewrite(query, { securityContext }) {
   const cubes = new Set(members.map((m) => m.split('.')[0]));
 
   // Datasets (admin console): a cube that is in a dataset the person has no grant on. The auth service puts the list in the token; no list, nothing blocked.
-  const blockedCubes = Array.isArray(sc.blocked_cubes) ? sc.blocked_cubes : [];
+  // The proposal agent is a service account with its own fixed list of cubes (below); datasets are for people.
+  const blockedCubes = sc.role !== 'agent' && Array.isArray(sc.blocked_cubes) ? sc.blocked_cubes : [];
   const hidden = [...cubes].find((c) => blockedCubes.includes(c));
   if (hidden) {
     throw forbidden(`'${hidden}' is in a dataset you have no access to`);
   }
   // ... and single fields a dataset holds (profit, say): the same rule for a member named in the query or inside an expression.
-  const blockedMembers = Array.isArray(sc.blocked_members) ? sc.blocked_members : [];
+  const blockedMembers = sc.role !== 'agent' && Array.isArray(sc.blocked_members) ? sc.blocked_members : [];
   const hiddenField = members.find((m) => blockedMembers.includes(m));
   if (hiddenField) {
     throw forbidden(`'${hiddenField}' is in a dataset you have no access to`);
   }
 
-  // Cost/profit are hidden from reps, whichever cube asks for them.
-  if ((sc.role === 'rep' || sc.role === 'viewer') && members.some((m) => PROFIT_MEMBERS.has(m.split('.')[1]))) {
-    throw forbidden('Profit and margin are not available for your role');
-  }
   if (sc.role === 'admin') {
     return query;
   }
-  if (ROLE_CUBES[sc.role]) {
-    if (![...cubes].every((c) => ROLE_CUBES[sc.role].has(c)) || ![...cubes].some((c) => INVENTORY_CUBES.has(c))) {
+  if (sc.role === 'agent') {
+    // the proposal agent: both inventory cubes in full, nothing else, and it cannot write
+    if (![...cubes].every((c) => AGENT_CUBES.has(c)) || ![...cubes].some((c) => c !== 'products')) {
       throw forbidden('Not available for your role');
-    }
-    if (sc.role === 'marketing' && members.some((m) => m.startsWith('inventory_health.') && SUPPLIER_MEMBERS.has(m.split('.')[1]))) {
-      throw forbidden('Supplier and order data are not available for your role');
     }
     return query;
   }
-  if ([...cubes].some((c) => INVENTORY_CUBES.has(c))) {
-    throw forbidden('Inventory data is not available for your role');
-  }
 
-  const territories = Array.isArray(sc.territories) ? sc.territories : [];
-  if (territories.length === 0) {
-    throw forbidden('No territories assigned');
-  }
-  // Customer-level data (PII) is admin-only.
-  if (cubes.has('customers')) {
-    throw forbidden('Customer data is not available for your role');
-  }
-  const touchesSales = [...cubes].some((c) => FACT_CUBES.has(c));
-  const onlyReference = [...cubes].every((c) => REFERENCE_CUBES.has(c));
-  if (!touchesSales && !cubes.has('territories') && !onlyReference) {
-    throw forbidden('Not available for your role');
-  }
-  if (touchesSales || cubes.has('territories')) {
+  // Row-level security: the sales facts (and the territories themselves) only for the person's own territories.
+  if ([...cubes].some((c) => FACT_CUBES.has(c)) || cubes.has('territories')) {
+    const territories = Array.isArray(sc.territories) ? sc.territories : [];
+    if (territories.length === 0) {
+      throw forbidden('No territories assigned');
+    }
     // ANDed with whatever the client asked for, so asking for another region yields nothing.
     query.filters = [...(query.filters || []),
       { member: 'territories.region', operator: 'equals', values: territories }];

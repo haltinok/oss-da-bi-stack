@@ -136,10 +136,6 @@ BROKEN = [
      ["panel 'margin' (timeseries)", "series[0].ratio.num[2]", "'internet_sales.nope' is not in the Cube model"]),
     ("a series sum without a label", lambda s: panel(s, "trend")["series"].append({"sum": ["internet_sales.revenue", "reseller_sales.revenue"]}),
      ["panel 'trend' (timeseries)", "series[2]", "needs a 'member'"]),
-    ("role rep on a dashboard with profit", lambda s: s.update(roles=["admin", "rep"]),
-     ["panel 'kpis' (kpi)", "role 'rep' cannot read 'internet_sales.gross_profit'", "profit and margin are hidden from reps"]),
-    ("role purchasing on a sales dashboard", lambda s: s.update(roles=["purchasing"]),
-     ["role 'purchasing' cannot read", "is not available to purchasing"]),
     ("drill levels out of order", lambda s: panel(s, "trend").update(drill=["month", "year"], granularity="month", granularities=None) or panel(s, "trend").pop("granularities") or panel(s, "trend").pop("on_click"),
      ["panel 'trend' (timeseries)", "drill:", "must go from coarse to fine"]),
     ("drill whose first level is not the granularity", lambda s: panel(s, "trend").update(drill=["year", "month"]),
@@ -185,7 +181,6 @@ BROKEN = [
      ["panel 'stock' (kpi)", "'inventory_health.stockout_items' cannot be combined with 'territories.region'", "filter 'region'",
       "ignore_filters"]),
     ("spec version", lambda s: s.update(spec=2), ["dashboard", "spec:", "was expected"]),
-    ("unknown role", lambda s: s.update(roles=["boss"]), ["dashboard", "roles[0]", "'boss' is not one of"]),
     ("bad currency", lambda s: s.update(currency="usd"), ["dashboard", "currency:", "does not match"]),
 ]
 
@@ -270,7 +265,7 @@ def test_build_writes_each_dashboard_and_an_index(tmp_path, capsys):
     assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
     assert json.loads((out / "sales-overview.json").read_text())["id"] == "sales-overview"
     index = json.loads((out / "index.json").read_text())
-    assert index == [{"id": "sales-overview", "title": "Sales overview", "description": GOOD["description"], "roles": ["admin", "manager"], "tags": GOOD["tags"]}]
+    assert index == [{"id": "sales-overview", "title": "Sales overview", "description": GOOD["description"], "roles": [], "tags": GOOD["tags"]}]
     (out / "gone.json").write_text("{}")                       # a dashboard that no longer exists is not served
     assert main(["build", "--dir", str(src), "--out", str(out)]) == 0
     assert not (out / "gone.json").exists()
@@ -352,32 +347,6 @@ def test_cli_lint_needs_a_cube(tmp_path, capsys, monkeypatch):
     with pytest.raises(SystemExit) as e:
         main(["lint", str(REPO / "dashboards" / "sales-overview.yml")])
     assert "CUBE_TOKEN" in str(e.value)
-
-
-def test_role_rules_for_inventory_dashboards():
-    spec = yaml.safe_load((REPO / "dashboards" / "envanter-sagligi.yml").read_text())
-    assert validate(copy.deepcopy(spec), CATALOG)[0] == []
-    spec["roles"] = ["admin", "purchasing", "marketing"]
-    text = "\n".join(validate(spec, CATALOG)[0])
-    assert "role 'marketing' cannot read 'inventory_health.suggested_order_value_total'" in text and "supplier and order data" in text
-    spec["roles"] = ["manager"]
-    assert "role 'manager' cannot read 'inventory_health." in "\n".join(validate(spec, CATALOG)[0])
-
-
-def test_role_rules_match_cube_js():
-    """validate.py mirrors the role rules of cube/cube.js; if one changes, so must the other."""
-    import re
-
-    import dashspec.validate as v
-    js = (REPO / "cube" / "cube.js").read_text()
-
-    def js_set(name):
-        return set(re.findall(r"'([a-z_]+)'", re.search(rf"const {name} = new Set\(\[(.*?)\]\)", js, re.S).group(1)))
-    assert js_set("PROFIT_MEMBERS") == v.PROFIT_MEMBERS
-    assert js_set("INVENTORY_CUBES") == v.INVENTORY_CUBES
-    assert js_set("SUPPLIER_MEMBERS") == v.SUPPLIER_MEMBERS
-    for role, cubes in v.ROLE_CUBES.items():
-        assert set(re.findall(r"'([a-z_]+)'", re.search(rf"{role}: new Set\(\[(.*?)\]\)", js).group(1))) == cubes
 
 
 def test_a_rep_dashboard_uses_no_profit_member():
@@ -478,21 +447,6 @@ def test_every_member_of_the_cube_model_has_a_description():
 def test_the_semantic_layer_page_is_generated_from_the_model_and_current():
     from dashspec.semantic import generate
     assert (REPO / "docs" / "semantic-layer.md").read_text() == generate(CATALOG), "run scripts/dashspec semantic"
-
-
-def test_catalog_json_hides_what_a_role_cannot_read():
-    from dashspec.semantic import catalog_json
-    rep = {c["cube"]: c for c in catalog_json(CATALOG, "rep")}
-    assert "inventory_health" not in rep and "customers" not in rep
-    assert "gross_profit" not in {m["name"] for m in rep["internet_sales"]["measures"]}
-    assert "revenue" in {m["name"] for m in rep["internet_sales"]["measures"]}
-    mk = {c["cube"]: c for c in catalog_json(CATALOG, "marketing")}
-    assert set(mk) == {"inventory_health", "offer_performance", "products"}
-    assert "vendor_name" not in {d["name"] for d in mk["inventory_health"]["dimensions"]}
-    admin = {c["cube"]: c for c in catalog_json(CATALOG)}
-    gp = next(m for m in admin["internet_sales"]["measures"] if m["name"] == "gross_profit")
-    assert gp["hidden_from"] == ["rep", "viewer", "purchasing", "marketing"] and gp["description"]
-    assert admin["internet_sales"]["joins"] == ["customers", "dates", "due_dates", "products", "ship_dates", "territories"] and admin["internet_sales"]["fact"]
 
 
 def test_a_drill_down_a_pie_and_the_new_styles_are_valid_and_compile_with_cube_joins():
@@ -623,8 +577,6 @@ PIVOT_BROKEN = [
     ("a click on a filter that does not exist", with_pivot(on_click={"set_filter": ["ghost"]}), ["panel 'xtab'", "on_click.set_filter:", "no filter with id 'ghost'"]),
     ("a measure cube with no join to the dimension", with_pivot(measures=["inventory_health.stockout_items"], on_click={"set_filter": ["category"]}),
      ["panel 'xtab' (pivot)", "'inventory_health.stockout_items' cannot be combined with"]),
-    ("a profit measure for a rep", lambda s: (with_pivot(measures=["internet_sales.margin_pct"])(s), s.update(roles=["rep"])),
-     ["panel 'xtab' (pivot)", "role 'rep' cannot read 'internet_sales.margin_pct'"]),
     ("an unknown field", with_pivot(shade="yes"), ["panel 'xtab'", "'shade' is not a field of a pivot panel"]),
     ("a granularity on a dimension that is not a time dimension", with_pivot(columns={"member": "dates.fiscal_year", "granularity": "month"}),
      ["panel 'xtab' (pivot)", "columns.member:", "is a number dimension, a time dimension is needed"]),
@@ -799,11 +751,7 @@ def test_a_broken_tab_setup_fails_with_a_message_that_names_the_place(name, muta
         assert needle in text, f"{name}: {needle!r} missing from:\n{text}"
 
 
-def test_the_panels_are_still_checked_on_a_tab_roles_included():
-    spec = tabbed(2)
-    spec["roles"] = ["admin", "rep"]                    # a rep may not read profit: the KPI row has it, whichever tab it is on
-    text = "\n".join(validate(spec, CATALOG)[0])
-    assert "panel 'kpis' (kpi): role 'rep' cannot read" in text
+def test_the_panels_are_still_checked_on_a_tab():
     spec = tabbed(2)
     panel(spec, "top")["by"] = "products.nme"
     assert "panel 'top' (bar): by: 'products.nme' is not in the Cube model" in "\n".join(validate(spec, CATALOG)[0])
@@ -1649,8 +1597,6 @@ CALC_BROKEN = [
      ["panel 'bad' (table): columns[1]: 'calc.nope' is not in the Cube model (calculations: calc.avg_price, calc.tax)"]),
     ("a calculation that cannot join to a column", lambda s: s["panels"].append({"id": "bad", "type": "table", "columns": ["internet_sales.order_number", "calc.avg_price"]}) or s["layout"].append([{"bad": 12}]),
      ["panel 'bad' (table): 'reseller_sales.revenue' cannot be combined with 'internet_sales.order_number'"]),
-    ("a calculation of what the role cannot read", lambda s: (s.update(roles=["rep"]), s["calculations"][0].update(formula="internet_sales.gross_profit / internet_sales.revenue")) and None,
-     ["role 'rep' cannot read 'internet_sales.gross_profit' (profit and margin are hidden from reps)"]),
 ]
 
 
@@ -1719,17 +1665,13 @@ def test_allowed_values_limit_every_panel_the_filter_applies_to_even_with_nothin
     assert active_filters(spec, {}, spec["panels"][1]) == []
 
 
-# ---- the viewer role: reads sales like a rep (no profit, no customers, no inventory) and nothing more
-def test_a_viewer_cannot_read_profit_customers_or_inventory():
-    from dashspec.validate import denied
-    assert denied("viewer", "internet_sales.gross_profit") and "viewers" in denied("viewer", "internet_sales.margin_pct")
-    assert denied("viewer", "customers.email_address") and denied("viewer", "inventory_health.on_hand")
-    assert denied("viewer", "internet_sales.revenue") is None and denied("viewer", "products.category") is None
-
-
-def test_the_viewer_is_a_role_a_dashboard_can_name_and_its_profit_rule_is_checked():
-    errors = run(lambda s: s.update(roles=["viewer"]))                                     # the sales overview shows profit
-    assert errors and all("viewer" in e for e in errors) and any("gross_profit" in e and "hidden from viewers" in e for e in errors)
-    assert not any("is not one of" in e or "enum" in e for e in errors), "viewer is a valid role in the schema"
-    spec = yaml.safe_load((REPO / "dashboards" / "regional-sales.yml").read_text())        # no profit: a viewer may open it
-    assert "viewer" in spec["roles"] and validate(spec, CATALOG)[0] == []
+def test_the_starter_datasets_name_only_cubes_and_fields_the_model_has():
+    """postgres/init/08_access_defaults.sql seeds datasets for the groups; a typo there would silently govern nothing (or fail the admin console's own check)."""
+    import re
+    sql = (REPO / "postgres" / "init" / "08_access_defaults.sql").read_text()
+    named = set(re.findall(r"'([a-z_.]+)'", " ".join(re.findall(r"ARRAY\[[^\]]*\]", sql))))
+    fields = {m for m in named if "." in m}
+    bare = {m for m in named if "." not in m}
+    members = {f"{c}.{m}" for c, v in CATALOG.cubes.items() for m in [*v["measures"], *v["dimensions"]]}
+    assert fields and fields <= members, sorted(fields - members)
+    assert {"internet_sales", "inventory_health", "customers", "offer_performance", "territories"} <= bare and bare <= set(CATALOG.cubes), sorted(bare - set(CATALOG.cubes))

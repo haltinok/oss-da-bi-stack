@@ -380,7 +380,7 @@ docker compose --profile starrocks up -d --build
 # unpause the pipeline once (new DAGs start paused), plus the simulators if they are not running:
 docker compose exec airflow-scheduler airflow dags unpause postgres_active_to_starrocks
 open http://localhost:8250        # users: admin, na_manager, de_rep -- password: TEST_USER_PASSWORD in .env
-                                  # buyer (purchasing) and marketer (marketing) get the inventory view only
+                                  # buyer (group Purchasing) and marketer (group Marketing) get the inventory view only
 ```
 
 An older `.env` needs the secrets this profile uses (`CUBEJS_API_SECRET`, `CUBE_DB_PASSWORD`, `AUTH_DB_PASSWORD`,
@@ -425,18 +425,18 @@ To develop against a scaled tier without touching the live schemas:
 (`mart_suffix` now suffixes the stage, mart, rls and default schemas).
 
 **Inventory access** (Cube cubes `inventory_health` and `offer_performance`; not territory-bound, so gated by role in
-`cube/cube.js`): `admin` sees everything; `purchasing` (user `buyer`) sees `inventory_health` including vendors,
-unit costs and order quantities, but no sales, offers or customers; `marketing` (user `marketer`) sees stock,
+`cube/cube.js` and the starter datasets): `admin` sees everything; the group Purchasing (user `buyer`) sees `inventory_health` including vendors,
+unit costs and order quantities, but no sales, offers or customers; the group Marketing (user `marketer`) sees stock,
 excess and discount tiers plus offer performance, but no vendor, unit cost, lead time or order-size member,
-whether asked for, filtered on or only used to order the result; managers and reps see no inventory at all,
+whether asked for, filtered on or only used to order the result; the Managers and Reps groups see no inventory at all,
 even joined to a sales cube. A Keycloak that already imported the realm keeps its old users: run
 `keycloak/sync-users.sh` to add the two roles and users. `offer_performance` is descriptive evidence (units per
 day during an offer versus the 28 days before): no control group, and one offer with a tiny baseline can show an
 enormous lift, so treat it as "what happened", not "what the discount did".
 
 **Inventory panels** (dashboard, below the sales charts; a **Drafted proposals** card above the lists shows what the agent drafted for the role, each with its rationale, the numbers behind it, editable quantities or discount and a tick per line, and Approve (the action endpoint with `proposal_id`: one transaction creates the rows, logs it and marks the proposal approved) or Dismiss): three KPI tiles (items at stockout risk, suggested
-reorders, capital tied in excess stock), a reorder list (admin, purchasing) and an overstock / dead-stock list with
-a suggested discount and what past offers of that depth did (admin, marketing), each with an Excel export. They
+reorders, capital tied in excess stock), a reorder list (admin, Purchasing group) and an overstock / dead-stock list with
+a suggested discount and what past offers of that depth did (admin, Marketing group), each with an Excel export. They
 ignore every sales filter and a filter change never re-queries them; they load with the page, on Refresh and on
 the 30-second poll (re-drawn only if the data changed). `buyer` and `marketer` see the inventory view only and
 the page never sends them a sales query. The "past offers" figure is the median lift (units per day during an
@@ -445,8 +445,8 @@ offers it can be large.
 
 **Inventory actions service** (`actions/`, port `ACTIONS_PORT`, profile `starrocks`; Phase 2 of
 `docs/inventory-actions-plan.md`). An approved proposal becomes a row in the simulated ERP:
-`POST /actions/purchase-orders` and `/actions/work-orders` (purchasing, admin) create approved purchase orders
-(one per vendor) and work orders; `POST /actions/campaigns` (marketing, admin) creates a special offer;
+`POST /actions/purchase-orders` and `/actions/work-orders` (Purchasing group, admin) create approved purchase orders
+(one per vendor) and work orders; `POST /actions/campaigns` (Marketing group, admin) creates a special offer;
 `GET /actions/log` lists the role's own kinds. Each call carries the user's Keycloak token. Nothing but the
 product ids and the edits a role may make (a quantity, a discount, a length) comes from the client: vendor,
 unit price, lead time and the product's state are read from the current `mart.inventory_health` row, and a

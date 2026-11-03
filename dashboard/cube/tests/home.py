@@ -46,12 +46,12 @@ ms.BENCH["on"] = False
 with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
     ms.reset_saved()
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.USER["name"] = "alice"
     ms.USER["groups"] = []
-    mine_id = ms.seed_saved("Alice sales", "regional", owner="alice", role="manager")["id"]
-    theirs_id = ms.seed_saved("Bob's report", "shared by bob", owner="bob", role="manager", visibility="everyone")["id"]
-    built_id = next(d["id"] for d in INDEX if not d.get("roles") or "manager" in d["roles"])
+    mine_id = ms.seed_saved("Alice sales", "regional", owner="alice", role="editor")["id"]
+    theirs_id = ms.seed_saved("Bob's report", "shared by bob", owner="bob", role="editor", visibility="everyone")["id"]
+    built_id = next(d["id"] for d in INDEX if not d.get("roles") or "editor" in d["roles"])
 
     # ---- the launcher, the lists, and what was opened lately (a gone dashboard is left out)
     now = 1_700_000_000_000
@@ -102,7 +102,7 @@ with sync_playwright() as p:
     ctx.close()
 
     # ---- Turkish
-    ms.ROLE["role"] = "manager"
+    ms.ROLE["role"] = "editor"
     ms.USER["name"] = "alice"
     ctx, page = open_page(browser, lang="tr")
     page.wait_for_selector(".home-sec")

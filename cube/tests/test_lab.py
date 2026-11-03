@@ -34,9 +34,9 @@ def psql(sql):
 
 @pytest.fixture()
 def lab_for_managers():
-    """A dataset on an inventory cube (nobody's dashboards use it) whose grant gives the manager role the SQL lab; removed afterwards."""
+    """A dataset on an inventory cube (nobody's dashboards use it) whose grant gives the editor role the SQL lab; removed afterwards."""
     psql("insert into access.dataset (id, name, cubes, updated_by) values ('ci-lab', 'CI lab', array['offer_performance'], 'ci') on conflict (id) do nothing")
-    psql("insert into access.\"grant\" (object_type, object_id, principal_type, principal, permission, granted_by) values ('dataset', 'ci-lab', 'role', 'manager', 'lab', 'ci') on conflict do nothing")
+    psql("insert into access.\"grant\" (object_type, object_id, principal_type, principal, permission, granted_by) values ('dataset', 'ci-lab', 'role', 'editor', 'lab', 'ci') on conflict do nothing")
     try:
         yield
     finally:
@@ -48,7 +48,7 @@ def test_the_lab_is_off_for_someone_who_was_not_given_it():
     assert requests.get(f"{LAB}/healthz", timeout=10).status_code == 200
     assert requests.post(f"{LAB}/query", json={"sql": "select 1"}, timeout=10).status_code == 401
     info = requests.get(f"{LAB}/info", headers=kc("na_manager"), timeout=60).json()
-    assert info["lab"] is False and info["role"] == "manager"
+    assert info["lab"] is False and info["role"] == "editor"
     r = query("na_manager", REVENUE)
     assert r.status_code == 403 and "SQL lab" in r.json()["detail"]
 
@@ -83,16 +83,16 @@ def test_with_the_lab_a_manager_gets_the_dashboards_rules_territories_and_all(la
     assert 0 < manager.json()["rows"][0][0] < admin, "a manager's revenue is only their territories' (the admin's is everyone's)"
     for sql, why in (("select count(*) from customers", "customer data is admin-only"), ("select count(*) from inventory_health", "inventory is not for managers")):
         r = query("na_manager", sql)
-        assert r.status_code == 400 and "not available" in r.json()["detail"], why
+        assert r.status_code == 400 and "no access" in r.json()["detail"], why
     schema = requests.get(f"{LAB}/schema", headers=kc("na_manager"), timeout=60).json()["cubes"]
     names = {c["name"] for c in schema}
     assert "internet_sales" in names and "customers" not in names and "inventory_health" not in names
 
 
 def test_a_rep_cannot_reach_profit_in_the_lab_either(lab_for_managers):
-    psql("insert into access.\"grant\" (object_type, object_id, principal_type, principal, permission, granted_by) values ('dataset', 'ci-lab', 'role', 'rep', 'lab', 'ci') on conflict do nothing")
+    psql("insert into access.\"grant\" (object_type, object_id, principal_type, principal, permission, granted_by) values ('dataset', 'ci-lab', 'group', 'Reps', 'lab', 'ci') on conflict do nothing")
     r = query("de_rep", "select measure(gross_profit) from internet_sales")
-    assert r.status_code == 400 and "Profit" in r.json()["detail"]
+    assert r.status_code == 400 and "dataset" in r.json()["detail"]
     assert query("de_rep", REVENUE).status_code == 200
     cubes = {c["name"]: c for c in requests.get(f"{LAB}/schema", headers=kc("de_rep"), timeout=60).json()["cubes"]}
     assert "gross_profit" not in {m["name"] for m in cubes["internet_sales"]["measures"]}
