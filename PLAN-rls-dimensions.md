@@ -1,6 +1,6 @@
 # Plan: row-level rules on more than territory
 
-Status: phases 1 and 2 built (2026-11-03, this PR); phase 3 built (2026-11-03): the second dimension is **product category** (`products.category`, instead of channel), `when_empty: deny`, on the sales cubes; starter rules give Managers and Reps every category (postgres/init/09_rls_defaults.sql). Today `territory` is the only dimension, hard-coded in four places; this plan makes the dimension a configured thing.
+Status: **all three phases done.** Phases 1 and 2 built (2026-11-03, #167); phase 3 built (#168) (2026-11-03): the second dimension is **product category** (`products.category`, instead of channel), `when_empty: deny`, on the sales cubes; starter rules give Managers and Reps every category (postgres/init/09_rls_defaults.sql). Before this plan `territory` was the only dimension, hard-coded in four places; the plan made the dimension a configured thing (`cube/rls_dimensions.json`).
 
 ## Where territory is hard-coded now
 | Place | What |
