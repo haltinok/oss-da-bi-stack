@@ -1,6 +1,6 @@
 # Plan 1: totals row on the table panel
 
-Status: **proposed**. One PR per phase, same style as [`docs/dashboard-spec-plan.md`](docs/dashboard-spec-plan.md). Order of the three plans: 1 (this) → 2 (pivot, [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md)) → 3 (tabs, [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md)). The pivot reuses the totals query built here.
+Status: **done** (the table's total row shipped in #78). One PR per phase, same style as [`docs/dashboard-spec-plan.md`](docs/dashboard-spec-plan.md). Order of the three plans: 1 (this) → 2 (pivot, [`PLAN-pivot-panel.md`](PLAN-pivot-panel.md)) → 3 (tabs, [`PLAN-dashboard-tabs.md`](PLAN-dashboard-tabs.md)). The pivot reuses the totals query built here.
 
 ## Goal
 A `table` panel can show a **total row** (footer or header) for its measure columns. The total is the true total of everything the filters select, not the sum of the rows on screen.

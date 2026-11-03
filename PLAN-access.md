@@ -1,6 +1,6 @@
 # Plan: users, access, folders, a home page and a SQL lab
 
-Status: **draft, written 2026-11-02, nothing built.** Phases 1 to 5, one PR each (phase 5 in three). Open questions for the product owner are at the end; phase 1 does not depend on any of them.
+Status: **all phases done** (1 to 4, and 5a-5c: #154 to #159; written 2026-11-02). Phases 1 to 5, one PR each (phase 5 in three). Open questions for the product owner are at the end; phase 1 does not depend on any of them.
 
 ## Why
 The dashboard side is finished: a person can describe, write or click a dashboard into existence. What is missing is the layer around it that lets a *team* use it:

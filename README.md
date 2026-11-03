@@ -15,9 +15,9 @@ served from a **governed Cube model** (one definition of each metric, row-level 
 - **Tabbed, interactive dashboards:** tabs, pivot tables with totals and heat, time charts with drill-down, cross-filtering by clicking a chart, Excel export of any panel.
 - **Save, version and share** dashboards with roles, named people or groups (view or edit); keep them in **folders**, with a trash; hand them over. Each viewer's role decides what they can read.
 - **A start page** (`/home/`) with what you opened lately, what is shared with you, and one search over it all.
-- **Run it as a team:** an **admin console** (`/admin/`) for people, groups and roles over Keycloak, **row rules** (which territories a person or group sees) and **datasets** (which cubes need a grant).
+- **Run it as a team:** an **admin console** (`/admin/`) for people, groups and roles over Keycloak, **row rules** (which territories and product categories a person or group sees) and **datasets** (which cubes need a grant).
 - **Ask in SQL:** a **SQL lab** (`/lab/`) for analysts, with saved and shared queries and CSV/Excel export, running through Cube as the signed-in person so the dashboards' rules apply.
-- **Governed data:** a Cube semantic layer on StarRocks, Keycloak sign-in, and row-level security by territory, so everyone sees the same numbers they are allowed to see.
+- **Governed data:** a Cube semantic layer on StarRocks, Keycloak sign-in, and row-level security by territory and product category, so everyone sees the same numbers they are allowed to see.
 - **Live data pipelines** from an OLTP simulator through Airflow, ingestr and dbt (plus an independent Kafka/Debezium CDC path into ClickHouse), and an inventory-actions service with a proposal agent.
 
 ## A tour
@@ -33,7 +33,7 @@ Screenshots from the demo stack's mock data (re-made by `dashboard/cube/tests/pa
 ![The dashboards list with a folder, and the share dialog](docs/images/pages/folders.png)
 ![The share dialog: people and groups, view or edit, folder, owner](docs/images/pages/share.png)
 
-**Admin console** (`/admin/`): people and groups over Keycloak, row rules (which territories a person or group sees, with a preview), and datasets (which cubes need a grant, and who has the SQL lab).
+**Admin console** (`/admin/`): people and groups over Keycloak, row rules (which territories and product categories a person or group sees, with a preview), and datasets (which cubes need a grant, and who has the SQL lab).
 
 ![The admin console: people](docs/images/pages/admin-users.png)
 ![The admin console: row rules and the preview of what a person will see](docs/images/pages/admin-rules.png)
@@ -308,7 +308,7 @@ live feed of the latest orders. It is served by the `dashboard-cube` service
 (http://localhost:8250) and reads everything through Cube.
 
 - **Sign-in and row-level security:** users sign in through Keycloak; each sees only their own
-  territories, and roles that may not see profit get no profit or margin figures (the tiles, columns
+  territories and product categories, and roles that may not see profit get no profit or margin figures (the tiles, columns
   and chart are hidden, not zeroed).
 - **Live:** the page polls every 30 s. New orders appear within one pipeline cycle plus about a
   minute (see *Freshness* above).
@@ -371,7 +371,7 @@ postgres_active --(ingestr, every 5 min, Airflow)--> StarRocks raw --(dbt-starro
 |---|---|
 | `starrocks-fe`, `starrocks-be`, `starrocks-init` | StarRocks (separate frontend and backend; the init job registers the backend by hostname, creates the schemas and the read-only users) |
 | `cube`, `cubestore`, `cubestore-worker` | the semantic layer (`cube/`), pre-aggregations, and row-level security in `cube/cube.js` |
-| `keycloak`, `auth` | sign-in (demo realm in `keycloak/`; the realm is still named `spike`, renaming it would orphan existing Keycloak volumes), and the service (`auth/`) that turns a Keycloak login into a 15-minute Cube token carrying the user's territories |
+| `keycloak`, `auth` | sign-in (demo realm in `keycloak/`; the realm is still named `spike`, renaming it would orphan existing Keycloak volumes), and the service (`auth/`) that turns a Keycloak login into a 15-minute Cube token carrying the user's row rules (territories, product categories) |
 | `admin`, `lab` | the admin console's service (people, groups, row rules, datasets) and the SQL lab's service (see [docs/admin.md](docs/admin.md), [docs/lab.md](docs/lab.md)); `lab` needs `cube` restarted for its SQL API |
 | `dashboard-cube` | the same dashboard UI as `dashboard`, with the Cube data source injected in front of `app.js` |
 
