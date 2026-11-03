@@ -22,7 +22,7 @@ def load(monkeypatch):
     return importlib.import_module("main")
 
 
-def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",), blocked=(), lab=False):
+def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manager", groups=("Sales",), blocked=(), lab=False, fields=()):
     main = load(monkeypatch)
 
     class Key:
@@ -38,7 +38,7 @@ def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="manage
         calls.append((user, role_, list(grps)))
         if isinstance(rules, Exception):
             raise rules
-        return list(rules or []), list(blocked), lab
+        return list(rules or []), list(blocked), lab, list(fields)
 
     monkeypatch.setattr(main, "read_access", fake_access)
     r = TestClient(main.app).post("/token", headers={"Authorization": "Bearer t"})
@@ -107,3 +107,11 @@ def test_a_viewer_is_scoped_by_territory_like_a_rep_and_never_has_the_lab(monkey
     assert r.status_code == 200 and r.json()["role"] == "viewer" and r.json()["territories"] == ["Canada"] and r.json()["lab"] is False
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[], seed=(), role="viewer")
     assert r.status_code == 403, "like a rep: no territory, no sales data"
+
+
+def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypatch):
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], fields=["internet_sales.gross_profit"])
+    assert r.json()["blocked_members"] == ["internet_sales.gross_profit"]
+    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["blocked_members"] == ["internet_sales.gross_profit"]
+    r, _ = sign_in(monkeypatch, rules_on=False, fields=["x.y"])
+    assert r.json()["blocked_members"] == []

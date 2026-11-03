@@ -6,22 +6,36 @@ A cube in no dataset is not governed. So without datasets nothing is blocked, an
 from __future__ import annotations
 
 
-def blocked_cubes(datasets: list[dict], grants: list[dict], user: str, role: str, groups: list[str]) -> list[str]:
-    """datasets: [{id, cubes}]; grants: [{object_id, principal_type, principal}] (dataset grants only). -> the governed cubes this person has no grant for."""
-    if role == "admin":
-        return []
-    mine = {g["object_id"] for g in grants
+def _mine(grants: list[dict], user: str, role: str, groups: list[str]) -> set[str]:
+    return {g["object_id"] for g in grants
             if (g["principal_type"] == "user" and g["principal"] == user) or (g["principal_type"] == "role" and g["principal"] == role)
             or (g["principal_type"] == "group" and g["principal"] in groups)}
+
+
+def blocked_cubes(datasets: list[dict], grants: list[dict], user: str, role: str, groups: list[str]) -> list[str]:
+    """datasets: [{id, cubes, members?}]; grants: [{object_id, principal_type, principal}] (dataset grants only). -> the governed cubes this person has no grant for."""
+    if role == "admin":
+        return []
+    mine = _mine(grants, user, role, groups)
     governed = {c for d in datasets for c in d["cubes"]}
     allowed = {c for d in datasets if d["id"] in mine for c in d["cubes"]}
     return sorted(governed - allowed)
 
 
+def blocked_members(datasets: list[dict], grants: list[dict], user: str, role: str, groups: list[str]) -> list[str]:
+    """The governed single fields (cube.member) this person has no grant for: a field in a dataset needs a grant on a dataset that holds it, whether or not its cube is open."""
+    if role == "admin":
+        return []
+    mine = _mine(grants, user, role, groups)
+    governed = {m for d in datasets for m in d.get("members", [])}
+    allowed = {m for d in datasets if d["id"] in mine for m in d.get("members", [])}
+    return sorted(governed - allowed)
+
+
 def load(cur) -> tuple[list[dict], list[dict]]:
     """Read the datasets and their grants with a plain psycopg2 cursor (rows are tuples, columns selected by position)."""
-    cur.execute("select id, cubes from access.dataset")
-    datasets = [{"id": r[0], "cubes": list(r[1])} for r in cur.fetchall()]
+    cur.execute("select id, cubes, members from access.dataset")
+    datasets = [{"id": r[0], "cubes": list(r[1]), "members": list(r[2])} for r in cur.fetchall()]
     cur.execute("select object_id, principal_type, principal, permission from access.\"grant\" where object_type = 'dataset'")
     grants = [{"object_id": r[0], "principal_type": r[1], "principal": r[2], "permission": r[3]} for r in cur.fetchall()]
     return datasets, grants

@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS access.dataset (
     id          text        PRIMARY KEY CHECK (id ~ '^[a-z0-9][a-z0-9_-]{0,39}$'),
     name        text        NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80),
     description text        NOT NULL DEFAULT '' CHECK (char_length(description) <= 400),
-    cubes       text[]      NOT NULL CHECK (cardinality(cubes) BETWEEN 1 AND 100),
+    cubes       text[]      NOT NULL DEFAULT '{}',                           -- whole cubes that need a grant
+    members     text[]      NOT NULL DEFAULT '{}',                           -- single fields (cube.member, e.g. internet_sales.gross_profit) that need a grant, wherever else the cube is open
+    CONSTRAINT dataset_has_content CHECK (cardinality(cubes) + cardinality(members) BETWEEN 1 AND 300),
     updated_by  text        NOT NULL,
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -40,3 +42,10 @@ CREATE TABLE IF NOT EXISTS access.grant (
 -- An install that has the table from before `lab` existed: widen the check (idempotent).
 ALTER TABLE access."grant" DROP CONSTRAINT IF EXISTS grant_permission_check;
 ALTER TABLE access."grant" ADD CONSTRAINT grant_permission_check CHECK (permission IN ('view', 'lab'));
+
+-- An install that has the table from before datasets could hold single fields: add the column and widen the check (idempotent).
+ALTER TABLE access.dataset ADD COLUMN IF NOT EXISTS members text[] NOT NULL DEFAULT '{}';
+ALTER TABLE access.dataset ALTER COLUMN cubes SET DEFAULT '{}';
+ALTER TABLE access.dataset DROP CONSTRAINT IF EXISTS dataset_cubes_check;
+ALTER TABLE access.dataset DROP CONSTRAINT IF EXISTS dataset_has_content;
+ALTER TABLE access.dataset ADD CONSTRAINT dataset_has_content CHECK (cardinality(cubes) + cardinality(members) BETWEEN 1 AND 300);

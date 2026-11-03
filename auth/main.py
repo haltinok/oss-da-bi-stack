@@ -97,7 +97,7 @@ def _territories_for(username: str) -> list[str]:
         conn.close()
 
 
-def read_access(username: str, role: str, groups: list[str]) -> tuple[list[str], list[str], bool]:
+def read_access(username: str, role: str, groups: list[str]) -> tuple[list[str], list[str], bool, list[str]]:
     """From the access schema: the territories the rules give this person (union over the rules for them and for their groups; [] when none applies), the cubes
     they may not read because of datasets (access_resolve.blocked_cubes), and whether they may use the SQL lab (access_resolve.lab_allowed)."""
     import psycopg2
@@ -108,7 +108,8 @@ def read_access(username: str, role: str, groups: list[str]) -> tuple[list[str],
                         "or (principal_type = 'group' and principal = any(%s)))", (username, groups))
             territories = sorted({v for (vals,) in cur.fetchall() for v in vals})
             datasets, grants = access_resolve.load(cur)
-        return territories, access_resolve.blocked_cubes(datasets, grants, username, role, groups), access_resolve.lab_allowed(grants, username, role, groups)
+        return (territories, access_resolve.blocked_cubes(datasets, grants, username, role, groups), access_resolve.lab_allowed(grants, username, role, groups),
+                access_resolve.blocked_members(datasets, grants, username, role, groups))
     finally:
         conn.close()
 
@@ -143,10 +144,11 @@ def token(authorization: str = Header(default="")) -> dict:
     groups = sorted(g.strip("/") for g in claims.get("groups", []) if isinstance(g, str))       # Keycloak's group-membership mapper (the `dashboard` client)
     ruled: list[str] = []
     blocked: list[str] = []
+    blocked_fields: list[str] = []
     lab = role == "admin"                                                                            # without the access database only admins have the SQL lab
     if RULES_ON:
         try:
-            ruled, blocked, lab = read_access(user, role, groups)
+            ruled, blocked, lab, blocked_fields = read_access(user, role, groups)
         except Exception as exc:                                                                  # noqa: BLE001 (any failure to read the rules fails the sign-in)
             raise HTTPException(503, "the access rules cannot be read right now") from exc
     territories: list[str] = []
@@ -157,8 +159,8 @@ def token(authorization: str = Header(default="")) -> dict:
 
     now = int(time.time())
     cube_token = jwt.encode(
-        {"user_id": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "lab": lab, "iat": now, "exp": now + TTL},
+        {"user_id": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
         CUBE_SECRET,
         algorithm="HS256",
     )
-    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "lab": lab}
+    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab}

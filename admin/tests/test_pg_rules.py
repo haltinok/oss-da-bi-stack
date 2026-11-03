@@ -63,7 +63,7 @@ def test_datasets_and_grants_on_postgres(store):
     store.rename_grants("group", "EU", "Europe")
     assert store.datasets()[0]["grants"] == [{"type": "group", "principal": "Europe", "permission": "view"}]
     ds, gs = store.resolve_input()
-    assert ds == [{"id": "sales", "cubes": ["internet_sales"]}] and gs == [{"object_id": "sales", "principal_type": "group", "principal": "Europe", "permission": "view"}]
+    assert ds == [{"id": "sales", "cubes": ["internet_sales"], "members": []}] and gs == [{"object_id": "sales", "principal_type": "group", "principal": "Europe", "permission": "view"}]
     store.drop_grants("group", "Europe")
     assert store.datasets()[0]["grants"] == []
     assert store.delete_dataset("sales") and not store.delete_dataset("sales")
@@ -96,3 +96,17 @@ def test_a_lab_grant_is_stored_and_a_bad_permission_refused(store):
     with pytest.raises(psycopg2.errors.CheckViolation):
         store.put_dataset("labs", "Labs", "", ["internet_sales"], [{"type": "role", "principal": "manager", "permission": "own"}], "root")
     store.delete_dataset("labs")
+
+
+def test_a_dataset_of_single_fields_on_postgres(store):
+    import psycopg2
+    with psycopg2.connect(DSN) as conn, conn.cursor() as cur:
+        cur.execute('delete from access."grant"')
+        cur.execute("delete from access.dataset")
+    row = store.put_dataset("profit", "Profit", "", [], [{"type": "role", "principal": "admin", "permission": "view"}], "root", members=["internet_sales.gross_profit"])
+    assert row["cubes"] == [] and row["members"] == ["internet_sales.gross_profit"]
+    ds, _ = store.resolve_input()
+    assert ds == [{"id": "profit", "cubes": [], "members": ["internet_sales.gross_profit"]}]
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        store.put_dataset("empty", "Empty", "", [], [], "root", members=[])
+    store.delete_dataset("profit")

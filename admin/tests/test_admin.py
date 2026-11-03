@@ -308,3 +308,16 @@ def test_viewer_is_a_role_an_admin_can_give(api, kc):
     u = api.post("/users", json={**NEW, "username": "vera", "role": "viewer"}).json()
     assert u["role"] == "viewer"
     assert api.put(f"/users/{u['id']}", json={"role": "manager"}).json()["role"] == "manager"
+
+
+def test_a_dataset_can_hold_single_fields_and_they_are_checked_against_the_model(ruled, kc):
+    kc.add("na_manager", "manager")
+    ok = {"name": "Profit", "members": ["internet_sales.gross_profit", "reseller_sales.gross_profit"], "grants": [{"type": "role", "principal": "admin"}]}
+    r = ruled.put("/datasets/profit", json=ok)
+    assert r.status_code == 200 and r.json()["members"] == ["internet_sales.gross_profit", "reseller_sales.gross_profit"] and r.json()["cubes"] == []
+    assert ruled.put("/datasets/profit", json={**ok, "members": ["internet_sales.nope"]}).status_code == 400
+    assert ruled.put("/datasets/profit", json={**ok, "members": ["gross_profit"]}).status_code == 400, "a field is written cube.field"
+    assert ruled.put("/datasets/empty", json={"name": "Empty", "grants": []}).status_code == 422, "a dataset holds at least one cube or field"
+    assert any(f["name"] == "gross_profit" for c in ruled.get("/datasets").json()["cubes"] if c["name"] == "internet_sales" for f in c["fields"])
+    p = ruled.get("/rls/preview/na_manager").json()
+    assert p["blocked_members"] == ["internet_sales.gross_profit", "reseller_sales.gross_profit"] and p["blocked_cubes"] == []

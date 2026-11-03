@@ -498,6 +498,7 @@ def preview(username: str, _: Who) -> dict:
     out = {"username": username, "role": shaped["role"], "groups": names, "applies": shaped["role"] in TERRITORY_ROLES,
            "rules": [{"type": r["type"], "principal": r["principal"], "values": r["values"]} for r in applying],
            "blocked_cubes": access_resolve.blocked_cubes(datasets, grants, username, shaped["role"] or "", names),
+           "blocked_members": access_resolve.blocked_members(datasets, grants, username, shaped["role"] or "", names),
            "lab": access_resolve.lab_allowed(grants, username, shaped["role"] or "", names)}
     if applying:
         return {**out, "territories": sorted({v for r in applying for v in r["values"]}), "source": "rules"}
@@ -521,7 +522,8 @@ class GrantIn(BaseModel):
 class DatasetRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=400)
-    cubes: list[str] = Field(min_length=1, max_length=100)
+    cubes: list[str] = Field(default=[], max_length=100)                       # whole cubes that need a grant
+    members: list[str] = Field(default=[], max_length=300)                     # single fields (cube.member) that need a grant
     grants: list[GrantIn] = Field(default=[], max_length=500)
 
 
@@ -536,11 +538,17 @@ def put_dataset(dataset_id: str, req: DatasetRequest, who: Who) -> dict:
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", dataset_id):
         raise HTTPException(400, "the id is lowercase letters, digits, - and _ (at most 40 characters)")
     store = rules()
+    if not req.cubes and not req.members:
+        raise HTTPException(422, "a dataset holds at least one cube or one field")
     known = {c["name"] for c in model_cubes()}
     if known:
         unknown = [c for c in req.cubes if c not in known]
         if unknown:
             raise HTTPException(400, f"no such cube: {unknown[0]}")
+        fields = {f"{c['name']}.{f['name']}" for c in model_cubes() for f in c.get("fields", [])}
+        bad = [m for m in req.members if m not in fields]
+        if bad:
+            raise HTTPException(400, f"no such field: {bad[0]} (write cube.field, e.g. internet_sales.gross_profit)")
     grants, seen = [], {}
     try:
         users, groups = None, None
@@ -567,8 +575,8 @@ def put_dataset(dataset_id: str, req: DatasetRequest, who: Who) -> dict:
             seen[(g.type, g.principal)] = grants[-1]
     except KeycloakError as exc:
         fail(exc)
-    row = store.put_dataset(dataset_id, req.name.strip(), req.description.strip(), sorted(set(req.cubes)), grants, who.name)
-    audit(who, "set_dataset", id=dataset_id, cubes=row["cubes"], grants=grants)
+    row = store.put_dataset(dataset_id, req.name.strip(), req.description.strip(), sorted(set(req.cubes)), grants, who.name, members=sorted(set(req.members)))
+    audit(who, "set_dataset", id=dataset_id, cubes=row["cubes"], members=row["members"], grants=grants)
     return row
 
 

@@ -180,3 +180,10 @@ def test_the_auth_services_refusals_are_passed_on(monkeypatch):
     with pytest.raises(HTTPException) as e:
         main.cube_session(ME)
     assert e.value.status_code == 403 and "territories" in e.value.detail
+
+
+def test_a_blocked_field_is_left_out_of_the_schema_browser(api, monkeypatch):
+    client, _ = api
+    monkeypatch.setattr(main, "cube_session", lambda caller: session(role="admin", blocked_members=["internet_sales.revenue"]))
+    cubes = {c["name"]: c for c in client.get("/schema").json()["cubes"]}
+    assert "revenue" not in {m["name"] for m in cubes["internet_sales"]["measures"]} and "orders" in {m["name"] for m in cubes["internet_sales"]["measures"]}

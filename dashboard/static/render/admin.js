@@ -181,7 +181,7 @@ function datasetsHtml() {
   if (s.rulesOff) return `<p class="adm-empty" role="status">${esc(t.rulesOff)}</p>`;
   const who = (g) => `<span class="adm-chip" title="${esc(t.grantType[g.type])}">${esc((g.type === "role" ? `role: ${g.principal}` : g.type === "group" ? `group: ${g.principal}` : g.principal) + (g.permission === "lab" ? ` · ${t.grantLabShort}` : ""))}</span>`;
   const rows = s.datasets.map((d) => `<tr data-id="${esc(d.id)}"><td><strong>${esc(d.name)}</strong><br><span class="hint">${esc(d.description)}</span></td>
-      <td>${d.cubes.map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("")}</td>
+      <td>${d.cubes.map((c) => `<span class="adm-chip">${esc(c)}</span>`).join("")}${(d.members || []).map((m) => `<span class="adm-chip" title="${esc(t.datasetFields)}">${esc(m)}</span>`).join("")}</td>
       <td>${d.grants.map(who).join("") || `<span class="hint">${esc(t.nobodyYet)}</span>`}</td>
       <td class="adm-act"><button class="adm-btn mini" data-act="edit">${esc(t.edit)}</button><button class="adm-btn mini danger" data-act="delete">${esc(t.delete)}</button></td></tr>`).join("");
   return `<p class="hint">${esc(t.datasetsHint)}</p><div class="adm-bar"><span class="spacer"></span><button class="adm-btn primary" id="new-dataset">${esc(t.newDataset)}</button></div>
@@ -203,12 +203,16 @@ const slug = (name) => name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u0
 async function datasetDialog(d) {
   const all = (await call("GET", "/users?max=200")).users;
   const grants = (d?.grants || []).map((g) => ({ ...g }));
+  const members = [...(d?.members || [])];
   const picked = new Set(d?.cubes || []);
   const choices = (type) => (type === "user" ? all.map((u) => u.username) : type === "group" ? s.groups.map((g) => g.name) : s.grantRoles);
   const form = openForm(`<h2>${esc(d ? `${t.edit}: ${d.name}` : t.newDataset)}</h2>
     <label>${esc(t.datasetName)}<input name="name" value="${esc(d?.name || "")}" maxlength="80" required></label>
     <label>${esc(t.datasetDesc)}<input name="description" value="${esc(d?.description || "")}" maxlength="400"></label>
     <label>${esc(t.datasetCubes)}<div class="groups-pick" role="group" aria-label="${esc(t.datasetCubes)}">${s.cubes.map((c) => `<label title="${esc(c.description)}"><input type="checkbox" name="c" value="${esc(c.name)}"${picked.has(c.name) ? " checked" : ""}> ${esc(c.name)} <span class="hint">(${c.measures + c.dimensions})</span></label>`).join("")}</div></label>
+    <div><span class="hint">${esc(t.datasetFields)}</span> <span class="hint">${esc(t.datasetFieldsHint)}</span><div id="member-list" class="adm-grants"></div>
+      <div class="row"><select id="m-cube" aria-label="${esc(t.fieldPickCube)}"><option value="">${esc(t.fieldPickCube)}</option>${s.cubes.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("")}</select>
+      <select id="m-field" aria-label="${esc(t.fieldPick)}"><option value="">${esc(t.fieldPick)}</option></select></div><button type="button" class="adm-btn mini" id="m-add">${esc(t.fieldAdd)}</button></div>
     <div><span class="hint">${esc(t.datasetAccess)}</span><div id="grant-list" class="adm-grants"></div>
       <div class="row"><select id="g-type" aria-label="${esc(t.ruleFor)}">${opts([["user", t.grantType.user], ["group", t.grantType.group], ["role", t.grantType.role]], "role")}</select>
       <select id="g-who" aria-label="${esc(t.ruleWho)}"></select></div>
@@ -216,8 +220,8 @@ async function datasetDialog(d) {
     ${foot(t.datasetSave)}`, async (f) => {
     const v = Object.fromEntries(new FormData(f));
     const cubes = [...f.querySelectorAll("[name=c]:checked")].map((c) => c.value);
-    if (!cubes.length) throw new Error(t.pickCube);
-    await call("PUT", `/datasets/${encodeURIComponent(d?.id || slug(v.name))}`, { name: v.name.trim(), description: (v.description || "").trim(), cubes, grants });
+    if (!cubes.length && !members.length) throw new Error(t.pickCube);
+    await call("PUT", `/datasets/${encodeURIComponent(d?.id || slug(v.name))}`, { name: v.name.trim(), description: (v.description || "").trim(), cubes, members, grants });
   });
   const list = form.querySelector("#grant-list"), type = form.querySelector("#g-type"), who = form.querySelector("#g-who");
   const drawGrants = () => {
@@ -233,7 +237,20 @@ async function datasetDialog(d) {
     if (at >= 0) grants[at].permission = permission; else grants.push({ type: type.value, principal: who.value, permission });
     drawGrants();
   });
-  drawGrants(); drawWho();
+  const mlist = form.querySelector("#member-list"), mcube = form.querySelector("#m-cube"), mfield = form.querySelector("#m-field");
+  const drawMembers = () => {
+    mlist.innerHTML = members.map((m, i) => `<span class="adm-chip">${esc(m)} <button type="button" class="adm-x" data-rm-m="${i}" aria-label="${esc(t.remove)} ${esc(m)}">✕</button></span>`).join("") || `<span class="hint">${esc(t.none)}</span>`;
+    mlist.querySelectorAll("[data-rm-m]").forEach((b) => b.addEventListener("click", () => { members.splice(Number(b.dataset.rmM), 1); drawMembers(); }));
+  };
+  mcube.addEventListener("change", () => {
+    const c = s.cubes.find((x) => x.name === mcube.value);
+    mfield.innerHTML = `<option value="">${esc(t.fieldPick)}</option>${(c?.fields || []).map((f) => `<option value="${esc(f.name)}">${esc(f.name)} (${esc(f.kind)})</option>`).join("")}`;
+  });
+  form.querySelector("#m-add").addEventListener("click", () => {
+    const m = mcube.value && mfield.value ? `${mcube.value}.${mfield.value}` : "";
+    if (m && !members.includes(m)) { members.push(m); drawMembers(); }
+  });
+  drawMembers(); drawGrants(); drawWho();
 }
 
 // ------------------------------------------------------------------------------------------------------------------ dialogs

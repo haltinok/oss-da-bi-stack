@@ -28,24 +28,24 @@ def test_a_spec_that_uses_a_blocked_cube_is_refused_for_that_person_only():
 
 
 def test_the_catalog_endpoint_leaves_out_blocked_cubes(monkeypatch):
-    monkeypatch.setattr(main, "blocked_for", lambda user: ["reseller_sales"])
+    monkeypatch.setattr(main, "blocked_for", lambda user: (["reseller_sales"], []))
     names = {c["cube"] for c in client.get("/catalog", headers=token("manager")).json()}
     assert "reseller_sales" not in names and "internet_sales" in names
-    monkeypatch.setattr(main, "blocked_for", lambda user: [])
+    monkeypatch.setattr(main, "blocked_for", lambda user: ([], []))
     assert "reseller_sales" in {c["cube"] for c in client.get("/catalog", headers=token("manager")).json()}
 
 
 def test_validate_refuses_a_spec_on_a_blocked_cube(monkeypatch):
-    monkeypatch.setattr(main, "blocked_for", lambda user: ["internet_sales"])
+    monkeypatch.setattr(main, "blocked_for", lambda user: (["internet_sales"], []))
     r = client.post("/validate", headers=token("admin"), json={"yaml": SALES}).json()
     assert not r["ok"] and any("internet_sales" in p for p in r["problems"])
 
 
 def test_without_a_database_nothing_is_left_out_and_admins_are_never_checked(monkeypatch):
     monkeypatch.setattr(main, "STORE", None)
-    assert main.blocked_for(main.User(name="a", role="manager")) == []
+    assert main.blocked_for(main.User(name="a", role="manager")) == ([], [])
     monkeypatch.setattr(main, "STORE", object())                                        # a store that would fail if asked
-    assert main.blocked_for(main.User(name="root", role="admin")) == []
+    assert main.blocked_for(main.User(name="root", role="admin")) == ([], [])
 
 
 def test_a_database_that_cannot_be_read_is_not_fatal(monkeypatch):
@@ -53,8 +53,27 @@ def test_a_database_that_cannot_be_read_is_not_fatal(monkeypatch):
         dsn = {"host": "127.0.0.1", "port": 1, "dbname": "x", "user": "x", "password": "x"}
 
     monkeypatch.setattr(main, "STORE", Down())
-    assert main.blocked_for(main.User(name="a", role="manager")) == []
+    assert main.blocked_for(main.User(name="a", role="manager")) == ([], [])
 
 
 def test_the_resolution_module_is_the_one_the_builder_ships():
     assert hasattr(access_resolve, "blocked_cubes") and hasattr(access_resolve, "load")
+
+
+def test_without_members_hides_single_fields_but_keeps_the_cube():
+    small = core.without_members(CATALOG, ["internet_sales.gross_profit", "internet_sales.margin_pct"])
+    assert "gross_profit" not in small.cubes["internet_sales"]["measures"] and "revenue" in small.cubes["internet_sales"]["measures"]
+    assert "gross_profit" in small.cubes["reseller_sales"]["measures"] and "gross_profit" in CATALOG.cubes["internet_sales"]["measures"], "only the named field, only in a copy"
+    assert core.without_members(CATALOG, []) is CATALOG
+
+
+def test_a_spec_that_uses_a_blocked_field_is_refused_for_that_person_only():
+    gone = core.without_members(CATALOG, ["internet_sales.gross_profit", "reseller_sales.gross_profit", "internet_sales.margin_pct", "reseller_sales.margin_pct", "internet_sales.product_cost", "reseller_sales.product_cost"])
+    built, problems = core.check_submission(SALES, gone, "admin")
+    assert built is None and any("gross_profit" in p for p in problems), "the sales overview shows profit"
+
+
+def test_the_catalog_endpoint_leaves_out_blocked_fields(monkeypatch):
+    monkeypatch.setattr(main, "blocked_for", lambda user: ([], ["internet_sales.gross_profit"]))
+    cubes = {c["cube"]: c for c in client.get("/catalog", headers=token("manager")).json()}
+    assert "gross_profit" not in {m["name"] for m in cubes["internet_sales"]["measures"]} and "revenue" in {m["name"] for m in cubes["internet_sales"]["measures"]}

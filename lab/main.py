@@ -133,13 +133,13 @@ def schema_for(session: dict) -> list[dict]:
     if cat is None:
         return []
     from dashspec.validate import denied
-    role, blocked = session.get("role", ""), set(session.get("blocked_cubes") or [])
+    role, blocked, fields = session.get("role", ""), set(session.get("blocked_cubes") or []), set(session.get("blocked_members") or [])
     out = []
     for name, c in sorted(cat.cubes.items()):
         if name in blocked:
             continue
-        dims = [{"name": d, "type": t, "description": c.get("docs", {}).get(d, "")} for d, t in sorted(c["dimensions"].items()) if denied(role, f"{name}.{d}") is None]
-        meas = [{"name": m, "type": t, "description": c.get("docs", {}).get(m, "")} for m, t in sorted(c["measures"].items()) if denied(role, f"{name}.{m}") is None]
+        dims = [{"name": d, "type": t, "description": c.get("docs", {}).get(d, "")} for d, t in sorted(c["dimensions"].items()) if denied(role, f"{name}.{d}") is None and f"{name}.{d}" not in fields]
+        meas = [{"name": m, "type": t, "description": c.get("docs", {}).get(m, "")} for m, t in sorted(c["measures"].items()) if denied(role, f"{name}.{m}") is None and f"{name}.{m}" not in fields]
         if dims or meas:
             out.append({"name": name, "description": c.get("description", ""), "dimensions": dims, "measures": meas, "joins": sorted(j for j in (c["joins"] or ()) if j not in blocked)})
     return out

@@ -151,6 +151,12 @@ function queryRewrite(query, { securityContext }) {
   if (hidden) {
     throw forbidden(`'${hidden}' is in a dataset you have no access to`);
   }
+  // ... and single fields a dataset holds (profit, say): the same rule for a member named in the query or inside an expression.
+  const blockedMembers = Array.isArray(sc.blocked_members) ? sc.blocked_members : [];
+  const hiddenField = members.find((m) => blockedMembers.includes(m));
+  if (hiddenField) {
+    throw forbidden(`'${hiddenField}' is in a dataset you have no access to`);
+  }
 
   // Cost/profit are hidden from reps, whichever cube asks for them.
   if ((sc.role === 'rep' || sc.role === 'viewer') && members.some((m) => PROFIT_MEMBERS.has(m.split('.')[1]))) {
