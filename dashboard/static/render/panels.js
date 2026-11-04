@@ -148,8 +148,10 @@ function kpiPanel(def, ctx) {
     const q = kpiQueries(ctx.spec, def, t, ctx.filterValues());
     const delta = tile.querySelector(".delta");
     try {
+      const current = runAll(ctx.run, q.now, signal);                  // the value's own query goes first; the comparison after it, at the same time
+      const trend = q.series ? runAll(ctx.run, q.series, signal) : null;
       const before = q.previous ? runAll(ctx.run, q.previous.queries, signal).then((rows) => ({ rows }), (e) => { if (e?.name === "AbortError" || signal?.aborted) throw e; return { error: e }; }) : null;
-      const [now, series, prev] = await Promise.all([runAll(ctx.run, q.now, signal), q.series ? runAll(ctx.run, q.series, signal) : null, before]);
+      const [now, series, prev] = await Promise.all([current, trend, before]);
       const v = evaluate(t, (m) => totals(now).get(m) ?? null);
       values[i] = v;
       tile.querySelector(".value").textContent = fmtOf(t)(v);
