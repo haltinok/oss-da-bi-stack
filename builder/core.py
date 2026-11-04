@@ -41,7 +41,7 @@ time: { dimension: <a time dimension>, fiscal_year_start: 7 }
 filters: list of { id, dimension, label, parent? }  (selects above the panels; every panel applies them unless it lists the id in ignore_filters)
 panels: list of { id, type, title?, ignore_filters?, ... }, types:
   kpi        measures: [ {member|sum|ratio, label, format, better?: lower (for costs, returns: a fall is good)} ... max 8 ], sparkline: { granularity: month },
-             compare?: previous_year | previous_period (each tile shows the change from the previous period of the chosen fiscal year, date range or drill-down; write it when the request asks for growth, change or a comparison)
+             compare?: previous_year | previous_period (each tile shows the change from the previous period of the chosen fiscal year, date range or drill-down; write previous_year on a sales key-figures row whenever the dashboard has a fiscal-year or date filter, previous_period when the request asks for it, and leave it out for stock snapshots (inventory) or when the request says no comparison)
   timeseries series: [ {member|sum|ratio, label, color?, format} ], granularity, style: line | area | stacked-area | bar | stacked-bar,
              and EITHER granularities?: [month, quarter, year] (a switch) + on_click?: { set_filter: <id of a fiscal_year filter> }
              OR drill: [year, month, day] (a drill-down: a click opens the next finer level for that period and filters every other panel to it; granularity = the first level; no on_click)

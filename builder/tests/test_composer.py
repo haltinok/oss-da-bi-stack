@@ -290,3 +290,32 @@ def test_the_examples_follow_the_language_and_fall_back_to_english():
     assert core.examples_for("admin", "de") == core.examples_for("admin", "en") == core.examples_for("admin")
     assert core.examples_for("editor", "tr") != core.examples_for("editor", "en")
     assert set(core.examples_for("editor", "tr")) == set(core.examples_for("editor", "tr")), "sales roles share the sales examples"
+
+
+# ---- the key figures' comparison with an earlier period
+def kpi_of(out):
+    return next(p for p in out["spec"]["panels"] if p["type"] == "kpi")
+
+
+def test_sales_key_figures_compare_with_the_previous_year_by_default():
+    out = build("admin", "monthly revenue by channel")
+    assert kpi_of(out)["compare"] == "previous_year" and any(f["id"] == "fy" for f in out["spec"]["filters"]), "the fiscal-year filter is always there, so is the comparison"
+    assert kpi_of(build("admin", "revenue by month compared with the previous period"))["compare"] == "previous_period"
+    assert kpi_of(build("admin", "aylık gelir, önceki döneme göre"))["compare"] == "previous_period"
+
+
+def test_inventory_key_figures_are_snapshots_and_do_not_compare():
+    out = build("admin", "inventory dashboard")
+    assert "compare" not in kpi_of(out)
+
+
+def test_asking_turns_the_comparison_on_switches_its_kind_and_takes_it_away():
+    source = yaml.safe_load(build("admin", "monthly revenue by channel")["yaml"])
+    plain = yaml.safe_dump({**source, "panels": [{k: v for k, v in p.items() if k != "compare"} for p in source["panels"]]}, sort_keys=False)
+    on = build("admin", "compare the key figures with last year", current=plain)
+    assert on["status"] == "ok" and kpi_of(on)["compare"] == "previous_year" and "previous year" in on["message"]
+    period = build("admin", "compare with the previous period instead", current=on["yaml"])
+    assert kpi_of(period)["compare"] == "previous_period"
+    off = build("admin", "remove the comparison", current=period["yaml"])
+    assert off["status"] == "ok" and "compare" not in kpi_of(off) and len(off["spec"]["panels"]) == len(period["spec"]["panels"]), "only the comparison goes, not a panel"
+    assert kpi_of(build("admin", "geçen yıla göre karşılaştır", current=plain))["compare"] == "previous_year"

@@ -92,6 +92,10 @@ def parse(prompt: str) -> dict:
         "drill": has(t, "drill", "detaya", "detay") and len(drill_levels(t)) >= 2, "levels": drill_levels(t),
         "pie": has(t, "pie", "pasta", "donut", "halka"), "area": has(t, "area", "alan grafik"),
         "column": has(t, "column", "sutun", "dikey", "kolon"),
+        # the key figures' comparison: "previous period" (the month or range before), else any word about a comparison means the year before
+        "compare": ("previous_period" if has(t, "previous period", "prior period", "period before", "onceki donem", "bir onceki donem") else
+                    "previous_year" if has(t, "compar", "previous year", "prior year", "last year", "year over year", "yoy", "growth", "vs last", "versus last",
+                                           "karsilastir", "gecen yil", "onceki yil", "gecen yila", "onceki yila", "buyume") else None),
         "separate": has(t, "ayri", "separate", "ikinci", "second", "half", "yarim", "iki chart", "iki grafik", "two chart", "each channel", "her kanal", "her biri"),
         "chart_segments": chart_segments(t),
         "gran": next((g for g, w in (("quarter", ("quarter", "ceyrek")), ("year", ("yearly", "annual", "by year", "yillik", "per year")), ("day", ("daily", "by day", "gunluk")),
@@ -197,7 +201,8 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
     if not terms:
         return Composition(reason="None of the figures you asked for are available for your role (profit and margin are hidden from reps).", notes=b.notes)
     b.ids.update({"kpis"})
-    b.panels.append({"id": "kpis", "type": "kpi", "measures": terms[:8], "sparkline": {"granularity": "month"}})
+    # the fiscal-year filter below is always there, so the tiles compare with the year before by default (with "All" chosen they say there is no period to compare)
+    b.panels.append({"id": "kpis", "type": "kpi", "measures": terms[:8], "sparkline": {"granularity": "month"}, "compare": p["compare"] or "previous_year"})
     fid = b.add_filter("fy", "dates.fiscal_year", "fy")
     dims = p["dims"] + ([] if p["dims"] else (["region"] if has(p["t"], "region", "territor", "bolge") else []))
     want_time = p["trend"] or p["gran"] or p["drill"] or p["style"] in ("line", "area") or not (p["dims"] or p["table"] or p["treemap"] or p["pie"] or p["pivot"])
@@ -502,6 +507,16 @@ def refine(p, prompt, catalog, role, current_yaml, focus: str | None = None) -> 
                 panels.append(x)
         spec["panels"] = panels
         spec["layout"] = layout(spec["panels"])
+    if p["compare"]:
+        kpis = [x for x in spec["panels"] if x["type"] == "kpi"]
+        for x in kpis:
+            if remove:
+                changed = x.pop("compare", None) is not None or changed
+            else:
+                x["compare"], changed = p["compare"], True
+        if kpis:
+            notes.append("The key figures no longer compare with an earlier period." if remove else
+                         f"The key figures compare with the {'previous period' if p['compare'] == 'previous_period' else 'previous year'}.")
     if p["top"]:
         for x in spec["panels"]:
             if x["type"] in ("bar", "table"):
@@ -521,5 +536,5 @@ def refine(p, prompt, catalog, role, current_yaml, focus: str | None = None) -> 
             spec["layout"] = layout(spec["panels"])
             notes.extend(fresh.notes)
     if not changed:
-        return Composition(spec=spec, notes=["The rule-based stand-in understood nothing to change. It handles: a chart style (line, bar, stacked), top N, adding or removing a table, treemap or a breakdown by region, country, category or product."])
+        return Composition(spec=spec, notes=["The rule-based stand-in understood nothing to change. It handles: a chart style (line, bar, stacked), top N, adding or removing a table, treemap or a breakdown by region, country, category or product, and comparing the key figures with the previous year or period (or not)."])
     return Composition(spec=spec, notes=notes)
