@@ -1,6 +1,8 @@
 # Plan: from dashboard to decisions — stockouts, overstock, reorders and campaigns
 
-Status: **plan, not started**. Written to be picked up and implemented with Claude Code, one phase per PR.
+Status: **all phases done** (0 to 3, one PR each: Phase 0 #48; 1.1-1.3 #49; 1.4-1.5 #50; 1.6 #51; 2a-2c #52 to #54; 3a-3c #55 to #57). The 250M tier was then served from the demo deployment (#58, #61, #62). Written to be picked up and implemented with Claude Code, one phase per PR.
+
+> **Update 2026-11-03:** the `purchasing` and `marketing` roles described below no longer exist; roles are capabilities only (`admin`, `editor`, `viewer`, #166), and who sees the inventory cubes is set by groups, datasets and grants ([`PLAN-access.md`](../PLAN-access.md)).
 
 ## Goal
 
