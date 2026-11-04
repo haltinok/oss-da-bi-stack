@@ -171,23 +171,32 @@ function placeSlicer(next, filter, tab) {
 }
 
 /**
- * A new slicer for the first visible filter that has none; when every filter has one, or there is none, a new filter on a field of the data the role may read is made first.
- * Returns { source, id } or { problem: "dimension" }.
+ * The gallery's slicer: a slicer on a field (`dimension`), a new full-width row at the end of `tab` (else the last tab), showing the first field its tab's panels can be
+ * filtered by that no filter or slicer uses yet, preferring the usual groupings (category, region...) and never a key or a time field. Returns { source, id } or
+ * { problem: "dimension" } when there is no such field.
  */
 export function addSlicer(source, catalog, { tab = null } = {}) {
   const next = clone(source);
-  let filter = (next.filters || []).find((f) => f.visible !== false && !slicerOf(next, f.id) && (f.scope !== "page" || next.tabs?.some((t) => t.id === f.tab)));
-  if (!filter) {
-    const measure = pickMeasure(catalog, next);
-    const dim = measure && pickDimension(catalog, measure, (next.filters || []).map((f) => f.dimension));
-    if (!dim) return { problem: "dimension" };
-    const made = addFilter(next, catalog, dim);
-    filter = made.source.filters.at(-1);
-    next.filters = made.source.filters;
-    next.panels = made.source.panels;                                                        // `addFilter` may have set panels to ignore it
-  }
-  const id = placeSlicer(next, filter, tab);
+  const id = newPanelId(next, "slicer");
+  next.panels.push({ id, type: "slicer", dimension: "" });
+  const lay = layoutsOf(next);
+  (lay.find((l) => l.tab === tab) || lay[lay.length - 1]).rows.push([{ [id]: 12 }]);
+  const byName = new Map(catalog.flatMap((c) => c.dimensions.map((d) => [d.member, d])));
+  const usable = slicerFieldOptions(catalog, next, id).map((o) => byName.get(o.value)).filter((d) => d && d.type !== "time" && !/^(key|id)$|_id$|_key$/.test(d.name));
+  const pick = PREFERRED_DIMENSIONS.map((n) => usable.find((d) => d.name === n)).find(Boolean) || usable[0];
+  if (!pick) return { problem: "dimension" };
+  next.panels.find((p) => p.id === id).dimension = pick.member;
   return { source: next, id };
+}
+
+/** A slicer on a field goes to the filter bar: a filter with its settings (a page filter of its tab on a dashboard with tabs) takes its place and the panel leaves the layout. */
+export function moveSlicerToBar(source, catalog, slicerId) {
+  const made = setSlicerMode(source, catalog, slicerId, "filter");
+  if (made.problem) return made;
+  const next = made.source;
+  next.panels = next.panels.filter((p) => p.id !== slicerId);
+  unplace(next, slicerId);
+  return { source: next };
 }
 
 // ---- a slicer on a field (`dimension:` on the slicer; the compiler makes it a filter of its own tab: dashspec/slicers.py)

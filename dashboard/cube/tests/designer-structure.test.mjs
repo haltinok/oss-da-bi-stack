@@ -271,15 +271,14 @@ test("a slicer of a page filter goes on its tab, and the filter follows its slic
   assert.equal(moved.source.filters[0].tab, "b", "a page filter stays on the tab its slicer is on");
 });
 
-test("the gallery's slicer uses a filter that has none, or makes one", () => {
-  const some = addSlicer(SOURCE, CATALOG);
-  assert.equal(slicerOf(some.source, "region").id, some.id);
-  assert.equal(some.source.filters.length, 1, "the existing filter is used");
-  const none = addSlicer({ ...SOURCE, filters: undefined }, CATALOG);
-  assert.equal(none.source.filters.length, 1);
-  assert.equal(slicerOf(none.source, none.source.filters[0].id).type, "slicer");
-  const twice = addSlicer(some.source, CATALOG);
-  assert.equal(twice.source.filters.length, 2, "every filter has a slicer: a new filter is made");
+test("the gallery's slicer is a slicer on a field: the first usual grouping its tab can be filtered by that nothing else uses", () => {
+  const one = addSlicer(SOURCE, CATALOG);
+  const sl = one.source.panels.find((p) => p.id === one.id);
+  assert.deepEqual(sl, { id: "slicer", type: "slicer", dimension: "products.category" }, "category before name; region is the header filter's");
+  assert.deepEqual(one.source.filters, SOURCE.filters, "no filter is made");
+  assert.deepEqual(one.source.layout.at(-1), [{ slicer: 12 }]);
+  const two = addSlicer(one.source, CATALOG);
+  assert.equal(two.source.panels.find((p) => p.id === two.id).dimension, "products.name", "the next free field, never a key or a time field");
   assert.equal(addSlicer({ ...SOURCE, filters: undefined }, [{ cube: "x", joins: [], measures: [], dimensions: [] }]).problem, "dimension");
 });
 
@@ -451,7 +450,7 @@ test("allowed values: the default is cut down to them, and the list goes with a 
 });
 
 // ---- a slicer on a field (PLAN-slicer-fields.md phase 2a)
-import { canFilterBy, setSlicerMode, setSlicerOption, slicerFieldOptions, slicerScope } from "../../static/lib/designer-structure.js";
+import { canFilterBy, moveSlicerToBar, setSlicerMode, setSlicerOption, slicerFieldOptions, slicerScope } from "../../static/lib/designer-structure.js";
 import { fieldsFor, slicerTypes } from "../../static/lib/designer-model.js";
 
 const withSlicer = (slicer, src = SOURCE) => ({ ...structuredClone(src), panels: [...structuredClone(src.panels), { id: "sl", type: "slicer", ...slicer }], layout: [...structuredClone(src.layout), [{ sl: 12 }]] });
@@ -513,4 +512,13 @@ test("the drawer shows a field slicer's own settings, and the filter choice for 
   assert.deepEqual(paths({ id: "sl", type: "slicer", filter: "region" }), ["title", "~slicer", "filter", "display", "ignore_filters"]);
   assert.deepEqual(fieldsFor({ id: "sl", type: "slicer", dimension: "dates.full_date" }, { typeOf }).find((x) => x.path === "filter_type").options, ["select", "multiselect", "date"]);
   assert.deepEqual(slicerTypes("number"), ["select", "multiselect", "number"]);
+});
+
+test("a field slicer moves to the filter bar as a filter with its settings, and its panel leaves the layout", () => {
+  const src = withSlicer({ dimension: "products.category", label: "Kind", filter_type: "multiselect", display: "chips" });
+  const moved = moveSlicerToBar(src, CATALOG, "sl").source;
+  assert.equal(moved.panels.some((p) => p.id === "sl"), false);
+  assert.equal(moved.layout.flat().some((c) => "sl" in c), false, "its row goes too");
+  assert.deepEqual(moved.filters.at(-1), { id: "category", dimension: "products.category", label: "Kind", type: "multiselect" });
+  assert.ok(moved.panels.find((p) => p.id === "top").ignore_filters.includes("region"), "nothing else changes");
 });

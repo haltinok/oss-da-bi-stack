@@ -861,20 +861,22 @@ with sync_playwright() as p:
         page.uncheck(f'{fcard} [data-path="slicer"]')
     settled(page)
     check(not slicers() and page.locator(f'[data-panel="{sid}"]').count() == 0, "unticking it removes the slicer and the filter is back in the header")
+    n_filters = len(filters())
     with changes(page):
         page.click('#dz-gallery [data-add="slicer"]')
     settled(page)
-    check(len(slicers()) == 1, "the gallery's Slicer adds one for a filter that has none")
+    check(len(slicers()) == 1 and slicers()[0].get("dimension") and "filter" not in slicers()[0] and len(filters()) == n_filters, f"the gallery's Slicer adds a slicer on a field, with no filter to declare ({slicers()})")
     page.click("#dz-back")
     with changes(page):
         page.click('#dz-gallery [data-add="slicer"]')
     settled(page)
-    check(len(slicers()) == 2 and len({s["filter"] for s in slicers()}) == 2, "a second one makes a new filter for it (a filter has one slicer)")
-    page.click("#dz-back")
-    page.once("dialog", lambda d: d.accept())
-    page.click(f'.dz-filter:has(h4:text-is("{slicers()[0]["filter"]}")) [data-rm-filter]')
-    page.wait_for_function("document.querySelectorAll('[data-panel^=\"slicer\"]').length === 1", timeout=15000)
-    check(len(slicers()) == 1, "removing a filter takes its slicer with it")
+    check(len(slicers()) == 2 and len({s["dimension"] for s in slicers()}) == 2, "a second one takes another field")
+    second = slicers()[1]
+    page.wait_for_selector("#designer #dz-tobar", timeout=10000)
+    with changes(page):
+        page.click("#designer #dz-tobar")
+    settled(page)
+    check(len(slicers()) == 1 and any(f["dimension"] == second["dimension"] for f in filters()), "Move to the filter bar: the slicer leaves the layout and a filter on its field takes its place")
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
