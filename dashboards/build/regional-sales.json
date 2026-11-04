@@ -38,6 +38,7 @@
     {
       "id": "kpis",
       "type": "kpi",
+      "compare": "previous_year",
       "measures": [
         {
           "sum": [

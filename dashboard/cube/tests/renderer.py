@@ -1578,6 +1578,8 @@ with sync_playwright() as p:
     check(donut and donut[0]["timeDimensions"] == [{"dimension": "dates.full_date", "dateRange": ["2020-01-01", "2020-12-31"]}], "the donut follows the period (cross-filtering)")
     kpi = [q for q in qs if q.get("measures") == ["internet_sales.revenue"] and "dimensions" not in q and q.get("timeDimensions", [{}])[0].get("granularity") != "month"]
     check(kpi and kpi[0]["timeDimensions"][0].get("dateRange") == ["2020-01-01", "2020-12-31"], "so do the KPI tiles")
+    check(any(q["timeDimensions"][0].get("dateRange") == ["2019-01-01", "2019-12-31"] for q in kpi), f"and each tile asks for the year before too, to compare (compare: previous_period) ({[q['timeDimensions'][0].get('dateRange') for q in kpi]})")
+    check("vs previous period" in page.inner_text('[data-panel="kpis"]'), "the tiles say what they are compared with")
     check(all(q.get("timeDimensions", [{}])[0].get("dateRange") == ["2020-01-01", "2020-12-31"] for q in qs if q.get("dimensions") in (["products.category"], ["territories.region"])), "and the other bars")
 
     page.locator(f"{trend} .hit").nth(2).click()

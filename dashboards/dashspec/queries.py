@@ -3,6 +3,7 @@
 compares, on every checked-in dashboard and several filter states."""
 
 from .calculations import PREFIX, real_members
+from .compare import previous_queries
 from .filters import applies, default_env, effective_value, to_cube
 
 DEFAULT_LIMIT = {"bar": 10, "table": 100}
@@ -267,9 +268,12 @@ def panel_queries(spec, panel, values):
         out = []
         for m in panel["measures"]:
             members = term_members(m)
-            out += follow_period(spec, panel, values, per_cube(spec, members, {"filters": filters}))
+            now = follow_period(spec, panel, values, per_cube(spec, members, {"filters": filters}))
+            out += now
             if "sparkline" in panel:
                 out += follow_period(spec, panel, values, per_cube(spec, members, {"filters": filters, "timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["sparkline"]["granularity"]}]}))
+            previous = previous_queries(now, panel.get("compare"))
+            out += previous["queries"] if previous else []
         return out
     if kind == "timeseries":
         members = list(dict.fromkeys(x for s in panel["series"] for x in term_members(s)))

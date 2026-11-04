@@ -6,6 +6,7 @@ import { defaultEnv, toCube } from "../lib/filters.js";
 import { AGGREGATE_LIMIT } from "../lib/aggregate.js";
 import { memberLabel } from "../lib/labels.js";
 import { evaluateCalc, realMembers } from "../lib/calc.js";
+import { previousQueries } from "../lib/compare.js";
 
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
@@ -380,11 +381,16 @@ export function followPeriod(spec, def, values, queries) {
 // One place builds them: the panels run them, and `dashspec lint` (which asks Cube whether a rollup serves each) mirrors them in Python;
 // dashboards/tests checks the two agree on every dashboard.
 
-/** KPI tile `t` (a term): { now, series } queries per cube; series is null without a sparkline. */
+/**
+ * KPI tile `t` (a term): { now, series, previous } queries per cube; series is null without a sparkline. `previous` is null without the panel's
+ * `compare`, else { queries, moved } (the `now` queries with their time constraints moved back) or null when there is no period to compare with.
+ */
 export function kpiQueries(spec, def, t, values) {
   const filters = activeFilters(spec, values, def);
+  const now = followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters }));
   return {
-    now: followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters })),
+    now,
+    previous: def.compare ? previousQueries(now, def.compare) : null,
     series: def.sparkline
       ? followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters, timeDimensions: [{ dimension: timeDimOf(spec, def), granularity: def.sparkline.granularity }] })) : null,
   };
@@ -634,7 +640,7 @@ export function slicerQueries(spec, def, values) {
 export function panelQueries(spec, def, values) {
   switch (def.type) {
     case "slicer": return slicerQueries(spec, def, values);
-    case "kpi": return def.measures.map(term).flatMap((t) => { const q = kpiQueries(spec, def, t, values); return [...q.now, ...(q.series || [])]; });
+    case "kpi": return def.measures.map(term).flatMap((t) => { const q = kpiQueries(spec, def, t, values); return [...q.now, ...(q.series || []), ...(q.previous?.queries || [])]; });
     case "timeseries": return timeseriesQueries(spec, def, values, def.granularity);
     case "bar": return barQueries(spec, def, values);
     case "pie": return pieQueries(spec, def, values);

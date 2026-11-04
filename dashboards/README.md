@@ -72,4 +72,4 @@ A KPI measure (and a time-chart series) is a `member`, a `sum` of measures (acro
 (`{ num: [...], den: [...] }`, for a margin over both channels). A `format` is `money`, `int`, `pct` (a fraction, 0.153 -> 15.3%),
 `decimal` or `number`. Table columns are a member or `{ member, label, format }`. For a measure over more than one cube the renderer
 sends one query per cube and merges the rows (a ranked bar over two cubes ranks after merging).
-Not yet: comparison with the previous period on KPI tiles, a different time dimension per panel.
+A key-figures row can show each value's change from the previous period (`compare: previous_year | previous_period`, see [docs/dashboards.md](../docs/dashboards.md)); a time chart or a sparkline can follow a date field of its own (`time_dimension`).
