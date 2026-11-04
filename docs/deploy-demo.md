@@ -9,9 +9,12 @@ https://demo.eloha-da.com
   /kc/*            Keycloak       (sign-in; KC_HTTP_RELATIVE_PATH=/kc; the admin console and master realm answer 404)
   /auth-api/*      auth service   (Keycloak token -> Cube token)       prefix stripped
   /actions-api/*   actions service (approve inventory actions)         prefix stripped
-  /admin-api/*     admin service  (people, groups, roles; admins only) prefix stripped
+  /admin-api/*     admin service  (people, groups, rules, datasets; admins only) prefix stripped
+  /builder-api/*   builder        (describe a dashboard, saved dashboards)  prefix stripped
+  /lab-api/*       SQL lab        (rows through Cube's SQL API)       prefix stripped
   /cubejs-api/*    Cube           (queries; every call needs the signed token)
-  everything else  dashboard-cube (the page)
+  /cubejs-250m/*   second Cube    (DATASET=both only: the 250M tier; 502 without it)
+  everything else  dashboard-cube (the pages: /home/ start page, /d/ dashboards, /admin/, /lab/, and the sales page at /)
 ```
 
 Everything mode-specific lives in `docker-compose.public.yml`, so a local run (`docker-compose.yml` alone, `PUBLIC_URL` unset)
@@ -44,7 +47,7 @@ Then fill the data: unpause the two DAGs in Airflow (`http://localhost:8080` thr
 `simulate_adventureworks` and `postgres_active_to_starrocks` (the second builds the mart in about a minute and refreshes it
 every 5 minutes). For the weekly proposal agent also unpause `inventory_weekly_proposals`.
 
-The demo users (`admin`, `na_manager`, `de_rep`, `buyer`, `marketer`) all use `TEST_USER_PASSWORD` from `.env`.
+The demo users all use `TEST_USER_PASSWORD` from `.env`: `admin` (the admin role: everything, the admin console and the SQL lab) and four editors, each in one group: `na_manager` (Managers), `de_rep` (Reps), `buyer` (Purchasing), `marketer` (Marketing). A role only says what a person may do; which data they see comes from their group's dataset grants and row rules (territory and product category), set in the admin console ([admin.md](admin.md)). Signing in at `/` lands on the start page, `/home/`.
 
 ## Update a running server
 For a server deployed as above (`COMPOSE_FILE` and `PUBLIC_URL` are in `.env`). **The order matters**: the auth service reads the access rules from Postgres and fails the sign-in (503) rather than guess, and Cube, the auth service and the admin console read the row-level dimensions (`access.rls_dimension`) when they start and do not start without them, so the database schemas must exist before they restart with the new code.
@@ -68,7 +71,7 @@ keycloak/migrate-roles.sh       # ONCE, if people still hold the old roles (mana
                                 # (after sync-access.sh, which seeds the datasets those groups are granted; before the new auth restarts: it refuses the old roles)
 
 # 3. rebuild and restart everything else (auth, builder, admin, lab, dashboard-cube, cube pick up the new code and settings)
-docker compose --profile starrocks up -d --build
+docker compose --profile starrocks up -d --build                    # with DATASET=both add --profile dual, or cube-250m keeps the old code
 docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile      # the new /admin-api and /lab-api routes
 ```
 Check: `curl -s -o /dev/null -w '%{http_code}\n' https://demo.eloha-da.com/home/` (200), `.../admin-api/healthz` and `.../lab-api/healthz` (200), `.../admin-api/users` (401: it wants a token); sign in as `admin` and open **Admin** and **SQL lab**.
@@ -110,7 +113,7 @@ drift from the one that was benchmarked.
 scripts/grant-dataset.sh 250m
 # then:
 sed -i 's/^DATASET=.*/DATASET=250m/' .env || echo 'DATASET=250m' >> .env   # set it (replacing an existing line)
-docker compose up -d cube auth actions dashboard-cube      # recreate the four services that read it
+docker compose up -d cube auth actions admin dashboard-cube      # recreate the services that read it (admin: the regions its rules screen offers)
 ```
 Optionally pause the weekly agent (`inventory_weekly_proposals`): it would read the 250m Cube and its drafts would be refused. (With `both` the agent keeps reading the live Cube.)
 
@@ -130,7 +133,7 @@ territories are the same).
 ```bash
 scripts/grant-dataset.sh 250m                       # once, after the 250m dbt build
 sed -i 's/^DATASET=.*/DATASET=both/' .env || echo 'DATASET=both' >> .env
-docker compose --profile starrocks --profile dual up -d     # starts cube-250m, recreates cube, auth, actions, dashboard-cube
+docker compose --profile starrocks --profile dual up -d     # starts cube-250m, recreates cube, auth, actions, admin, dashboard-cube
 ```
 Costs: a second Cube container and the 250M rollups next to the live ones in StarRocks and Cube Store. The first 250M query builds
 its rollups (a few minutes, as above) while the live 5-minute refresh keeps running, so watch StarRocks memory
@@ -139,7 +142,7 @@ Go back to a single dataset with `DATASET=live`/`250m` and `docker compose --pro
 
 **Switch back to live**
 ```bash
-sed -i 's/^DATASET=.*/DATASET=live/' .env && docker compose up -d cube auth actions dashboard-cube
+sed -i 's/^DATASET=.*/DATASET=live/' .env && docker compose up -d cube auth actions admin dashboard-cube
 ```
 It is immediate: the live rollups (`dev_pre_aggregations`) were never touched. The 250m ones stay in their schema for the next switch.
 
@@ -165,8 +168,9 @@ run them on a local stack, or against the server before the script, or with the 
   If issuance fails, `docker compose logs caddy` says why (DNS not pointing here, port 80 or 443 blocked, the DNS record proxied).
 - **Only Caddy publishes ports.** `docker compose ps` / `docker compose config | grep -B1 published` show 80 and 443 on `0.0.0.0` and
   everything else on `127.0.0.1`. Airflow, StarRocks and the databases are reached through `ssh -L`.
-- **The Dataset switch** (live / 250M benchmark in the header, two Cubes) is a local feature and is not offered on a public host: the
-  benchmark Cube from `run_scale.sh` is published on the server's localhost only. On a public host use `DATASET` above instead.
+- **The Dataset switch on a public host is `DATASET=both`** (above): Caddy routes `/cubejs-250m/` to the second Cube. The older local variant
+  (`CUBE_250M_PORT` pointing at the benchmark Cube from `spike/bench/run_scale.sh`, with `DATASET=live`) only works on localhost: that Cube is
+  published on the server's localhost and has no public route.
 - **Keycloak admin.** The admin console is blocked at the proxy. Administer with `docker compose exec keycloak /opt/keycloak/bin/kcadm.sh`
   (what the scripts do), or temporarily through `ssh -L 8180:localhost:8180 demo` (the console then redirects to the public host, so
   prefer `kcadm.sh`).
@@ -184,7 +188,7 @@ public address keeps the public redirect URIs: run `PUBLIC_URL=http://localhost:
 `http://localhost` value counts as local, and the script then turns the password grant back on) after the stack is back up.
 
 ## Dashboards from YAML (`/d/`)
-`dashboard-cube` also serves the dashboard renderer: `/d/` lists the dashboards the signed-in role may open and `/d/<id>` draws one
-(specs in `dashboards/*.yml`, compiled to the committed `dashboards/build/`; see `dashboards/README.md`). The first deploy of this needs the
-service recreated, because it gets a new mount and nginx routes: `git pull && docker compose up -d dashboard-cube`. After that a new or
-changed dashboard is only `git pull` (nginx reads the JSON on each request). Nothing else changes: the sales dashboard stays at `/`.
+`dashboard-cube` also serves the dashboard renderer: `/d/` lists the dashboards (samples from `dashboards/*.yml`, compiled to the committed
+`dashboards/build/`, and the saved ones) and `/d/<id>` draws one; see `dashboards/README.md`. A dashboard is listed for whoever may read every
+cube and field it uses (datasets and grants), not by role. A new or changed sample dashboard is only `git pull` (nginx reads the JSON on each
+request); saved dashboards live in Postgres and need nothing. The start page `/home/` links to them.
