@@ -378,6 +378,8 @@
               "filter": { "$ref": "#/$defs/id" },
               "dimension": { "$ref": "#/$defs/member" },
               "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "filter_type": { "enum": ["select", "multiselect", "text", "number", "date"] },
+              "default": { "type": "string" },
               "display": { "enum": ["list", "chips", "dropdown"] }
             }
           }

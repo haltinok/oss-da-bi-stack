@@ -163,3 +163,28 @@ def test_python_and_the_renderer_ask_cube_the_same_for_a_field_slicer(tmp_path):
     assert options and all("products.color" in q["query"]["dimensions"] for q in options), "the slicer asks for the colours"
     narrowed = next(s for s in dumped if s["values"].get("sl_colour"))
     assert any(f["member"] == "products.color" for q in narrowed["panels"]["kpis"] for f in q["query"].get("filters", [])), "a chosen colour narrows the key figures"
+
+
+# ---- its filter settings (phase 1b)
+def test_type_and_default_move_onto_the_made_filter():
+    out, _ = compiled(with_slicer(copy.deepcopy(GOOD), filter_type="multiselect", default="in:Red,Black", display="chips"))
+    assert by_id(out["filters"], "sl_colour") == {"id": "sl_colour", "dimension": "products.color", "label": "Color", "source": "colour", "type": "multiselect", "default": "in:Red,Black"}
+    assert by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour", "display": "chips"}
+
+
+def test_a_date_slicer_on_a_time_field():
+    out, _ = compiled(with_slicer(copy.deepcopy(GOOD), dimension="dates.full_date", filter_type="date", default="rel:last_30_days"))
+    assert by_id(out["filters"], "sl_colour")["type"] == "date"
+
+
+@pytest.mark.parametrize("fields,needle", [
+    ({"filter_type": "date"}, "panel 'colour' (slicer): filter_type: 'date' needs a time dimension, 'products.color' is string"),
+    ({"filter_type": "number"}, "panel 'colour' (slicer): filter_type: 'number' needs a number dimension"),
+    ({"filter_type": "multiselect", "default": "Red"}, "panel 'colour' (slicer): default: 'Red' is not a value of a multiselect filter"),
+    ({"filter_type": "text", "display": "chips"}, "panel 'colour' (slicer): display: only a select or multiselect filter can be a list or chips; this slicer is a text slicer"),
+    ({"filter_type": "grid"}, "filter_type"),
+], ids=["date-on-text", "number-on-text", "bad-default", "display-on-text", "unknown-type"])
+def test_settings_that_do_not_fit_the_field_are_refused_under_the_slicers_name(fields, needle):
+    errors, _ = check(with_slicer(copy.deepcopy(GOOD), **fields))
+    assert errors and any(needle in e for e in errors), errors
+    assert not any("sl_colour" in e for e in errors), "the reader wrote a slicer, not a filter called sl_colour"
