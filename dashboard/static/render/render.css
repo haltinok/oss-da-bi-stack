@@ -6,9 +6,17 @@
 .logo { height: 28px; width: auto; margin-right: 10px; vertical-align: middle; }
 .brand-name { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
-.kpis.dyn { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); margin-bottom: 0; }
-@media (max-width: 1100px) { .kpis.dyn { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .kpis.dyn { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+/* Key figures: --k tiles to a line, sharing it equally. The panel sets --per (every tile up to 6, half of 7 or 8: 4 + 4, not 6 + 2) and --per-mid for
+   screens up to 1100px (5 or 6 tiles: 3 + 3, 7 or 8: 4 + 4). Fewer when a tile would be under 170px, measured in the panel's own width, so a row in a
+   narrow layout cell wraps too. A tile is never wider than 320px (--n tiles of 320px at most cap the row): one or two figures are cards, not banners. */
+.kpis.dyn {
+  --gap: 16px; --k: var(--per, 6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(170px, (100% - (var(--k) - 1) * var(--gap)) / var(--k) - 1px)), 1fr));
+  max-width: calc(var(--n, 6) * 320px + (var(--n, 6) - 1) * var(--gap)); margin-bottom: 0;
+}
+@media (max-width: 1100px) { .kpis.dyn { --k: var(--per-mid, 3); } }
+@media (max-width: 560px) { .kpis.dyn { --gap: 10px; --k: 2; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, max(140px, (100% - var(--gap)) / 2 - 1px)), 1fr)); max-width: none; } }
+.kpis.dyn .kpi .delta { flex-wrap: wrap; row-gap: 0; }
 .kpi.pending { opacity: 0.55; }
 .kpi .delta { color: var(--warn, #b45309); }
 .kpi .delta.cmp { color: var(--muted); }
