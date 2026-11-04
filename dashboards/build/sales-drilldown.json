@@ -28,9 +28,22 @@
       "id": "region",
       "dimension": "territories.region",
       "label": "Region"
+    },
+    {
+      "id": "sl_group",
+      "dimension": "territories.group_name",
+      "label": "Sales group",
+      "source": "group"
     }
   ],
   "panels": [
+    {
+      "id": "group",
+      "type": "slicer",
+      "display": "chips",
+      "filter": "sl_group",
+      "title": "Sales group"
+    },
     {
       "id": "kpis",
       "type": "kpi",
@@ -222,6 +235,12 @@
     ],
     [
       {
+        "panel": "group",
+        "span": 12
+      }
+    ],
+    [
+      {
         "panel": "trend",
         "span": 7
       },
@@ -291,6 +310,10 @@
     "reseller_sales.units": {
       "kind": "measure",
       "type": "sum"
+    },
+    "territories.group_name": {
+      "kind": "dimension",
+      "type": "string"
     },
     "territories.region": {
       "kind": "dimension",

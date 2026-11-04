@@ -67,6 +67,7 @@ def expand(spec, catalog=None):
                 if not joins(catalog, q, f["dimension"]) and f["id"] not in q.get("ignore_filters", []):
                     q["ignore_filters"] = [*q.get("ignore_filters", []), f["id"]]
         p["filter"] = f["id"]
+        p.setdefault("title", f["label"])              # the card's heading: a list or chips slicer does not print its filter's label itself
         for k in ("dimension", "label", *OWN):
             p.pop(k, None)
     return out

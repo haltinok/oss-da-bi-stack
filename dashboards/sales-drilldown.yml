@@ -20,6 +20,11 @@ filters:
     dimension: territories.region
     label: Region
 panels:
+  - id: group
+    type: slicer
+    dimension: territories.group_name      # a slicer on a field: no filter to declare (it narrows this dashboard, and the rollups have the field)
+    label: Sales group
+    display: chips
   - id: kpis
     type: kpi
     compare: previous_period
@@ -87,6 +92,7 @@ panels:
     totals: footer
 layout:
   - [kpis: 12]
+  - [group: 12]
   - [trend: 7, donut: 5]
   - [categories: 6, regions: 6]
   - [detail: 12]

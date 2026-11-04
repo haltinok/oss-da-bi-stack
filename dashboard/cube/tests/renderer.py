@@ -1564,6 +1564,19 @@ with sync_playwright() as p:
     page.mouse.move(5, 5)
     check(page.locator('[data-panel="categories"] svg .hit').count() == 4 and page.locator('[data-panel="categories"] svg rect[fill]').count() >= 4, "vertical columns are drawn for the category bars")
     check(page.locator("#period-bar").is_hidden(), "no period yet")
+    # the slicer on a field (dimension: territories.group_name, no filter declared): chips of the field's values; a choice narrows the panels and is in the address
+    group = '[data-panel="group"]'
+    check(page.locator(f"{group} h2").inner_text() == "Sales group" and page.locator(f"{group} .slicer-chip").count() == 2, "the field slicer shows its field's values as chips, under its label")
+    check(not any(x.strip() == "Sales group" for x in page.locator("#filters label.field").all_inner_texts()), "and it is not also in the header")
+    page.queries.clear()
+    page.locator(f"{group} .slicer-chip", has_text="Europe").click()
+    settled(page)
+    check("sl_group=Europe" in here(page) and page.locator(f"{group} .slicer-chip[aria-pressed=\"true\"]").count() == 1, f"a chip writes sl_group to the address and shows pressed ({here(page)})")
+    narrowed = [q for q in sent(page) if q.get("measures") and not q.get("dimensions") and has_filter(q, "territories.group_name")]
+    check(narrowed, "the choice narrows the key figures")
+    page.click("#filters .reset")
+    settled(page)
+    check("sl_group" not in here(page) and page.locator(f"{group} .slicer-chip[aria-pressed=\"true\"]").count() == 0, "Reset clears it")
 
     page.queries.clear()
     page.locator(f"{trend} .hit").nth(1).click()

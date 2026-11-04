@@ -53,13 +53,13 @@ def by_id(items, id_):
 def test_a_slicer_on_a_field_becomes_a_slicer_of_a_filter_made_for_it():
     out, used = compiled(with_slicer(copy.deepcopy(GOOD)))
     assert by_id(out["filters"], "sl_colour") == {"id": "sl_colour", "dimension": "products.color", "label": "Color", "source": "colour"}
-    assert by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour"}
+    assert by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour", "title": "Color"}, "the label is the card's heading"
     assert "products.color" in used, "the field counts as one the dashboard reads (who may open it goes by those)"
 
 
 def test_its_label_is_the_authors_when_given():
     out, _ = compiled(with_slicer(copy.deepcopy(GOOD), label="Colour", display="chips"))
-    assert by_id(out["filters"], "sl_colour")["label"] == "Colour" and by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour", "display": "chips"}
+    assert by_id(out["filters"], "sl_colour")["label"] == "Colour" and by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour", "display": "chips", "title": "Colour"}
 
 
 def test_on_a_dashboard_with_tabs_it_narrows_only_its_own_tab():
@@ -82,6 +82,11 @@ def test_a_click_on_a_chart_by_the_same_field_sets_the_slicer():
     spec = copy.deepcopy(GOOD)
     out, _ = compiled(with_slicer(spec, pid="product", dimension="products.name"))
     assert by_id(out["panels"], "top")["on_click"] == {"set_filter": ["sl_product"]}, "the cross-filtering reuses the slicer's filter, so the slicer shows the click"
+
+
+def test_a_title_of_its_own_wins_over_the_label():
+    out, _ = compiled(with_slicer(copy.deepcopy(GOOD), label="Colour", title="Pick a colour"))
+    assert by_id(out["panels"], "colour")["title"] == "Pick a colour" and by_id(out["filters"], "sl_colour")["label"] == "Colour"
 
 
 def test_the_source_file_is_not_changed_by_validating_or_compiling():
@@ -169,7 +174,7 @@ def test_python_and_the_renderer_ask_cube_the_same_for_a_field_slicer(tmp_path):
 def test_type_and_default_move_onto_the_made_filter():
     out, _ = compiled(with_slicer(copy.deepcopy(GOOD), filter_type="multiselect", default="in:Red,Black", display="chips"))
     assert by_id(out["filters"], "sl_colour") == {"id": "sl_colour", "dimension": "products.color", "label": "Color", "source": "colour", "type": "multiselect", "default": "in:Red,Black"}
-    assert by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour", "display": "chips"}
+    assert by_id(out["panels"], "colour") == {"id": "colour", "type": "slicer", "filter": "sl_colour", "display": "chips", "title": "Color"}
 
 
 def test_a_date_slicer_on_a_time_field():

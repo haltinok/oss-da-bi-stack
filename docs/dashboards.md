@@ -215,6 +215,19 @@ It takes part in everything the other filters do:
 - **Cross-filtering**: a click on a chart that sets the filter (`on_click.set_filter`) shows in the slicer, and picking in the slicer narrows the chart, like the header filter does.
 - **Drill-down**: the period a drill-down opens narrows the options too.
 
+**A slicer on a field**, without declaring a filter: give the slicer a `dimension` instead of a `filter`. Any dimension of the model works, as long as a panel of the slicer's tab can be filtered by it.
+```yaml
+  - id: group
+    type: slicer
+    dimension: territories.group_name
+    label: Sales group          # the card's heading (default: the field's name)
+    display: chips
+    filter_type: multiselect    # optional: select (default), multiselect, text, number, date
+    default: "in:Europe"        # optional, written as for a filter
+```
+The compiler makes it a filter of its own (`sl_group` in the address). It narrows **only the panels of its own tab** (the whole dashboard when there are no tabs). A panel of that tab that cannot be filtered by the field is left out. It is refused when no panel of the tab can be filtered by the field, and when a visible filter or another slicer already narrows those panels by the same field (draw that filter with `filter:` instead). A click on a chart by the same field shows in it, as with any filter. `sales-drilldown` has one, the Sales group chips under the key figures.
+Pick a field the panels' rollups have (here `territories.group_name`), or the slicer's list is read from the raw data: fine on the live mart, slow on the 250M tier. `dashspec lint` lists such queries.
+
 ## Calculations: formulas over measures
 
 A calculation is a named formula over measures, defined once at the top of the file and used like a measure (`calc.<id>`) in any panel: a key figure, a chart series, a bar, a pie, a treemap, a table column, a pivot measure, and as the field a table is sorted by. It can mix measures of cubes that do not join (internet and reseller sales).
