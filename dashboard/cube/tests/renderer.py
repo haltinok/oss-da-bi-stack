@@ -1552,6 +1552,18 @@ with sync_playwright() as p:
     check(not page.problems, f"the drill-down dashboard loads without console errors {page.problems[:2]}")
     check(crumbs() == ["All"] and hits() == 3 and "2019" in page.inner_text(trend) and "Click a point to drill down" in page.inner_text(trend), "the chart starts at the year level with a trail")
     check(page.locator(f"{trend} svg path[fill-opacity]").count() >= 2, "a stacked area is drawn")
+    check(page.locator('[data-panel="donut"] path.slice').count() == 4 and page.locator('[data-panel="donut"] .pie-legend li').count() == 4, "the donut has a slice and a legend row per subcategory")
+    check("Total" in page.inner_text('[data-panel="donut"]') and "$" in page.text_content('[data-panel="donut"] .pie-total'), "with the total in the middle")
+    detail = '[data-panel="detail"]'
+    cells = page.locator(f"{detail} tfoot tr.tot td").all_inner_texts()
+    check(page.locator(f"{detail} tbody tr").count() > 3 and cells[:2] == ["", ""] and all(c.startswith("$") for c in cells[2:4]) and all(c.endswith("%") for c in cells[4:]), f"the subcategory table has a footer total: dimensions empty, revenue and margin filled ({cells})")
+    wholes = [q for q in sent(page) if not q.get("dimensions") and not q.get("timeDimensions") and q.get("measures") in (["internet_sales.revenue", "internet_sales.margin_pct"], ["reseller_sales.revenue", "reseller_sales.margin_pct"])]
+    check(len(wholes) == 2, f"one total query per measure cube, margins included, so each margin is the set's own ratio ({len(wholes)})")
+    page.locator('[data-panel="donut"] path.slice').first.hover()
+    check("Revenue" in page.inner_text("#tip") and "Share" in page.inner_text("#tip"), "the slice tooltip uses the author's measure label")
+    page.mouse.move(5, 5)
+    check(page.locator('[data-panel="categories"] svg .hit').count() == 4 and page.locator('[data-panel="categories"] svg rect[fill]').count() >= 4, "vertical columns are drawn for the category bars")
+    check(page.locator("#period-bar").is_hidden(), "no period yet")
     # the slicer on a field (dimension: territories.group_name, no filter declared): chips of the field's values; a choice narrows the panels and is in the address
     group = '[data-panel="group"]'
     check(page.locator(f"{group} h2").inner_text() == "Sales group" and page.locator(f"{group} .slicer-chip").count() == 2, "the field slicer shows its field's values as chips, under its label")
@@ -1565,18 +1577,6 @@ with sync_playwright() as p:
     page.click("#filters .reset")
     settled(page)
     check("sl_group" not in here(page) and page.locator(f"{group} .slicer-chip[aria-pressed=\"true\"]").count() == 0, "Reset clears it")
-    check(page.locator('[data-panel="donut"] path.slice').count() == 4 and page.locator('[data-panel="donut"] .pie-legend li').count() == 4, "the donut has a slice and a legend row per subcategory")
-    check("Total" in page.inner_text('[data-panel="donut"]') and "$" in page.text_content('[data-panel="donut"] .pie-total'), "with the total in the middle")
-    detail = '[data-panel="detail"]'
-    cells = page.locator(f"{detail} tfoot tr.tot td").all_inner_texts()
-    check(page.locator(f"{detail} tbody tr").count() > 3 and cells[:2] == ["", ""] and all(c.startswith("$") for c in cells[2:4]) and all(c.endswith("%") for c in cells[4:]), f"the subcategory table has a footer total: dimensions empty, revenue and margin filled ({cells})")
-    wholes = [q for q in sent(page) if not q.get("dimensions") and not q.get("timeDimensions") and q.get("measures") in (["internet_sales.revenue", "internet_sales.margin_pct"], ["reseller_sales.revenue", "reseller_sales.margin_pct"])]
-    check(len(wholes) == 2, f"one total query per measure cube, margins included, so each margin is the set's own ratio ({len(wholes)})")
-    page.locator('[data-panel="donut"] path.slice').first.hover()
-    check("Revenue" in page.inner_text("#tip") and "Share" in page.inner_text("#tip"), "the slice tooltip uses the author's measure label")
-    page.mouse.move(5, 5)
-    check(page.locator('[data-panel="categories"] svg .hit').count() == 4 and page.locator('[data-panel="categories"] svg rect[fill]').count() >= 4, "vertical columns are drawn for the category bars")
-    check(page.locator("#period-bar").is_hidden(), "no period yet")
 
     page.queries.clear()
     page.locator(f"{trend} .hit").nth(1).click()
