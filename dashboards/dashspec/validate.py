@@ -256,7 +256,8 @@ def _slicer_errors(w, p, spec):
     if others:
         errs.append(f"{w}: filter: '{flt['id']}' is already drawn by the slicer '{others[0]}'; a filter has one")
     if "display" in p and flt.get("type", "select") not in ("select", "multiselect"):
-        errs.append(f"{w}: display: only a select or multiselect filter can be a list or chips; '{flt['id']}' is a {flt.get('type')} filter and shows its own control")
+        what = f"this slicer is a {flt.get('type')} slicer" if flt.get("source") == p["id"] else f"'{flt['id']}' is a {flt.get('type')} filter"
+        errs.append(f"{w}: display: only a select or multiselect filter can be a list or chips; {what} and shows its own control")
     if flt.get("scope") == "page" and filters_mod.tab_of(spec, p["id"]) != flt.get("tab"):
         errs.append(f"{w}: filter: '{flt['id']}' is a filter of tab '{flt.get('tab')}'; its slicer must sit on that tab")
     return errs
@@ -411,13 +412,16 @@ def semantic_errors(spec, catalog):
     for dup in sorted({i for i in filter_ids if filter_ids.count(i) > 1}):
         errs.append(f"dashboard: filters: id '{dup}' is used by more than one filter")
     for f in filters:
-        w = f"filter '{f['id']}'"
+        w = f"panel '{f['source']}' (slicer)" if f["id"].startswith(slicers.PREFIX) and "source" in f else f"filter '{f['id']}'"      # a field slicer's settings are its own
         check(w, "dimension", f["dimension"], "dimension")
         if "parent" in f:
             check(w, "parent", f["parent"], "dimension")
             if f["parent"] == f["dimension"]:
                 errs.append(f"{w}: parent: a filter cannot be its own parent")
-        errs.extend(_filter_type_errors(w, f, filters, used))
+        type_errs = _filter_type_errors(w, f, filters, used)
+        if f["id"].startswith(slicers.PREFIX):                   # on a field slicer the setting is written filter_type (a panel's `type` is `slicer`)
+            type_errs = [e.replace(f"{w}: type:", f"{w}: filter_type:", 1) for e in type_errs]
+        errs.extend(type_errs)
         errs.extend(_filter_scope_errors(w, f, spec))
 
     for i, tag in enumerate(spec.get("tags", [])):

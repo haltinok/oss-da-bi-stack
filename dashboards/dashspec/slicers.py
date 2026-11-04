@@ -11,6 +11,7 @@ from .filters import tab_of
 
 PREFIX = "sl_"                       # the filter ids made here; a file's own filters may not start with it (the validator says so)
 DATA_LESS = ("text", "slicer")
+OWN = {"filter_type": "type", "default": "default"}     # a field slicer's filter settings -> the made filter's (a panel's own `type` is `slicer`, hence filter_type)
 
 
 def label_of(dimension):
@@ -45,6 +46,7 @@ def joins(catalog, panel, dimension):
 
 def made_filter(spec, slicer):
     f = {"id": f"{PREFIX}{slicer['id']}", "dimension": slicer["dimension"], "label": slicer.get("label") or label_of(slicer["dimension"]), "source": slicer["id"]}
+    f |= {OWN[k]: slicer[k] for k in OWN if k in slicer}
     tab = tab_of(spec, slicer["id"]) if "tabs" in spec else None
     if tab is not None:
         f |= {"scope": "page", "tab": tab}
@@ -65,6 +67,6 @@ def expand(spec, catalog=None):
                 if not joins(catalog, q, f["dimension"]) and f["id"] not in q.get("ignore_filters", []):
                     q["ignore_filters"] = [*q.get("ignore_filters", []), f["id"]]
         p["filter"] = f["id"]
-        p.pop("dimension")
-        p.pop("label", None)
+        for k in ("dimension", "label", *OWN):
+            p.pop(k, None)
     return out
