@@ -7,7 +7,7 @@ import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, m
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption } from "../lib/designer-structure.js";
+import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -311,7 +311,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <div class="dz-layout" role="group" aria-label="${esc(dz.layout)}">${LAYOUT_COMMANDS.map((cmd) => `<button type="button" data-cmd="${cmd}" ${moveCommand(source, panel.id, cmd).problem ? "disabled" : ""}>${esc(dz.cmd[cmd])}</button>`).join("")}</div>
       <p class="hint">${esc(dz.width(rowOf(source, panel.id).find((c) => c.id === panel.id)?.span ?? 12))}</p>
       ${tabsOf(source).length > 1 ? `<label class="dz-field"><span>${esc(dz.toTab)}</span><span class="dz-input"><select id="dz-totab"><option value="">—</option>${tabsOf(source).filter((tab) => !tab.panels.includes(panel.id)).map((tab) => `<option value="${esc(tab.id)}">${esc(tab.title)}</option>`).join("")}</select></span></label>` : ""}
-      <div class="dz-actions"><button type="button" id="dz-back">${esc(dz.back)}</button><button type="button" id="dz-dup">${esc(dz.duplicate)}</button><button type="button" id="dz-del" class="dz-danger">${esc(dz.remove)}</button></div>
+      <div class="dz-actions"><button type="button" id="dz-back">${esc(dz.back)}</button>${panel.type === "slicer" && panel.dimension !== undefined ? `<button type="button" id="dz-tobar">${esc(dz.toBar)}</button>` : ""}<button type="button" id="dz-dup">${esc(dz.duplicate)}</button><button type="button" id="dz-del" class="dz-danger">${esc(dz.remove)}</button></div>
       <p class="hint">${esc(dz.footer)}</p>`;
     drawer.querySelector("#dz-calc-add")?.append(calcEntry(selected));
     for (const slot of drawer.querySelectorAll(".dz-input")) {
@@ -798,6 +798,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (rm) { if (confirm(dz.confirmFilter)) commit(removeFilter(source, rm.dataset.rmFilter), { message: dz.filterRemoved, panel: null }); return; }
     if (e.target.closest("#dz-addfilter")) { const dim = drawer.querySelector("#dz-newfilter").value; if (dim) commit(addFilter(source, catalog, dim), { message: dz.filterAdded, panel: null }); return; }
     if (e.target.closest("#dz-back")) { select(null); return; }
+    if (e.target.closest("#dz-tobar")) { commit(moveSlicerToBar(source, catalog, selected), { message: dz.movedToBar, panel: null }); return; }
     if (e.target.closest("#dz-dup")) { commit(duplicatePanel(source, selected, { suffix: dz.copySuffix }), { message: dz.duplicated }); return; }
     if (e.target.closest("#dz-del")) {
       const title = panelDef()?.title || selected;
