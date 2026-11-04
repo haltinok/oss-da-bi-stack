@@ -6,7 +6,7 @@ import re
 
 from jsonschema import Draft202012Validator
 
-from . import calculations, crossfilter, filters as filters_mod
+from . import calculations, crossfilter, filters as filters_mod, slicers
 
 SCHEMA = json.loads((pathlib.Path(__file__).parent.parent / "schema" / "dashboard.schema.json").read_text())
 _VALIDATOR = Draft202012Validator(SCHEMA)
@@ -262,6 +262,33 @@ def _slicer_errors(w, p, spec):
     return errs
 
 
+def _field_slicer_errors(spec, catalog, check):
+    """A slicer on a field: the field is a dimension of the model, at least one panel of its tab can be filtered by it (its options are asked with that panel's measures),
+    and it is the only control for that field on those panels (a second one, a header filter or another slicer, would apply as well and confuse the reader)."""
+    errs = []
+    field = slicers.field_slicers(spec)
+    for p in field:
+        w = f"panel '{p['id']}' (slicer)"
+        dim = p["dimension"]
+        if check(w, "dimension", dim, "dimension") is None:
+            errs.append(f"{w}: dimension: a slicer needs a dimension of the model")          # check() has said why; this stops the expansion
+            continue
+        scope = slicers.scope_panels(spec, p)
+        where = "its tab" if "tabs" in spec else "the dashboard"
+        if not scope:
+            errs.append(f"{w}: dimension: {where} has no panel with data for the slicer to narrow")
+        elif not any(slicers.joins(catalog, q, dim) for q in scope):
+            errs.append(f"{w}: dimension: none of the panels of {where} ({', '.join(q['id'] for q in scope)}) can be filtered by '{dim}', so the slicer would narrow nothing")
+        ids = {q["id"] for q in scope}
+        for f in spec.get("filters", []):
+            if f["dimension"] == dim and f.get("visible", True) is not False and any(filters_mod.applies(spec, f, i) for i in ids):
+                errs.append(f"{w}: dimension: the filter '{f['id']}' already narrows these panels by '{dim}'; draw it as a slicer with `filter: {f['id']}` instead of a second control")
+        for q in field:
+            if q is not p and q["dimension"] == dim and field.index(q) < field.index(p) and ids & {x["id"] for x in slicers.scope_panels(spec, q)}:
+                errs.append(f"{w}: dimension: the slicer '{q['id']}' already narrows these panels by '{dim}'")
+    return errs
+
+
 NUMERIC_ONLY = ("sum", "avg")
 
 
@@ -367,13 +394,22 @@ def semantic_errors(spec, catalog):
 
     check("dashboard", "time.dimension", spec["time"]["dimension"], "dimension", time=True)
 
+    for fid in (f["id"] for f in spec.get("filters", [])):
+        if fid.startswith(crossfilter.PREFIX):
+            errs.append(f"dashboard: filters: id '{fid}': ids starting with '{crossfilter.PREFIX}' are made by cross_filter")
+        if fid.startswith(slicers.PREFIX):
+            errs.append(f"dashboard: filters: id '{fid}': ids starting with '{slicers.PREFIX}' are made for slicers on a field")
+    # a slicer on a field (`dimension:`) becomes a filter of its own; once its own rules hold, the rest of the checks run on the file with that filter in it, so the made
+    # filter and its slicer go through every filter and slicer rule (slicers.py)
+    slicer_errs = _field_slicer_errors(spec, catalog, check)
+    errs.extend(slicer_errs)
+    if not slicer_errs:
+        spec = slicers.expand(spec, catalog)
+
     filters = spec.get("filters", [])
     filter_ids = [f["id"] for f in filters]
     for dup in sorted({i for i in filter_ids if filter_ids.count(i) > 1}):
         errs.append(f"dashboard: filters: id '{dup}' is used by more than one filter")
-    for fid in filter_ids:
-        if fid.startswith(crossfilter.PREFIX):
-            errs.append(f"dashboard: filters: id '{fid}': ids starting with '{crossfilter.PREFIX}' are made by cross_filter")
     for f in filters:
         w = f"filter '{f['id']}'"
         check(w, "dimension", f["dimension"], "dimension")
@@ -412,7 +448,7 @@ def semantic_errors(spec, catalog):
             if p["type"] == "kpi" and "sparkline" not in p:
                 errs.append(f"{w}: time_dimension: a key-figures row only has a time axis with a `sparkline`")
             check(w, "time_dimension", p["time_dimension"], "dimension", time=True)
-        if p["type"] == "slicer":
+        if p["type"] == "slicer" and "filter" in p:          # a field slicer whose own rules failed was not expanded; its errors are already listed
             errs.extend(_slicer_errors(w, p, spec))
         if "cross_filter" in p:
             errs.extend(_cross_filter_errors(w, p, spec, used, catalog))

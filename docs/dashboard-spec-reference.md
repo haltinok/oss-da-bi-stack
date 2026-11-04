@@ -246,7 +246,9 @@ Exactly one of `measure` or `stack`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | id | yes | The id of the filter this slicer draws, in the layout instead of the header (or tab bar, or card). The filter keeps its type, scope and default and still narrows the panels it applies to; the slicer only decides where it is drawn. A filter has at most one slicer; it must be visible; a page filter's slicer sits on its own tab. |
+| `filter` | id |  | Instead of `dimension`: the id of the filter this slicer draws, in the layout instead of the header (or tab bar, or card). The filter keeps its type, scope and default and still narrows the panels it applies to; the slicer only decides where it is drawn. A filter has at most one slicer; it must be visible; a page filter's slicer sits on its own tab. |
+| `dimension` | member (`cube.name`) |  | Instead of `filter`: a field of the model (`products.color`) whose values the slicer offers. The slicer is then a filter of its own (a select, in the address as `sl_<panel id>`), narrowing only the panels of its own tab (the whole dashboard when there are no tabs); a panel of that tab that cannot be filtered by the field is left out. At least one panel of the tab must be filterable by it, and no other visible filter or slicer may already narrow those panels by the same field (draw that filter with `filter:` instead). A click on a chart by the same field shows in the slicer. |
+| `label` | string |  | The slicer's heading, for a slicer on a field (`dimension`). Default: the field's name. |
 | `display` | `list` \| `chips` \| `dropdown` |  | How a `select` or `multiselect` filter is drawn: `list` (every option shown, ticked or picked; the default), `chips` (the options as buttons) or `dropdown` (the usual control). A text, number or date filter always shows its usual control. The options are narrowed by the other filters that apply to the slicer (the dashboard's, its tab's, its own pane filters) and by a drill-down's period, never by its own filter, and a chosen value stays chosen even when the others narrow it away. |
 
 ### `text`

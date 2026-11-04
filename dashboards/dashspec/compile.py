@@ -3,6 +3,7 @@ import copy
 
 from .calculations import with_calculations
 from .crossfilter import expand
+from .slicers import expand as expand_slicers
 
 
 def _calculation_formats(panel, members):
@@ -20,6 +21,7 @@ def _calculation_formats(panel, members):
 
 def compile_spec(spec, used, catalog=None):
     catalog = with_calculations(catalog, spec) if catalog is not None else None
+    spec = expand_slicers(spec, catalog)          # a slicer on a field becomes a slicer of a filter made for it (dashspec/slicers.py); before the cross-filtering, which reuses it
     spec = expand(spec, used, catalog)            # `cross_filter` on a panel becomes filters and an `on_click` (dashspec/crossfilter.py)
     out = copy.deepcopy({k: v for k, v in spec.items() if k not in ("layout", "tabs")})
     for panel in out["panels"]:
