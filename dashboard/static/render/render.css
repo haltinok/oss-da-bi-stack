@@ -8,14 +8,14 @@
 
 /* Key figures: --k tiles to a line, sharing it equally. The panel sets --per (every tile up to 6, half of 7 or 8: 4 + 4, not 6 + 2) and --per-mid for
    screens up to 1100px (5 or 6 tiles: 3 + 3, 7 or 8: 4 + 4). Fewer when a tile would be under 170px, measured in the panel's own width, so a row in a
-   narrow layout cell wraps too. A tile is never wider than 320px (--n tiles of 320px at most cap the row): one or two figures are cards, not banners. */
+   narrow layout cell wraps too. The tiles always fill the row, like the panels around them. */
 .kpis.dyn {
   --gap: 16px; --k: var(--per, 6);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, max(170px, (100% - (var(--k) - 1) * var(--gap)) / var(--k) - 1px)), 1fr));
-  max-width: calc(var(--n, 6) * 320px + (var(--n, 6) - 1) * var(--gap)); margin-bottom: 0;
+  margin-bottom: 0;
 }
 @media (max-width: 1100px) { .kpis.dyn { --k: var(--per-mid, 3); } }
-@media (max-width: 560px) { .kpis.dyn { --gap: 10px; --k: 2; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, max(140px, (100% - var(--gap)) / 2 - 1px)), 1fr)); max-width: none; } }
+@media (max-width: 560px) { .kpis.dyn { --gap: 10px; --k: 2; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, max(140px, (100% - var(--gap)) / 2 - 1px)), 1fr)); } }
 .kpis.dyn .kpi .delta { flex-wrap: wrap; row-gap: 0; }
 .kpi.pending { opacity: 0.55; }
 .kpi .delta { color: var(--warn, #b45309); }

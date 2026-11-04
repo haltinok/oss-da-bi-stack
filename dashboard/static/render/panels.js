@@ -140,7 +140,7 @@ export const kpiPerLine = (n) => {
 
 function kpiPanel(def, ctx) {
   const terms = def.measures.map(term);
-  const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--n:${terms.length};--per:${kpiPerLine(terms.length).wide};--per-mid:${kpiPerLine(terms.length).mid}` });     // render.css: one figure is a card, not a banner
+  const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--per:${kpiPerLine(terms.length).wide};--per-mid:${kpiPerLine(terms.length).mid}` });     // render.css: the tiles fill the row in even lines
   const tiles = terms.map((t) => {
     const tile = el("div", { class: "card kpi" }, `<div class="label">${esc(t.label)}</div><div class="value">…</div><div class="delta"></div>`);
     root.append(tile);
