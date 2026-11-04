@@ -373,9 +373,11 @@
         {
           "if": { "properties": { "type": { "const": "slicer" } } },
           "then": {
-            "required": ["filter"],
+            "oneOf": [{ "required": ["filter"] }, { "required": ["dimension"] }],
             "properties": {
               "filter": { "$ref": "#/$defs/id" },
+              "dimension": { "$ref": "#/$defs/member" },
+              "label": { "type": "string", "minLength": 1, "maxLength": 80 },
               "display": { "enum": ["list", "chips", "dropdown"] }
             }
           }
