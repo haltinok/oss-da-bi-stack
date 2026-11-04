@@ -129,9 +129,18 @@ export function showChange(node, { now, before, previous, kind, points, better }
   node.innerHTML = `<span role="img" aria-label="${esc(w[c.dir])}">${c.dir === "up" ? "▲" : "▼"}</span>${esc(size)} <span class="vs">${esc(vs)}</span>`;
 }
 
+/**
+ * Key-figure tiles to a line when there is room, so the lines come out even instead of leaving one or two tiles alone: { wide } all of them up to 6,
+ * 7 or 8 as 4 + 3 / 4 + 4; { mid } (screens up to 1100px) up to 4 on one line, 5 or 6 as 3 + 3 / 3 + 2, 7 or 8 as 4 + 4 / 4 + 3. render.css uses them.
+ */
+export const kpiPerLine = (n) => {
+  const k = Math.max(n, 1);
+  return { wide: k <= 6 ? k : Math.ceil(k / 2), mid: k <= 4 ? k : k <= 6 ? 3 : 4 };
+};
+
 function kpiPanel(def, ctx) {
   const terms = def.measures.map(term);
-  const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--cols:${Math.max(terms.length, 4)}` });
+  const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--n:${terms.length};--per:${kpiPerLine(terms.length).wide};--per-mid:${kpiPerLine(terms.length).mid}` });     // render.css: one figure is a card, not a banner
   const tiles = terms.map((t) => {
     const tile = el("div", { class: "card kpi" }, `<div class="label">${esc(t.label)}</div><div class="value">…</div><div class="delta"></div>`);
     root.append(tile);

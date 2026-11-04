@@ -743,3 +743,17 @@ test("the parts of a calculation come back as one result: merged on the dimensio
   const plain = await runAll(async () => [{ a: 1 }], [{ cube: "x", query: { measures: ["x.m"] } }]);
   assert.deepEqual(plain, [{ cube: "x", rows: [{ a: 1 }] }], "queries without a calculation come back as they were");
 });
+
+test("key-figure lines come out even: never a tile or two left alone on a line of their own", async () => {
+  const { kpiPerLine } = await import("../../static/render/panels.js");
+  const shape = (n, per) => { const lines = []; for (let left = n; left > 0; left -= per) lines.push(Math.min(per, left)); return lines; };
+  for (let n = 1; n <= 8; n++) {
+    for (const per of [kpiPerLine(n).wide, kpiPerLine(n).mid]) {
+      const lines = shape(n, per);
+      assert.ok(lines.length === 1 || lines.at(-1) >= lines[0] - 1, `${n} tiles at ${per} a line: ${lines.join(" + ")}`);
+    }
+  }
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => kpiPerLine(n).wide), [1, 2, 3, 4, 5, 6, 4, 4]);
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map((n) => kpiPerLine(n).mid), [1, 2, 3, 4, 3, 3, 4, 4]);
+  assert.deepEqual(kpiPerLine(0), { wide: 1, mid: 1 });
+});
