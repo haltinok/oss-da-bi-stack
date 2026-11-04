@@ -122,7 +122,7 @@ To switch a running stack to Claude: add the key to `.env`, then `docker compose
   panels, and is shown the first example again on two tabs; a mistake comes back naming the tab (`tabs: panel 'kpis' is placed 2 times (tab 'overview' and tab 'details')`). The rule-based
   stand-in never writes tabs and **refuses to change a dashboard that has them** (its editing rebuilds the layout from the panels and would flatten the pages): it says so and points at the YAML tab.
 - **The rule-based stand-in.** Keywords in English and Turkish (measures, drill levels, chart styles, per-channel charts, breakdowns, top N, table, treemap, pie, a pivot ("by category and month", "heatmap", "crosstab": one measure, rows by a dimension or two, the fiscal year or months/quarters across, optional shading), filters, clicks, language),
-  and edits (chart style, columns, top N, add or remove a panel, split a chart per channel). It says what it understood ("Understood: …") and, when it understood nothing
+  and edits (chart style, columns, top N, add or remove a panel, split a chart per channel, compare the key figures with the previous year or period or not: "compare with last year", "previous period", "remove the comparison", "geçen yıla göre karşılaştır"). A sales key-figures row compares with the previous year by default (the fiscal-year filter is always there); inventory figures are snapshots and do not compare. It says what it understood ("Understood: …") and, when it understood nothing
   of a change, says so and changes nothing. It is not an LLM and will miss phrasing it does not know; that is what Claude is for.
 
 ## When something is wrong
