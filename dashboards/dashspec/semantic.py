@@ -26,7 +26,8 @@ def catalog_json(catalog, role=None):
         if role and not (ms or ds):
             continue
         out.append({"cube": name, **({"extends": c["extends"]} if c.get("extends") else {}), **({"label_prefix": c["label_prefix"]} if c.get("label_prefix") else {}), "description": c.get("description", ""), "joins": sorted(j for j in (c["joins"] or ()) if j in readable),
-                    "fact": name in FACTS, "measures": ms, "dimensions": ds})
+                    "fact": name in FACTS, "measures": ms, "dimensions": ds,
+                    **({"rollup_dimensions": c["rollup_dimensions"]} if c.get("rollup_dimensions") else {})})          # for the designer's note on a slicer whose field no rollup has
     return out
 
 

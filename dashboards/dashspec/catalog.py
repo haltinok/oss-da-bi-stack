@@ -89,6 +89,16 @@ def _by_name(base, own):
     return list(merged.values())
 
 
+def _rollup_dimensions(name, cube):
+    """Every dimension (cube.field) any pre-aggregation of the cube groups by; a field written bare or as CUBE.field is the cube's own."""
+    out = set()
+    for pa in cube.get("pre_aggregations") or []:
+        for d in pa.get("dimensions") or []:
+            d = str(d)
+            out.add(f"{name}.{d.partition('.')[2]}" if d.startswith("CUBE.") else d if "." in d else f"{name}.{d}")
+    return sorted(out)
+
+
 def from_model(model_dir):
     """Read every cube in a Cube model directory (cube/model). Only names, types and joins are needed, so the SQL is ignored.
     A cube that `extends` another (a role of the date dimension: `ship_dates` extends `dates`) has the base's members, joins and key as well as its own."""
@@ -112,6 +122,7 @@ def from_model(model_dir):
             "extends": cube.get("extends"),
             "description": cube.get("description", ""),
             "docs": {m["name"]: m["description"] for m in members if m.get("description")},
+            "rollup_dimensions": _rollup_dimensions(name, cube),          # the fields its pre-aggregations group by: a query by any other field reads the raw data
         }
     if not cubes:
         raise SystemExit(f"no cubes found under {model_dir}")

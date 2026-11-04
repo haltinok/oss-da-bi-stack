@@ -118,7 +118,7 @@ def visible_catalog(catalog: cat.Catalog, role: str) -> cat.Catalog:
         ms = {m: t for m, t in c["measures"].items() if denied(role, f"{name}.{m}") is None}
         ds = {d: t for d, t in c["dimensions"].items() if denied(role, f"{name}.{d}") is None}
         if ms or ds:
-            cubes[name] = {"measures": ms, "dimensions": ds, "joins": c["joins"], "description": c.get("description", ""), "docs": c.get("docs", {})}
+            cubes[name] = {"measures": ms, "dimensions": ds, "joins": c["joins"], "description": c.get("description", ""), "docs": c.get("docs", {}), "rollup_dimensions": c.get("rollup_dimensions", [])}
     # a join to a cube the role cannot see is no use to it
     for c in cubes.values():
         c["joins"] = {j for j in (c["joins"] or ()) if j in cubes} if c["joins"] is not None else None

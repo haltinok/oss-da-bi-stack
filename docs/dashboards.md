@@ -193,7 +193,7 @@ What a click chose shows as chips in a **selection bar** above the panels ("Name
 In the designer, every such panel has **Clicking it filters the other panels**: Yes (the default), Yes for every tab (with tabs), No, or its own click rule written in the YAML. The source file keeps only what was chosen: nothing for the default.
 
 ### The slicer
-In the designer: the gallery's **Slicer** adds one for a filter that has none (or makes a filter first), a filter card has a **Show it as a slicer in the layout** box, and picking a slicer shows its Filter and *Shown as* (list, buttons, dropdown). Removing a filter removes its slicer; a filter has one slicer, so a slicer cannot be duplicated, and a filter that has one cannot be hidden.
+In the designer: the gallery's **Slicer** adds a slicer on a field (the first usual grouping its tab can be filtered by that nothing else uses), a filter card has a **Show it as a slicer in the layout** box, and picking a slicer shows **Shows**: *a field of the data* (**Field**, offering only the fields its tab can be filtered by, with a note when no rollup has the field; **Name**, **Type**, **Default** and *Shown as*, and **Move to the filter bar**) or *a filter of the dashboard* (its Filter and *Shown as*: list, buttons, dropdown). Switching between the two keeps what the slicer shows. Removing a filter removes its slicer; a filter has one slicer, so a slicer cannot be duplicated, and a filter that has one cannot be hidden.
 
 A `slicer` panel draws a filter **in the layout** instead of in the header, the tab's bar or a card: a list, buttons or the usual control, placed and sized like any panel.
 
