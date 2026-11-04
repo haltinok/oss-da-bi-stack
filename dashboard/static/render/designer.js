@@ -7,7 +7,7 @@ import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, m
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar } from "../lib/designer-structure.js";
+import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar, slicerOutsideRollups } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -329,6 +329,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       }
       if (panel.type === "slicer" && panel.dimension !== undefined) {                        // a slicer on a field: what no longer fits a new field or type goes with it
         slot.append(control(fd, panel, (v) => commit(setSlicerOption(source, catalog, selected, fd.path, v), { message: dz.changed(panel.title || selected) })));     // its made filter changes too, so the page draws itself again (patch refuses)
+        if (fd.kind === "slicerfield" && panel.dimension && slicerOutsideRollups(catalog, source, selected, panel.dimension)) slot.append(el("p", { class: "hint dz-rollup" }, esc(dz.notInRollup)));
         continue;
       }
       if (fd.kind === "aggregate") { slot.append(aggregateControl(fd, panel)); continue; }

@@ -238,6 +238,16 @@ export function slicerFieldOptions(catalog, source, slicerId) {
 }
 
 /**
+ * Does the slicer's list read the raw data? True when a fact cube of its tab's panels that can be filtered by the field has pre-aggregations and none of them groups by
+ * the field (the catalog's `rollup_dimensions`; a cube without any says nothing). Fine on a small mart, slow on a large one.
+ */
+export function slicerOutsideRollups(catalog, source, slicerId, dimension) {
+  const byCube = Object.fromEntries(catalog.map((c) => [c.cube, c]));
+  const cubes = new Set(slicerScope(source, slicerId).filter((p) => canFilterBy(catalog, p, dimension)).flatMap((p) => [...membersIn(p)].filter((m) => isMeasure(catalog, m)).map(cubeOf)));
+  return [...cubes].some((c) => byCube[c]?.rollup_dimensions?.length && !byCube[c].rollup_dimensions.includes(dimension));
+}
+
+/**
  * Switches a slicer between a field of the data (`mode` "field") and a filter of the dashboard ("filter"), keeping what it shows:
  *  - to a field: the filter it drew becomes its own settings and leaves the file, when nothing else needs that filter (a click rule, a child filter) and it narrowed
  *    the same panels (a one-page dashboard, or a page filter of the slicer's tab); otherwise the slicer takes the first free field and the filter goes back to the bar.

@@ -193,3 +193,20 @@ def test_settings_that_do_not_fit_the_field_are_refused_under_the_slicers_name(f
     errors, _ = check(with_slicer(copy.deepcopy(GOOD), **fields))
     assert errors and any(needle in e for e in errors), errors
     assert not any("sl_colour" in e for e in errors), "the reader wrote a slicer, not a filter called sl_colour"
+
+
+# ---- the rollup note in the designer (phase 2c): the catalog knows which fields each cube's pre-aggregations group by
+def test_the_catalog_carries_each_cubes_rollup_fields():
+    from dashspec.semantic import catalog_json
+    assert {"products.category", "territories.group_name", "dates.fiscal_year"} <= set(CATALOG.cubes["internet_sales"]["rollup_dimensions"])
+    assert "products.color" not in CATALOG.cubes["internet_sales"]["rollup_dimensions"], "colour is in no rollup, so a slicer on it reads the raw data"
+    assert CATALOG.cubes["products"]["rollup_dimensions"] == [], "a dimension cube has none"
+    out = {c["cube"]: c for c in catalog_json(CATALOG)}
+    assert out["internet_sales"]["rollup_dimensions"] == CATALOG.cubes["internet_sales"]["rollup_dimensions"] and "rollup_dimensions" not in out["products"]
+
+
+def test_rollup_fields_written_bare_or_as_cube_are_the_cubes_own():
+    from dashspec.catalog import _rollup_dimensions
+    cube = {"pre_aggregations": [{"dimensions": ["status", "CUBE.region", "products.category"]}, {"dimensions": []}, {}]}
+    assert _rollup_dimensions("sales", cube) == ["products.category", "sales.region", "sales.status"]
+    assert _rollup_dimensions("sales", {}) == []

@@ -522,3 +522,12 @@ test("a field slicer moves to the filter bar as a filter with its settings, and 
   assert.deepEqual(moved.filters.at(-1), { id: "category", dimension: "products.category", label: "Kind", type: "multiselect" });
   assert.ok(moved.panels.find((p) => p.id === "top").ignore_filters.includes("region"), "nothing else changes");
 });
+
+test("the designer says when a slicer's field is in no rollup of its tab's fact cubes", async () => {
+  const { slicerOutsideRollups } = await import("../../static/lib/designer-structure.js");
+  const cat = CATALOG.map((c) => (c.cube === "internet_sales" ? { ...c, rollup_dimensions: ["products.category", "territories.region"] } : c));
+  const src = withSlicer({ dimension: "products.name" });
+  assert.equal(slicerOutsideRollups(cat, src, "sl", "products.name"), true, "internet sales has rollups, none by name");
+  assert.equal(slicerOutsideRollups(cat, src, "sl", "products.category"), false);
+  assert.equal(slicerOutsideRollups(CATALOG, src, "sl", "products.name"), false, "a cube that says nothing about rollups gets no note");
+});
