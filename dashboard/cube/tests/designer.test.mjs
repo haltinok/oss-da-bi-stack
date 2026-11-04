@@ -121,3 +121,17 @@ test("measure and member lists carry the cube, the full name and the description
   assert.deepEqual(m[0], { value: "internet_sales.revenue", label: "internet_sales.revenue", cube: "internet_sales", description: "" });
   assert.equal(anyMemberOptions(CATALOG).length, 4 + 1 + 2 + 1 + 1 + 1);
 });
+
+test("a key-figures row offers Compare with, and each tile's Which way is good once it compares", () => {
+  const kpi = { id: "k", type: "kpi", measures: [{ member: "a.cost", label: "Cost" }, { member: "a.revenue", label: "Revenue" }] };
+  const paths = (p) => fieldsFor(p).map((x) => x.path);
+  assert.ok(paths(kpi).includes("compare"));
+  assert.ok(!paths(kpi).some((p) => p.endsWith(".better")));
+  const compared = { ...kpi, compare: "previous_year" };
+  assert.deepEqual(paths(compared).filter((p) => p.endsWith(".better")), ["measures.0.better", "measures.1.better"]);
+  assert.deepEqual(fieldsFor(compared).find((x) => x.path === "compare").options, ["previous_year", "previous_period"]);
+  const lower = setField({ panels: [compared] }, "k", "measures.0.better", "lower", { optional: true }).source;
+  assert.equal(lower.panels[0].measures[0].better, "lower");
+  const off = setField(lower, "k", "compare", "", { optional: true }).source;
+  assert.equal("compare" in off.panels[0], false);
+});

@@ -102,6 +102,7 @@ Exactly one of `member`, `sum` (with `label`) or `ratio` (with `label`). `ratio`
 | `label` | string |  | The tile's or series' name. Default for a `member`: the measure's name, capitalised. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How the value is shown. Default `number`. |
 | `rules` | list of rules (1-4) |  | Up to 4 colour rules, checked in order; the first that matches wins: `{ when: below | above | at_most | at_least, value: <number>, tone: good | warn | bad }` (for a `pct` measure the value is a fraction: `0.25` is 25%). The tone is shown as the theme's good, warning or bad colour **and** a symbol (✓ ! ✕) with a hidden text for screen readers, so colour is never the only signal. |
+| `better` | `higher` \| `lower` |  | Which way is good when the panel has `compare`: `higher` (the default: a rise is green, a fall red) or `lower` (for costs, returns, discounts: a fall is green). |
 
 ### A time-chart series (`timeseries.series[]`)
 
@@ -152,6 +153,7 @@ Either a member string, or an object with these fields.
 |---|---|---|---|
 | `time_dimension` | member (`cube.name`) |  | A time dimension of this panel's own, when it should follow another date than the dashboard's `time.dimension`: the ship date (`ship_dates.full_date`), the due date. The default is the dashboard's. A drill-down on this panel sets a period on **this date field**, which narrows the panels that use the same field and no others; the period's chip names the field. A click rule on the chart can only set a year filter of the same date field (`ship_dates.fiscal_year`). Used by the sparkline. |
 | `measures` | list of measure (1+) | yes | One tile per measure, up to 8. Each tile loads on its own, so a slow measure does not hold back the others. |
+| `compare` | `previous_year` \| `previous_period` |  | Show under each value how it changed from the previous period: `previous_year` or `previous_period`. The tile sends its own query again with its time constraints moved back, everything else unchanged. Time constraints are the drill-down period, a `date` filter's range, and a select on a `fiscal_year` or `calendar_year` field. `previous_year` moves each 12 months (or one year) back; `previous_period` moves a range back by its own length (whole months by months: March 2021 → February 2021; Q1 → Q4 of the year before) and a year by one (several consecutive years by how many there are). Other date parts, such as a month-name select, stay as they are. A `pct` value shows the difference in points (`▲ 1.2 pts`), others the change in percent (`▲ 8.3%`), then `vs FY2020` when a fiscal-year select was moved, else `vs previous year` / `vs previous period`. With no period chosen (all time), or one that cannot be moved back (an open range such as `before`, an "all except" year), the tile says there is nothing to compare and sends no second query. |
 | `sparkline` | object |  | A small trend line under each value, grouped by this granularity. |
 
 ### `timeseries`

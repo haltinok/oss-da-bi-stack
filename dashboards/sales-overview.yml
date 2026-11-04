@@ -26,6 +26,7 @@ filters:
 panels:
   - id: kpis
     type: kpi
+    compare: previous_year
     measures:
       - { sum: [internet_sales.revenue, reseller_sales.revenue], label: Revenue, format: money }
       - { sum: [internet_sales.gross_profit, reseller_sales.gross_profit], label: Gross profit, format: money }

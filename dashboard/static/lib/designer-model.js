@@ -33,13 +33,15 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
     if (m && typeof m === "object") {
       out.push(f(`${name}.${i}.label`, "text", { key: "label", group: g, optional: extra.optionalLabel }));
       if (extra.format !== false) out.push(f(`${name}.${i}.format`, "choice", { key: "format", options: FORMATS, optional: true, group: g }));
+      if (extra.better) out.push(f(`${name}.${i}.better`, "choice", { key: "better", options: ["higher", "lower"], optional: true, group: g }));
       if (extra.rules) ruleFields(`${name}.${i}`, m, true);
     }
   });
   if (panel.type !== "text" && panel.type !== "kpi") out.push(f("title", "text", { key: "title", optional: true }));
   switch (panel.type) {
     case "kpi":
-      measureItem("measures", panel.measures, { formula: true, rules: true });
+      measureItem("measures", panel.measures, { formula: true, rules: true, better: !!panel.compare });
+      out.push(f("compare", "choice", { key: "compare", options: ["previous_year", "previous_period"], optional: true }));
       out.push(f("sparkline.granularity", "choice", { key: "sparkline", options: GRANULARITIES, optional: true }));
       if (panel.sparkline) out.push(f("time_dimension", "timedim", { key: "panelTimeDimension", optional: true }));
       break;

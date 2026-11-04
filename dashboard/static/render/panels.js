@@ -6,6 +6,7 @@ import { addTimers } from "../lib/timer.js";
 import { pinTotals, pivotHtml, tableHtml } from "../lib/table.js";
 import { toneCue, toneOf, toneWord } from "../lib/rules.js";
 import { AGGREGATE_LIMIT, grandAggregates, groupAggregates } from "../lib/aggregate.js";
+import { change, compareLabel } from "../lib/compare.js";
 import {
   activeFilters, appliesPeriod, barQueries, byBucket, byDims, colorOf, evaluate, humanize, isSelected, kpiQueries, markdown, num, ownFilterIds, parsePeriod,
   PERIOD, periodKey, timeDimOf, heatScale, nextSort, sortKeyOf, pieQueries, pivotColumn, pivotModel, pivotQueries, pivotShare, rangeOf, runAll, PIVOT_LIMIT, tableOrder, tableParts, tableQueries, term, timeKey, tableTotalQueries, timeseriesQueries, totals, treemapQueries, yearOf,
@@ -108,6 +109,26 @@ const clickable = (node, fn) => {
 };
 
 // ------------------------------------------------------------------------------------------------------------------ kpi
+/**
+ * The comparison line under a key figure: an arrow (with a spoken word), the change (points for a fraction, else percent) and what it is
+ * compared with; green or red by `better`. `previous` is kpiQueries' { queries, moved }, null when there is no period to compare with.
+ */
+export function showChange(node, { now, before, previous, kind, points, better }, ctx) {
+  const w = ctx.t.compare;
+  if (!previous) { node.classList.add("cmp"); node.innerHTML = `<span class="vs">${esc(w.none)}</span>`; return; }
+  const label = compareLabel(previous.moved, kind);
+  const vs = label.year ? (label.fiscal ? w.vs.fy(label.year) : w.vs.year(label.year)) : w.vs[label.kind];
+  node.title = w.title(previous.moved.map((m) => `${humanize(m.member)} ${m.to.length === 2 && m.to[0].includes("-") ? `${m.to[0]} – ${m.to[1]}` : m.to.join(", ")}`).join("; "));
+  const c = change(now, before, points);
+  node.classList.add("cmp");
+  if (!c.dir) { node.innerHTML = `<span class="vs">${esc(w.noData)} (${esc(vs)})</span>`; return; }
+  if (c.dir === "flat") { node.innerHTML = `${esc(w.flat)} <span class="vs">${esc(vs)}</span>`; return; }
+  const good = (c.dir === "up") === (better !== "lower");
+  node.classList.add(good ? "good" : "bad");
+  const size = points ? `${ctx.formatter("decimal")(Math.abs(c.value))} ${w.pts}` : ctx.formatter("pct")(Math.abs(c.value));
+  node.innerHTML = `<span role="img" aria-label="${esc(w[c.dir])}">${c.dir === "up" ? "▲" : "▼"}</span>${esc(size)} <span class="vs">${esc(vs)}</span>`;
+}
+
 function kpiPanel(def, ctx) {
   const terms = def.measures.map(term);
   const root = el("section", { class: "kpis dyn", "data-panel": def.id, style: `--cols:${Math.max(terms.length, 4)}` });
@@ -117,6 +138,7 @@ function kpiPanel(def, ctx) {
     return tile;
   });
   const values = terms.map(() => null);
+  const befores = terms.map(() => null);
   const fmtOf = (t) => ctx.formatter(t.format);
   let loadedKey = null;
   const tileLoad = async (t, i, signal) => {
@@ -124,13 +146,29 @@ function kpiPanel(def, ctx) {
     tile.classList.add("pending");
     const spark = def.sparkline;
     const q = kpiQueries(ctx.spec, def, t, ctx.filterValues());
+    const delta = tile.querySelector(".delta");
     try {
-      const [now, series] = await Promise.all([runAll(ctx.run, q.now, signal), q.series ? runAll(ctx.run, q.series, signal) : null]);
+      const before = q.previous ? runAll(ctx.run, q.previous.queries, signal).then((rows) => ({ rows }), (e) => { if (e?.name === "AbortError" || signal?.aborted) throw e; return { error: e }; }) : null;
+      const [now, series, prev] = await Promise.all([runAll(ctx.run, q.now, signal), q.series ? runAll(ctx.run, q.series, signal) : null, before]);
       const v = evaluate(t, (m) => totals(now).get(m) ?? null);
       values[i] = v;
       tile.querySelector(".value").textContent = fmtOf(t)(v);
       toneTile(tile, def.measures[i].rules, v, ctx.t.tones);
-      tile.querySelector(".delta").textContent = "";
+      delta.className = "delta";
+      delta.textContent = "";
+      delta.removeAttribute("title");
+      befores[i] = null;
+      if (def.compare) {
+        if (prev?.error) {
+          delta.textContent = readable(prev.error);
+          delta.title = readable(prev.error);
+          console.warn(`kpi ${t.label} comparison failed:`, prev.error?.message || prev.error);
+        } else {
+          const pv = prev ? evaluate(t, (m) => totals(prev.rows).get(m) ?? null) : null;
+          befores[i] = pv;
+          showChange(delta, { now: v, before: pv, previous: q.previous, kind: def.compare, points: t.format === "pct", better: def.measures[i].better || "higher" }, ctx);
+        }
+      }
       tile.querySelector("svg.spark")?.remove();
       if (series) {
         const key = timeKey(timeDimOf(ctx.spec, def), spark.granularity);
@@ -144,10 +182,12 @@ function kpiPanel(def, ctx) {
     } catch (e) {
       if (e?.name === "AbortError" || signal?.aborted) throw e;
       values[i] = null;
+      befores[i] = null;
       tile.querySelector(".value").textContent = "—";
       toneTile(tile, null, null);
-      tile.querySelector(".delta").textContent = readable(e);
-      tile.querySelector(".delta").title = readable(e);
+      delta.className = "delta";
+      delta.textContent = readable(e);
+      delta.title = readable(e);
       console.warn(`kpi ${t.label} failed:`, e?.message || e);
     } finally {
       if (!signal?.aborted) tile.classList.remove("pending");
@@ -158,8 +198,13 @@ function kpiPanel(def, ctx) {
     redraw() {},
     sheet: () => ({
       name: (def.title || "Key figures").slice(0, 31), title: def.title || "Key figures", subtitle: ctx.subtitle(),
-      columns: [{ label: ctx.t.measure, type: "text" }, { label: ctx.t.value, type: "text" }],
-      rows: terms.map((t, i) => [t.label, { v: values[i], t: XLSX_TYPE[t.format] || "number" }]),
+      columns: [{ label: ctx.t.measure, type: "text" }, { label: ctx.t.value, type: "text" }, ...(def.compare ? [{ label: ctx.t.compare.before, type: "text" }, { label: ctx.t.compare.column, type: "text" }] : [])],
+      rows: terms.map((t, i) => {
+        const row = [t.label, { v: values[i], t: XLSX_TYPE[t.format] || "number" }];
+        if (!def.compare) return row;
+        const c = change(values[i], befores[i], t.format === "pct");
+        return [...row, { v: befores[i], t: XLSX_TYPE[t.format] || "number" }, c.dir ? (t.format === "pct" ? { v: c.value, t: "number" } : { v: c.value, t: "pct" }) : { v: null, t: "number" }];
+      }),
     }),
     load(signal, { force = false } = {}) {
       const key = JSON.stringify([activeFilters(ctx.spec, ctx.filterValues(), def), appliesPeriod(ctx.spec, def) ? ctx.filterValues()[periodKey(ctx.spec, timeDimOf(ctx.spec, def))] : ""]);
