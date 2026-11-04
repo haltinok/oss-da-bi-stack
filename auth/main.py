@@ -9,9 +9,7 @@ POST /token   Authorization: Bearer <Keycloak access token>
 Cube re-verifies that signature and applies the territory filter in queryRewrite
 (cube/cube.js), so a client can neither widen its territories nor extend the token.
 """
-import json
 import os
-import pathlib
 import re
 import time
 
@@ -19,6 +17,7 @@ import jwt
 import pymysql
 
 import access_resolve
+import rls_registry
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -50,8 +49,18 @@ PG = {"host": os.environ.get("AUTH_PG_HOST", "postgres"), "port": int(os.environ
       "user": os.environ.get("AUTH_PG_USER", "access_auth"), "password": os.environ.get("AUTH_PG_PASSWORD", "")}
 RULES_ON = bool(PG["password"]) and PG["password"] != "REPLACE_ME"
 
-# The row-level dimensions (territory, ...): cube/rls_dimensions.json, a copy of which sits next to this file. Cube adds the filters; here the values of each are worked out.
-DIMENSIONS = json.loads((pathlib.Path(__file__).parent / "rls_dimensions.json").read_text(encoding="utf-8"))["dimensions"]
+
+
+def _access_db():
+    import psycopg2
+    return psycopg2.connect(connect_timeout=5, **PG)
+
+
+# The row-level dimensions (territory, ...): access.rls_dimension, read once now, at startup (rls_registry.py; the default file rls_dimensions.json when there is no
+# access database). A registry that cannot be read or is not valid stops the service. Cube adds the filters; here the values of each are worked out, and the token
+# carries the registry's version so Cube refuses tokens made from a different list (one of the two was not restarted after a change).
+DIMENSIONS, REGISTRY_SOURCE = rls_registry.load(_access_db if RULES_ON else None, wait=float(os.environ.get("RLS_REGISTRY_WAIT", "60")))
+RLS_VERSION = rls_registry.version(DIMENSIONS)
 
 jwks = jwt.PyJWKClient(JWKS_URL, cache_keys=True, lifespan=300)
 app = FastAPI(title="spike-auth")
@@ -171,7 +180,7 @@ def token(authorization: str = Header(default="")) -> dict:
 
     now = int(time.time())
     cube_token = jwt.encode(
-        {"user_id": user, "role": role, "territories": territories, "rls": rls, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
+        {"user_id": user, "role": role, "territories": territories, "rls": rls, "rls_version": RLS_VERSION, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
         CUBE_SECRET,
         algorithm="HS256",
     )

@@ -47,20 +47,21 @@ every 5 minutes). For the weekly proposal agent also unpause `inventory_weekly_p
 The demo users (`admin`, `na_manager`, `de_rep`, `buyer`, `marketer`) all use `TEST_USER_PASSWORD` from `.env`.
 
 ## Update a running server
-For a server deployed as above (`COMPOSE_FILE` and `PUBLIC_URL` are in `.env`). **The order matters**: the auth service reads the access rules from Postgres and fails the sign-in (503) rather than guess, so the database schemas must exist before it restarts with the new code.
+For a server deployed as above (`COMPOSE_FILE` and `PUBLIC_URL` are in `.env`). **The order matters**: the auth service reads the access rules from Postgres and fails the sign-in (503) rather than guess, and Cube, the auth service and the admin console read the row-level dimensions (`access.rls_dimension`) when they start and do not start without them, so the database schemas must exist before they restart with the new code.
 
 ```bash
 cd oss-da-bi-stack && git pull
 
 # 1. new secrets the access features need (once; Compose refuses to start without ADMIN_CLIENT_SECRET)
-for v in ADMIN_CLIENT_SECRET ADMIN_DB_PASSWORD AUTH_PG_PASSWORD LAB_DB_PASSWORD; do
+for v in ADMIN_CLIENT_SECRET ADMIN_DB_PASSWORD AUTH_PG_PASSWORD CUBE_ACCESS_PG_PASSWORD LAB_DB_PASSWORD; do
   grep -q "^$v=" .env || echo "$v=$(openssl rand -hex 16)" >> .env
 done
 
 # 2. recreate Postgres and Keycloak with the new variables, then bring the data stores and Keycloak up to date (all idempotent; nothing is deleted)
 docker compose --profile starrocks up -d postgres keycloak
 postgres/sync-builder.sh        # folders, shares, trash for saved dashboards
-postgres/sync-access.sh         # row rules, datasets and grants (and, once, a product-category rule for the groups Managers and Reps: without one nobody but an admin sees sales)
+postgres/sync-access.sh         # row rules, datasets and grants (and, once, a product-category rule for the groups Managers and Reps: without one nobody but an admin sees sales);
+                                # the row-level dimensions table (access.rls_dimension, seeded with the default list) and Cube's login for it
 postgres/sync-lab.sh            # the SQL lab's saved queries
 keycloak/sync-users.sh          # the admin-console client, the groups claim, the editor/viewer roles and the starter groups
 keycloak/migrate-roles.sh       # ONCE, if people still hold the old roles (manager, rep, purchasing, marketing): each becomes an editor in the matching group

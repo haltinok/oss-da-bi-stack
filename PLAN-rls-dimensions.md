@@ -1,6 +1,6 @@
 # Plan: row-level rules on more than territory
 
-Status: **all three phases done.** Phases 1 and 2 built (2026-11-03, #167); phase 3 built (#168) (2026-11-03): the second dimension is **product category** (`products.category`, instead of channel), `when_empty: deny`, on the sales cubes; starter rules give Managers and Reps every category (postgres/init/09_rls_defaults.sql). Before this plan `territory` was the only dimension, hard-coded in four places; the plan made the dimension a configured thing (`cube/rls_dimensions.json`).
+Status: **all three phases done.** Phases 1 and 2 built (2026-11-03, #167); phase 3 built (#168) (2026-11-03): the second dimension is **product category** (`products.category`, instead of channel), `when_empty: deny`, on the sales cubes; starter rules give Managers and Reps every category (postgres/init/09_rls_defaults.sql). Before this plan `territory` was the only dimension, hard-coded in four places; the plan made the dimension a configured thing (`cube/rls_dimensions.json`). **Update 2026-11-04:** the list now lives in Postgres, `access.rls_dimension`, read by Cube, auth and the admin console when they start; the file is the default and the seed ([`PLAN-rls-registry-db.md`](PLAN-rls-registry-db.md)).
 
 ## Where territory is hard-coded now
 | Place | What |

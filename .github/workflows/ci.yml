@@ -479,7 +479,8 @@ jobs:
           docker compose --profile starrocks build auth builder admin lab
           docker compose --profile starrocks up -d --no-deps keycloak
           for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile starrocks ps -q keycloak)")" = healthy ] && break; sleep 3; done
-          docker compose --profile starrocks up -d --no-deps auth builder admin lab dashboard-cube caddy
+          # Postgres too: auth and the admin console read the row-level dimensions (access.rls_dimension) when they start, and do not start without them
+          docker compose --profile starrocks up -d --no-deps postgres auth builder admin lab dashboard-cube caddy
           for i in $(seq 40); do curl -sf http://localhost:8088/auth-api/healthz >/dev/null && break; sleep 3; done
       - name: routing, issuer, admin console block, browser config
         run: |

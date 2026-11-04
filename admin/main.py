@@ -25,7 +25,6 @@ from __future__ import annotations
 import datetime
 import json
 import os
-import pathlib
 import secrets
 from typing import Annotated
 
@@ -35,6 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import access_resolve
+import rls_registry
 from access import TYPES, PgRules
 from cubes import cubes as model_cubes
 from keycloak import Keycloak, KeycloakError
@@ -438,8 +438,12 @@ class RuleRequest(BaseModel):
     values: list[str] = Field(min_length=1, max_length=200)
 
 
-# The row-level dimensions (territory, ...): cube/rls_dimensions.json, a copy of which sits next to this file.
-DIMENSIONS = json.loads((pathlib.Path(__file__).parent / "rls_dimensions.json").read_text(encoding="utf-8"))["dimensions"]
+# The row-level dimensions (territory, ...): access.rls_dimension, read once now, at startup, through the console's own login (rls_registry.py; the default file
+# rls_dimensions.json when ADMIN_DB_PASSWORD is not set). A registry that cannot be read or is not valid stops the service. After a change to the table,
+# restart Cube, the auth service and this console: the Row rules tab shows this console's version, which the other two log when they start.
+_registry_pg = PgRules.from_env()
+DIMENSIONS, REGISTRY_SOURCE = rls_registry.load(_registry_pg._conn if _registry_pg else None, wait=float(os.environ.get("RLS_REGISTRY_WAIT", "60")))
+RLS_VERSION = rls_registry.version(DIMENSIONS)
 
 
 def dimension_of(id_: str) -> dict:
@@ -467,7 +471,8 @@ def known_regions() -> list[str] | None:
 @app.get("/rls/rules")
 def list_rules(_: Who) -> dict:
     return {"rules": rules().list(), "regions": known_regions() or [],
-            "dimensions": [{"id": d["id"], "labels": d.get("labels", {}), "values": dimension_values(d) or []} for d in DIMENSIONS]}
+            "dimensions": [{"id": d["id"], "labels": d.get("labels", {}), "values": dimension_values(d) or []} for d in DIMENSIONS],
+            "registry": {"source": REGISTRY_SOURCE, "version": RLS_VERSION}}
 
 
 @app.put("/rls/rules/{type_}/{principal}")
