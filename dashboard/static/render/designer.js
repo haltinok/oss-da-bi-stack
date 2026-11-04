@@ -7,7 +7,7 @@ import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, m
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf } from "../lib/designer-structure.js";
+import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -321,6 +321,16 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       if (fd.kind === "crossfilter") { slot.append(crossControl(panel)); continue; }
       if (fd.kind === "pievalue") { slot.append(pieControl(panel)); continue; }
       if (["multicheck", "drill", "ignorefilters", "tableorder", "barkind", "pivotstep"].includes(fd.kind)) { slot.append(panelOptionControl(fd, panel)); continue; }
+      if (fd.kind === "slicermode") { slot.append(slicerModeControl(panel)); continue; }
+      if (fd.kind === "slicerdefault") {
+        const typ = panel.filter_type || "select";
+        slot.append(defaultRow({ id: panel.id, dimension: panel.dimension, type: typ, default: panel.default }, typ, (v) => commit(setSlicerOption(source, catalog, selected, "default", v), { message: dz.changed(panel.title || selected) })));
+        continue;
+      }
+      if (panel.type === "slicer" && panel.dimension !== undefined) {                        // a slicer on a field: what no longer fits a new field or type goes with it
+        slot.append(control(fd, panel, (v) => commit(setSlicerOption(source, catalog, selected, fd.path, v), { message: dz.changed(panel.title || selected) })));     // its made filter changes too, so the page draws itself again (patch refuses)
+        continue;
+      }
       if (fd.kind === "aggregate") { slot.append(aggregateControl(fd, panel)); continue; }
       if (fd.kind === "colshown") { slot.append(shownControl(fd, panel)); continue; }
       if (fd.kind === "builtin") { slot.append(el("span", { class: "dz-formula" }, esc(dz.builtinAgg(memberInfo(fd.member)?.type)))); continue; }
@@ -339,6 +349,15 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const form = drawer.querySelector(".dz-form");
     if (panel.type === "table") form.append(addFieldRow());
     for (const name of lists) if (Array.isArray(panel[name]) && panel[name].length < listRule(panel, name).max) form.append(el("button", { type: "button", class: "dz-mini", "data-additem": name }, esc(name === "series" ? dz.addSeries : dz.addMeasure)));
+  }
+
+  /** What a slicer shows: a field of the data (a filter of its own, on its tab) or one of the dashboard's filters. Switching keeps what it shows where it can (setSlicerMode). */
+  function slicerModeControl(panel) {
+    const pick = el("select", { "data-path": "~slicer", "aria-label": dz.f.slicerMode });
+    for (const m of ["field", "filter"]) pick.append(el("option", { value: m }, esc(dz.v[`slicer_${m}`])));
+    pick.value = panel.dimension !== undefined ? "field" : "filter";
+    pick.addEventListener("change", () => commit(setSlicerMode(source, catalog, selected, pick.value), { message: dz.changed(panel.title || selected) }));
+    return pick;
   }
 
   /** "Clicking it filters the other panels": off, the whole dashboard, or this panel's tab. A click rule written by hand in the YAML shows as off, with a hint; choosing a mode replaces it. */
@@ -623,11 +642,12 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   const options = (fd, holder) => (fd.kind === "measure" ? measureOptions(catalog) : fd.kind === "dimension" ? dimensionOptions(catalog, holder, getAt(holder, fd.path))
+    : fd.kind === "slicerfield" ? slicerFieldOptions(catalog, source, holder.id)
     : fd.kind === "timedim" ? timeDimensions(catalog) : fd.kind === "anydim" ? dimensionList() : anyMemberOptions(catalog));
 
   /** The input for one field: it reads its value from `holder` and calls `onSet(value)` when the person changes it. */
   function control(fd, holder, onSet) {
-    const value = shown(holder, fd.path);
+    const value = shown(holder, fd.path) || fd.fallback || "";                                     // a field whose absence means a value (a slicer's type: select) shows that value
     let input;
     if (fd.kind === "readonly") return el("code", { class: "dz-formula" }, esc(formula(getAt(holder, fd.path))));
     if (fd.kind === "textarea") { input = el("textarea", { rows: 8, spellcheck: "false" }); input.value = value; }

@@ -1,7 +1,7 @@
 // The designer's structural edits, without the page: new panels with sensible contents, removing and duplicating a panel, the dashboard's filters and its own fields.
 // Pure functions on the dashboard's source spec; each returns a copy (the argument is not touched) and what the person should be told. As with field edits, the builder
 // service's validator has the last word: these functions only try to hand it a spec that is already as right as can be known here.
-import { membersIn, cubeOf, reachableCubes } from "./designer-model.js";
+import { membersIn, cubeOf, reachableCubes, noted } from "./designer-model.js";
 import { memberLabel } from "./labels.js";
 
 export const PANEL_TYPES = ["kpi", "timeseries", "bar", "pie", "treemap", "table", "pivot", "text", "slicer"];
@@ -188,6 +188,102 @@ export function addSlicer(source, catalog, { tab = null } = {}) {
   }
   const id = placeSlicer(next, filter, tab);
   return { source: next, id };
+}
+
+// ---- a slicer on a field (`dimension:` on the slicer; the compiler makes it a filter of its own tab: dashspec/slicers.py)
+const DATA_LESS = ["text", "slicer"];
+const panelsOfTab = (source, tab) => new Set(layoutsOf(source).filter((l) => l.tab === tab).flatMap((l) => l.rows.flat().flatMap((c) => Object.keys(c))));
+const isMeasure = (catalog, m) => catalog.some((c) => c.measures.some((x) => x.member === m));
+const isDimension = (catalog, m) => catalog.some((c) => c.dimensions.some((x) => x.member === m));
+
+/** The data panels a slicer on a field narrows: those of its tab (every placed panel on a dashboard without tabs). */
+export function slicerScope(source, slicerId) {
+  const on = panelsOfTab(source, tabOfPanel(source, slicerId));
+  return source.panels.filter((p) => !DATA_LESS.includes(p.type) && on.has(p.id));
+}
+
+/** Can this panel be filtered by the field? Every measure it reads must reach the field's cube; a panel of dimensions only goes by its fields (the validator's `joins`). */
+export function canFilterBy(catalog, panel, dimension) {
+  const all = [...membersIn(panel)];
+  const members = all.filter((m) => isMeasure(catalog, m));
+  const by = members.length ? members : all.filter((m) => isDimension(catalog, m));
+  if (!by.length) return false;
+  const reach = reachableCubes(catalog, [...new Set(by.map(cubeOf))]);
+  return !reach || reach.has(cubeOf(dimension));
+}
+
+/**
+ * The fields a slicer on a field may show: those a panel of its tab can be filtered by, and that no visible filter or other field slicer already narrows those panels by
+ * (the validator refuses both). Its own field always stays in the list. [{ value, label, cube, description }]
+ */
+export function slicerFieldOptions(catalog, source, slicerId) {
+  const me = source.panels.find((p) => p.id === slicerId);
+  const tab = tabOfPanel(source, slicerId);
+  const scope = slicerScope(source, slicerId), ids = new Set(scope.map((p) => p.id));
+  const taken = new Set([
+    ...(source.filters || []).filter((f) => f.visible !== false && f.id !== me?.filter && (f.scope === "panel" ? ids.has(f.panel) : f.scope === "page" ? f.tab === tab : true)).map((f) => f.dimension),
+    ...source.panels.filter((p) => p.type === "slicer" && p.dimension && p.id !== slicerId && tabOfPanel(source, p.id) === tab).map((p) => p.dimension),
+  ]);
+  return catalog.flatMap((c) => c.dimensions.map((d) => ({ value: d.member, label: d.member, cube: c.cube, description: noted(d) })))
+    .filter((o) => o.value === me?.dimension || (!taken.has(o.value) && scope.some((p) => canFilterBy(catalog, p, o.value))));
+}
+
+/**
+ * Switches a slicer between a field of the data (`mode` "field") and a filter of the dashboard ("filter"), keeping what it shows:
+ *  - to a field: the filter it drew becomes its own settings and leaves the file, when nothing else needs that filter (a click rule, a child filter) and it narrowed
+ *    the same panels (a one-page dashboard, or a page filter of the slicer's tab); otherwise the slicer takes the first free field and the filter goes back to the bar.
+ *  - to a filter: a new filter with the slicer's settings (on its tab), which the slicer then draws.
+ * Returns { source } or { problem: "dimension" } when no field can be shown.
+ */
+export function setSlicerMode(source, catalog, slicerId, mode) {
+  const next = clone(source);
+  const p = next.panels.find((x) => x.id === slicerId);
+  if (!p) return { problem: "missing" };
+  const tab = tabOfPanel(next, slicerId);
+  if (mode === "field") {
+    if (p.dimension !== undefined) return { source: next };
+    const f = (next.filters || []).find((x) => x.id === p.filter);
+    const needed = f && (next.panels.some((q) => [q.on_click?.set_filter].flat().includes(f.id)) || (next.filters || []).some((g) => g.parent === f.dimension));
+    const same = f && f.scope !== "panel" && (!next.tabs || (f.scope === "page" && f.tab === tab));
+    if (f && !needed && same) {
+      Object.assign(p, { dimension: f.dimension, ...(f.label ? { label: f.label } : {}), ...(f.type && f.type !== "select" ? { filter_type: f.type } : {}), ...(f.default !== undefined ? { default: f.default } : {}) });
+      next.filters = next.filters.filter((x) => x !== f);
+      if (!next.filters.length) delete next.filters;
+      for (const q of next.panels) if (q.ignore_filters) { q.ignore_filters = q.ignore_filters.filter((x) => x !== f.id); if (!q.ignore_filters.length) delete q.ignore_filters; }
+    } else {
+      delete p.filter;
+      p.dimension = "";                                                                        // so the options are worked out for a field slicer
+      const first = slicerFieldOptions(catalog, next, slicerId).find((o) => o.value)?.value;
+      if (!first) return { problem: "dimension" };
+      p.dimension = first;
+    }
+    delete p.filter;
+    if (!["select", "multiselect"].includes(p.filter_type || "select")) delete p.display;
+    return { source: next };
+  }
+  if (p.filter !== undefined) return { source: next };
+  const f = { id: newFilterId(next, p.dimension), dimension: p.dimension, label: p.label || humanize(p.dimension), ...(p.filter_type ? { type: p.filter_type } : {}), ...(p.default !== undefined ? { default: p.default } : {}) };
+  if (next.tabs && tab) Object.assign(f, { scope: "page", tab });
+  next.filters = [...(next.filters || []), f];
+  ignoreWhereUnreachable(next, catalog, f);
+  p.filter = f.id;
+  for (const k of ["dimension", "label", "filter_type", "default"]) delete p[k];
+  return { source: next };
+}
+
+/** Changes one setting of a slicer on a field (dimension, label, filter_type, default, display); what no longer fits goes: a type the new field cannot take, a default of the old type, a list display on a text, number or date slicer. */
+export function setSlicerOption(source, catalog, slicerId, path, value) {
+  const next = clone(source);
+  const p = next.panels.find((x) => x.id === slicerId);
+  if (!p) return { problem: "missing" };
+  if (value === "" || value == null || (path === "filter_type" && value === "select")) delete p[path]; else p[path] = value;          // select is what nothing says
+  if (path === "dimension") {
+    if (p.filter_type && !typesFor(dimensionTypeOf(catalog, value)).includes(p.filter_type)) delete p.filter_type;
+    delete p.default;
+  }
+  if (path === "filter_type") delete p.default;
+  if (!["select", "multiselect"].includes(p.filter_type || "select")) delete p.display;
+  return { source: next };
 }
 
 /** Draws a filter as a slicer (a new panel, in its tab) or back where it was (the slicer panel is removed). A hidden filter has no slicer. */

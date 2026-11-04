@@ -449,3 +449,68 @@ test("allowed values: the default is cut down to them, and the list goes with a 
   assert.equal("allowed" in setFilter(limited.source, CATALOG, "m", "allowed", []).source.filters[0], false, "an empty list removes the limit");
   assert.equal("allowed" in setFilterType(limited.source, CATALOG, "m", "text").source.filters[0], false, "a text filter has no list to limit");
 });
+
+// ---- a slicer on a field (PLAN-slicer-fields.md phase 2a)
+import { canFilterBy, setSlicerMode, setSlicerOption, slicerFieldOptions, slicerScope } from "../../static/lib/designer-structure.js";
+import { fieldsFor, slicerTypes } from "../../static/lib/designer-model.js";
+
+const withSlicer = (slicer, src = SOURCE) => ({ ...structuredClone(src), panels: [...structuredClone(src.panels), { id: "sl", type: "slicer", ...slicer }], layout: [...structuredClone(src.layout), [{ sl: 12 }]] });
+const values = (opts) => opts.map((o) => o.value);
+
+test("a field slicer offers only the fields a panel of its tab can be filtered by, and none another control already narrows", () => {
+  const src = withSlicer({ dimension: "products.category" });
+  assert.deepEqual(slicerScope(src, "sl").map((p) => p.id), ["kpis", "trend", "top"], "its tab's data panels: not the note, not itself");
+  assert.equal(canFilterBy(CATALOG, src.panels[0], "products.name"), true);
+  assert.equal(canFilterBy(CATALOG, src.panels[0], "inventory_health.status"), false, "sales do not join inventory");
+  const opts = values(slicerFieldOptions(CATALOG, src, "sl"));
+  assert.ok(opts.includes("products.name") && opts.includes("products.category") && opts.includes("dates.fiscal_year"));
+  assert.ok(!opts.includes("inventory_health.status"), "no panel of the tab can be filtered by it");
+  assert.ok(!opts.includes("territories.region"), "the region filter already narrows these panels");
+});
+
+test("on a dashboard with tabs it is the slicer's own tab that counts", () => {
+  const tabbed = { ...structuredClone(SOURCE), layout: undefined, tabs: [{ id: "a", title: "A", layout: [[{ kpis: 12 }], [{ sl: 12 }]] }, { id: "b", title: "B", layout: [[{ trend: 8 }, { top: 4 }]] }],
+    filters: [{ id: "region", dimension: "territories.region", scope: "page", tab: "b" }], panels: [...structuredClone(SOURCE.panels).filter((p) => p.id !== "note"), { id: "sl", type: "slicer", dimension: "products.name" }] };
+  delete tabbed.layout;
+  for (const p of tabbed.panels) delete p.on_click;
+  assert.deepEqual(slicerScope(tabbed, "sl").map((p) => p.id), ["kpis"]);
+  assert.ok(values(slicerFieldOptions(CATALOG, tabbed, "sl")).includes("territories.region"), "the region filter narrows tab b only");
+});
+
+test("switching to a field takes the filter's settings when nothing else needs it, and back makes a filter of the slicer's", () => {
+  const src = { ...withSlicer({ filter: "cat", display: "chips" }), filters: [...SOURCE.filters, { id: "cat", dimension: "products.category", label: "Category", type: "multiselect", default: "in:Bikes" }] };
+  const field = setSlicerMode(src, CATALOG, "sl", "field").source;
+  assert.deepEqual(field.panels.find((p) => p.id === "sl"), { id: "sl", type: "slicer", display: "chips", dimension: "products.category", label: "Category", filter_type: "multiselect", default: "in:Bikes" });
+  assert.deepEqual(field.filters.map((f) => f.id), ["region"], "the filter it drew left the file");
+  const back = setSlicerMode(field, CATALOG, "sl", "filter").source;
+  assert.deepEqual(back.panels.find((p) => p.id === "sl"), { id: "sl", type: "slicer", display: "chips", filter: "category" });
+  assert.deepEqual(back.filters.find((f) => f.id === "category"), { id: "category", dimension: "products.category", label: "Category", type: "multiselect", default: "in:Bikes" });
+});
+
+test("a filter that a click rule needs stays, and the slicer takes a free field instead", () => {
+  const src = withSlicer({ filter: "region" });
+  const field = setSlicerMode(src, CATALOG, "sl", "field").source;
+  assert.ok(field.filters.some((f) => f.id === "region"), "the trend's click rule sets it");
+  const sl = field.panels.find((p) => p.id === "sl");
+  assert.ok(sl.dimension && sl.dimension !== "territories.region" && !("filter" in sl), JSON.stringify(sl));
+  assert.deepEqual(setSlicerMode(withSlicer({ filter: "region" }), [CATALOG[5]], "sl", "field"), { problem: "dimension" }, "no field it could show");
+});
+
+test("changing the field or the type drops what no longer fits", () => {
+  const src = withSlicer({ dimension: "products.name", filter_type: "text", default: "contains:Road" });
+  const date = setSlicerOption(src, CATALOG, "sl", "dimension", "dates.full_date").source.panels.find((p) => p.id === "sl");
+  assert.deepEqual(date, { id: "sl", type: "slicer", dimension: "dates.full_date" }, "a text slicer cannot be on a time field; the old default goes");
+  const chips = withSlicer({ dimension: "products.name", display: "chips" });
+  assert.deepEqual(setSlicerOption(chips, CATALOG, "sl", "filter_type", "text").source.panels.find((p) => p.id === "sl"), { id: "sl", type: "slicer", dimension: "products.name", filter_type: "text" }, "chips are for a list");
+  assert.equal(setSlicerOption(chips, CATALOG, "sl", "label", "").source.panels.find((p) => p.id === "sl").label, undefined);
+});
+
+test("the drawer shows a field slicer's own settings, and the filter choice for one that draws a filter", () => {
+  const typeOf = (m) => ({ "products.name": "string", "dates.full_date": "time" })[m];
+  const paths = (p) => fieldsFor(p, { typeOf, filters: SOURCE.filters }).map((x) => x.path);
+  assert.deepEqual(paths({ id: "sl", type: "slicer", dimension: "products.name" }), ["title", "~slicer", "dimension", "label", "filter_type", "display", "ignore_filters"]);
+  assert.deepEqual(paths({ id: "sl", type: "slicer", dimension: "dates.full_date", filter_type: "date" }), ["title", "~slicer", "dimension", "label", "filter_type", "default", "ignore_filters"]);
+  assert.deepEqual(paths({ id: "sl", type: "slicer", filter: "region" }), ["title", "~slicer", "filter", "display", "ignore_filters"]);
+  assert.deepEqual(fieldsFor({ id: "sl", type: "slicer", dimension: "dates.full_date" }, { typeOf }).find((x) => x.path === "filter_type").options, ["select", "multiselect", "date"]);
+  assert.deepEqual(slicerTypes("number"), ["select", "multiselect", "number"]);
+});

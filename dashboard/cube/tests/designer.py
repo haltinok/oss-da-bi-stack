@@ -1234,6 +1234,38 @@ with sync_playwright() as p:
     check(box["width"] >= 380 and box["y"] > 300 and page.evaluate("document.documentElement.scrollWidth - window.innerWidth") <= 0, f"on a phone the drawer is a sheet at the bottom ({box['width']:.0f}px wide, from y={box['y']:.0f}) and the page does not scroll sideways")
     ctx.close()
 
+    # ---- a slicer on a field (sales-drilldown's Sales group): its drawer, the fields it offers, and switching to a filter of the dashboard and back
+    src = yaml.safe_load((ms.ROOT / "dashboards" / "sales-drilldown.yml").read_text())
+    src["id"] = "draft"
+    status, built = ms.builder_answer("/validate", {"yaml": yaml.safe_dump(src, sort_keys=False)})
+    assert status == 200 and built["ok"], built.get("problems")
+    sliced = json.dumps({"yaml": built["yaml"], "spec": built["spec"], "prompt": "", "message": "", "notes": [], "mode": "standin", "model": ""})
+    ctx, page = open_page(browser, "/d/draft", draft=sliced)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    page.click("#bd-design")
+    page.click('[data-panel="group"]')
+    page.wait_for_selector('#designer [data-path="~slicer"]', timeout=10000)
+    check(page.input_value('#designer [data-path="~slicer"]') == "field" and page.input_value('#designer [data-slot="dimension"] select') == "territories.group_name", "a field slicer's drawer says it shows a field, and which")
+    offered = page.eval_on_selector_all('#designer [data-slot="dimension"] option', "os => os.map(o => o.value)")
+    check("products.color" in offered and "products.category" not in offered and "territories.region" not in offered and not any(o.startswith("inventory_health.") for o in offered),
+          "it offers only fields these panels can be filtered by and that no header filter already narrows")
+    check(page.input_value('#designer [data-slot="filter_type"] select') == "select", "nothing written as its type reads as select")
+    with changes(page):
+        page.select_option('#designer [data-path="~slicer"]', "filter")
+    draft_yaml = lambda: yaml.safe_load(json.loads(page.evaluate("localStorage.getItem('builder.draft')"))["yaml"])  # noqa: E731
+    made = draft_yaml()
+    sl = next(p for p in made["panels"] if p["id"] == "group")
+    check(sl.get("filter") == "group_name" and "dimension" not in sl and any(f["id"] == "group_name" and f["label"] == "Sales group" for f in made["filters"]), "switched to a filter: a filter with its settings, which the slicer draws")
+    page.wait_for_function("document.querySelector('#designer [data-path=\"~slicer\"]')?.value === 'filter'", timeout=10000)        # the slicer stays picked after the change
+    with changes(page):
+        page.select_option('#designer [data-path="~slicer"]', "field")
+    back = draft_yaml()
+    sl = next(p for p in back["panels"] if p["id"] == "group")
+    check(sl.get("dimension") == "territories.group_name" and sl.get("label") == "Sales group" and not any(f["id"] == "group_name" for f in back.get("filters", [])), "and back: the filter folds into the slicer again")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
     # ---- Turkish
     ctx, page = open_page(browser, "/d/draft?lang=tr", draft=kept_draft)
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)

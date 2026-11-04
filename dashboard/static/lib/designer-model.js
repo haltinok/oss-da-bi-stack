@@ -99,15 +99,30 @@ export function fieldsFor(panel, { isMeasure = () => false, filters = [], typeOf
     case "text":
       out.push(f("markdown", "textarea", { key: "markdown" }));
       break;
-    case "slicer":
-      out.push(f("filter", "choice", { key: "slicerFilter", options: filters.map((x) => x.id), labels: Object.fromEntries(filters.map((x) => [x.id, x.label || x.id])) }),
-        f("display", "choice", { key: "slicerDisplay", options: ["list", "chips", "dropdown"], optional: true }));
+    case "slicer": {
+      // What it shows: a field of the data (`dimension`, a filter of its own) or a filter of the dashboard (`filter`); the drawer switches between the two.
+      out.push({ path: "~slicer", kind: "slicermode", key: "slicerMode" });
+      if (panel.dimension !== undefined) {
+        const typ = panel.filter_type || "select";
+        out.push(f("dimension", "slicerfield", { key: "slicerField" }), f("label", "text", { key: "slicerLabel", optional: true }),
+          f("filter_type", "choice", { key: "filterType", options: slicerTypes(typeOf(panel.dimension)), fallback: "select" }));             // nothing written means select
+        if (typ === "select" || typ === "multiselect") out.push(f("display", "choice", { key: "slicerDisplay", options: ["list", "chips", "dropdown"], optional: true }));
+        else out.push({ path: "default", kind: "slicerdefault", key: "filterDefault" });         // a list slicer's value is picked on the page, as for a list filter
+      } else {
+        out.push(f("filter", "choice", { key: "slicerFilter", options: filters.map((x) => x.id), labels: Object.fromEntries(filters.map((x) => [x.id, x.label || x.id])) }),
+          f("display", "choice", { key: "slicerDisplay", options: ["list", "chips", "dropdown"], optional: true }));
+      }
       break;
+    }
     default:
   }
   if (panel.type !== "text") out.push({ path: "ignore_filters", kind: "ignorefilters", key: "ignoreFilters" });
   return out;
 }
+
+/** The filter types a field slicer can have for a field of Cube type `dimType`: select and multiselect always, text / number / date for a string / number / time field
+ * (FILTER_TYPES and NEEDS in designer-structure.js say the same; that module imports this one, so the rule is written here too). */
+export const slicerTypes = (dimType) => ["select", "multiselect", ...({ string: ["text"], number: ["number"], time: ["date"] }[dimType] || [])];
 
 const tokens = (path) => path.split(".").map((p) => (/^\d+$/.test(p) ? Number(p) : p));
 
