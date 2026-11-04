@@ -44,6 +44,10 @@ def test_the_three_services_ship_the_same_resolution_file():
     assert (ROOT / "builder" / "access_resolve.py").read_bytes() == one and (ROOT / "admin" / "access_resolve.py").read_bytes() == one
 
 
+def test_auth_and_admin_ship_the_same_registry_loader():
+    assert (ROOT / "admin" / "rls_registry.py").read_bytes() == (ROOT / "auth" / "rls_registry.py").read_bytes()
+
+
 def test_the_sql_lab_is_for_admins_and_those_granted_lab_on_any_dataset():
     from access_resolve import lab_allowed
     view = {**grant("sales", "user", "ayse"), "permission": "view"}

@@ -67,6 +67,8 @@ x-cube: &cube
       condition: service_completed_successfully
     cubestore:
       condition: service_started
+    postgres:                         # the row-level dimensions (access.rls_dimension) are read from it once, at startup, when CUBE_ACCESS_PG_PASSWORD is set
+      condition: service_healthy
   volumes:
     - ./cube:/cube/conf
     # the 500M-tuned model, read by cube.js when DATASET is not live (re-pointed at mart_<dataset> at load time)
@@ -99,6 +101,13 @@ x-cube-env: &cube-env
   CUBEJS_CONCURRENCY: "${CUBE_CONCURRENCY:-6}"
   CUBEJS_DB_MAX_POOL: "${CUBE_CONCURRENCY:-6}"
   CUBEJS_DB_QUERY_TIMEOUT: "7200"
+  # The row-level dimensions: read from Postgres (access.rls_dimension, login access_cube, SELECT on that table only) once, when Cube starts. Empty password: the
+  # default file cube/rls_dimensions.json. Set but unreadable for RLS_REGISTRY_WAIT seconds, or not a valid registry: Cube does not start (PLAN-rls-registry-db.md).
+  CUBE_ACCESS_PG_HOST: postgres
+  CUBE_ACCESS_PG_PORT: "5432"
+  CUBE_ACCESS_PG_DB: postgres
+  CUBE_ACCESS_PG_USER: access_cube
+  CUBE_ACCESS_PG_PASSWORD: ${CUBE_ACCESS_PG_PASSWORD:-}
 
 # Every published port is overridable from .env so this stack can run next to
 # another one on the same host (the defaults below are the historical values).
@@ -114,6 +123,7 @@ services:
       BUILDER_DB_PASSWORD: ${BUILDER_DB_PASSWORD:-}      # the dashboard builder's login (postgres/init/03_builder_user.sh); empty skips it
       ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:-}          # the admin console's and the auth service's logins on the access schema (postgres/init/05_access_users.sh); empty skips them
       AUTH_PG_PASSWORD: ${AUTH_PG_PASSWORD:-}
+      CUBE_ACCESS_PG_PASSWORD: ${CUBE_ACCESS_PG_PASSWORD:-}   # Cube's read-only login for the row-level dimensions (05_access_users.sh); empty skips it
       LAB_DB_PASSWORD: ${LAB_DB_PASSWORD:-}              # the SQL lab's login on the lab schema (postgres/init/07_lab_user.sh); empty skips it (no saved queries)
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"

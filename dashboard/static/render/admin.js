@@ -50,7 +50,7 @@ async function load() {
   const qs = new URLSearchParams({ max: "200", ...(s.q ? { search: s.q } : {}), ...(s.role ? { role: s.role } : {}), ...(s.group ? { group: s.group } : {}), ...(s.status ? { enabled: s.status === "active" } : {}) });
   const [u, g] = await Promise.all([call("GET", `/users?${qs}`), call("GET", "/groups")]);
   s.users = u.users; s.total = u.total; s.groups = g.groups;
-  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.dimensions = r.dimensions || []; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.dimensions = []; s.rulesOff = true; }
+  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.dimensions = r.dimensions || []; s.registry = r.registry || null; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.dimensions = []; s.rulesOff = true; }
   if (!s.rulesOff) { const d = await call("GET", "/datasets"); s.datasets = d.datasets; s.cubes = d.cubes; s.grantRoles = d.roles; } else { s.datasets = []; }
 }
 async function refresh() { try { await load(); draw(); show(""); } catch (e) { show(`${t.failed} ${e.message}`); } }
@@ -123,7 +123,8 @@ function rulesHtml() {
   const rows = s.rules.map((r) => `<tr data-type="${esc(r.type)}" data-principal="${esc(r.principal)}" data-dimension="${esc(r.dimension || "territory")}"><td><span class="adm-badge">${esc(r.type === "user" ? t.ruleUser : t.ruleGroup)}</span> <strong>${esc(r.principal)}</strong></td>
       ${manyDims() ? `<td>${esc(dimLabel(dimOf(r.dimension || "territory")))}</td>` : ""}<td>${r.values.map((v) => `<span class="adm-chip">${esc(v)}</span>`).join("")}</td><td class="hide-s hint">${esc(r.updated_by)}</td>
       <td class="adm-act"><button class="adm-btn mini" data-act="edit">${esc(t.edit)}</button><button class="adm-btn mini danger" data-act="delete">${esc(t.delete)}</button></td></tr>`).join("");
-  return `<p class="hint">${esc(t.rulesHint)}</p><div class="adm-bar"><span class="spacer"></span><button class="adm-btn primary" id="new-rule">${esc(t.newRule)}</button></div>
+  const registry = s.registry ? `<p class="hint" id="registry-note">${esc(t.registryFrom(s.registry.source, s.registry.version))}</p>` : "";
+  return `<p class="hint">${esc(t.rulesHint)}</p>${registry}<div class="adm-bar"><span class="spacer"></span><button class="adm-btn primary" id="new-rule">${esc(t.newRule)}</button></div>
     ${s.rules.length ? `<table class="adm-table"><thead><tr><th>${esc(t.ruleWho)}</th>${manyDims() ? `<th>${esc(t.ruleDimension)}</th>` : ""}<th>${esc(manyDims() ? t.ruleValues : t.ruleTerritories)}</th><th class="hide-s">${esc(t.ruleUpdated)}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="adm-empty">${esc(t.noRules)}</p>`}
     <section class="adm-preview" aria-labelledby="pv-h"><h3 id="pv-h">${esc(t.preview)}</h3>
       <div class="adm-bar"><select id="pv-user" aria-label="${esc(t.previewPick)}"><option value="">${esc(t.previewPick)}</option></select><button class="adm-btn" id="pv-go">${esc(t.previewGo)}</button></div>

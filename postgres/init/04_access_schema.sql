@@ -14,6 +14,23 @@ CREATE TABLE IF NOT EXISTS access.rls_rule (
     PRIMARY KEY (principal_type, principal, dimension)
 );
 
+-- The row-level dimensions (PLAN-rls-registry-db.md): which field a rule of each dimension limits, on which cubes, and whether a person with no value is denied or
+-- unrestricted. Cube, the auth service and the admin console read this table once, when they start (and refuse to start on rows they could not enforce), so a
+-- change here needs a restart of those three. A new database gets the default list (cube/rls_dimensions.json) from 10_rls_dimensions.sql.
+CREATE TABLE IF NOT EXISTS access.rls_dimension (
+    id             text        PRIMARY KEY CHECK (id ~ '^[a-z][a-z0-9_]{0,39}$'),                     -- what access.rls_rule.dimension names
+    position       integer     NOT NULL DEFAULT 0,                                                     -- the order the console lists them in
+    member         text        NOT NULL CHECK (member ~ '^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$'),   -- the Cube field filtered on (cube.field)
+    cubes          text[]      NOT NULL CHECK (cardinality(cubes) BETWEEN 1 AND 50),                   -- every query touching one of these cubes is filtered
+    when_empty     text        NOT NULL CHECK (when_empty IN ('deny', 'allow')),                       -- deny: no value, nothing from those cubes; allow: no value, no limit
+    values_source  jsonb       NOT NULL DEFAULT '{"kind": "cube"}' CHECK (values_source->>'kind' IN ('seed_regions', 'list', 'cube')),   -- where the console's value list comes from
+    seed           boolean     NOT NULL DEFAULT false,                                                 -- with no rule, the dbt seed (rls.user_regions) decides (territory)
+    labels         jsonb       NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(labels) = 'object'),           -- the console's name for it, per language
+    empty_message  text        NOT NULL DEFAULT '' CHECK (char_length(empty_message) <= 200),          -- what Cube answers a person with no value (deny)
+    updated_by     text        NOT NULL DEFAULT 'install',
+    updated_at     timestamptz NOT NULL DEFAULT now()
+);
+
 -- Datasets: named sets of cubes. A cube that is in at least one dataset is "governed": only people with a grant on a dataset that contains it may read it (admins always can).
 -- A cube in no dataset is governed by the role rules alone, as before. So nothing changes until a dataset is created, and a grant can only narrow what the role allows.
 CREATE TABLE IF NOT EXISTS access.dataset (

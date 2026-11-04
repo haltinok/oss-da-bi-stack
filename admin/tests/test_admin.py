@@ -191,6 +191,7 @@ def test_set_list_and_delete_a_rule_for_a_user_and_a_group(ruled, kc):
     out = ruled.get("/rls/rules").json()
     assert [(r["type"], r["principal"], r["values"]) for r in out["rules"]] == [("group", "EU team", ["France"]), ("user", "de_rep", ["France", "Germany"])]
     assert out["regions"] == ["Canada", "France", "Germany", "United States"]
+    assert out["registry"]["source"] == "file" and len(out["registry"]["version"]) == 16, "the screen says where the dimensions came from (no ADMIN_DB_PASSWORD at startup: the file)"
     assert ruled.delete("/rls/rules/user/de_rep").status_code == 204
     assert ruled.delete("/rls/rules/user/de_rep").status_code == 404
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The logins of the access schema (04_access_schema.sql). Least privilege: the admin console may read and write the rules; the auth service may only read them.
+# The logins of the access schema (04_access_schema.sql). Least privilege: the admin console may read and write the rules; the auth service may only read them;
+# Cube may only read the row-level dimensions (access.rls_dimension), once, when it starts.
 # Idempotent (postgres/sync-access.sh runs it on a volume that exists). A login whose password variable is empty is skipped: the service then runs without rules.
 set -euo pipefail
 
-for pair in access_admin:ADMIN_DB_PASSWORD access_auth:AUTH_PG_PASSWORD; do
+for pair in access_admin:ADMIN_DB_PASSWORD access_auth:AUTH_PG_PASSWORD access_cube:CUBE_ACCESS_PG_PASSWORD; do
     role=${pair%%:*}; var=${pair##*:}
     if [ -z "${!var:-}" ] || [ "${!var}" = "REPLACE_ME" ]; then
         echo "05_access_users: $var is empty, skipping $role"
@@ -25,10 +26,15 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_admin') THEN
         GRANT USAGE ON SCHEMA access TO access_admin;
         GRANT SELECT, INSERT, UPDATE, DELETE ON access.rls_rule, access.dataset, access."grant" TO access_admin;
+        GRANT SELECT ON access.rls_dimension TO access_admin;                -- read at startup; changing the list is a database task, then a restart
       END IF;
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_auth') THEN
         GRANT USAGE ON SCHEMA access TO access_auth;
-        GRANT SELECT ON access.rls_rule, access.dataset, access."grant" TO access_auth;
+        GRANT SELECT ON access.rls_rule, access.dataset, access."grant", access.rls_dimension TO access_auth;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_cube') THEN
+        GRANT USAGE ON SCHEMA access TO access_cube;
+        GRANT SELECT ON access.rls_dimension TO access_cube;                 -- nothing else: not the rules, not the datasets
       END IF;
       -- the dashboard builder reads the datasets and grants to leave out the cubes a person may not read (it has its own login: 03_builder_user.sh)
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'builder_app') THEN

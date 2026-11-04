@@ -37,8 +37,10 @@ class StarRocksQuery extends MysqlQuery {
 const SECRET = process.env.CUBEJS_API_SECRET;
 // What a person may read is decided by datasets and grants (blocked_cubes, blocked_members in the token), not by their role; the rules below are the ones that need no configuration: the sales facts
 // are limited to the person's territories, and the proposal agent (a service account, not a person) may only read the two inventory cubes and the products.
-// The row-level dimensions (territory, ...): cube/rls_dimensions.json, also read by the auth service and the admin console.
-const RLS_DIMENSIONS = require('./rls_dimensions.json').dimensions;
+// The row-level dimensions (territory, ...): access.rls_dimension in Postgres, read once, now, while this file loads (rls_registry.js; the default file
+// rls_dimensions.json when CUBE_ACCESS_PG_PASSWORD is not set). The auth service and the admin console read the same table when they start.
+// A registry that cannot be read or is not valid throws here, so Cube does not start.
+const RLS = require('./rls_registry').init();
 const AGENT_CUBES = new Set(['inventory_health', 'offer_performance', 'products']);
 
 // Cube turns a thrown CubejsHandlerError into its HTTP status; any other error is a 500
@@ -158,9 +160,14 @@ function queryRewrite(query, { securityContext }) {
     return query;
   }
 
-  // Row-level security (rls_dimensions.json): for each dimension whose cubes the query touches, only the person's own values. Dimensions are ANDed; the values of one are ORed.
+  // The token was made from the same registry as the one enforced here: after a change to access.rls_dimension, an auth service restarted without Cube (or the
+  // other way round) would hand out values for a dimension that is not filtered on. A token from before `rls_version` existed has none and is let through.
+  if (sc.rls_version !== undefined && sc.rls_version !== RLS.version) {
+    throw forbidden('The row-level dimensions changed: restart the auth service and Cube together, then sign in again');
+  }
+  // Row-level security (access.rls_dimension): for each dimension whose cubes the query touches, only the person's own values. Dimensions are ANDed; the values of one are ORed.
   // The token's `rls` holds the values per dimension (an older token only has `territories`). Nobody listed for a `deny` dimension gets nothing from its cubes.
-  for (const dim of RLS_DIMENSIONS) {
+  for (const dim of RLS.dimensions) {
     if (!dim.cubes.some((c) => cubes.has(c))) continue;
     const mine = sc.rls && Array.isArray(sc.rls[dim.id]) ? sc.rls[dim.id] : (dim.id === 'territory' && Array.isArray(sc.territories) ? sc.territories : []);
     if (mine.length === 0) {
