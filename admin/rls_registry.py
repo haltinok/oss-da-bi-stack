@@ -87,7 +87,7 @@ def version(dims: list[dict]) -> str:
 def from_row(r) -> dict:
     """A row of SELECT (a tuple or a dict) as a registry entry."""
     keys = ("id", "member", "cubes", "when_empty", "values_source", "seed", "labels", "empty_message")
-    d = dict(r) if isinstance(r, dict) else dict(zip(keys, r))
+    d = dict(r) if isinstance(r, dict) else dict(zip(keys, r, strict=True))
     return {"id": d["id"], "member": d["member"], "cubes": list(d["cubes"] or []), "when_empty": d["when_empty"],
             "values": d["values_source"], "seed": d["seed"], "labels": d["labels"], "empty_message": d["empty_message"]}
 

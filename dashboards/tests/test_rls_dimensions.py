@@ -82,7 +82,7 @@ def test_missing_fields_get_their_defaults_and_a_row_reads_like_the_file():
     d = DIMS[0]
     row = (d["id"], d["member"], d["cubes"], d["when_empty"], d["values"], d.get("seed", False), d.get("labels", {}), d.get("empty_message", ""))
     assert R.normalize([R.from_row(row)]) == R.normalize([d])
-    assert R.normalize([R.from_row(dict(zip(("id", "member", "cubes", "when_empty", "values_source", "seed", "labels", "empty_message"), row)))]) == R.normalize([d])
+    assert R.normalize([R.from_row(dict(zip(("id", "member", "cubes", "when_empty", "values_source", "seed", "labels", "empty_message"), row, strict=True)))]) == R.normalize([d])
 
 
 class FakeConn:
