@@ -52,6 +52,9 @@ panels: list of { id, type, title?, ignore_filters?, ... }, types:
   pivot      rows: [dim] or [dim, dim] (down the side; two = the first groups the second), columns: <one other dimension> OR { member: <time dimension>, granularity: month|quarter|year|... } (across the top; use the second for "by month"), measures: [ member | {member, label, format} ] (1-3),
              totals?: both | rows | columns | none, order?: { by: total | label, dir }, limit?: { rows (25), columns (12) }, heat?: { measure: <one of the measures> } (shades the cells; good for month x region), show?: value | share_of_row | share_of_column | share_of_total (cells as percentages; needs the matching totals, and sum/count measures only: never a ratio), on_click?: { set_filter: [<filter on a rows dimension, or on the columns dimension unless it is a time column>] (max 2) }
   text       markdown
+  slicer     a filter drawn in the layout as a card, EITHER dimension: <any dimension the panels can be filtered by> (+ label, filter_type?: select | multiselect, default?) (its own filter: it narrows the panels of its tab, or the whole dashboard without tabs; write no filter for it)
+             OR filter: <id of a visible filter> (draws that filter here instead of above the panels); display?: list | chips | dropdown (chips for a few values, dropdown for many).
+             Write a slicer only when the request asks for one ("a slicer for colour", "dilimleyici"); a field that already has a filter gets filter: <its id>, never a second control. Place it in the layout, usually under the key figures.
 A measure is one of: member: cube.measure | sum: [a.m, b.m] (the same measure of two fact cubes, added; needs label) | ratio: { num: [..], den: [..] } (needs label; format pct).
 format: money | int | pct (a fraction) | decimal | number.   color: internet | reseller | #rrggbb.
 layout: rows of 12 columns, every panel exactly once: - [kpis: 12]  - [trend: 8, lines: 4]
