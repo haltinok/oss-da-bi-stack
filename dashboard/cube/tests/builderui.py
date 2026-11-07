@@ -114,7 +114,7 @@ with sync_playwright() as p:
     yaml_text = page.input_value("#bd-yaml")
     check("id: draft" in yaml_text and "regional" not in yaml_text.lower() and "title:" in yaml_text, "the YAML tab shows the whole file")
     page.fill("#bd-yaml", yaml_text.replace("title: Sales dashboard", "title: My own title", 1))
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-apply")
     settled(page)
     check(page.inner_text("#title") == "My own title" and "Applied" in page.inner_text("#bd-msg"), "an edited YAML is applied and drawn")
@@ -526,7 +526,7 @@ with sync_playwright() as p:
     rows = spec.pop("layout")
     spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:1]}, {"id": "details", "title": "Details", "layout": rows[1:]}]
     page.fill("#bd-yaml", yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-apply")
     settled(page)
     check("Applied" in page.inner_text("#bd-msg") and page.locator('[role="tab"]').all_inner_texts() == ["Overview", "Details"], "a draft edited into tabs in the YAML tab is applied and drawn with a tab bar")
