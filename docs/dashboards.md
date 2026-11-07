@@ -113,7 +113,7 @@ discards what could have been redone.
 needs no description of which chart. The model is told to leave every other panel, filter and the layout as they are; the result is checked like any other, and Undo takes it back like a designer edit. Without a pick, the Change box
 is about the whole dashboard as before. (The rule-based stand-in understands a pie or donut, bars or columns, a chart style, top N and removing the panel; a language model understands free text.)
 
-**Saved dashboards.** Open a dashboard you own and press **Design**: it is the same draft as **Edit**, tied to the saved dashboard, with the designer already on; **Save** then makes a new version. For a dashboard that is
+**Saved dashboards.** Open a dashboard you own and press **Design**: it is the same draft as **Edit**, tied to the saved dashboard, with the designer already on; **Save** then makes a new version. Moving between the saved dashboard and its draft (Design, Edit, Save, an older version, a copy, Back and Forward) happens in the page, without loading it: the cards that are the same stay as they are, with their data, and after Save, Back goes to where the draft was opened from. For a dashboard that is
 someone else's the button is **Design a copy**. In **Versions**, each version lists what it changed from the one before (a panel added, removed or changed with the fields, the layout, a filter, the title, the page's own
 fields), computed on the server from the two files; a version whose predecessor is no longer kept says only "Changed".
 

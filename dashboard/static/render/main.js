@@ -18,7 +18,7 @@ import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builde
 import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
 import { noteRecent } from "../lib/recent.js";
-import { life, onRedraw, renew } from "../lib/life.js";
+import { life, onGo, onRedraw, renew } from "../lib/life.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -38,7 +38,8 @@ const wanted = new URLSearchParams(location.search).get("dataset") || keep.get()
 const dataset = DATASETS.find((d) => d.id === wanted) || DATASETS[0];
 keep.set(dataset.id);
 
-const id = decodeURIComponent(location.pathname.replace(/^\/d\/?/, "").replace(/\/$/, ""));
+const idOf = (path) => decodeURIComponent(path.replace(/^\/d\/?/, "").replace(/\/$/, ""));
+let id = idOf(location.pathname);                                  // the dashboard shown; go() and Back / Forward change it without loading the page
 const client = createCubeClient({
   stack: C, apiUrl: dataset.cube, redirect: `${location.origin}${location.pathname}`,
   onSession(s) {
@@ -652,6 +653,7 @@ async function remount() {
   bar.replaceChildren();
   bar.hidden = true;
   show("");
+  setStatus(esc(stringsFor(uiLocale(navigator.language)).loading));                  // until the new dashboard has loaded (a saved one is fetched first): not "Updated" from the old one
   try {
     await showDashboard({ again: true, counts, carry });
   } catch (e) {
@@ -663,6 +665,24 @@ async function remount() {
   }
 }
 onRedraw(remount);
+
+/** Moves to the dashboard at `path` in this page (lib/life.js `go`): Design and Edit on a saved dashboard, Save, a copy, an older version. The list is a page of its own. */
+function goTo(path, { replace = false, keepQuery = true } = {}) {
+  const url = new URL(path, location.origin);
+  if (keepQuery && !url.search) url.search = location.search;
+  if (!idOf(url.pathname) || !id) { location[replace ? "replace" : "assign"](url); return; }
+  history[replace ? "replaceState" : "pushState"](null, "", url);
+  id = idOf(url.pathname);
+  remount();
+}
+onGo(goTo);
+// Back and Forward between dashboards shown with go(): the one in the address is drawn in place (the list, or coming from it, loads the page).
+window.addEventListener("popstate", () => {
+  const next = idOf(location.pathname);
+  if (!next || !id) { location.reload(); return; }
+  id = next;
+  remount();
+});
 
 // ------------------------------------------------------------------ start
 (async () => {

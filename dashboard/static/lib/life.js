@@ -19,3 +19,13 @@ let redrawer = () => location.reload();
 export const onRedraw = (fn) => { redrawer = fn; };
 /** Draws the dashboard again from what this browser holds (the draft, the saved dashboard), in the page: the designer's changes, undo, the Change box. */
 export const redraw = () => redrawer();
+
+// Moving to another dashboard (a draft, a saved one) without loading the page: render/main.js registers how; until it has, it is a page load.
+let goer = (path) => location.assign(path);
+/** Sets how the page moves to another dashboard (render/main.js). */
+export const onGo = (fn) => { goer = fn; };
+/**
+ * Shows the dashboard at `path` (/d/draft, /d/s/<id>) in this page: the address changes (`replace`: without a new history entry) and the dashboard is drawn
+ * there, keeping the cards that are the same. `keepQuery`: the filters, period and tab in the address stay (the same dashboard, in another mode).
+ */
+export const go = (path, { replace = false, keepQuery = true } = {}) => goer(path, { replace, keepQuery });
