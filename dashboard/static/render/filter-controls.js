@@ -1,6 +1,7 @@
 // The filter bar's controls for the filter types other than `select` (the select is drawn by main.js). Each control owns a piece of DOM and speaks in the filter's
 // value string (see lib/filters.js): `show(value)` puts a value into it, and `onChange(value)` is called when the reader changes it ("" = no filter).
 import { el, esc } from "../lib/dom.js";
+import { life } from "../lib/life.js";
 import { FIXED_PRESETS, COUNTED_UNITS, MAX_COUNT, formatValue, parseValue } from "../lib/filters.js";
 import { fold } from "../lib/search.js";
 
@@ -135,7 +136,7 @@ function multi(f, t, label, field, notify) {
   exBox.addEventListener("change", () => { exclude = exBox.checked; emit(); });
   all.addEventListener("click", () => { for (const v of api.shown || []) chosen.add(v); drawList(); emit(); });
   none.addEventListener("click", () => { chosen.clear(); drawList(); emit(); });
-  document.addEventListener("click", (e) => { if (!pop.hidden && !field.contains(e.target)) setOpen(false); });
+  document.addEventListener("click", (e) => { if (!pop.hidden && !field.contains(e.target)) setOpen(false); }, { signal: life() });
   field.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { setOpen(false); button.focus(); } });
   summary();
   return Object.assign(api, {

@@ -5,6 +5,7 @@
 The mock's builder answers with the real loop, validator and rule-based stand-in (builder/), so what is checked here is the page and the whole chain
 except the language model and Keycloak.
 """
+import contextlib
 import json
 import pathlib
 import re
@@ -41,6 +42,15 @@ def open_page(browser, path, width=1440, storage=None):
     page.on("console", lambda m: page.problems.append(f"console.{m.type}: {m.text}") if m.type in ("error", "warning") else None)
     page.goto(f"{BASE}{path}")
     return ctx, page
+
+
+@contextlib.contextmanager
+def redrawn(page, timeout=20000):
+    """What the body does draws the dashboard again in the page, without loading it (render/main.js `remount`, which counts them): waits for that."""
+    n, origin = page.evaluate("[window.__render?.mountCount || 0, performance.timeOrigin]")
+    yield
+    page.wait_for_function(f"(window.__render?.mountCount || 0) > {n}", timeout=timeout)
+    assert page.evaluate("performance.timeOrigin") == origin, "the page was loaded again instead of drawn again in place"
 
 
 def settled(page, timeout=20000):
@@ -84,17 +94,17 @@ with sync_playwright() as p:
 
     # ---- change it by asking
     page.fill("#bd-change", "make the chart a line")
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-go")
     settled(page)
     check(page.locator('[data-panel="trend"] svg path[stroke]').count() >= 2 and page.locator('[data-panel="trend"] svg rect[fill]').count() == 0, "'make the chart a line' redraws the trend as a line")
     page.fill("#bd-change", "show the top 3")
-    with page.expect_navigation():
+    with redrawn(page):
         page.press("#bd-change", "Enter")
     settled(page)
     check(page.locator('[data-panel^="by_product"] .rrow').count() == 3, "'show the top 3' limits the product bars to three (Enter submits)")
     page.fill("#bd-change", "make it prettier")
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-go")
     settled(page)
     check("understood nothing to change" in page.inner_text("#bd-msg"), "a change the stand-in does not understand says so")
@@ -104,7 +114,7 @@ with sync_playwright() as p:
     yaml_text = page.input_value("#bd-yaml")
     check("id: draft" in yaml_text and "regional" not in yaml_text.lower() and "title:" in yaml_text, "the YAML tab shows the whole file")
     page.fill("#bd-yaml", yaml_text.replace("title: Sales dashboard", "title: My own title", 1))
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-apply")
     settled(page)
     check(page.inner_text("#title") == "My own title" and "Applied" in page.inner_text("#bd-msg"), "an edited YAML is applied and drawn")
@@ -191,7 +201,7 @@ with sync_playwright() as p:
     page.check("input[name=vis][value=roles]")
     check(page.locator(".vis .roles").is_visible(), "choosing roles shows the role boxes")
     page.check("input[name=vis][value=everyone]")
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#sb-share-go")
     settled(page)
     check("Everyone" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "now it is shared with everyone")
@@ -252,7 +262,7 @@ with sync_playwright() as p:
     settled(page)
     check("You are editing a saved dashboard" in (page.inner_text("#tab-save") if page.locator("#tab-save").is_visible() else "") or True, "editing")
     page.fill("#bd-change", "add a table of the top 5 products")
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-go")
     settled(page)
     page.click('[data-tab="save"]')
@@ -267,7 +277,7 @@ with sync_playwright() as p:
     check("Created" in page.inner_text('#tab-versions li[data-v="1"]'), "the first says it was created")
     second = page.inner_text('#tab-versions li[data-v="2"] .vc')
     check(second.startswith(("Added", "Changed", "Rearranged", "Removed", "Renamed")), f"and the second says what it changed ({second.replace(chr(10), ' | ')})")
-    with page.expect_navigation():
+    with redrawn(page):
         page.click('#tab-versions li[data-v="1"] [data-act="restore"]')
     settled(page)
     check("version 3" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "restoring version 1 makes version 3")
@@ -508,7 +518,7 @@ with sync_playwright() as p:
     rows = spec.pop("layout")
     spec["tabs"] = [{"id": "overview", "title": "Overview", "layout": rows[:1]}, {"id": "details", "title": "Details", "layout": rows[1:]}]
     page.fill("#bd-yaml", yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))
-    with page.expect_navigation():
+    with redrawn(page):
         page.click("#bd-apply")
     settled(page)
     check("Applied" in page.inner_text("#bd-msg") and page.locator('[role="tab"]').all_inner_texts() == ["Overview", "Details"], "a draft edited into tabs in the YAML tab is applied and drawn with a tab bar")
