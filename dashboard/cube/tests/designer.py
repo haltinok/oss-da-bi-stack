@@ -264,9 +264,15 @@ with sync_playwright() as p:
     page.keyboard.press("Escape")
     filters_before = len(yaml_of(page).get("filters", []))
     page.select_option("#dz-newfilter", "products.color")
+    # A new filter draws the dashboard again in the page; every card is kept (its definition did not change), the same element, and none of them asks
+    # for its data again (a card that queries is marked pending while it waits).
+    page.evaluate("""() => { window.__queried = new Set(); document.querySelectorAll('[data-panel]').forEach((c) => { c.__before = true;
+        new MutationObserver(() => { if (c.classList.contains('pending')) window.__queried.add(c.dataset.panel); }).observe(c, { attributes: true, attributeFilter: ['class'] }); }); }""")
     page.click("#dz-addfilter")
     page.wait_for_function("(n) => document.querySelectorAll('#dz-filters .dz-filter').length > n", arg=filters_before, timeout=20000)
     settled(page)
+    kept = page.evaluate("() => { const cards = [...document.querySelectorAll('[data-panel]')]; return { cards: cards.length, same: cards.filter((c) => c.__before).length, kept: window.__render.keptCount, queried: [...window.__queried], grips: document.querySelectorAll('.dz-grip').length }; }")
+    check(kept["cards"] == kept["same"] == kept["kept"] and not kept["queried"], f"adding a filter keeps every card as it was, with its data: none is made again or loads again ({kept})")
     added_filter = yaml_of(page)["filters"][-1]
     check(added_filter["dimension"] == "products.color" and page.locator("#filters .field").count() == filters_before + 1, "a new filter appears in the page's filter bar")
     page.click(f'[data-rm-filter="{added_filter["id"]}"]')

@@ -852,6 +852,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }, { capture: true, signal });
 
   const dnd = mountDnd({ panels, getSource: () => source, getActiveTab: activeTab, commit: (edit, o) => commit(edit, o), dz });
+  signal.addEventListener("abort", () => dnd.disable());                      // its grips are in the cards, which the next drawing may keep
 
   function setMode(next) {
     on = next;
