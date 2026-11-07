@@ -2,7 +2,7 @@
 // It talks to the builder service (builder/): a prompt becomes a validated dashboard spec for the signed-in role. Everything the service or the model
 // returns is shown as text (escaped); a draft lives in this browser (localStorage) until it is saved to the repository as a reviewed YAML file.
 import { el, esc } from "../lib/dom.js";
-import { life, redraw } from "../lib/life.js";
+import { go as openDashboard, life, redraw } from "../lib/life.js";
 import { nameDialog, shareDialog, words } from "./sharing.js";
 import { filterItems } from "../lib/search.js";
 import { chipsHtml, groupByFirstTag, tagsOf, withTags } from "../lib/tags.js";
@@ -466,7 +466,7 @@ function mountSavePane(pane, api, t, draft, currentYaml) {
     for (const b of pane.querySelectorAll("button")) b.disabled = true;
     try {
       const out = asNew || !editing ? await api.save(body) : await api.updateSaved(draft.savedId, body);
-      location.assign(`/d/s/${encodeURIComponent(out.id)}`);
+      openDashboard(`/d/s/${encodeURIComponent(out.id)}`, { replace: true });          // the draft is gone once saved: Back goes to where it was opened from, not to an empty draft
     } catch (e) {
       show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] });
       for (const b of pane.querySelectorAll("button")) b.disabled = false;
@@ -503,7 +503,7 @@ export function mountSavedBar(host, api, t, opened) {
   const $ = (q) => host.querySelector(q), msg = $("#sb-msg");
   $("#sb-yaml").value = opened.yaml;
   for (const b of host.querySelectorAll("[data-tab]")) b.addEventListener("click", () => { const pane = $(`#tab-${b.dataset.tab}`); pane.hidden = !pane.hidden; });
-  const asDraft = (extra) => { drafts.setCurrent({ yaml: opened.yaml, spec: opened.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", ...extra }); location.assign("/d/draft"); };
+  const asDraft = (extra) => { drafts.setCurrent({ yaml: opened.yaml, spec: opened.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", ...extra }); openDashboard("/d/draft"); };
   $("#sb-edit")?.addEventListener("click", () => asDraft({ savedId: m.id, savedMeta: { title: m.title, visibility: m.visibility, shared_roles: m.shared_roles } }));
   $("#sb-editcopy")?.addEventListener("click", () => asDraft({}));
   // Design: the same draft as Edit (or Edit a copy), opened with the designer already on (render/designer.js keeps its mode under this key in sessionStorage).
@@ -511,7 +511,7 @@ export function mountSavedBar(host, api, t, opened) {
   $("#sb-design")?.addEventListener("click", () => designing({ savedId: m.id, savedMeta: { title: m.title, visibility: m.visibility, shared_roles: m.shared_roles } }));
   $("#sb-designcopy")?.addEventListener("click", () => designing({}));
   $("#sb-copy")?.addEventListener("click", async () => {
-    try { const out = await api.save({ yaml: opened.yaml, title: m.title }); location.assign(`/d/s/${encodeURIComponent(out.id)}`); }
+    try { const out = await api.save({ yaml: opened.yaml, title: m.title }); openDashboard(`/d/s/${encodeURIComponent(out.id)}`); }
     catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
   });
   $("#sb-download")?.addEventListener("click", () => {
@@ -560,7 +560,7 @@ export function mountSavedBar(host, api, t, opened) {
         if (b.dataset.act === "restore") { await api.restoreSaved(m.id, v); redraw(); return; }
         const old = await api.openSaved(m.id, v);
         drafts.setCurrent({ yaml: old.yaml, spec: old.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", savedId: m.id, savedMeta: { title: old.meta.title, visibility: m.visibility, shared_roles: m.shared_roles } });
-        location.assign("/d/draft");
+        openDashboard("/d/draft");
       } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
     });
   }

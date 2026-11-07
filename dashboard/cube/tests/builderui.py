@@ -257,9 +257,12 @@ with sync_playwright() as p:
     page.evaluate("sessionStorage.removeItem('designer')")
     page.goto(saved_url)
     settled(page)
+    page.evaluate("window.__origin0 = performance.timeOrigin")              # Edit, the change, Save and Back below all happen in this one page load
     page.click("#sb-edit")
     page.wait_for_url("**/d/draft")
     settled(page)
+    check(page.evaluate("performance.timeOrigin === window.__origin0 && window.__render.keptCount === document.querySelectorAll('[data-panel]').length"),
+          "Edit opens the draft in the page, without loading it, and keeps every card (the draft is the same dashboard)")
     check("You are editing a saved dashboard" in (page.inner_text("#tab-save") if page.locator("#tab-save").is_visible() else "") or True, "editing")
     page.fill("#bd-change", "add a table of the top 5 products")
     with redrawn(page):
@@ -271,6 +274,11 @@ with sync_playwright() as p:
     page.wait_for_url(saved_url)
     settled(page)
     check("version 2" in page.inner_text(".builder-bar .bb-head").replace("ONLY YOU","Only you").replace("EVERYONE","Everyone"), "saving makes version 2 at the same address")
+    check(page.evaluate("performance.timeOrigin === window.__origin0"), "and Save showed it in the page, without loading it")
+    page.go_back()
+    page.wait_for_function("(u) => location.href === u && window.__render.spec && /Updated/.test(document.querySelector('#live-text').textContent)", arg=saved_url, timeout=20000)
+    check(page.evaluate("performance.timeOrigin === window.__origin0") and page.locator("#sb-edit").count() == 1,
+          "Back goes to the saved dashboard it was opened from (the spent draft is not in the history), in the page too")
     page.click('[data-tab="versions"]')
     page.wait_for_selector("#tab-versions li", timeout=10000)
     check(page.locator("#tab-versions li[data-v]").count() == 2, "both versions are listed")
