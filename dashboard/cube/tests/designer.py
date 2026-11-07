@@ -202,7 +202,7 @@ with sync_playwright() as p:
     check(page.inner_text("#title") == "Board pack" and "Redid" in page.inner_text("#bd-msg"), "Redo puts it back")
     page.evaluate("document.activeElement && document.activeElement.blur()")
     with changes(page):
-        page.click('#designer [data-hist="undo"]')
+        page.keyboard.press("Control+z")
     settled(page)
     check(page.inner_text("#title") != "Board pack", "Ctrl+Z undoes")
     with changes(page):
@@ -210,16 +210,16 @@ with sync_playwright() as p:
     settled(page)
     check(page.inner_text("#title") == "Board pack", "Ctrl+Shift+Z redoes")
     with changes(page):
-        page.click('#designer [data-hist="undo"]')
+        page.keyboard.press("Control+z")
     settled(page)
     with changes(page):
-        page.click('#designer [data-hist="redo"]')
+        page.keyboard.press("Control+y")
     settled(page)
     check(page.inner_text("#title") == "Board pack", "and so does Ctrl+Y")
     draft_before = page.evaluate("localStorage.getItem('builder.draft')")
     page.click('#designer [data-path="description"]')
     page.keyboard.type("xyz")
-    page.click('#designer [data-hist="undo"]')
+    page.keyboard.press("Control+z")
     page.wait_for_timeout(600)
     check(page.evaluate("localStorage.getItem('builder.draft')") == draft_before and not page.input_value('#designer [data-path="description"]').endswith("xyz"), "in a text field Ctrl+Z is the field's own undo, not the draft's")
     page.press('#designer [data-path="description"]', "Escape")
@@ -708,7 +708,8 @@ with sync_playwright() as p:
     with changes(page):
         page.fill('#designer [data-path="title"]', "Page title")
         page.press('#designer [data-path="title"]', "Tab")
-    check(page.evaluate("window.__stay") is None, "a change to the page itself (its title) still draws the page again")
+    check(page.evaluate("window.__stay") == 1 and page.inner_text("#title") == "Page title",
+          "a change to the page itself (its title) draws the dashboard again in the page, without loading it either")
     check(not [x for x in page.problems if "pageerror" in x], f"no script errors {page.problems[:2]}")
     ctx.close()
 
