@@ -69,7 +69,7 @@ A draft has a third way to change it besides describing the change or editing th
 a click picks one (it does not filter the page); a drawer on the right (a sheet at the bottom on a phone) shows the panel's fields: its title, the measures, what it groups
 by, the style and time step of a time chart, sort, limit, direction and format of a bar, the slices of a pie, the columns of a table, the text of a note. The lists hold only
 what you may read **and** what Cube can answer for that panel: a bar adding two sales channels offers only the groupings both channels join to. A change is checked by the same
-validator that checks a model's answer; if it is accepted the draft is updated and the page is drawn again with the panel still picked, and if not, the drawer says why and the draft
+validator that checks a model's answer; if it is accepted the draft is updated and the change is applied in the page, without loading it again: a change to one panel's fields redraws that panel, anything else (a filter, a tab, a panel added or removed, undo and redo) draws the dashboard again in place, with the panel still picked and the scroll position and the drawer where they were; if not, the drawer says why and the draft
 stays as it was. Changing what a panel groups by removes its click rule (it pointed at a filter on the old grouping) and says so.
 
 With nothing picked (or after Escape) the drawer is the **page** view: the dashboard's title, description, language, currency and time field; its **filters** (label, the field it filters by,

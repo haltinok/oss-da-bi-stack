@@ -2,6 +2,7 @@
 // or onto the empty end of the page), and a bar between two neighbours in a row to change their widths. The logic is in lib/designer-layout.js; this file only turns pointer
 // positions into those calls. The same moves are available as buttons in the drawer, so nothing here is the only way to do anything (and a keyboard needs none of it).
 import { el, esc } from "../lib/dom.js";
+import { life } from "../lib/life.js";
 import { dropPanel, rowOf, setWidths } from "../lib/designer-layout.js";
 
 const GAP = 16;                                                  // the grid's gap in px (render.css .rgrid)
@@ -105,7 +106,7 @@ export function mountDnd({ panels, getSource, getActiveTab, commit, dz }) {
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up);
     grip.addEventListener("pointercancel", cancel);
-    document.addEventListener("keydown", esc_, true);
+    document.addEventListener("keydown", esc_, { capture: true, signal: life() });
     move(e);
     raf = requestAnimationFrame(autoscroll);
   }
@@ -177,7 +178,7 @@ export function mountDnd({ panels, getSource, getActiveTab, commit, dz }) {
     bar.addEventListener("pointermove", show);
     bar.addEventListener("pointerup", up);
     bar.addEventListener("pointercancel", cancel);
-    document.addEventListener("keydown", esc_, true);
+    document.addEventListener("keydown", esc_, { capture: true, signal: life() });
     show(e);
   }
 
@@ -188,8 +189,8 @@ export function mountDnd({ panels, getSource, getActiveTab, commit, dz }) {
       addGrips();
       observer ||= new ResizeObserver(schedule);
       for (const [, p] of panels) observer.observe(p.root);
-      window.addEventListener("resize", schedule);
-      document.addEventListener("transitionend", schedule);
+      window.addEventListener("resize", schedule, { signal: life() });
+      document.addEventListener("transitionend", schedule, { signal: life() });
       schedule();
     },
     disable() {

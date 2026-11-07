@@ -18,6 +18,7 @@ import { createBuilderApi, drafts, mountDraftBar, mountSavedBar } from "./builde
 import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
 import { noteRecent } from "../lib/recent.js";
+import { life, onRedraw, renew } from "../lib/life.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -127,7 +128,12 @@ async function showList() {
 }
 
 // ------------------------------------------------------------------ one dashboard
-async function showDashboard() {
+/**
+ * Draws the dashboard of this address. It can run again in the same page (`remount`): what it adds outside its own elements is tied to the signal of
+ * lib/life.js, which a remount ends first. `again`: drawn again from what this page already checked (the draft is not compiled once more).
+ */
+async function showDashboard({ again = false, counts = {} } = {}) {
+  const pageSignal = life();                                     // the page's life (lib/life.js); `signal` below is one load's
   const locale0 = uiLocale(navigator.language);
   const t0 = stringsFor(locale0);
   localizeChrome(t0, locale0);
@@ -141,7 +147,7 @@ async function showDashboard() {
   } else if (id === "draft") {
     if (!draft?.spec) throw new Error(t0.noDraft);
     const api = createBuilderApi({ stack: C, client, t: t0 });
-    if (api.available && draft.yaml) {                          // the stored page may predate the compiler (cross-filtering, say): compile the file again
+    if (api.available && draft.yaml && !again) {                // the stored page may predate the compiler (cross-filtering, say): compile the file again
       try { const r = await api.validate(draft.yaml); if (r?.ok && r.spec) draft = drafts.recompiled(r.spec) || draft; } catch { /* keep the stored page */ }
     }
     spec = draft.spec;
@@ -150,6 +156,7 @@ async function showDashboard() {
     if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
     spec = await res.json();
   }
+  if (pageSignal.aborted) return;                                // drawn again (or another dashboard) while this one was being fetched: that one draws the page
   const role = client.session().role;
   if (id !== "draft") noteRecent({ kind: id.startsWith("s/") ? "saved" : "built", id: id.startsWith("s/") ? id.slice(2) : id, title: spec.title });        // for the start page's "pick up where you left off"
   const locale = uiLocale(spec.locale || "en-US");              // the person's choice (EN | TR), else the dashboard's own locale
@@ -456,6 +463,7 @@ async function showDashboard() {
       }));
     }, 120);
   }
+  pageSignal.addEventListener("abort", () => { ctrl?.abort(); slicerCtrl?.abort(); clearTimeout(slicerTimer); });     // drawn again: what this page still asks Cube for is dropped
   function writeUrl() {
     const q = new URLSearchParams(location.search);
     // Only what differs from the default is written; a filter cleared while it has a default is written as `?id=` (so a reload does not bring the default back).
@@ -480,7 +488,7 @@ async function showDashboard() {
     const mine = ++seq, signal = ctrl.signal, loading = activeTab;
     show("");
     const results = await Promise.allSettled(openPanels().map((p) => p.load(signal, { force })));
-    if (mine !== seq) return;                           // a newer load took over
+    if (mine !== seq || pageSignal.aborted) return;           // a newer load took over, or the page was drawn again
     const failed = results.filter((r) => r.status === "rejected" && r.reason?.name !== "AbortError");
     lastLoad = Date.now();
     tabLoadedAt.set(loading, lastLoad);
@@ -570,7 +578,8 @@ async function showDashboard() {
   }
   /** The values a select or multiselect filter offers (for the designer's default-value picker); [] until its options have loaded. */
   const filterOptions = (id) => { const f = (spec.filters || []).find((x) => x.id === id); return f ? optionsOf(optionRows.get(id) || [], f, "", sortKeyOf(spec, f.dimension)).map((o) => o.value) : []; };
-  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null };
+  // patchCount and mountCount (for the tests: a change applied in place, the page drawn again in place) carry over a remount
+  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null, remount, patchCount: counts.patchCount || 0, mountCount: counts.mountCount || 0 };
 
   $("#export-all").hidden = false;
   $("#export-all").addEventListener("click", async () => {
@@ -578,9 +587,9 @@ async function showDashboard() {
     const signal = new AbortController().signal;
     await Promise.allSettled([...panels.values()].map((p) => p.load(signal)));
     ctx.exportSheets([...panels.values()].map((p) => p.sheet()), "dashboard");
-  });
+  }, { signal: pageSignal });
   $("#refresh").hidden = false;
-  $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); });
+  $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); }, { signal: pageSignal });
   if (role === "viewer" && draft) throw new Error(t0.noDraft);                       // a viewer builds nothing: no drafts
   if ((draft || savedDash) && role !== "viewer") {                                    // ... and has no builder bar or designer on a dashboard
     const api = createBuilderApi({ stack: C, client, t });
@@ -590,12 +599,44 @@ async function showDashboard() {
   ctx.syncReset?.();
   renderSelection();
   setStatus(esc(t.loading));
-  await loadOptions(new AbortController().signal).catch((e) => console.warn("filter options failed:", e?.message || e));
+  await loadOptions(pageSignal).catch((e) => { if (e?.name !== "AbortError") console.warn("filter options failed:", e?.message || e); });
+  if (pageSignal.aborted) return;
   document.dispatchEvent(new CustomEvent("filters:options"));                           // the designer's default-value pickers can now list the real values
   await loadAll();
-  setInterval(() => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); }, 30_000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); });
+  const stale = () => { if (!document.hidden && Date.now() - lastLoad > REFRESH_MS) loadAll({ force: true }); };
+  if (pageSignal.aborted) return;
+  const timer = setInterval(stale, 30_000);
+  pageSignal.addEventListener("abort", () => clearInterval(timer));
+  document.addEventListener("visibilitychange", stale, { signal: pageSignal });
 }
+
+/**
+ * Draws the dashboard of this address again, in the page and without loading it (lib/life.js `redraw`: the designer's changes that `patch` cannot apply, undo and
+ * redo, the Change box, Apply YAML). The old dashboard's listeners, timers and queries end with its life; the page keeps its height while the new one is made, so
+ * the scroll position does not jump, and the designer comes back where it was (render/designer.js keeps that in sessionStorage, as for a reload).
+ */
+async function remount() {
+  const main = $("#main");
+  main.style.minHeight = `${main.offsetHeight}px`;
+  const counts = { patchCount: window.__render?.patchCount || 0, mountCount: (window.__render?.mountCount || 0) + 1 };
+  const signal = renew();
+  for (const q of ["#builder-host", "#designer", "#dz-colors"]) $(q)?.remove();          // what the draft bar and the designer put in the page; they are mounted again
+  document.body.classList.remove("designing", "dz-dragging");
+  const bar = $("#filters");
+  bar.replaceChildren();
+  bar.hidden = true;
+  show("");
+  try {
+    await showDashboard({ again: true, counts });
+  } catch (e) {
+    if (signal.aborted) return;
+    setStatus(`<strong>${esc(stringsFor(uiLocale(navigator.language)).stale)}</strong>`, "stale");
+    show(readable(e));
+  } finally {
+    if (!signal.aborted) main.style.minHeight = "";
+  }
+}
+onRedraw(remount);
 
 // ------------------------------------------------------------------ start
 (async () => {

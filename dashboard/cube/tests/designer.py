@@ -35,14 +35,15 @@ def check(ok, msg):
 
 @contextlib.contextmanager
 def changes(page, timeout=20000):
-    """What the body does ends in a change that the page either applies in place (render/main.js `patch`, which counts them) or by loading itself again; waits for whichever happens."""
-    n = page.evaluate("window.__render?.patchCount || 0")
+    """What the body does ends in a change that the page applies in place (render/main.js `patch`), draws again in place (`remount`; both are counted) or, on an
+    older page, by loading itself again; waits for whichever happens."""
+    n = page.evaluate("(window.__render?.patchCount || 0) + (window.__render?.mountCount || 0)")
     origin = page.evaluate("performance.timeOrigin")
     yield
     waited = 0
     while waited < timeout:
         try:
-            now = page.evaluate("[performance.timeOrigin, window.__render?.patchCount || 0]")
+            now = page.evaluate("[performance.timeOrigin, (window.__render?.patchCount || 0) + (window.__render?.mountCount || 0)]")
         except Exception:                                    # the page is being replaced
             page.wait_for_load_state()
             return
@@ -201,7 +202,7 @@ with sync_playwright() as p:
     check(page.inner_text("#title") == "Board pack" and "Redid" in page.inner_text("#bd-msg"), "Redo puts it back")
     page.evaluate("document.activeElement && document.activeElement.blur()")
     with changes(page):
-        page.keyboard.press("Control+z")
+        page.click('#designer [data-hist="undo"]')
     settled(page)
     check(page.inner_text("#title") != "Board pack", "Ctrl+Z undoes")
     with changes(page):
@@ -209,16 +210,16 @@ with sync_playwright() as p:
     settled(page)
     check(page.inner_text("#title") == "Board pack", "Ctrl+Shift+Z redoes")
     with changes(page):
-        page.keyboard.press("Control+z")
+        page.click('#designer [data-hist="undo"]')
     settled(page)
     with changes(page):
-        page.keyboard.press("Control+y")
+        page.click('#designer [data-hist="redo"]')
     settled(page)
     check(page.inner_text("#title") == "Board pack", "and so does Ctrl+Y")
     draft_before = page.evaluate("localStorage.getItem('builder.draft')")
     page.click('#designer [data-path="description"]')
     page.keyboard.type("xyz")
-    page.keyboard.press("Control+z")
+    page.click('#designer [data-hist="undo"]')
     page.wait_for_timeout(600)
     check(page.evaluate("localStorage.getItem('builder.draft')") == draft_before and not page.input_value('#designer [data-path="description"]').endswith("xyz"), "in a text field Ctrl+Z is the field's own undo, not the draft's")
     page.press('#designer [data-path="description"]', "Escape")
@@ -520,6 +521,7 @@ with sync_playwright() as p:
     page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
     settled(page)
     page.click("#bd-design")
+    page.evaluate("window.__origin0 = performance.timeOrigin")              # a page loaded again would lose this
     all_ids = sorted(x["id"] for x in yaml_of(page)["panels"])
     placed = lambda: sorted(next(iter(c)) for tab in (yaml_of(page).get("tabs") or [{"layout": yaml_of(page)["layout"]}]) for row in tab["layout"] for c in row)
     check("layout" in yaml_of(page) and "dz-totabs" in page.inner_html("#designer"), "a one-page dashboard offers to split into tabs")
@@ -541,6 +543,17 @@ with sync_playwright() as p:
         page.click("#dz-onepage")
     settled(page)
     check("tabs" not in yaml_of(page) and placed() == sorted([*all_ids, "note"]), "Back to one page puts every panel on a single layout")
+    one = page.evaluate("""() => ({ origin: performance.timeOrigin === window.__origin0, mounts: window.__render.mountCount, designers: document.querySelectorAll('#designer').length,
+        bars: document.querySelectorAll('#builder-host').length, drawn: !document.querySelector('#designer').hidden && document.body.classList.contains('designing') })""")
+    check(one == {"origin": True, "mounts": 4, "designers": 1, "bars": 1, "drawn": True},
+          f"making tabs, adding and removing one and going back to one page drew the dashboard again in the page four times, never loading it, with one designer and one draft bar ({one})")
+    page.click('#designer [data-hist="undo"]')
+    page.wait_for_function("window.__render.mountCount === 5 && !!(window.__render.spec.tabs || []).length", timeout=20000)
+    settled(page)
+    check(page.evaluate("performance.timeOrigin === window.__origin0") and page.locator("[role=tab]").count() == 2, "undo draws it again in the page too: the tabs are back")
+    page.click('#designer [data-hist="redo"]')
+    page.wait_for_function("window.__render.mountCount === 6", timeout=20000)
+    settled(page)
     reload_after(lambda: page.click("#dz-totabs"))
     page.click(f'[data-panel="{panel_of(page, "kpi")}"] .card', position={"x": 6, "y": 6})
     check(page.locator("#dz-totab").count() == 1 and page.locator('#designer [data-additem="measures"]').count() == 1 and page.locator('#designer [data-addrule="measures.0"]').count() == 1, "on a dashboard with tabs a picked panel still gets its Move to tab and all its buttons (Add a measure, Add a colour rule)")

@@ -1,8 +1,10 @@
 // Design mode on a draft (/d/draft): click a panel to change its fields in a drawer; with nothing picked the drawer is the page's own view (title, filters, add a panel).
 // The designer writes to the dashboard's source spec and nothing else; the builder service's validator, the same one that checks a model's answer, accepts or refuses every
-// change, and an accepted change is stored in the draft and the page is drawn again (the picked panel and the scroll position come back from sessionStorage).
+// change, and an accepted change is stored in the draft and applied to the page in place: the changed panels alone (render/main.js `patch`), or the whole dashboard
+// drawn again without loading the page (`remount`; the picked panel, the drawer's place and the scroll position come back from sessionStorage, as after a reload).
 // The logic is in lib/designer-model.js (a panel's fields) and lib/designer-structure.js (new panels, removing, filters, the page's fields).
 import { $, el, esc } from "../lib/dom.js";
+import { life, redraw } from "../lib/life.js";
 import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, measureOptions, setField, shown } from "../lib/designer-model.js";
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
@@ -20,6 +22,9 @@ const read = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || "{}"
 const write = (s) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage unavailable: design mode just starts closed after a change */ } };
 
 /** A measure or dimension written as a formula (sum, ratio) cannot be picked from a list: it is shown in words and left to the YAML. */
+let catalogOnce = null;                                           // the members the role may read: asked for once per page, not again on every remount
+const catalogOf = (api) => (catalogOnce ||= api.catalog().catch((e) => { catalogOnce = null; throw e; }));
+
 const formula = (m) => (m?.sum ? m.sum.join(" + ") : m?.ratio ? `(${m.ratio.num.join(" + ")}) ÷ (${m.ratio.den.join(" + ")})` : JSON.stringify(m));
 
 // The dashboard's own fields and a filter's, in the same shape as a panel's (see fieldsFor in lib/designer-model.js).
@@ -731,7 +736,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         document.dispatchEvent(new CustomEvent("draft:changed"));
         return true;
       }
-      location.reload();
+      redraw();                                                                       // in the page; the drawer and the scroll come back from what write() kept
       return true;
     } catch (e) {
       problems([e.message]);
@@ -752,11 +757,11 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     }
   }
 
-  /** Undo or redo one step of the draft's history: the draft in this browser is replaced and the page drawn again (the picked panel and the scroll position stay). */
+  /** Undo or redo one step of the draft's history: the draft in this browser is replaced and the dashboard drawn again in the page (the picked panel and the scroll position stay). */
   function step(kind) {
     if (busy || !drafts[kind]((label) => (kind === "undo" ? dz.undone : dz.redone)(label))) return;
     write({ on: true, panel: selected, scroll: window.scrollY, ui: placeInDrawer() });
-    location.reload();
+    redraw();
   }
 
   const activeTab = () => window.__render?.activeTab?.() ?? null;
@@ -832,7 +837,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     e.stopPropagation();
     select(node.dataset.panel);
   };
-  document.addEventListener("click", pick, true);                                 // before the panel's own click (which would filter the page)
+  const signal = life();                                                          // a remount draws a new designer: this one's document listeners go with the old page
+  document.addEventListener("click", pick, { capture: true, signal });                                 // before the panel's own click (which would filter the page)
   document.addEventListener("keydown", (e) => {
     if (!on) return;
     if ((e.ctrlKey || e.metaKey) && !e.altKey && ["z", "y"].includes(e.key.toLowerCase()) && !dnd.active()) {
@@ -843,7 +849,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     }
     if (e.key === "Escape" && selected && !dnd.active()) { select(null); return; }                // while a drag is held, Escape cancels the drag instead
     if ((e.key === "Enter" || e.key === " ") && hit(e) && !drawer.contains(e.target)) pick(e);
-  }, true);
+  }, { capture: true, signal });
 
   const dnd = mountDnd({ panels, getSource: () => source, getActiveTab: activeTab, commit: (edit, o) => commit(edit, o), dz });
 
@@ -860,13 +866,14 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
   button.addEventListener("click", () => setMode(!on));
   // The filters' options arrive after the page is drawn (and the designer may already be open): the page view is drawn again so a default value can be picked from them.
-  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) { draw(); restorePlace(); forgetPlace(); } });
+  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) { draw(); restorePlace(); forgetPlace(); } }, { signal });
   for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) drawer.addEventListener(ev, forgetPlace, { passive: true });
 
   // The data the drawer needs: the source of this draft and the members the role may read.
   button.disabled = true;
   try {
-    const [r, cat] = await Promise.all([api.validate(draft.yaml), api.catalog()]);
+    const [r, cat] = await Promise.all([api.validate(draft.yaml), catalogOf(api)]);
+    if (signal.aborted) return;                                                 // the page was drawn again meanwhile: the new designer takes over
     if (!r.ok) throw new Error(r.problems?.[0] || "the draft does not validate");
     if (!r.source) throw new Error(dz.oldBuilder);                              // a builder service built before the designer existed does not send the source back
     source = r.source;

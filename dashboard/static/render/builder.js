@@ -2,6 +2,7 @@
 // It talks to the builder service (builder/): a prompt becomes a validated dashboard spec for the signed-in role. Everything the service or the model
 // returns is shown as text (escaped); a draft lives in this browser (localStorage) until it is saved to the repository as a reviewed YAML file.
 import { el, esc } from "../lib/dom.js";
+import { life, redraw } from "../lib/life.js";
 import { nameDialog, shareDialog, words } from "./sharing.js";
 import { filterItems } from "../lib/search.js";
 import { chipsHtml, groupByFirstTag, tagsOf, withTags } from "../lib/tags.js";
@@ -334,14 +335,14 @@ export function mountDraftBar(host, api, t, draft) {
     $("#bd-focus").textContent = panel ? t.focusOn(panel.title || panel.id) : "";
     $("#bd-change").placeholder = panel ? t.focusPlaceholder : t.changePlaceholder;
   };
-  document.addEventListener("designer:pick", (e) => aim(e.detail?.panel));
+  document.addEventListener("designer:pick", (e) => aim(e.detail?.panel), { signal: life() });
   try { const s = JSON.parse(sessionStorage.getItem("designer") || "{}"); if (s.on) aim(s.panel); } catch { /* no designer state: the whole dashboard */ }
   // The designer changed the draft without drawing the page again: the YAML tab, the message and the Change box follow.
   document.addEventListener("draft:changed", () => {
     yamlBox.value = draft.yaml;
     show(msg, outcome({ status: "ok", message: draft.message, notes: draft.notes }, t));
     aim(focus);
-  });
+  }, { signal: life() });
   async function change() {
     const text = $("#bd-change").value.trim();
     if (text.length < 3) return;
@@ -351,7 +352,7 @@ export function mountDraftBar(host, api, t, draft) {
       const result = await api.build(text, draft.yaml, focus);
       if (result.status === "ok") {
         drafts.edit({ ...draft, yaml: result.yaml, spec: result.spec, prompt: text, message: result.message, notes: result.notes, mode: result.mode, model: result.model });
-        location.reload();
+        redraw();
         return;
       }
       show(msg, outcome(result, t));
@@ -367,7 +368,7 @@ export function mountDraftBar(host, api, t, draft) {
     const problems = $("#bd-problems");
     try {
       const r = await api.validate(yamlBox.value);
-      if (r.ok) { drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message: t.yamlApplied, notes: r.notes }); location.reload(); return; }
+      if (r.ok) { drafts.edit({ ...draft, yaml: r.yaml, spec: r.spec, message: t.yamlApplied, notes: r.notes }); redraw(); return; }
       show(problems, { kind: "failed", title: t.problems, lines: r.problems });
     } catch (e) {
       show(problems, { kind: "failed", title: "", lines: [e.message] });
@@ -526,7 +527,7 @@ export function mountSavedBar(host, api, t, opened) {
     const pane = $("#tab-share");
     pane.append(form.el, el("div", { class: "bb-row" }, `<button type="button" id="sb-share-go" class="primary">${esc(t.saveGo)}</button>`));
     pane.querySelector("#sb-share-go").addEventListener("click", async () => {
-      try { await api.updateSaved(m.id, form.read()); location.reload(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
+      try { await api.updateSaved(m.id, form.read()); redraw(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
     });
   }
   if (owner) {
@@ -536,7 +537,7 @@ export function mountSavedBar(host, api, t, opened) {
     pane.querySelector("#sb-tags-go").addEventListener("click", async () => {
       const tags = field.read();
       if (!tags) return;                                 // nothing changed
-      try { await api.updateSaved(m.id, { tags }); location.reload(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
+      try { await api.updateSaved(m.id, { tags }); redraw(); } catch (e) { show(msg, { kind: "failed", title: "", lines: [e.message, ...(e.problems || [])] }); }
     });
   }
   if (owner) {
@@ -556,7 +557,7 @@ export function mountSavedBar(host, api, t, opened) {
       if (!b) return;
       const v = Number(b.closest("li").dataset.v);
       try {
-        if (b.dataset.act === "restore") { await api.restoreSaved(m.id, v); location.reload(); return; }
+        if (b.dataset.act === "restore") { await api.restoreSaved(m.id, v); redraw(); return; }
         const old = await api.openSaved(m.id, v);
         drafts.setCurrent({ yaml: old.yaml, spec: old.spec, prompt: "", message: "", notes: [], mode: "saved", model: "", savedId: m.id, savedMeta: { title: old.meta.title, visibility: m.visibility, shared_roles: m.shared_roles } });
         location.assign("/d/draft");
