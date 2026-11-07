@@ -319,3 +319,70 @@ def test_asking_turns_the_comparison_on_switches_its_kind_and_takes_it_away():
     off = build("admin", "remove the comparison", current=period["yaml"])
     assert off["status"] == "ok" and "compare" not in kpi_of(off) and len(off["spec"]["panels"]) == len(period["spec"]["panels"]), "only the comparison goes, not a panel"
     assert kpi_of(build("admin", "geçen yıla göre karşılaştır", current=plain))["compare"] == "previous_year"
+
+
+def slicers_of(out):
+    """The slicers of the file as written (in the compiled `spec` a slicer on a field already points at the filter made for it)."""
+    return [p for p in yaml.safe_load(out["yaml"])["panels"] if p["type"] == "slicer"]
+
+
+@pytest.mark.parametrize("role", core.ROLES)
+@pytest.mark.parametrize("prompt", ["monthly revenue with a slicer for colour", "revenue by region, a slicer for region and colour", "Türkçe aylık gelir, renk dilimleyici",
+                                    "inventory dashboard with a status slicer and a colour slicer", "revenue with a slicer for product", "a slicer", "revenue with a vendor slicer",
+                                    "monthly revenue, slicers for colour, country, sales group and fiscal year"])
+def test_slicer_prompts_end_in_a_valid_spec(role, prompt):
+    out = build(role, prompt)
+    assert out["status"] == "ok" and out["attempts"] == 1, (role, prompt, out.get("problems"))
+
+
+def test_a_slicer_for_a_field_without_a_filter_is_a_slicer_on_that_field_under_the_key_figures():
+    out = build("admin", "monthly revenue with a slicer for colour")
+    (s,) = slicers_of(out)
+    assert {k: s[k] for k in ("dimension", "label", "display")} == {"dimension": "products.color", "label": "Color", "display": "chips"}, "the source file keeps `dimension`"
+    assert yaml.safe_load(out["yaml"])["layout"][1] == [{"slicer_color": 12}], "right under the key figures"
+    assert not any(p["type"] == "bar" and p.get("by") == "products.color" for p in out["spec"]["panels"]), "the slicer's words are not read again as a breakdown"
+    assert slicers_of(build("admin", "Türkçe aylık gelir, renk dilimleyici"))[0]["label"] == "Renk"
+    assert slicers_of(build("admin", "revenue with a slicer for product"))[0]["display"] == "dropdown", "hundreds of products: not chips"
+
+
+def test_a_field_that_has_a_filter_gets_a_slicer_drawing_it_not_a_second_control():
+    out = build("admin", "revenue by region, a slicer for region and colour")
+    region, color = slicers_of(out)
+    assert region["filter"] == "region" and "dimension" not in region and color["dimension"] == "products.color"
+    assert yaml.safe_load(out["yaml"])["layout"][1] == [{"slicer_region": 6}, {"slicer_color": 6}], "slicers side by side share a row"
+    inv = build("admin", "inventory dashboard with a status slicer and a colour slicer")
+    assert [s.get("filter") or s["dimension"] for s in slicers_of(inv)] == ["status", "products.color"]
+
+
+def test_the_fields_of_a_slicer_are_read_before_or_after_the_word():
+    from builder.composer import norm, slicer_fields
+    for text, keys in [("a slicer for colour", ["color"]), ("colour and country slicers", ["color", "country"]), ("make region a slicer", ["region"]),
+                       ("bölge filtresini dilimleyici yap", ["region"]), ("renge göre dilimleyici", ["color"]), ("slicer for sales group", ["group"]),
+                       ("slicers for colour, country and fiscal year", ["color", "country", "fy"]), ("a status slicer and a colour slicer", ["status", "color"]),
+                       ("revenue by region with a slicer for colour", ["color"]), ("a slicer", [])]:
+        said, found, _ = slicer_fields(norm(text))
+        assert said and found == keys, text
+    assert slicer_fields(norm("revenue by region, product and alt kategori"))[2] == norm("revenue by region, product and alt kategori"), "no slicer: the text is left as it was"
+
+
+def test_a_slicer_that_cannot_be_made_says_why_and_a_field_is_asked_for():
+    out = build("admin", "revenue with a vendor slicer")
+    assert not slicers_of(out) and "none of the panels can be filtered by it" in out["message"]
+    out = build("admin", "a slicer")
+    assert not slicers_of(out) and "A slicer needs a field" in out["message"]
+
+
+def test_editing_adds_a_slicer_makes_a_filter_one_and_removes_them():
+    base = build("admin", "monthly revenue by region")["yaml"]
+    color = build("admin", "add a slicer for colour", current=base)
+    assert color["status"] == "ok" and [s["dimension"] for s in slicers_of(color)] == ["products.color"]
+    both = build("admin", "make region a slicer", current=color["yaml"])
+    assert [s.get("filter") or s["dimension"] for s in slicers_of(both)] == ["products.color", "region"]
+    assert yaml.safe_load(build("admin", "bölge filtresini dilimleyici yap", current=base)["yaml"])["panels"][1] == {"id": "slicer_region", "type": "slicer", "filter": "region", "display": "chips"}
+    again = build("admin", "add a slicer for colour", current=both["yaml"])
+    assert len(slicers_of(again)) == 2 and "already has a slicer" in again["message"]
+    one = build("admin", "remove the colour slicer", current=both["yaml"])
+    assert [s["id"] for s in slicers_of(one)] == ["slicer_region"] and len(one["spec"]["panels"]) == len(both["spec"]["panels"]) - 1
+    none = build("admin", "remove the slicers", current=both["yaml"])
+    assert not slicers_of(none) and "back in the bar above the panels" in none["message"]
+    assert "no such slicer" in build("admin", "remove the slicer", current=base)["message"]

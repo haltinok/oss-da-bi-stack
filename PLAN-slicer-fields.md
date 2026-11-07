@@ -1,6 +1,6 @@
 # Plan: a slicer on any field of the model
 
-Status: **phases 1a to 2c built** (#179, #183, #181, #182, #184 and this one, 2026-11-04); **phase 3 (builder) later**, as decided. Small phases, one PR each, like [`PLAN-designer.md`](PLAN-designer.md) phases 9 and 10. Note from 1c: the sample slicer is *Sales group* (`territories.group_name`), not colour, because the group is in the rollups of both models.
+Status: **built**: phases 1a to 2c (#179, #183, #181, #182, #184, #185, 2026-11-04) and phase 3, the builder (2026-11-07). Small phases, one PR each, like [`PLAN-designer.md`](PLAN-designer.md) phases 9 and 10. Note from 1c: the sample slicer is *Sales group* (`territories.group_name`), not colour, because the group is in the rollups of both models.
 
 ## Goal
 A slicer can show the values of **any dimension in the Cube model** that the dashboard's data can be filtered by: colour, subcategory, country, a ship date. It no longer has to be a filter declared first in `filters:`.
