@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 import yaml
 from dashspec import catalog as cat
+from dashspec import slicers as slicer_rules
 from dashspec.validate import denied
 
 TR_MAP = str.maketrans("ıİşŞğĞüÜöÖçÇ", "iissgguuoocc")
@@ -59,6 +60,7 @@ L = {  # label -> (English, Turkish)
     "inventory": ("Inventory dashboard", "Envanter panosu"), "drilltitle": ("{m}: year, month, day", "{m}: yıl, ay, gün"), "built": ("Built from: {p}", "İstek: {p}"), "product_name": ("Product", "Ürün"),
     "stock_status": ("Products by status", "Duruma göre ürün sayısı"), "reorder_list": ("Reorder list", "Yeniden sipariş listesi"), "excess_list": ("Excess and dead stock", "Fazla ve ölü stok"),
     "vendor_value": ("Suggested order value by vendor", "Tedarikçiye göre önerilen sipariş tutarı"), "granularity": ("", ""),
+    "color": ("Color", "Renk"), "group": ("Sales group", "Satış grubu"),
 }
 
 
@@ -74,8 +76,68 @@ def _top_n(t: str) -> int | None:
     return min(int(m.group(1)), 50) if m else None
 
 
+# ---- slicers: "a slicer for colour", "colour and country slicers", "make region a slicer", "renk dilimleyici", "bölge filtresini dilimleyici yap"
+SLICER_WORD = re.compile(r"^(slicer|dilimleyic)")
+SLICER_FIELDS = (            # key -> token prefixes, longest first where one contains another
+    ("subcategory", (("subcategor",), ("alt", "kategori"))), ("category", (("categor",), ("kategori",))),
+    ("group", (("sales", "group"), ("territory", "group"), ("satis", "grub"), ("group",), ("grup",), ("grub",))),
+    ("color", (("colo",), ("renk",), ("reng",))), ("region", (("region",), ("territor",), ("bolge",))), ("country", (("countr",), ("ulke",))),
+    ("fy", (("fiscal", "year"), ("mali", "yil"), ("year",), ("yil",))), ("status", (("status",), ("durum",))),
+    ("vendor", (("vendor",), ("supplier",), ("tedarik",))), ("product", (("product",), ("urun",))),
+)
+LEAD = {"for", "on", "of", "by", "a", "an", "the", "per", "with", "icin", "olarak"}          # "slicer for colour", "slicers on the country"
+AND = {"and", "or", "ve", "veya", "ile"}                                                   # "colour and country slicers", "slicers for colour and country"
+BEFORE = {"a", "an", "the", "as", "into", "to", "bir", "olarak", "icin", "gore", "filter", "filters", "filtre", "filtresi", "filtresini", "filtreyi"}   # "make the region filter a slicer"
+
+
+def _field_at(tokens: list[str], i: int, backwards: bool = False) -> tuple[str, int] | None:
+    """The slicer field whose words start at token i (or end there, going backwards), and how many tokens it takes."""
+    for key, forms in SLICER_FIELDS:
+        for form in forms:
+            start = i - len(form) + 1 if backwards else i
+            if start >= 0 and start + len(form) <= len(tokens) and all(tokens[start + k].startswith(w) for k, w in enumerate(form)):
+                return key, len(form)
+    return None
+
+
+def _fields_from(tokens: list[str], i: int, step: int, skip: set[str]) -> tuple[list[str], set[int]]:
+    """The fields named next to the slicer word at i, walking forwards (step 1) or backwards (-1): first past the words in `skip`, then a field, and
+    more fields, side by side or joined by "and"."""
+    found, used, j = [], set(), i + step
+    while 0 <= j < len(tokens) and tokens[j] in skip:
+        j += step
+    while 0 <= j < len(tokens):
+        hit = _field_at(tokens, j, backwards=step < 0)
+        if not hit:
+            break
+        found.append(hit[0])
+        span = range(j, j + hit[1]) if step > 0 else range(j - hit[1] + 1, j + 1)
+        used.update(span)
+        j = (span[-1] if step > 0 else span[0]) + step
+        if 0 <= j < len(tokens) and tokens[j] in AND:             # "colour and country"; a list's commas are already spaces ("colour, country")
+            j += step
+    return (found if step > 0 else found[::-1]), used
+
+
+def slicer_fields(t: str) -> tuple[bool, list[str], str]:
+    """(a slicer was asked for, the fields named for slicers in order, the text without those words): the fields are the words right after the
+    slicer word ("slicer for colour and country") or, when none follow, right before it ("make region a slicer", "colour and country slicers").
+    The words a slicer took are not read again as breakdowns, so "a slicer for country" does not also add a bar chart by country."""
+    tokens, used, keys, said = t.split(), set(), [], False
+    for i, tok in enumerate(tokens):
+        if not SLICER_WORD.match(tok):
+            continue
+        said = True
+        found, took = _fields_from(tokens, i, 1, LEAD)
+        if not found:
+            found, took = _fields_from(tokens, i, -1, BEFORE)
+        used |= took
+        keys += [k for k in found if k not in keys]
+    return said, keys, (" ".join(w for k, w in enumerate(tokens) if k not in used) if used else t)
+
+
 def parse(prompt: str) -> dict:
-    t = norm(prompt)
+    slicer_said, slicers, t = slicer_fields(norm(prompt))
     wants = {k: has(t, *w) for k, w in {
         "revenue": ("revenue", "sales", "gelir", "satis", "ciro"), "profit": ("profit", "kar"), "margin": ("margin", "marj"), "orders": ("order", "siparis"),
         "units": ("units", "quantity", "adet", "aded", "miktar"), "aov": ("average order", "avg order", "aov", "ortalama siparis"),
@@ -110,6 +172,7 @@ def parse(prompt: str) -> dict:
         "treemap": has(t, "treemap", "mix", "composition", "share", "karma"),
         "clickable": has(t, "click", "cross filter", "interactive", "tikla"),
         "style": next((s for s, w in (("stacked-bar", ("stacked",)), ("area", ("area", "alan grafik")), ("line", ("line", "cizgi")), ("bar", ("bar chart", "bars", "column", "kolon", "sutun"))) if has(t, *w)), None),
+        "slicer_said": slicer_said, "slicers": slicers,
         "filters": [f for f, w in (("fy", ("fiscal", "year filter", "filter by year", "yil")), ("region", ("filter by region", "region filter", "bolge filtre")),
                                    ("category", ("filter by category", "category filter", "kategori filtre")), ("country", ("filter by country", "country filter"))) if has(t, *w)],
     }
@@ -321,7 +384,8 @@ def compose_sales(p, prompt, catalog, role) -> Composition:
         b.add_filter("region", "territories.region", "region")
     levels_said = [f"{'Internet' if c == 'internet_sales' else 'Reseller'}: {' > '.join(lv)}" for c, lv in p["chart_segments"] if lv]
     heard = [f"measures: {', '.join(L[k][0].lower() for k in keys)}"] + ([f"chart style: {p['style']}"] if p["style"] else []) + ([f"drill-down {'; '.join(levels_said) or ' > '.join(p['levels'])}"] if p["drill"] or levels_said else []) \
-        + (["a separate chart per channel"] if len(p["chart_segments"]) >= 2 else []) + (["pie"] if p["pie"] else []) + (["a pivot" + (" with shading" if p["heat"] else "")] if p["pivot"] else [])
+        + (["a separate chart per channel"] if len(p["chart_segments"]) >= 2 else []) + (["pie"] if p["pie"] else []) + (["a pivot" + (" with shading" if p["heat"] else "")] if p["pivot"] else []) \
+        + ([f"slicers: {', '.join(L[k][0].lower() for k in p['slicers'])}"] if p["slicers"] else [])
     b.notes.insert(0, ("Anladığım: " if b.tr else "Understood: ") + "; ".join(heard) + ".")
     return finish(b, prompt, "dates.full_date", "sales")
 
@@ -364,16 +428,65 @@ def compose_inventory(p, prompt, catalog, role) -> Composition:
     return finish(b, prompt, f"{ih}.last_sale_date", "inventory")
 
 
+# ------------------------------------------------------------------------------------------------------------------ slicers
+SLICER_MEMBERS = {"color": "products.color", "category": "products.category", "subcategory": "products.subcategory", "product": "products.name",
+                  "region": "territories.region", "country": "territories.country", "group": "territories.group_name", "fy": "dates.fiscal_year",
+                  "status": "inventory_health.status", "vendor": "inventory_health.vendor_name"}
+MANY_VALUES = ("product", "vendor")                                       # hundreds of values: a dropdown, not a wall of chips
+
+
+def add_slicers(spec: dict, keys: list[str], catalog: cat.Catalog, role: str, tr: bool) -> list[str]:
+    """A slicer for each field asked for, placed under the key figures. A field that already has a visible filter gets a slicer that draws that filter
+    (`filter:`; one control per field), any other field a slicer of its own (`dimension:`). A field the role cannot read, or no panel can be filtered by,
+    is left out with a note. Returns the notes; the caller lays the panels out again."""
+    notes, panels, filters = [], spec["panels"], spec.setdefault("filters", [])
+    ids = {x["id"] for x in panels} | {f["id"] for f in filters}
+    for key in keys:
+        member, name, label = SLICER_MEMBERS[key], L[key][0], L[key][1 if tr else 0]      # notes are in English, as the stand-in's others; the label in the dashboard's language
+        c, _, n = member.partition(".")
+        if c not in catalog.cubes or n not in catalog.cubes[c]["dimensions"] or denied(role, member):
+            notes.append(f"No slicer for {name.lower()}: your role cannot read it.")
+            continue
+        if not any(slicer_rules.joins(catalog, x, member) for x in panels if x["type"] not in slicer_rules.DATA_LESS):
+            notes.append(f"No slicer for {name.lower()}: none of the panels can be filtered by it.")
+            continue
+        flt = next((f for f in filters if f["dimension"] == member and f.get("visible", True) is not False), None)
+        drawn = [x for x in panels if x["type"] == "slicer" and (x.get("dimension") == member or (flt and x.get("filter") == flt["id"]))]
+        if drawn:
+            notes.append(f"{name} already has a slicer ({drawn[0]['id']}).")
+            continue
+        sid, i = f"slicer_{key}", 1
+        while sid in ids:
+            i += 1
+            sid = f"slicer_{key}_{i}"
+        ids.add(sid)
+        listed = flt is None or flt.get("type", "select") in ("select", "multiselect")
+        panel = {"id": sid, "type": "slicer", **({"filter": flt["id"]} if flt else {"dimension": member, "label": label}),
+                 **({"display": "dropdown" if key in MANY_VALUES else "chips"} if listed else {})}
+        at = next((k for k, x in enumerate(panels) if x["type"] not in ("kpi", "slicer")), len(panels))     # under the key figures and the slicers already there
+        panels.insert(at, panel)
+        notes.append(f"Added a slicer for {name.lower()}" + (f" (it draws the filter '{flt['id']}', which moves from the bar above the panels)." if flt else "."))
+    if not filters:
+        spec.pop("filters")
+    return notes
+
+
 # ------------------------------------------------------------------------------------------------------------------ layout and the file
 FLEXIBLE = {"timeseries": (8, 4), "treemap": (7, 5), "bar": (6, 6), "pie": (5, 7)}
 
 
 def layout(panels: list[dict]) -> list[list[dict]]:
-    """Rows of 12 columns: kpis, tables and notes take a row; two charts share one (the first sets the split)."""
+    """Rows of 12 columns: kpis, tables and notes take a row; two charts share one (the first sets the split); slicers next to each other share one evenly (up to 4)."""
     rows, i = [], 0
     while i < len(panels):
         p = panels[i]
         nxt = panels[i + 1] if i + 1 < len(panels) else None
+        if p["type"] == "slicer":
+            run = [x["id"] for x in panels[i:i + 4]]
+            run = run[:next((k for k, x in enumerate(panels[i:i + 4]) if x["type"] != "slicer"), len(run))]
+            rows.append([{sid: 12 // len(run) + (12 % len(run) if k == 0 else 0)} for k, sid in enumerate(run)])
+            i += len(run)
+            continue
         if p["type"] in FLEXIBLE and nxt and nxt["type"] in FLEXIBLE:
             a, c = FLEXIBLE[p["type"]]
             if nxt["type"] == "pie" and p["type"] != "pie":
@@ -391,11 +504,17 @@ def layout(panels: list[dict]) -> list[list[dict]]:
 def finish(b: Builder, prompt: str, time_dim: str, kind: str) -> Composition:
     spec = {"spec": 1, "id": "draft", "title": b.lab(kind), "description": b.lab("built", p=" ".join(prompt.split())[:180]),
             "locale": "tr-TR" if b.tr else "en-US", "currency": "TRY" if b.tr else "USD", "time": {"dimension": time_dim, **({"fiscal_year_start": 7} if kind == "sales" else {})},
-            **({"filters": b.filters} if b.filters else {}), "panels": b.panels, "layout": layout(b.panels)}
+            "filters": b.filters, "panels": b.panels}
+    b.notes.extend(add_slicers(spec, b.p["slicers"], b.catalog, b.role, b.tr))
+    if b.p["slicer_said"] and not b.p["slicers"]:
+        b.notes.append(SLICER_WHICH)
+    spec["layout"] = layout(spec["panels"])
     return Composition(spec=spec, notes=b.notes)
 
 
 # ------------------------------------------------------------------------------------------------------------------ editing
+SLICER_WHICH = ("A slicer needs a field: say which, for example \"a slicer for colour\" (colour, category, subcategory, product, region, country, sales group, "
+                "fiscal year; status or vendor on inventory).")
 FOCUS_UNDERSTOOD = "With one panel picked the rule-based stand-in handles: pie or donut, bars or columns, a chart style (line, area, bar, stacked), top N, and removing it."
 KEEP = ("id", "title", "description", "measure", "label", "by", "by_label", "format", "on_click")
 
@@ -522,6 +641,27 @@ def refine(p, prompt, catalog, role, current_yaml, focus: str | None = None) -> 
             if x["type"] in ("bar", "table"):
                 x["limit"], changed = p["top"], True
         notes.append(f"Limit set to {p['top']}.")
+    if p["slicer_said"]:
+        if remove:
+            named = {SLICER_MEMBERS[k] for k in p["slicers"]}
+            by_id = {f["id"]: f["dimension"] for f in spec.get("filters", [])}
+            gone = [x for x in spec["panels"] if x["type"] == "slicer" and (not named or (x.get("dimension") or by_id.get(x.get("filter"))) in named)]
+            if gone:
+                spec["panels"] = [x for x in spec["panels"] if x not in gone]
+                spec["layout"] = layout(spec["panels"])
+                changed = True
+                notes.append(f"Removed the slicer{'s' if len(gone) > 1 else ''} {', '.join(x['id'] for x in gone)}" +
+                             (" (a filter it drew is back in the bar above the panels)." if any("filter" in x for x in gone) else "."))
+            else:
+                notes.append("There is no such slicer to remove.")
+        elif p["slicers"]:
+            before = len(spec["panels"])
+            notes.extend(add_slicers(spec, p["slicers"], catalog, role, spec.get("locale", "tr-TR" if p["tr"] else "en-US") == "tr-TR"))
+            if len(spec["panels"]) > before:
+                spec["layout"] = layout(spec["panels"])
+                changed = True
+        else:
+            notes.append(SLICER_WHICH)
     if not remove and (p["table"] or p["treemap"] or p["dims"]):
         # add what was asked for as a fresh composition of just that part, then merge it in
         fresh = compose(prompt, catalog, role)
@@ -535,6 +675,8 @@ def refine(p, prompt, catalog, role, current_yaml, focus: str | None = None) -> 
             spec["filters"] = [*spec.get("filters", []), *[f for f in fresh.spec.get("filters", []) if f["id"] not in known]]
             spec["layout"] = layout(spec["panels"])
             notes.extend(fresh.notes)
+    if not changed and p["slicer_said"] and notes:
+        return Composition(spec=spec, notes=notes)                      # "colour already has a slicer", "your role cannot read it": say so, not "understood nothing"
     if not changed:
-        return Composition(spec=spec, notes=["The rule-based stand-in understood nothing to change. It handles: a chart style (line, bar, stacked), top N, adding or removing a table, treemap or a breakdown by region, country, category or product, and comparing the key figures with the previous year or period (or not)."])
+        return Composition(spec=spec, notes=["The rule-based stand-in understood nothing to change. It handles: a chart style (line, bar, stacked), top N, adding or removing a table, treemap or a breakdown by region, country, category or product, comparing the key figures with the previous year or period (or not), and adding or removing a slicer (\"a slicer for colour\", \"make region a slicer\")."])
     return Composition(spec=spec, notes=notes)

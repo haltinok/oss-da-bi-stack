@@ -29,7 +29,7 @@ Operating it, the limits, what is logged and what leaves the network: **[docs/bu
   API in this repository (no key was available): the loop, the prompts and the checks are tested with a scripted model.
 - **The rule-based stand-in** (no key): keywords in English and Turkish for measures, a time axis with a drill-down (year, quarter, month, day), a chart per channel, column / line / area
   styles, pie and donut, breakdowns (region, country, category, product), top N, a table, a treemap, a pivot, filters, clicks, language, and edits (chart style, columns, top N, split a chart per
-  channel, add or remove a panel, compare the key figures with the previous year or period or not; sales key figures compare with the previous year by default). It says what it understood and what it did not. It is not an LLM and says so (`mode: standin`); it exists so everything else runs, and is tested on every prompt x every role.
+  channel, add or remove a panel, compare the key figures with the previous year or period or not, add or remove a slicer ("a slicer for colour", "make region a slicer", "dilimleyici"); sales key figures compare with the previous year by default). It says what it understood and what it did not. It is not an LLM and says so (`mode: standin`); it exists so everything else runs, and is tested on every prompt x every role.
 
 ## The page
 On `/d/` (the dashboards list) a **Describe a dashboard** box: type a request or click an example that fits your role, press Build, and the result is drawn at
