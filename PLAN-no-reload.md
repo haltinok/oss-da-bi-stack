@@ -1,6 +1,6 @@
 # Plan: no whole-page reloads while working on a dashboard
 
-Status: **phase 1 built** (2026-11-07); phases 2 and 3 next. Small phases, one PR each.
+Status: **phases 1 and 2 built** (2026-11-07); phase 3 next. Small phases, one PR each.
 
 ## The problem
 Three everyday actions load the whole page again in the browser (white flash, every panel blank and queried again, the scroll and the drawer's place restored from sessionStorage afterwards):

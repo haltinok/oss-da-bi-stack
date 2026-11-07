@@ -23,6 +23,10 @@ import { life, onRedraw, renew } from "../lib/life.js";
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
 const show = (msg) => { const e = $("#error"); e.textContent = msg; e.hidden = !msg; };
+// One tooltip and one panel context for the life of the page, not of one drawing of the dashboard: a remount refills `pageCtx`, and the panels it keeps
+// (their definition did not change) read the new spec, filters and functions through it, and their tooltips stay registered.
+const tooltip = createTooltip($("#tip"));
+const pageCtx = {};
 
 initTheme();
 mountThemeMenu($("#theme"), { locale: () => document.documentElement.lang || "en" });
@@ -132,7 +136,7 @@ async function showList() {
  * Draws the dashboard of this address. It can run again in the same page (`remount`): what it adds outside its own elements is tied to the signal of
  * lib/life.js, which a remount ends first. `again`: drawn again from what this page already checked (the draft is not compiled once more).
  */
-async function showDashboard({ again = false, counts = {} } = {}) {
+async function showDashboard({ again = false, counts = {}, carry = null } = {}) {
   const pageSignal = life();                                     // the page's life (lib/life.js); `signal` below is one load's
   const locale0 = uiLocale(navigator.language);
   const t0 = stringsFor(locale0);
@@ -173,7 +177,6 @@ async function showDashboard({ again = false, counts = {} } = {}) {
   $("#title").textContent = spec.title;
   $("#brand-sub").textContent = spec.description || "";
   const fmt = createFormat({ locale, currency: spec.currency || "USD" });
-  const tooltip = createTooltip($("#tip"));
   const dateFmt = new Intl.DateTimeFormat(fmt.locale, { dateStyle: "medium", timeZone: "UTC" });
   const dateTimeFmt = new Intl.DateTimeFormat(fmt.locale, { dateStyle: "medium", timeStyle: "short" });
   const asDate = (b) => new Date(`${String(b).slice(0, 19)}Z`);
@@ -195,7 +198,9 @@ async function showDashboard({ again = false, counts = {} } = {}) {
   let activeTab = pickTab(tabs, qs.get("tab"));
   const span = Object.fromEntries(tabs.flatMap((tab) => tab.layout.flat()).map((c) => [c.panel, c.span]));
 
-  const ctx = {
+  const ctx = pageCtx;
+  for (const k of Object.keys(ctx)) delete ctx[k];                // what the last drawing added (syncReset, attachPaneFilters) must not outlive it
+  Object.assign(ctx, {
     spec, t, run: (q, signal) => client.run(q, signal), tooltip,
     filterValues: () => values,
     formatter: (format, full = false) => {
@@ -232,10 +237,10 @@ async function showDashboard({ again = false, counts = {} } = {}) {
       values._clicked = was ? (values._clicked || []).filter((i) => !ids.includes(i)) : [...new Set([...(values._clicked || []), ...ids])];          // which filters hold a choice made by a click (see clickedIds)
       apply(patch);
     },
-  };
+  });
   const saved = {};                                     // what the filters held before a click, so that clicking again can undo it
 
-  const panels = new Map(spec.panels.map((p) => [p.id, createPanel(p, ctx)]));
+  const panels = new Map(spec.panels.map((p) => [p.id, kept(carry, spec, p) || createPanel(p, ctx)]));
   const periodBar = el("div", { id: "period-bar", class: "period-bar", hidden: "" });
   function renderPeriod() {
     const show = (d) => dateFmt.format(new Date(`${d}T00:00:00Z`));
@@ -579,7 +584,8 @@ async function showDashboard({ again = false, counts = {} } = {}) {
   /** The values a select or multiselect filter offers (for the designer's default-value picker); [] until its options have loaded. */
   const filterOptions = (id) => { const f = (spec.filters || []).find((x) => x.id === id); return f ? optionsOf(optionRows.get(id) || [], f, "", sortKeyOf(spec, f.dimension)).map((o) => o.value) : []; };
   // patchCount and mountCount (for the tests: a change applied in place, the page drawn again in place) carry over a remount
-  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null, remount, patchCount: counts.patchCount || 0, mountCount: counts.mountCount || 0 };
+  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null, remount, patchCount: counts.patchCount || 0, mountCount: counts.mountCount || 0,
+    keptCount: [...panels.values()].filter((p) => carry?.panels.get(p.root.dataset.panel) === p).length };          // for the tests: panels the last remount took over
 
   $("#export-all").hidden = false;
   $("#export-all").addEventListener("click", async () => {
@@ -611,6 +617,25 @@ async function showDashboard({ again = false, counts = {} } = {}) {
 }
 
 /**
+ * A panel of the last drawing that a remount can take over as it is, with its element and its loaded data: its compiled definition did not change, nor did
+ * what every panel formats with (language, currency, time field, theme). Its load then only redraws unless what it depends on changed (a filter that now
+ * applies to it, say: plan.js activeFilters is in its cache key). A drill-down chart is always made again (it registers with the page's period hooks).
+ * What the last drawing put into the card (a slicer's or pane's filter controls, the note on ignored filters, the designer's marks) is taken out.
+ */
+function kept(carry, spec, def) {
+  if (!carry || def.drill) return null;
+  const frame = (s) => JSON.stringify([s.locale, s.currency, s.time, s.theme]);
+  const before = carry.spec.panels.find((p) => p.id === def.id), panel = carry.panels.get(def.id);
+  if (!before || !panel || frame(carry.spec) !== frame(spec) || JSON.stringify(before) !== JSON.stringify(def)) return null;
+  const root = panel.root;
+  root.querySelectorAll(":scope .pane-filters, :scope > .ignored-note").forEach((n) => n.remove());
+  root.querySelector(".slicer-body")?.replaceChildren();
+  root.classList.remove("dz-selected");
+  root.removeAttribute("tabindex");
+  return panel;
+}
+
+/**
  * Draws the dashboard of this address again, in the page and without loading it (lib/life.js `redraw`: the designer's changes that `patch` cannot apply, undo and
  * redo, the Change box, Apply YAML). The old dashboard's listeners, timers and queries end with its life; the page keeps its height while the new one is made, so
  * the scroll position does not jump, and the designer comes back where it was (render/designer.js keeps that in sessionStorage, as for a reload).
@@ -619,6 +644,7 @@ async function remount() {
   const main = $("#main");
   main.style.minHeight = `${main.offsetHeight}px`;
   const counts = { patchCount: window.__render?.patchCount || 0, mountCount: (window.__render?.mountCount || 0) + 1 };
+  const carry = window.__render?.panels ? { spec: window.__render.spec, panels: window.__render.panels } : null;          // the panels the new drawing may keep
   const signal = renew();
   for (const q of ["#builder-host", "#designer", "#dz-colors"]) $(q)?.remove();          // what the draft bar and the designer put in the page; they are mounted again
   document.body.classList.remove("designing", "dz-dragging");
@@ -627,7 +653,7 @@ async function remount() {
   bar.hidden = true;
   show("");
   try {
-    await showDashboard({ again: true, counts });
+    await showDashboard({ again: true, counts, carry });
   } catch (e) {
     if (signal.aborted) return;
     setStatus(`<strong>${esc(stringsFor(uiLocale(navigator.language)).stale)}</strong>`, "stale");
