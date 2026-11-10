@@ -1,0 +1,5 @@
+# What the app needs to know about the AdventureWorks model beyond Cube's /v1/meta (see PLAN-decouple.md). Sits beside cube/model.
+time:
+  dimension: dates.full_date
+  fiscal_year_start: 7
+  year_fields: { fiscal: dates.fiscal_year, calendar: dates.calendar_year }        # a comparison with the previous year moves these (their roles, ship_dates.fiscal_year ..., too)

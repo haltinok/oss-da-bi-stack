@@ -14,6 +14,7 @@ from dashspec import compare as C
 from dashspec.queries import panel_queries
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+YEAR = {"fiscal": ["dates.fiscal_year", "ship_dates.fiscal_year"], "calendar": ["dates.calendar_year", "ship_dates.calendar_year"]}          # what a model's time.year_fields gives (with its roles)
 
 
 # ---- date ranges
@@ -58,15 +59,15 @@ REGION = {"member": "territories.region", "operator": "equals", "values": ["Cana
 
 
 def test_a_fiscal_year_select_moves_one_year_and_names_it():
-    s = C.shift_query({"measures": ["a.revenue"], "filters": [FY, REGION]}, "previous_year")
+    s = C.shift_query({"measures": ["a.revenue"], "filters": [FY, REGION]}, "previous_year", YEAR)
     assert s["query"] == {"measures": ["a.revenue"], "filters": [{**FY, "values": ["2020"]}, REGION]}
-    assert C.compare_label(s["moved"], "previous_year") == {"year": "2020", "fiscal": True}
+    assert C.compare_label(s["moved"], "previous_year", YEAR) == {"year": "2020", "fiscal": True}
 
 
 def test_the_drill_period_and_a_date_filter_both_move():
     q = {"measures": ["a.revenue"], "filters": [{"member": "a.ship_date", "operator": "inDateRange", "values": ["2021-01-01", "2021-12-31"]}],
          "timeDimensions": [{"dimension": "dates.full_date", "dateRange": ["2021-03-01", "2021-03-31"]}]}
-    s = C.shift_query(q, "previous_period")
+    s = C.shift_query(q, "previous_period", YEAR)
     assert s["query"]["filters"][0]["values"] == ["2020-01-01", "2020-12-31"]
     assert s["query"]["timeDimensions"][0]["dateRange"] == ["2021-02-01", "2021-02-28"]
     assert C.compare_label(s["moved"], "previous_period") == {"kind": "previous_period"}
@@ -81,28 +82,28 @@ def test_the_drill_period_and_a_date_filter_both_move():
     [{**FY, "values": ["x"]}],
 ])
 def test_no_comparison_without_a_period_that_can_move(filters):
-    assert C.shift_query({"measures": ["a.revenue"], "filters": filters}, "previous_year") is None
+    assert C.shift_query({"measures": ["a.revenue"], "filters": filters}, "previous_year", YEAR) is None
 
 
 def test_set_on_a_year_field_is_not_a_period():
-    assert C.shift_query({"measures": ["a.x"], "filters": [{"member": "dates.calendar_year", "operator": "set"}]}, "previous_year") is None
+    assert C.shift_query({"measures": ["a.x"], "filters": [{"member": "dates.calendar_year", "operator": "set"}]}, "previous_year", YEAR) is None
 
 
 def test_an_unknown_kind_compares_nothing():
-    assert C.shift_query({"measures": ["a.x"], "filters": [FY]}, "previous_week") is None
+    assert C.shift_query({"measures": ["a.x"], "filters": [FY]}, "previous_week", YEAR) is None
     assert C.previous_queries([{"cube": "a", "query": {"filters": [FY]}}], None) is None
 
 
 def test_queries_of_several_cubes_name_what_moved_once():
     qs = [{"cube": c, "query": {"measures": [f"{c}.revenue"], "filters": [FY]}} for c in ("a", "b")]
-    p = C.previous_queries(qs, "previous_year")
+    p = C.previous_queries(qs, "previous_year", YEAR)
     assert [q["query"]["filters"][0]["values"] for q in p["queries"]] == [["2020"], ["2020"]]
     assert p["moved"] == [{"member": "dates.fiscal_year", "from": ["2021"], "to": ["2020"]}]
 
 
 # ---- the panel's queries
 def _spec(compare="previous_year"):
-    return {"time": {"dimension": "dates.full_date"}, "members": {}, "filters": [{"id": "fy", "dimension": "dates.fiscal_year"}],
+    return {"yearFields": YEAR, "time": {"dimension": "dates.full_date"}, "members": {}, "filters": [{"id": "fy", "dimension": "dates.fiscal_year"}],
             "panels": [], "_panel": {"id": "k", "type": "kpi", "measures": [{"member": "a.revenue"}], **({"compare": compare} if compare else {})}}
 
 
@@ -129,13 +130,39 @@ def test_the_python_mirror_equals_the_renderers_code():
     cases = []
     for kind in ("previous_year", "previous_period", "nope"):
         for f in filters:
-            cases.append({"query": {"measures": ["a.x"], "filters": f}, "kind": kind})
+            cases.append({"query": {"measures": ["a.x"], "filters": f}, "kind": kind, "yearFields": YEAR})
             for r in ranges[:4]:
-                cases.append({"query": {"measures": ["a.x"], "filters": f, "timeDimensions": [{"dimension": "dates.full_date", "dateRange": r}]}, "kind": kind})
-        cases.append({"query": {"measures": ["a.x"], "timeDimensions": [{"dimension": "dates.full_date", "granularity": "month"}]}, "kind": kind})
+                cases.append({"query": {"measures": ["a.x"], "filters": f, "timeDimensions": [{"dimension": "dates.full_date", "dateRange": r}]}, "kind": kind, "yearFields": YEAR})
+        cases.append({"query": {"measures": ["a.x"], "timeDimensions": [{"dimension": "dates.full_date", "granularity": "month"}]}, "kind": kind, "yearFields": YEAR})
     out = subprocess.run(["node", str(REPO / "dashboards" / "tests" / "dump_compare.mjs")], input=json.dumps(cases), capture_output=True, text=True, check=True).stdout
     js = json.loads(out)
     assert len(js) == len(cases) > 300
     for case, got in zip(cases, js, strict=True):
-        s = C.shift_query(case["query"], case["kind"])
-        assert got == (s and {**s, "label": C.compare_label(s["moved"], case["kind"])}), case
+        s = C.shift_query(case["query"], case["kind"], case["yearFields"])
+        assert got == (s and {**s, "label": C.compare_label(s["moved"], case["kind"], case["yearFields"])}), case
+
+
+def test_the_year_fields_come_from_the_models_config_not_from_a_name_ending():
+    from dashspec import catalog as cat
+    aw = cat.from_model(REPO / "cube" / "model").year_fields()
+    assert aw["fiscal"][0] == "dates.fiscal_year" and "ship_dates.fiscal_year" in aw["fiscal"] and "dates.calendar_year" in aw["calendar"]
+    dist = cat.from_model(REPO / "models" / "distributor" / "cube").year_fields()
+    assert dist == {"calendar": ["calendar.calendar_year", "maturity_dates.calendar_year"]}
+    q = {"measures": ["a.x"], "filters": [{"member": "calendar.calendar_year", "operator": "equals", "values": ["2025"]}]}
+    assert C.shift_query(q, "previous_year", dist)["query"]["filters"][0]["values"] == ["2024"]
+    assert C.shift_query(q, "previous_year", aw) is None, "a field with a year's name that this model does not list is not a year field"
+    assert C.shift_query(q, "previous_year") is None, "no year fields: nothing to move"
+    assert C.compare_label(C.shift_query(q, "previous_year", dist)["moved"], "previous_year", dist) == {"year": "2024", "fiscal": False}
+
+
+def test_the_compiled_spec_carries_the_year_fields_of_its_model():
+    import yaml
+
+    from dashspec import catalog as cat
+    from dashspec.compile import compile_spec
+    from dashspec.validate import validate
+    model = REPO / "cube" / "model"
+    spec = yaml.safe_load((REPO / "dashboards" / "sales-overview.yml").read_text())
+    errors, used = validate(spec, cat.from_model(model))
+    assert errors == []
+    assert compile_spec(spec, used, cat.from_model(model))["yearFields"]["fiscal"][0] == "dates.fiscal_year"

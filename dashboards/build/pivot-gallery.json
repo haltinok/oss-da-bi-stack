@@ -265,6 +265,18 @@
       "type": "string"
     }
   },
+  "yearFields": {
+    "fiscal": [
+      "dates.fiscal_year",
+      "due_dates.fiscal_year",
+      "ship_dates.fiscal_year"
+    ],
+    "calendar": [
+      "dates.calendar_year",
+      "due_dates.calendar_year",
+      "ship_dates.calendar_year"
+    ]
+  },
   "cubes": {
     "dates": {
       "joins": []

@@ -123,9 +123,11 @@ test("panelMeasures and tableParts split a table's members by kind", () => {
 });
 
 test("colorOf maps theme names to CSS variables, passes hex through and cycles a palette", () => {
-  assert.equal(colorOf("internet", 0), "var(--internet)");
+  assert.equal(colorOf("series1", 0), "var(--series1)");
+  assert.equal(colorOf("internet", 0), "var(--internet)", "the old names still work (they are aliases in the stylesheet)");
   assert.equal(colorOf("#112233", 0), "#112233");
-  assert.equal(colorOf(undefined, 1), "var(--reseller)");
+  assert.equal(colorOf(undefined, 1), "var(--series2)");
+  assert.equal(colorOf(undefined, 8), "var(--series1)", "the eight series colours cycle");
 });
 
 test("markdown escapes html first, then renders bold, code, links and lists", () => {

@@ -4,7 +4,7 @@ import { compareLabel, shiftQuery } from "../../dashboard/static/lib/compare.js"
 
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
-console.log(JSON.stringify(JSON.parse(input).map(({ query, kind }) => {
-  const s = shiftQuery(query, kind);
-  return s && { ...s, label: compareLabel(s.moved, kind) };
+console.log(JSON.stringify(JSON.parse(input).map(({ query, kind, yearFields }) => {
+  const s = shiftQuery(query, kind, yearFields);
+  return s && { ...s, label: compareLabel(s.moved, kind, yearFields) };
 })));

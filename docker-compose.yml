@@ -492,6 +492,7 @@ services:
       additional_contexts:
         dashboards: ./dashboards
         cubemodel: ./cube/model
+        modelconfig: ./cube
     profiles: [starrocks]
     restart: unless-stopped
     depends_on:
@@ -529,6 +530,7 @@ services:
       additional_contexts:
         dashboards: ./dashboards
         cubemodel: ./cube/model
+        modelconfig: ./cube
     profiles: [starrocks]
     restart: unless-stopped
     depends_on:
@@ -715,6 +717,7 @@ services:
       additional_contexts:
         dashboards: ./dashboards
         cubemodel: ./cube/model
+        modelconfig: ./cube
     profiles: [starrocks]
     restart: unless-stopped
     depends_on:

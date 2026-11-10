@@ -68,7 +68,7 @@ def test_each_model_says_which_cubes_are_facts_and_what_its_first_measure_is():
 
 def test_adventureworks_names_its_sales_series_and_the_second_model_has_none():
     aw, dist = (cat.from_model(MODELS[n][0]) for n in ("adventureworks", "distributor"))
-    assert aw.series("internet_sales") == ("Internet", "internet") and aw.series("reseller_sales") == ("Reseller", "reseller")
+    assert aw.series("internet_sales") == ("Internet", "series1") and aw.series("reseller_sales") == ("Reseller", "series2")
     assert dist.series("orders") == (None, None)
     assert aw.primary("internet_sales") == "revenue" and dist.primary("orders") == "revenue" and dist.primary("payments") == "collected"
 

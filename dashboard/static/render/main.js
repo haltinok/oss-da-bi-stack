@@ -95,11 +95,15 @@ function setStatus(text, cls = "") {
   $("#live-text").innerHTML = text;
 }
 
-/** A dashboard's own look: a name and logo in the header, and colours for the theme tokens (a series `color: internet` follows them). */
+/** A dashboard's own look: a name and logo in the header, and colours for the theme tokens (a series `color: series1` follows them; `internet` and `reseller` are the old names of series1 and series2). */
+const TOKEN_ALIASES = { internet: "series1", reseller: "series2" };
 function applyTheme(theme = {}) {
   if (theme.name) { $("#brand-name").textContent = theme.name; $("#brand-name").hidden = false; }
   if (theme.logo) { $("#logo").src = theme.logo; $("#logo").hidden = false; }
-  for (const [token, hex] of Object.entries(theme.colors || {})) document.documentElement.style.setProperty(`--${token}`, hex);
+  for (const [token, hex] of Object.entries(theme.colors || {})) {
+    document.documentElement.style.setProperty(`--${token}`, hex);
+    if (TOKEN_ALIASES[token]) document.documentElement.style.setProperty(`--${TOKEN_ALIASES[token]}`, hex);          // the old name recolours the new one, so the default cycle follows
+  }
 }
 
 // ------------------------------------------------------------------ the list

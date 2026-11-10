@@ -6,7 +6,6 @@
 // `notEquals` on a year, a year that is not a number, years that are not consecutive for previous_period): no comparison.
 
 export const COMPARE_KINDS = ["previous_year", "previous_period"];
-const YEAR_FIELDS = ["fiscal_year", "calendar_year"];
 const OPEN = ["beforeDate", "afterDate", "beforeOrOnDate", "afterOrOnDate", "notInDateRange"];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const INT = /^-?\d+$/;
@@ -54,13 +53,14 @@ export function shiftYears(values, kind) {
   return ys.map((y) => String(y - by));
 }
 
-export const isYearField = (member) => YEAR_FIELDS.includes(String(member).split(".")[1]);
+/** Is `member` one of the model's year fields? `yearFields` is { fiscal: [members], calendar: [members] } (the compiled spec's `yearFields`, from `time.year_fields` in model.config.yml); a model with none has no year to move. */
+export const isYearField = (member, yearFields) => [...(yearFields?.fiscal || []), ...(yearFields?.calendar || [])].includes(member);
 
 /**
  * One Cube query with its time constraints moved back: { query, moved } or null when it has none, or one cannot be moved.
  * `moved` lists what changed, each { member, from, to } (from/to: a [from, to] date range, or a list of years).
  */
-export function shiftQuery(query, kind) {
+export function shiftQuery(query, kind, yearFields) {
   if (!COMPARE_KINDS.includes(kind)) return null;
   const moved = [];
   let ok = true;
@@ -72,7 +72,7 @@ export function shiftQuery(query, kind) {
       moved.push({ member: f.member, from: [...f.values], to });
       return { ...f, values: to };
     }
-    if (isYearField(f.member) && !["set", "notSet"].includes(f.operator)) {
+    if (isYearField(f.member, yearFields) && !["set", "notSet"].includes(f.operator)) {
       const to = f.operator === "equals" ? shiftYears(f.values, kind) : null;
       if (!to) { ok = false; return f; }
       moved.push({ member: f.member, from: f.values.map(String), to });
@@ -98,11 +98,11 @@ export function shiftQuery(query, kind) {
  * The comparison queries for a tile's `now` queries ([{ cube, query, post? }]): { queries, moved } or null. Each query is moved on its own;
  * `moved` is what changed, once per member and range (the per-cube queries share their filters).
  */
-export function previousQueries(queries, kind) {
+export function previousQueries(queries, kind, yearFields) {
   if (!kind || !queries?.length) return null;
   const out = [], moved = [], seen = new Set();
   for (const q of queries) {
-    const s = shiftQuery(q.query, kind);
+    const s = shiftQuery(q.query, kind, yearFields);
     if (!s) return null;
     out.push({ ...q, query: s.query });
     for (const m of s.moved) {
@@ -116,9 +116,9 @@ export function previousQueries(queries, kind) {
 /**
  * What the tile names the comparison by: { year, fiscal } when the only thing moved is a single year value (`vs FY2020`, `vs 2020`), else { kind }.
  */
-export function compareLabel(moved, kind) {
-  if (moved.length === 1 && isYearField(moved[0].member) && moved[0].to.length === 1) {
-    return { year: moved[0].to[0], fiscal: moved[0].member.endsWith(".fiscal_year") };
+export function compareLabel(moved, kind, yearFields) {
+  if (moved.length === 1 && isYearField(moved[0].member, yearFields) && moved[0].to.length === 1) {
+    return { year: moved[0].to[0], fiscal: (yearFields.fiscal || []).includes(moved[0].member) };
   }
   return { kind };
 }

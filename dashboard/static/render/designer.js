@@ -77,7 +77,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         : `<p class="hint">${esc(dz.noTabs)}</p><div class="dz-actions"><button type="button" id="dz-addtab-first">${esc(dz.addTab)}</button><button type="button" id="dz-totabs" ${(source.layout || []).length < 2 ? "disabled" : ""}>${esc(dz.makeTabs)}</button></div>`}
       <h3 class="dz-section">${esc(dz.filters)}</h3><div id="dz-filters" class="dz-filters"></div>
       <div class="dz-add-filter"><select id="dz-newfilter" aria-label="${esc(dz.addFilter)}"></select><button type="button" id="dz-addfilter">${esc(dz.addFilter)}</button></div>
-      <h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calcs" class="dz-filters"></div>
+      <h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(calcsHint())}</p><div id="dz-calcs" class="dz-filters"></div>
       <div id="dz-calc-add"></div>
       <h3 class="dz-section">${esc(dz.addPanel)}</h3>
       <div class="dz-gallery" id="dz-gallery">${PANEL_TYPES.map((ty) => `<button type="button" class="dz-type" data-add="${ty}"><strong>${esc(typeName(ty))}</strong><span>${esc(dz.typeHint[ty])}</span></button>`).join("")}</div>`;
@@ -188,6 +188,14 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     for (const f of own) wrap.append(filterCard(f, panel.id));
     wrap.append(scopedAdd("panel", panel.id, dz.addPanelFilter));
     return wrap;
+  }
+
+  /** The calculation hint with an example made from this model: the same measure of two facts added up (`sum(a.m, b.m) * 0.2`), else a measure times a number. */
+  function calcsHint() {
+    const facts = baseCatalog.filter((c) => c.fact && c.measures.length);
+    const pair = facts.flatMap((a, i) => facts.slice(i + 1).flatMap((b) => a.measures.filter((m) => b.measures.some((x) => x.name === m.name)).map((m) => [a, b, m.name])))[0];
+    const example = pair ? `sum(${pair[0].cube}.${pair[2]}, ${pair[1].cube}.${pair[2]}) * 0.2` : facts[0] ? `${facts[0].cube}.${facts[0].measures[0].name} * 0.2` : "a.measure * 0.2";
+    return dz.calcsHint.replace("{example}", example);
   }
 
   /** The way into the calculations window: New, and one button per calculation of the dashboard to edit it. `panelId` is the panel to stay on afterwards (null: the page view). */
@@ -331,7 +339,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const left = el("aside", { class: "calc-measures" }, `<h3>${esc(dz.calcMeasures)}</h3>`);
     left.append(search, tree);
     const mid = el("section", { class: "calc-main" }, `<label for="calc-formula">${esc(dz.f.calcFormula)}</label>`);
-    mid.append(box, status, el("p", { class: "hint" }, esc(dz.calcsHint)));
+    mid.append(box, status, el("p", { class: "hint" }, esc(calcsHint())));
     body.append(left, mid, ops);
     const foot = dlg.querySelector(".calc-foot");
     foot.append(del, el("span", { class: "spacer" }, ""), cancel, save);
@@ -352,7 +360,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     }).join("");
     drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn()}</div>
       <div id="dz-msg" class="bmsg" role="alert" hidden></div><form class="dz-form" onsubmit="return false">${rows}</form>
-      ${["text", "slicer"].includes(panel.type) ? "" : `<h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calc-add"></div>`}
+      ${["text", "slicer"].includes(panel.type) ? "" : `<h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(calcsHint())}</p><div id="dz-calc-add"></div>`}
       ${["text", "slicer"].includes(panel.type) ? "" : `<h3 class="dz-section">${esc(dz.panelFilters)}</h3><div id="dz-panelfilters"></div>`}
       <h3 class="dz-section">${esc(dz.layout)}</h3>
       <div class="dz-layout" role="group" aria-label="${esc(dz.layout)}">${LAYOUT_COMMANDS.map((cmd) => `<button type="button" data-cmd="${cmd}" ${moveCommand(source, panel.id, cmd).problem ? "disabled" : ""}>${esc(dz.cmd[cmd])}</button>`).join("")}</div>
@@ -705,7 +713,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (fd.kind === "readonly") return el("code", { class: "dz-formula" }, esc(formula(getAt(holder, fd.path))));
     if (fd.kind === "textarea") { input = el("textarea", { rows: 8, spellcheck: "false" }); input.value = value; }
     else if (fd.kind === "text" || fd.kind === "color") {
-      input = el("input", { type: "text", maxlength: 200, ...(fd.kind === "color" ? { list: "dz-colors", placeholder: "internet · reseller · #rrggbb" } : {}) });
+      input = el("input", { type: "text", maxlength: 200, ...(fd.kind === "color" ? { list: "dz-colors", placeholder: "series1 … series8 · #rrggbb" } : {}) });
       input.value = value;
     } else if (fd.kind === "number") { input = el("input", { type: "number", min: fd.min, max: fd.max, step: fd.step || 1 }); input.value = value; }
     else {
@@ -932,7 +940,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     catalog = withCalculations(baseCatalog, source);
     setMemberLabels(Object.fromEntries(cat.flatMap((c) => [...c.measures, ...c.dimensions]).filter((m) => m.label).map((m) => [m.member, m.label])));          // the role's name in front: "Ship month name"
     button.disabled = false;
-    document.body.append(el("datalist", { id: "dz-colors" }, '<option value="internet"><option value="reseller">'));
+    document.body.append(el("datalist", { id: "dz-colors" }, Array.from({ length: 8 }, (_, i) => `<option value="series${i + 1}">`).join("")));
   } catch (e) {
     button.title = e.message;
     button.after(el("span", { class: "hint", id: "bd-design-note", role: "status" }, esc(e.message)));

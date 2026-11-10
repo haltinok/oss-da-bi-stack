@@ -18,7 +18,7 @@ const lum = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 25
   .reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
 const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
 
-const TOKENS = ["page", "surface", "surface-2", "ink", "ink-2", "muted", "grid", "axis", "border", "internet", "reseller", "good", "bad", "warn", "live", "neutral-mid", "focus", "on-focus", "shadow"];
+const TOKENS = ["page", "surface", "surface-2", "ink", "ink-2", "muted", "grid", "axis", "border", "series1", "series2", "series3", "series4", "series5", "series6", "series7", "series8", "good", "bad", "warn", "live", "neutral-mid", "focus", "on-focus", "shadow"];
 
 test("every theme in the menu has a block in themes.css, and the other way round (light and dark live in style.css)", () => {
   assert.deepEqual(listed.filter((id) => id !== "light" && id !== "dark").sort(), Object.keys(themes).sort());
@@ -29,7 +29,7 @@ test("every theme in the menu has a block in themes.css, and the other way round
 test("each theme sets every token the pages read, as plain colours", () => {
   for (const [id, t] of Object.entries(themes)) {
     for (const k of TOKENS) assert.ok(k in t, `${id} lacks --${k}`);
-    for (const k of ["page", "surface", "surface-2", "ink", "ink-2", "muted", "internet", "reseller", "good", "bad", "warn", "focus", "on-focus"]) assert.match(t[k], /^#[0-9a-f]{6}$/i, `${id} --${k}`);
+    for (const k of ["page", "surface", "surface-2", "ink", "ink-2", "muted", "series1", "series2", "series3", "series4", "series5", "series6", "series7", "series8", "good", "bad", "warn", "focus", "on-focus"]) assert.match(t[k], /^#[0-9a-f]{6}$/i, `${id} --${k}`);
   }
 });
 
@@ -43,7 +43,7 @@ test("text reads on every surface: 4.5:1 for body, secondary and muted text, on 
 
 test("series colours, status colours and the focus ring stand out from the card (3:1), and a primary button's text reads on --focus (4.5:1)", () => {
   for (const [id, t] of Object.entries(themes)) {
-    for (const k of ["internet", "reseller", "good", "bad", "warn", "focus"]) assert.ok(ratio(t[k], t.surface) >= 3, `${id}: ${k} on surface is ${ratio(t[k], t.surface).toFixed(2)}`);
+    for (const k of ["series1", "series2", "series3", "series4", "series5", "series6", "series7", "series8", "good", "bad", "warn", "focus"]) assert.ok(ratio(t[k], t.surface) >= 3, `${id}: ${k} on surface is ${ratio(t[k], t.surface).toFixed(2)}`);
     assert.ok(ratio(t["on-focus"], t.focus) >= 4.5, `${id}: on-focus on focus is ${ratio(t["on-focus"], t.focus).toFixed(2)}`);
   }
 });

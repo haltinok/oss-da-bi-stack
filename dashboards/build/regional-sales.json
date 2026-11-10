@@ -91,13 +91,13 @@
         {
           "member": "internet_sales.revenue",
           "label": "Internet",
-          "color": "internet",
+          "color": "series1",
           "format": "money"
         },
         {
           "member": "reseller_sales.revenue",
           "label": "Reseller",
-          "color": "reseller",
+          "color": "series2",
           "format": "money"
         }
       ],
@@ -115,12 +115,12 @@
         {
           "member": "internet_sales.revenue",
           "label": "Internet",
-          "color": "internet"
+          "color": "series1"
         },
         {
           "member": "reseller_sales.revenue",
           "label": "Reseller",
-          "color": "reseller"
+          "color": "series2"
         }
       ],
       "by": "territories.country",
@@ -141,12 +141,12 @@
         {
           "member": "internet_sales.revenue",
           "label": "Internet",
-          "color": "internet"
+          "color": "series1"
         },
         {
           "member": "reseller_sales.revenue",
           "label": "Reseller",
-          "color": "reseller"
+          "color": "series2"
         }
       ],
       "by": "products.name",
@@ -225,6 +225,18 @@
       "kind": "dimension",
       "type": "string"
     }
+  },
+  "yearFields": {
+    "fiscal": [
+      "dates.fiscal_year",
+      "due_dates.fiscal_year",
+      "ship_dates.fiscal_year"
+    ],
+    "calendar": [
+      "dates.calendar_year",
+      "due_dates.calendar_year",
+      "ship_dates.calendar_year"
+    ]
   },
   "cubes": {
     "dates": {

@@ -10,6 +10,8 @@ import { showChange } from "../../static/render/panels.js";
 import { createFormat } from "../../static/lib/format.js";
 import { stringsFor } from "../../static/render/strings.js";
 
+const YEAR = { fiscal: ["dates.fiscal_year"], calendar: ["dates.calendar_year"] };          // what a model's time.year_fields compiles to
+
 test("months move with the day clamped, and the last day of a month stays the last day when asked", () => {
   assert.equal(addMonths("2024-03-31", -1), "2024-02-29");
   assert.equal(addMonths("2023-02-28", -12, true), "2022-02-28");
@@ -31,16 +33,17 @@ test("the change is relative, or in points for a fraction, and absent when there
 });
 
 test("a fiscal-year select is named by its year; anything else by the kind", () => {
-  const fy = shiftQuery({ filters: [{ member: "dates.fiscal_year", operator: "equals", values: ["2021"] }] }, "previous_year");
-  assert.deepEqual(compareLabel(fy.moved, "previous_year"), { year: "2020", fiscal: true });
-  const cy = shiftQuery({ filters: [{ member: "dates.calendar_year", operator: "equals", values: ["2021"] }] }, "previous_period");
-  assert.deepEqual(compareLabel(cy.moved, "previous_period"), { year: "2020", fiscal: false });
-  const two = shiftQuery({ filters: [{ member: "dates.fiscal_year", operator: "equals", values: ["2021", "2022"] }] }, "previous_year");
-  assert.deepEqual(compareLabel(two.moved, "previous_year"), { kind: "previous_year" });
-  assert.equal(previousQueries([{ cube: "a", query: { filters: [] } }], "previous_year"), null);
+  const fy = shiftQuery({ filters: [{ member: "dates.fiscal_year", operator: "equals", values: ["2021"] }] }, "previous_year", YEAR);
+  assert.deepEqual(compareLabel(fy.moved, "previous_year", YEAR), { year: "2020", fiscal: true });
+  const cy = shiftQuery({ filters: [{ member: "dates.calendar_year", operator: "equals", values: ["2021"] }] }, "previous_period", YEAR);
+  assert.deepEqual(compareLabel(cy.moved, "previous_period", YEAR), { year: "2020", fiscal: false });
+  const two = shiftQuery({ filters: [{ member: "dates.fiscal_year", operator: "equals", values: ["2021", "2022"] }] }, "previous_year", YEAR);
+  assert.deepEqual(compareLabel(two.moved, "previous_year", YEAR), { kind: "previous_year" });
+  assert.equal(previousQueries([{ cube: "a", query: { filters: [] } }], "previous_year", YEAR), null);
 });
 
 const spec = {
+  yearFields: YEAR,
   time: { dimension: "dates.full_date" }, filters: [{ id: "fy", dimension: "dates.fiscal_year" }, { id: "r", dimension: "t.region" }],
   members: { "a.rev": { kind: "measure" }, "b.rev": { kind: "measure" } }, panels: [],
 };
@@ -65,7 +68,7 @@ const node = () => {
   const classes = new Set();
   return { title: "", innerHTML: "", classList: { add: (...c) => c.forEach((x) => classes.add(x)), has: (c) => classes.has(c) } };
 };
-const ctx = (lang = "en") => { const f = createFormat({ locale: lang === "tr" ? "tr-TR" : "en-US" }); return { t: stringsFor(lang), formatter: (k) => f[k] }; };
+const ctx = (lang = "en") => { const f = createFormat({ locale: lang === "tr" ? "tr-TR" : "en-US" }); return { t: stringsFor(lang), formatter: (k) => f[k], spec: { yearFields: YEAR } }; };
 const fyMoved = { queries: [], moved: [{ member: "dates.fiscal_year", from: ["2021"], to: ["2020"] }] };
 
 test("the tile's line: arrow, change, what it is compared with, and green or red by `better`", () => {
@@ -104,4 +107,13 @@ test("Turkish words", () => {
   const n = node();
   showChange(n, { now: 90, before: 100, previous: fyMoved, kind: "previous_year", points: false, better: "higher" }, ctx("tr"));
   assert.match(n.innerHTML, /aria-label="düşüş">▼<\/span>%10,0 <span class="vs">önceki: MY2020<\/span>/);
+});
+
+test("without year fields a year filter is not a year to move: nothing is compared by name", () => {
+  const q = { filters: [{ member: "dates.fiscal_year", operator: "equals", values: ["2021"] }] };
+  assert.equal(shiftQuery(q, "previous_year"), null);
+  assert.equal(shiftQuery(q, "previous_year", { calendar: ["calendar.calendar_year"] }), null, "a name that this model does not list is not a year field");
+  const own = shiftQuery({ filters: [{ member: "calendar.calendar_year", operator: "equals", values: ["2025"] }] }, "previous_year", { calendar: ["calendar.calendar_year"] });
+  assert.deepEqual(own.query.filters[0].values, ["2024"]);
+  assert.deepEqual(compareLabel(own.moved, "previous_year", { calendar: ["calendar.calendar_year"] }), { year: "2024", fiscal: false });
 });
