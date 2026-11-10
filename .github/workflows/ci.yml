@@ -387,7 +387,7 @@ jobs:
           python -m dashspec validate dashboards/*.yml
           for f in dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
 
-  # PLAN-decouple.md: the app knows no model. A warning for now (it lists the hits as annotations); phase 5 makes it an error (--strict).
+  # PLAN-decouple.md: the app knows no model. An error on any hit that scripts/no-model-names.allow does not list.
   no-model-names:
     runs-on: ubuntu-latest
     steps:
@@ -396,7 +396,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyyaml
-      - run: python scripts/no_model_names.py
+      - run: python scripts/no_model_names.py --strict
 
   # The dashboard page without any service: the shared JS modules (node tests) and the page in a real Chrome against the mock stack
   # (every panel renders from generated data without a console error, the Excel export downloads, the header and the dataset switch).
@@ -409,9 +409,7 @@ jobs:
           python-version: "3.12"
       - run: pip install playwright pyyaml "jsonschema>=4.18"
       - run: node --test dashboard/cube/tests/lib.test.mjs dashboard/cube/tests/lib_render.test.mjs dashboard/cube/tests/compare.test.mjs dashboard/cube/tests/themes.test.mjs dashboard/cube/tests/designer.test.mjs dashboard/cube/tests/designer-structure.test.mjs dashboard/cube/tests/designer-layout.test.mjs dashboard/cube/tests/drafts.test.mjs dashboard/cube/tests/recent.test.mjs dashboard/cube/tests/lab-grid.test.mjs dashboard/cube/tests/landing.test.mjs
-      - run: python -I dashboard/cube/tests/render.py
       - run: python -I dashboard/cube/tests/renderer.py
-      - run: python -I dashboard/cube/tests/header.py
       - run: python -I dashboard/cube/tests/designer.py        # design mode: pick a panel, change its fields, a refusal, a phone, Turkish
       - run: python -I dashboard/cube/tests/admin.py            # the admin console: people, groups, dialogs, who is let in
       - run: python -I dashboard/cube/tests/builderui.py        # the builder's page: the Save dialog, saved dashboards, tags
@@ -419,7 +417,6 @@ jobs:
       - run: python -I dashboard/cube/tests/home.py             # the start page: launcher, recent, shared, search
       - run: python -I dashboard/cube/tests/viewer.py           # the viewer role: dashboards only
       - run: python -I dashboard/cube/tests/lab.py              # the SQL lab: who gets it, schema, run, grid, tabs, history
-      - run: python -I dashboard/cube/tests/dataset.py
 
   # The dashboard builder (builder/): its loop against a scripted model, the rule-based stand-in over every prompt x role, and the HTTP service
   # with signed test tokens. No model API is called.
@@ -498,7 +495,8 @@ jobs:
           set -euo pipefail
           B=http://localhost:8088
           code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-          test "$(code $B/)" = 200
+          test "$(code $B/)" = 302          # the root redirects to the start page
+          test "$(code $B/home/)" = 200
           curl -s $B/cube/config.js | grep -q 'keycloak: { url: "http://localhost:8088/kc"'
           issuer=$(curl -s $B/kc/realms/spike/.well-known/openid-configuration | jq -r .issuer)
           test "$issuer" = "$B/kc/realms/spike"

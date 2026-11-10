@@ -512,17 +512,17 @@ class Handler(BaseHTTPRequestHandler):
             path = "/home.html"
         if path == "/lab" or path.startswith("/lab/"):      # the SQL lab
             path = "/lab.html"
+        if path == "/":                                      # the root is the start page
+            self.send_response(302)
+            self.send_header("Location", "/home/")
+            self.end_headers()
+            return
         for base, strip in ((ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
             if path.startswith(strip):
-                rel = path[len(strip):] or "index.html"
+                rel = path[len(strip):]
                 f = base / rel
-                if f.is_file():
+                if rel and f.is_file():
                     page = f.read_bytes()
-                    if rel == "index.html" and "demo=1" in self.path:
-                        # no data behind the mock: put the status line in the state a working page shows (until the next poll)
-                        page = page.replace(b"</body>", b"<script>addEventListener('load', () => setTimeout(() => { if (window.__app) { window.__app.state.data = { latest_orders: [{ order_date: '2021-06-30T10:00:00' }] }; window.__app.setLive(true); const e = document.querySelector('#error'); if (e) e.hidden = true; } }, 1800));</script></body>")
-                    if rel == "index.html":
-                        page = page.replace(b'<script type="module" src="app.js"></script>', b'<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script type="module" src="app.js"></script>')
                     ctype = "text/html" if rel.endswith(".html") else "text/javascript" if rel.endswith((".js", ".mjs")) else "text/css" if rel.endswith(".css") else "application/json" if rel.endswith(".json") else "application/octet-stream"
                     return self._send(page, ctype)
         self._send(b"not found", "text/plain", 404)

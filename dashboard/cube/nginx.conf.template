@@ -1,5 +1,4 @@
-# Serves the existing dashboard (dashboard/static, unchanged) and injects the Cube data source in
-# front of app.js: sign-in + Cube adapter instead of the Postgres-backed /api/*.
+# Serves the dashboard pages (dashboard/static) and the browser's stack configuration (/cube/config.js, the shared sign-in and Cube client).
 # Template: the nginx image fills in ${KEYCLOAK_PORT} / ${AUTH_PORT} / ${CUBE_PORT} / ${ACTIONS_PORT} / ${BUILDER_PORT} / ${ADMIN_PORT} / ${LAB_PORT} / ${CUBE_250M_PORT} /
 # ${PUBLIC_URL} / ${PATH_ROUTING} at start. Without PATH_ROUTING the browser talks to each service on its own localhost port;
 # with it (docker-compose.public.yml) everything goes through PUBLIC_URL: /kc, /auth-api, /actions-api, /cubejs-api (Caddy).
@@ -49,11 +48,11 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # The root is the start page. (The original hand-built live sales page, app.js and its Cube adapter, is retired: dashboards/sales-overview.yml is its replacement.)
+    location = / { return 302 /home/; }
+
     location / {
         try_files $uri $uri/ =404;
         add_header Cache-Control "no-cache";
-        sub_filter_once on;
-        sub_filter '<script type="module" src="app.js"></script>'
-                   '<script src="cube/config.js"></script><script src="cube/boot.js"></script><script type="module" src="cube/cube-source.mjs"></script><script type="module" src="app.js"></script>';
     }
 }

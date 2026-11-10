@@ -116,7 +116,7 @@ why step 0 pauses the DAG; at 500M one fact build needed ~40 GB.
 | Cube == direct SQL (totals, margin, drill-across) | `uv run --with pymysql --with pyjwt python -I spike/cube/check.py` |
 | Which rollup serves which dashboard query | `uv run --with pyjwt python -I spike/cube/probe.py` |
 | RLS + auth (29 tests) | `uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest cube/tests -v` |
-| Dashboard in a real browser, per role | `uv run --with playwright python -I dashboard/cube/tests/e2e.py` |
+| Dashboard in a real browser | `dashboard/cube/tests/renderer.py` and `designer.py` (mock stack; the per-role browser test of the retired live page is gone) |
 | Progressive rendering + cancel on filter change | `uv run --with playwright python -I dashboard/cube/tests/progressive.py na_manager "Mountain Bikes"` |
 | Latency per dashboard query, rollup vs direct | `uv run --with pyjwt --with requests python -I spike/bench/bench.py --label 500m` |
 | Concurrent users with RLS | `uv run --with pyjwt --with requests python -I spike/bench/load.py --label 500m --users 1,10,25` |

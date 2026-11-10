@@ -74,6 +74,7 @@ Screenshots from the demo stack's mock data (re-made by `dashboard/cube/tests/pa
 - [The start page and dashboards](docs/dashboards.md#the-start-page): `/home/`.
 - [The admin console](docs/admin.md): people, groups and roles, row rules and datasets, over Keycloak.
 - [The SQL lab](docs/lab.md): ad-hoc SQL over the semantic layer, under the dashboards' rules.
+- [Bring your own model](docs/bring-your-own-model.md): the `meta:` keys and `model.config.yml` that let the app run on any Cube model.
 - [Serving the demo](docs/deploy-demo.md): Caddy, `PUBLIC_URL` and the public overlay.
 - [Spec reference](docs/dashboard-spec-reference.md): every field of a dashboard file. The designer's plan: [`PLAN-designer.md`](PLAN-designer.md).
 
@@ -299,41 +300,20 @@ psql "postgresql://postgres:$POSTGRES_PASSWORD@localhost:5434/active_db" -c '\dt
 
 > More dashboards without writing code: a dashboard can be one YAML file, validated against the Cube model and drawn at `/d/<id>`. See [`docs/dashboards.md`](docs/dashboards.md).
 
-`dashboard/static` is a small, dependency-light web app over the star: revenue,
-gross profit and margin, orders, average order value and units (each with a
-sparkline and a change vs the prior fiscal year), monthly revenue by channel,
-a product-mix treemap (one hue per category, a shade per subcategory, margin in
-each tile's label and tooltip), the top 10 products, revenue by territory and a
-live feed of the latest orders. It is served by the `dashboard-cube` service
-(http://localhost:8250) and reads everything through Cube.
+The sales dashboard is `dashboards/sales-overview.yml`, drawn by the renderer at http://localhost:8250/d/sales-overview (`/` is the start page, `/home/`): revenue,
+gross profit and margin, orders, average order value and units (each with a sparkline and a change vs the prior fiscal year), monthly revenue by channel, a product-mix
+treemap, the top products, revenue by territory and the latest orders. It reads everything through Cube. (It replaces the original hand-built page, `app.js`, which was retired
+when the app stopped knowing the model: see [`PLAN-decouple.md`](PLAN-decouple.md).)
 
 - **Sign-in and row-level security:** users sign in through Keycloak; each sees only their own
-  territories and product categories, and roles that may not see profit get no profit or margin figures (the tiles, columns
-  and chart are hidden, not zeroed).
-- **Live:** the page polls every 30 s. New orders appear within one pipeline cycle plus about a
-  minute (see *Freshness* above).
-- **Panels load independently:** each panel runs its own query and redraws when its answer arrives, with a
-  spinner and a seconds counter while it waits and "✓ 1.4s" once it has landed. Under a product filter the
-  exact order count is the slow figure, so those panels draw first and Orders / Average order value fill in
-  later. Changing a filter cancels the unfinished requests.
-- **Cross-filtering:** channel, fiscal year, territory group/region and product
-  category in one filter row; clicking a month, treemap tile or territory
-  applies the same filters. A selection is marked with an outline/check rather
-  than by fading everything else. Clicking a region (or subcategory) also sets
-  its group (or category); clicking it again undoes both, restoring whatever
-  group/category you had picked before. The filters are kept in the URL, so a
-  view can be bookmarked.
-- **Accessible:** every chart has a table view, keyboard-focusable marks with
-  tooltips, and light/dark themes.
-- **Excel export:** every chart has an *Excel* button, and *Export all* writes
-  one workbook with a sheet per chart plus the key figures. Cells are typed
-  (currency, %, counts, dates), each sheet has a frozen header and autofilter
-  and states the filters it was exported with (and any the panel deliberately
-  ignores), and the rows are the same ones the chart's table view shows. The
-  `.xlsx` is generated in the browser by `static/lib/xlsx.js` (no dependency).
-- **Data source:** `static/app.js` asks `window.dashboardData` for `/api/meta` and `/api/dashboard`. The
-  Cube adapter (`dashboard/cube/cube-source.mjs`, injected by nginx in front of `app.js`, on top of the shared sign-in and query client `dashboard/cube/cube-client.mjs`) answers them
-  with Cube queries; the page itself knows nothing about Cube.
+  territories and product categories, and what a person's datasets leave out is not shown (a refused panel says so).
+- **Live:** the page polls every 30 s. New orders appear within one pipeline cycle plus about a minute (see *Freshness* above).
+- **Panels load independently:** each panel runs its own query and redraws when its answer arrives, with a spinner and a seconds counter while it waits and "✓ 1.4s" once it has
+  landed. Changing a filter cancels the unfinished requests.
+- **Cross-filtering:** filters in one row, and a click on a chart sets the same filters (a selection is marked with an outline, not by fading everything else); the filters are kept in the URL, so a view can be bookmarked.
+- **Accessible:** every chart has a table view, keyboard-focusable marks with tooltips, and light/dark themes.
+- **Excel export:** every chart has an *Excel* button, and *Export all* writes one workbook with a sheet per chart. Cells are typed (currency, %, counts, dates), each sheet has a frozen header
+  and autofilter and states the filters it was exported with. The `.xlsx` is generated in the browser by `static/lib/xlsx.js` (no dependency).
 
 **Continuous dates.** The AdventureWorks sample's business dates end in mid-2014,
 while the simulator stamps new orders with `now()`. dbt therefore shifts the
@@ -373,7 +353,7 @@ postgres_active --(ingestr, every 5 min, Airflow)--> StarRocks raw --(dbt-starro
 | `cube`, `cubestore`, `cubestore-worker` | the semantic layer (`cube/`), pre-aggregations, and row-level security in `cube/cube.js` |
 | `keycloak`, `auth` | sign-in (demo realm in `keycloak/`; the realm is still named `spike`, renaming it would orphan existing Keycloak volumes), and the service (`auth/`) that turns a Keycloak login into a 15-minute Cube token carrying the user's row rules (territories, product categories) |
 | `admin`, `lab` | the admin console's service (people, groups, row rules, datasets) and the SQL lab's service (see [docs/admin.md](docs/admin.md), [docs/lab.md](docs/lab.md)); `lab` needs `cube` restarted for its SQL API |
-| `dashboard-cube` | the same dashboard UI as `dashboard`, with the Cube data source injected in front of `app.js` |
+| `dashboard-cube` | the dashboard pages (`dashboard/static`) served by nginx, with the browser's stack configuration (`/cube/config.js`) |
 
 ```bash
 docker compose --profile starrocks up -d --build
@@ -512,8 +492,7 @@ switch between *Live (simulator)* and *250M benchmark* (`mart_250m`). Picking on
 (`?dataset=250m`, remembered in the browser); the benchmark is read-only: no actions service call, no proposals panel
 or Approve controls (its product ids are not the live ERP's), and a banner says it is a scaled copy that ends in 2021.
 Both Cubes must share `CUBEJS_API_SECRET` (the benchmark Cube is started with the one from `.env`), and the browser must
-be able to reach the second Cube's port. `dashboard/cube/tests/dataset.py` tests the switch and `dashboard/cube/tests/header.py` the header and banner
-(one row from 1280 px up, no overflow down to a phone, both datasets, light and dark) against mock services, in a real Chrome.
+be able to reach the second Cube's port. `dashboard/cube/tests/renderer.py` tests the switch against mock services, in a real Chrome.
 
 **`DATASET`** (`.env`, `live` or `250m`): the deployment serves the live mart or the 250M benchmark tier (`mart_250m`). Cube loads
 `spike/cube/model` (year-partitioned rollups, hourly refresh) plus the inventory cubes re-pointed at `mart_250m` into its own
@@ -566,7 +545,6 @@ volume of a year of 500M data.
 ```bash
 # with CUBE_URL / KEYCLOAK_URL / AUTH_URL / STARROCKS_MYSQL_PORT pointing at this stack (see spike/README.md):
 uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest cube/tests
-uv run --with playwright python -I dashboard/cube/tests/e2e.py                      # each role, in a real browser
 ```
 
 ## Folder structure
@@ -679,7 +657,7 @@ oss-da-bi-stack/
 │       ├── 01_init.sql       # orders: Kafka engine + history + current-state + rejected views
 │       └── 02_adventureworks_cdc.sql  # AW: multi-topic Kafka table + aw_events + typed tables
 ├── dashboard/
-│   ├── static/               # the pages: index.html (live sales), d.html (a dashboard), render/ (renderer, designer, builder bar), lib/ (shared ES modules), style.css, themes.css
+│   ├── static/               # the pages: home.html (the start page), d.html (a dashboard), render/ (renderer, designer, builder bar), lib/ (shared ES modules), style.css, themes.css
 │   └── cube/                 # nginx template, the Cube client, and the browser tests (tests/)
 ├── spike/                    # the StarRocks + Cube spike: benchmarks, results, and the pieces
 │   ├── results.md            #   not yet moved out: auth/, keycloak/, dashboard/ (Cube data source)
