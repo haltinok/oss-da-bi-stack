@@ -3,6 +3,7 @@ cubes:
     description: "Tahsilat: money collected from dealers."
     sql_table: dist.fact_payment
     data_source: default
+    meta: { kind: fact }
 
     joins:
       - name: dealers
@@ -32,9 +33,11 @@ cubes:
 
     measures:
       - name: collected
+        meta: { format: money, primary: 1 }
         description: "Money collected in TRY."
         sql: amount
         type: sum
       - name: payment_count
+        meta: { format: int, primary: 2 }
         description: "Number of payments."
         type: count

@@ -37,9 +37,9 @@ CI runs them in the `dashspec` job, and validates and compiles every `dashboards
 - `currency` (`USD`, `TRY`, ...) sets the currency sign on screen and in the Excel export. It is display only: the data is not converted.
 - `theme: { name, logo, colors }` puts a name and a logo (a path or an https URL) in the header and recolours the theme tokens
   (`internet`, `reseller`, `focus`, `live`, `good`, `bad`, `warn`; `#rrggbb`). A series with `color: internet` follows the theme.
-- `roles` lists who may open the page. Cube enforces what each role may read; the validator mirrors those rules (rep: no profit members;
-  purchasing/marketing: inventory data only, marketing no supplier data; manager/rep: no inventory, no customers), so a page that would
-  show an error to a listed role does not validate. A test keeps the mirror equal to `cube/cube.js`.
+- `roles` lists who may open the page (`admin`, `editor`, `viewer`: what a person may *do*). What data they may read is not decided by a role: **datasets, grants and row rules**
+  (admin console, [`docs/admin.md`](../docs/admin.md)) decide it, and Cube enforces them on every query, so the validator does not mirror any rule. A panel that uses something a
+  reader may not read shows Cube's refusal in that panel.
 
 ## Is it fast? `dashspec lint`
 ```bash

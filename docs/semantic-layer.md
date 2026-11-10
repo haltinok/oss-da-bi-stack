@@ -1,21 +1,19 @@
 # The semantic layer
 
-What the Cube model offers a dashboard: the **cubes** (a fact such as `internet_sales`, or a dimension such as `products`), their **measures** (numbers: revenue, orders) and **dimensions** (things to group or filter by: region, category, a date). A dashboard spec names these as `cube.member` and nothing else; every number comes from Cube, which also enforces who may read what.
+What the Cube model offers a dashboard: the **cubes** (a fact, which holds events, or a dimension, which describes them), their **measures** (numbers to add up or count) and **dimensions** (things to group or filter by: a region, a category, a date). A dashboard spec names these as `cube.member` and nothing else; every number comes from Cube, which also enforces who may read what.
 
-Generated from `cube/model/cubes/*.yml` by `scripts/dashspec semantic` (descriptions come from the model files; a test keeps this page current). The guide is [dashboards.md](dashboards.md).
+Generated from the model's cube files by `scripts/dashspec semantic` (descriptions come from the model files; a test keeps this page current). The guide is [dashboards.md](dashboards.md).
 
 ## How to think about it
 
-- A **fact** cube holds events (order lines, inventory rows). Its measures can be grouped by the dimensions of the cubes it **joins to**: `internet_sales` and `reseller_sales` join `products`, `dates` and `territories`; `inventory_health` joins `products`.
-- Cube cannot join two fact cubes in one query. To show both sales channels together, use `sum: [internet_sales.revenue, reseller_sales.revenue]`, a `ratio` of two sums (a margin over both channels) or a stacked bar; there is no other arithmetic in a spec.
-- `orders` is the exact count of distinct orders (right under every filter, slower at scale); `orders_placed` counts each order once on its first line (fast, right for date, territory and channel, wrong for product filters).
-- `margin_pct` is in percentage points (0-100). For a percentage in a spec use a `ratio` of `gross_profit` over `revenue` with `format: pct`.
+- A **fact** cube (`meta: { kind: fact }`) holds events. Its measures can be grouped by the dimensions of the cubes it **joins to**: `internet_sales` joins `customers`, `dates`, `due_dates`, `products`, `ship_dates`, `territories`; `inventory_health` joins `products`; `offer_performance` joins ; `reseller_sales` joins `dates`, `due_dates`, `products`, `ship_dates`, `territories`.
+- Cube cannot join two fact cubes in one query. To show facts together, use `sum: [internet_sales.revenue, reseller_sales.revenue]`, a `ratio` of two sums or a stacked bar; there is no other arithmetic in a spec.
 - A text dimension with a natural order (a month's name, a quarter's, a weekday's) **sorts by another dimension** of its cube, declared in the model as `meta: { sort_by: <number field> }` and shown below as "Sorted by": tables, pivots, filter lists and slicers order by that field, so months run January to December, not alphabetically.
-- Row-level security: a person only gets the territories assigned to them (by a rule for them or their groups, else the dbt seed), whatever the dashboard asks for.
+- Row-level security: a person only gets the values a row rule gives them (a rule for them or their groups), on every cube the rule covers, whatever the dashboard asks for.
 
 ## Who can read what
 
-Not decided by a role: a person's **role** says what they may *do* (`viewer` views dashboards, `editor` also builds and shares them, `admin` administers), and what data they may read comes from the **datasets** and grants and the **row rules** in the admin console (see [admin.md](admin.md)): a cube or single field that sits in a dataset needs a grant, and the sales facts are limited to the person's territories. Cube enforces it on every query, so a dashboard that uses something a reader may not read shows Cube's refusal in that panel. Customer data and profit are examples of what a dataset can keep back.
+Not decided by a role: a person's **role** says what they may *do* (`viewer` views dashboards, `editor` also builds and shares them, `admin` administers), and what data they may read comes from the **datasets** and grants and the **row rules** in the admin console (see [admin.md](admin.md)): a cube or single field that sits in a dataset needs a grant, and the cubes a row rule covers are limited to the person's values. Cube enforces it on every query, so a dashboard that uses something a reader may not read shows Cube's refusal in that panel. Whole cubes or single fields can be kept back by a dataset.
 
 ## `customers`
 
@@ -118,7 +116,7 @@ Joins: `customers`, `dates`, `due_dates`, `products`, `ship_dates`, `territories
 | `internet_sales.order_number` | string | The sales order number. |
 | `internet_sales.order_status` | number | Order status code: 1 in process, 2 approved, 3 backordered, 5 shipped (4 rejected and 6 cancelled are not in this cube). |
 
-## `inventory_health`
+## `inventory_health` (fact)
 
 One row per product that is stocked, sold or on order: its stock position, a status and what to do. Not territory-bound: purchasing and admin see everything, marketing no supplier or order-size members; managers and reps none of it.
 
@@ -165,7 +163,7 @@ Joins: `products`.
 | `inventory_health.vendor_id` | number | Vendor key. Supplier data. |
 | `inventory_health.vendor_name` | string | Vendor name. Supplier data. |
 
-## `offer_performance`
+## `offer_performance` (fact)
 
 Special offers and what happened to unit sales during them versus the 28 days before. Descriptive only: no control group, so it also carries seasonality and trend. Marketing and admin.
 

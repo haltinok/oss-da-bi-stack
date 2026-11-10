@@ -35,6 +35,30 @@ class Catalog:
         prefix = self.cubes.get(cube, {}).get("label_prefix")
         return f"{prefix} {name.replace('_', ' ')}" if prefix and name else None
 
+    def kind(self, cube):
+        """"fact" or "dimension": what the model says in the cube's `meta.kind` ("dimension" when it says nothing)."""
+        return "fact" if (self.cubes.get(cube) or {}).get("kind") == "fact" else "dimension"
+
+    def facts(self):
+        """The fact cubes, in name order."""
+        return sorted(n for n in self.cubes if self.kind(n) == "fact")
+
+    def series(self, cube):
+        """How a fact is named when facts are shown side by side (`meta.series`), else None; and the theme colour it takes by default (`meta.color`)."""
+        c = self.cubes.get(cube) or {}
+        return c.get("series"), c.get("color")
+
+    def measure_meta(self, member):
+        """A measure's `meta` ({"format": "money", "primary": True}); {} when it has none."""
+        cube, _, name = member.partition(".")
+        return (self.cubes.get(cube) or {}).get("measure_meta", {}).get(name, {})
+
+    def primary(self, cube):
+        """The measure a KPI row or chart picks first (`meta.primary: true`), else the cube's first measure; None when it has none."""
+        c = self.cubes.get(cube) or {}
+        ranked = sorted((rank(m.get("primary")), n) for n, m in c.get("measure_meta", {}).items() if m.get("primary"))
+        return (ranked[0][1] if ranked else (list(c.get("measures", {})) or [None])[0])
+
     def sort_by(self, member):
         """The dimension (as 'cube.name') a text dimension is sorted by, from its `meta.sort_by` in the Cube model; None for most."""
         cube, _, name = member.partition(".")
@@ -82,6 +106,18 @@ def sort_by_problems(catalog):
     return out
 
 
+def rank(primary):
+    """`primary: true` or `primary: 2`: the order a model prefers its measures in (true is 1)."""
+    return 1 if primary is True else primary if isinstance(primary, (int, float)) else 1
+
+
+def _cube_meta(meta, measures):
+    """What the model says about a cube and its measures in `meta:` (the same keys whether read from the files or from /v1/meta): kind, series, color, and each measure's meta."""
+    meta = meta or {}
+    return {"kind": meta.get("kind"), "series": meta.get("series"), "color": meta.get("color"),
+            "measure_meta": {m["name"].rpartition(".")[2]: dict(m["meta"]) for m in measures if m.get("meta")}}
+
+
 def _by_name(base, own):
     """Members of a cube that `extends` another: the base's, then its own, an own member replacing the base's of the same name."""
     merged = {m["name"]: m for m in base}
@@ -122,6 +158,7 @@ def from_model(model_dir):
             "extends": cube.get("extends"),
             "description": cube.get("description", ""),
             "docs": {m["name"]: m["description"] for m in members if m.get("description")},
+            **_cube_meta(cube.get("meta"), measures),
             "rollup_dimensions": _rollup_dimensions(name, cube),          # the fields its pre-aggregations group by: a query by any other field reads the raw data
         }
     if not cubes:
@@ -133,7 +170,11 @@ def from_cube(url, token):
     """Read a running Cube's catalog (GET <url>/cubejs-api/v1/meta). The token is a Cube JWT (never put it on the command line)."""
     req = urllib.request.Request(url.rstrip("/") + "/cubejs-api/v1/meta", headers={"Authorization": token})
     with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 (a URL the operator passed)
-        meta = json.load(r)
+        return from_meta(json.load(r))
+
+
+def from_meta(meta):
+    """The catalog of a /v1/meta answer."""
     cubes = {}
     for c in meta["cubes"]:
         short = lambda m: m["name"].partition(".")[2]  # noqa: E731
@@ -147,5 +188,6 @@ def from_cube(url, token):
             "extends": None,
             "description": c.get("description", ""),
             "docs": {short(m): m["description"] for m in [*c["measures"], *c["dimensions"]] if m.get("description")},
+            **_cube_meta(c.get("meta"), c["measures"]),
         }
     return Catalog(cubes)
