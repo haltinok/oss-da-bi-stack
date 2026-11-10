@@ -1328,6 +1328,18 @@ with sync_playwright() as p:
     page.wait_for_selector("#designer #dz-panelfilters [data-reach]", timeout=10000)
     reach = page.locator("#designer #dz-panelfilters [data-reach]")
     check(reach.count() >= 1 and "this panel only" in page.inner_text("#designer #dz-panelfilters"), "the panel lists the filter with where it comes from")
+    own = page.locator("#designer #dz-panelfilters .dz-filter")
+    check(own.count() == 1 and own.locator('[data-path="type"]').count() == 1 and own.locator('[data-path="label"]').count() == 1, "the panel's own filter has its settings (label, type...) right in the panel's drawer")
+    with changes(page):
+        own.locator('[data-path="label"] input, input[data-path="label"]').first.fill("Colour")
+        own.locator('input[data-path="label"], [data-path="label"] input').first.press("Tab")
+    settled(page)
+    check(next(x for x in cur()["filters"] if x.get("scope") == "panel").get("label") == "Colour" and page.locator("#designer #dz-panelfilters .dz-filter").count() == 1, "editing it there keeps the panel open")
+    page.once("dialog", lambda d: d.accept())
+    with changes(page):
+        page.click("#designer #dz-panelfilters [data-rm-filter]")
+    settled(page)
+    check(not any(x.get("scope") == "panel" for x in cur().get("filters", [])) and page.locator("#designer #dz-panelfilters").count() == 1, "and removing it there keeps the panel open")
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 

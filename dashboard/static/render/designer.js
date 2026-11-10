@@ -102,41 +102,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     });
     const list = drawer.querySelector("#dz-filters");
     if (!(source.filters || []).length) list.innerHTML = `<p class="hint">${esc(dz.noFilters)}</p>`;
-    for (const f of source.filters || []) {
-      const card = el("div", { class: "dz-filter" });
-      card.append(el("h4", {}, esc(f.id)));
-      const typ = f.type || "select";
-      const edit = (path, v) => commit(setFilter(source, catalog, f.id, path, v), { message: dz.filterChanged, panel: null });
-      for (const fd of FILTER_FIELDS.filter((x) => x.path !== "parent")) card.append(field(fd, f, (v) => edit(fd.path, v)));
-      card.append(field({ path: "type", kind: "choice", key: "filterType", options: typesFor(dimensionTypeOf(catalog, f.dimension)) }, { ...f, type: typ },
-        (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
-      if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
-      card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
-      if (typ !== "select" && typ !== "multiselect") card.append(defaultRow(f, typ, (v) => edit("default", v)));           // a list filter has the allowed values instead; the reader picks on the page
-      // Where it applies and whether the reader sees it.
-      const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
-      const scopes = ["dashboard", ...(hasTabs || scope === "page" ? ["page"] : []), "panel"];
-      card.append(field({ path: "scope", kind: "choice", key: "filterScope", options: scopes }, { ...f, scope },
-        (v) => commit(setFilterScope(source, catalog, f.id, v), { message: dz.filterChanged, panel: null })));
-      if (scope === "page") card.append(field({ path: "tab", kind: "choice", key: "filterTab", options: tabsOf(source).map((x) => x.id), labels: Object.fromEntries(tabsOf(source).map((x) => [x.id, x.title])) }, f, (v) => edit("tab", v)));
-      if (scope === "panel") card.append(field({ path: "panel", kind: "choice", key: "filterPanel", options: source.panels.filter((p) => p.type !== "text").map((p) => p.id), labels: Object.fromEntries(source.panels.map((p) => [p.id, p.title || p.id])) }, f, (v) => edit("panel", v)));
-      const eye = el("input", { type: "checkbox", "data-path": "visible", "aria-label": dz.f.filterVisible });
-      eye.checked = f.visible !== false;
-      eye.addEventListener("change", async () => { if (!(await commit(setFilterVisible(source, f.id, eye.checked), { message: dz.filterChanged, panel: null }))) eye.checked = !eye.checked; });         // a refused change puts the box back
-      const eyeRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterVisible)}</span>`);
-      eyeRow.append(el("span", { class: "dz-input" }, "")); eyeRow.lastChild.append(eye);
-      card.append(eyeRow);
-      const slicer = el("input", { type: "checkbox", "data-path": "slicer", "aria-label": dz.f.filterSlicer });
-      slicer.checked = !!slicerOf(source, f.id);
-      slicer.addEventListener("change", async () => { if (!(await commit(setFilterSlicer(source, f.id, slicer.checked, { tab: activeTab() }), { message: dz.filterChanged, panel: null }))) slicer.checked = !slicer.checked; });
-      const slicerRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterSlicer)}</span>`);
-      slicerRow.append(el("span", { class: "dz-input" }, "")); slicerRow.lastChild.append(slicer);
-      card.append(slicerRow);
-      if (f.visible === false) card.querySelector("h4").insertAdjacentHTML("beforeend", ` <span class="badge" title="${esc(dz.hiddenHint)}">${esc(dz.hidden)}</span>`);
-      const rm = el("button", { type: "button", class: "dz-danger", "data-rm-filter": f.id }, esc(dz.removeFilter));
-      card.append(rm);
-      list.append(card);
-    }
+    for (const f of source.filters || []) list.append(filterCard(f));
     const calcList = drawer.querySelector("#dz-calcs");
     if (!(source.calculations || []).length) calcList.innerHTML = `<p class="hint">${esc(dz.noCalcs)}</p>`;
     for (const c of source.calculations || []) {
@@ -152,6 +118,43 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     drawer.querySelector("#dz-calc-add").append(calcEntry(null));
     const pick = drawer.querySelector("#dz-newfilter");
     for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
+  }
+
+  /** One filter with all its settings (field, type, allowed values, default, where it applies, shown or hidden). `keep` is the panel to stay on after a change (null: the page view). */
+  function filterCard(f, keep = null) {
+      const card = el("div", { class: "dz-filter" });
+      card.append(el("h4", {}, esc(f.id)));
+      const typ = f.type || "select";
+      const edit = (path, v) => commit(setFilter(source, catalog, f.id, path, v), { message: dz.filterChanged, panel: keep });
+      for (const fd of FILTER_FIELDS.filter((x) => x.path !== "parent")) card.append(field(fd, f, (v) => edit(fd.path, v)));
+      card.append(field({ path: "type", kind: "choice", key: "filterType", options: typesFor(dimensionTypeOf(catalog, f.dimension)) }, { ...f, type: typ },
+        (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: keep })));
+      if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
+      card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
+      if (typ !== "select" && typ !== "multiselect") card.append(defaultRow(f, typ, (v) => edit("default", v)));           // a list filter has the allowed values instead; the reader picks on the page
+      // Where it applies and whether the reader sees it.
+      const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
+      const scopes = ["dashboard", ...(hasTabs || scope === "page" ? ["page"] : []), "panel"];
+      card.append(field({ path: "scope", kind: "choice", key: "filterScope", options: scopes }, { ...f, scope },
+        (v) => commit(setFilterScope(source, catalog, f.id, v), { message: dz.filterChanged, panel: keep })));
+      if (scope === "page") card.append(field({ path: "tab", kind: "choice", key: "filterTab", options: tabsOf(source).map((x) => x.id), labels: Object.fromEntries(tabsOf(source).map((x) => [x.id, x.title])) }, f, (v) => edit("tab", v)));
+      if (scope === "panel") card.append(field({ path: "panel", kind: "choice", key: "filterPanel", options: source.panels.filter((p) => p.type !== "text").map((p) => p.id), labels: Object.fromEntries(source.panels.map((p) => [p.id, p.title || p.id])) }, f, (v) => edit("panel", v)));
+      const eye = el("input", { type: "checkbox", "data-path": "visible", "aria-label": dz.f.filterVisible });
+      eye.checked = f.visible !== false;
+      eye.addEventListener("change", async () => { if (!(await commit(setFilterVisible(source, f.id, eye.checked), { message: dz.filterChanged, panel: keep }))) eye.checked = !eye.checked; });         // a refused change puts the box back
+      const eyeRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterVisible)}</span>`);
+      eyeRow.append(el("span", { class: "dz-input" }, "")); eyeRow.lastChild.append(eye);
+      card.append(eyeRow);
+      const slicer = el("input", { type: "checkbox", "data-path": "slicer", "aria-label": dz.f.filterSlicer });
+      slicer.checked = !!slicerOf(source, f.id);
+      slicer.addEventListener("change", async () => { if (!(await commit(setFilterSlicer(source, f.id, slicer.checked, { tab: activeTab() }), { message: dz.filterChanged, panel: keep }))) slicer.checked = !slicer.checked; });
+      const slicerRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterSlicer)}</span>`);
+      slicerRow.append(el("span", { class: "dz-input" }, "")); slicerRow.lastChild.append(slicer);
+      card.append(slicerRow);
+      if (f.visible === false) card.querySelector("h4").insertAdjacentHTML("beforeend", ` <span class="badge" title="${esc(dz.hiddenHint)}">${esc(dz.hidden)}</span>`);
+      const rm = el("button", { type: "button", class: "dz-danger", "data-rm-filter": f.id }, esc(dz.removeFilter));
+      card.append(rm);
+      return card;
   }
 
   /** A field picker and a button that adds a filter narrowed to a tab (`scope` "page") or a panel (`scope` "panel"). */
@@ -176,6 +179,9 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     wrap.append(el("p", { class: "hint" }, esc(dz.panelFiltersHint)));
     if (!reach.length) wrap.append(el("p", { class: "hint" }, esc(dz.noPanelFilters)));
     else wrap.append(el("ul", { class: "dz-reach" }, reach.map((f) => `<li data-reach="${esc(f.id)}"><strong>${esc(f.label || f.id)}</strong> <span class="badge">${esc(from(f))}</span>${ignored.has(f.id) ? ` <span class="badge">${esc(dz.ignoredHere)}</span>` : ""}</li>`).join("")));
+    const own = (source.filters || []).filter((f) => f.scope === "panel" && f.panel === panel.id);
+    if (own.length) wrap.append(el("p", { class: "hint" }, esc(dz.panelFiltersDefine)));
+    for (const f of own) wrap.append(filterCard(f, panel.id));
     wrap.append(scopedAdd("panel", panel.id, dz.addPanelFilter));
     return wrap;
   }
@@ -835,7 +841,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     const add = e.target.closest("[data-add]");
     if (add) { commit(addPanel(source, add.dataset.add, catalog, { tab: activeTab(), title: titleOf }), { message: dz.added(typeName(add.dataset.add)) }); return; }
     const rm = e.target.closest("[data-rm-filter]");
-    if (rm) { if (confirm(dz.confirmFilter)) commit(removeFilter(source, rm.dataset.rmFilter), { message: dz.filterRemoved, panel: null }); return; }
+    if (rm) { if (confirm(dz.confirmFilter)) commit(removeFilter(source, rm.dataset.rmFilter), { message: dz.filterRemoved, panel: selected }); return; }
     if (e.target.closest("#dz-addfilter")) { const dim = drawer.querySelector("#dz-newfilter").value; if (dim) commit(addFilter(source, catalog, dim), { message: dz.filterAdded, panel: null }); return; }
     if (e.target.closest("#dz-back")) { select(null); return; }
     if (e.target.closest("#dz-tobar")) { commit(moveSlicerToBar(source, catalog, selected), { message: dz.movedToBar, panel: null }); return; }
