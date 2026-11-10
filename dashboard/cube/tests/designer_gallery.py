@@ -62,5 +62,13 @@ with sync_playwright() as p:
     changed(page, lambda: (page.select_option('#designer [data-scoped-field="page:tab_2"]', "products.category"), page.click('#designer [data-scoped-add="page:tab_2"]')))
     page.locator("#designer .dz-tabfilters").nth(1).scroll_into_view_if_needed()
     page.screenshot(path=str(OUT / "tab-3-tab-filter.png"))
+    # 4. a panel's own filter, with its settings
+    bar = page.evaluate("(window.__render.spec.panels.find((x) => x.type === 'bar') || {}).id")
+    page.click(f'[data-panel="{bar}"] h2')
+    page.wait_for_selector("#dz-panelfilters", timeout=10000)
+    changed(page, lambda: (page.select_option(f'#designer [data-scoped-field="panel:{bar}"]', "products.color"), page.click(f'#designer [data-scoped-add="panel:{bar}"]')))
+    page.wait_for_selector("#designer #dz-panelfilters .dz-filter", timeout=10000)
+    page.locator("#designer #dz-panelfilters").scroll_into_view_if_needed()
+    page.screenshot(path=str(OUT / "tab-4-panel-filter.png"))
     browser.close()
 print(f"wrote {OUT}")

@@ -100,6 +100,8 @@ once. With tabs, the page view lists them: rename a tab or move it earlier or la
 
    ![A filter that belongs to the Products tab only, with its settings](images/designer/tab-3-tab-filter.png)
 
+   ![A panel's own filter: the filters that reach it, and its settings](images/designer/tab-4-panel-filter.png)
+
 Everything is undoable (Ctrl+Z) and is checked by the same validator as a hand-edited file. The pictures are made by `dashboard/cube/tests/designer_gallery.py`.
 
 **Every panel's own fields are in the drawer.** Besides the ones above: a time chart's time steps to switch between and its drill-down path (Year › Month › Day and others; a drill-down replaces the switch and a click rule); a key-figures row's sparkline step (any of them, or none) and what it is compared with (the previous year or period, or nothing; each tile then has "Which way is good"); a bar's choice between one measure and stacked measures (add and remove measures), its second grouping (`split`) and the name of the grouping; a pie's and a treemap's names for their groupings; a table's sort (one field, either direction); a pivot's column step for a time field; and for every panel the filters it ignores.
