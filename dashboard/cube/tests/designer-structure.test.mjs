@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { addFilter, addPanel, defaultPanel, duplicatePanel, guessFormat, newPanelId, pickDimension, pickMeasure, removeFilter, removePanel, setFilter, setPageField, timeDimensions } from "../../static/lib/designer-structure.js";
 
-const m = (cube, name, type = "number") => ({ name, member: `${cube}.${name}`, type, description: "" });
+const PRIMARY = { revenue: 1, orders: 2, units: 3, stock: 4 };          // what the Cube model says in `meta.primary` (the catalog carries it)
+const m = (cube, name, type = "number") => ({ name, member: `${cube}.${name}`, type, description: "", ...(PRIMARY[name] ? { primary: PRIMARY[name] } : {}) });
 const CATALOG = [
   { cube: "internet_sales", joins: ["products", "dates", "territories"], measures: [m("internet_sales", "revenue"), m("internet_sales", "orders"), m("internet_sales", "margin_pct")], dimensions: [m("internet_sales", "order_number", "string")] },
   { cube: "reseller_sales", joins: ["products", "dates"], measures: [m("reseller_sales", "revenue")], dimensions: [] },
@@ -366,7 +367,7 @@ test("what a panel's measures must be able to join to: its groupings, its time a
 test("a measure to add is one the panel can join to: customers.count is not offered to a sales key-figures row", () => {
   const kpi = { id: "kpis", type: "kpi", sparkline: { granularity: "month" }, measures: [{ member: "internet_sales.revenue" }] };
   const src = { ...SOURCE, filters: [{ id: "cat", dimension: "products.category" }] };
-  assert.equal(spareMeasure(WITH_CUSTOMERS, src, kpi, ["internet_sales.revenue"]), "reseller_sales.revenue", "a usual measure first (revenue, orders, units, stock), never customers.count");
+  assert.equal(spareMeasure(WITH_CUSTOMERS, src, kpi, ["internet_sales.revenue"]), "reseller_sales.revenue", "a preferred measure first (meta.primary), never customers.count");
   const taken = ["internet_sales.revenue", "reseller_sales.revenue"];
   assert.equal(spareMeasure(WITH_CUSTOMERS, src, kpi, taken), "internet_sales.orders", "then the next usual one");
   assert.notEqual(spareMeasure(WITH_CUSTOMERS, src, kpi, [...taken, "internet_sales.orders", "internet_sales.margin_pct"]), "customers.count");
@@ -550,4 +551,15 @@ test("setPrefilter: fixed values, hidden from the reader; none brings the filter
   assert.deepEqual([two.default, two.visible, two.type], ["in:Europe,Asia", false, "multiselect"]);
   const back = setPrefilter(setPrefilter(base.source, base.id, ["Europe"]).source, base.id, []).source.filters.find((f) => f.id === base.id);
   assert.deepEqual([back.allowed, back.default, back.visible], [undefined, undefined, undefined]);
+});
+
+test("a new panel starts with the measure the model prefers (meta.primary), not one picked by name; with none preferred, the catalog's first", () => {
+  const cat = [
+    { cube: "a", joins: ["d"], measures: [{ ...m("a", "total"), primary: 2 }, { ...m("a", "count"), primary: 1 }, m("a", "revenue")], dimensions: [] },
+    { cube: "d", joins: [], measures: [], dimensions: [m("d", "day", "time")] },
+  ].map((c) => ({ ...c, measures: c.measures.map(({ ...x }) => { if (x.name === "revenue") delete x.primary; return x; }) }));
+  const src = { ...SOURCE, time: { dimension: "d.day" } };
+  assert.equal(pickMeasure(cat, src, { time: true }), "a.count");
+  const none = cat.map((c) => ({ ...c, measures: c.measures.map(({ primary, ...x }) => x) }));
+  assert.equal(pickMeasure(none, src, { time: true }), "a.total", "nothing preferred: the catalog's first, and 'revenue' is just a name");
 });

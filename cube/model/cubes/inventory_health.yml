@@ -3,6 +3,7 @@ cubes:
     description: "One row per product that is stocked, sold or on order: its stock position, a status and what to do. Not territory-bound: purchasing and admin see everything, marketing no supplier or order-size members; managers and reps none of it."
     sql_table: mart.inventory_health
     data_source: default
+    meta: { kind: fact }                 # what the app knows about this cube (PLAN-decouple.md)
     # One row per product (a few hundred), so no pre-aggregation: StarRocks answers it directly.
     # Not territory-bound; access is by role (cube/cube.js): purchasing and admin see everything,
     # marketing sees stock and discounts but no supplier cost, vendor or order-quantity member.
@@ -102,6 +103,7 @@ cubes:
 
     measures:
       - name: product_count
+        meta: { format: int, primary: 4 }
         description: "Number of products."
         type: count
       - name: stockout_items

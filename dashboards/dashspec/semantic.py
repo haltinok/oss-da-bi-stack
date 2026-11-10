@@ -1,9 +1,9 @@
 """The semantic layer for people who write dashboards: what the Cube model offers (cubes, measures, dimensions, what each means, which cubes
 join, who may read what), as JSON for the builder's page and as docs/semantic-layer.md (generated: a test keeps it current)."""
+from .catalog import rank
 from .validate import denied
 
 ROLES = ("admin", "editor", "viewer")
-FACTS = ("internet_sales", "reseller_sales")
 
 
 def _members(name, c, kind, role):
@@ -13,7 +13,9 @@ def _members(name, c, kind, role):
             continue
         key = c.get("sort_by", {}).get(m) if kind == "dimensions" else None
         label = f"{c['label_prefix']} {m.replace('_', ' ')}" if c.get("label_prefix") else None
-        rows.append({"name": m, "member": f"{name}.{m}", "type": t, "description": c.get("docs", {}).get(m, ""), **({"sort_by": f"{name}.{key}"} if key else {}), **({"label": label} if label else {})})
+        meta = c.get("measure_meta", {}).get(m, {}) if kind == "measures" else {}
+        rows.append({"name": m, "member": f"{name}.{m}", "type": t, "description": c.get("docs", {}).get(m, ""), **({"sort_by": f"{name}.{key}"} if key else {}), **({"label": label} if label else {}),
+                     **({"primary": rank(meta["primary"])} if meta.get("primary") else {}), **({"format": meta["format"]} if meta.get("format") else {})})          # what the model prefers and how it is shown
     return rows
 
 
@@ -26,32 +28,37 @@ def catalog_json(catalog, role=None):
         if role and not (ms or ds):
             continue
         out.append({"cube": name, **({"extends": c["extends"]} if c.get("extends") else {}), **({"label_prefix": c["label_prefix"]} if c.get("label_prefix") else {}), "description": c.get("description", ""), "joins": sorted(j for j in (c["joins"] or ()) if j in readable),
-                    "fact": name in FACTS, "measures": ms, "dimensions": ds,
+                    "fact": catalog.kind(name) == "fact", **({"series": catalog.series(name)[0]} if catalog.series(name)[0] else {}), **({"color": catalog.series(name)[1]} if catalog.series(name)[1] else {}), "measures": ms, "dimensions": ds,
                     **({"rollup_dimensions": c["rollup_dimensions"]} if c.get("rollup_dimensions") else {})})          # for the designer's note on a slicer whose field no rollup has
+    return out
+
+
+def _how_facts_join(catalog):
+    """The first bullets of the guide, written from the catalog: which dimensions each fact joins to, and how to show facts together (with a real pair of measures when two facts share one)."""
+    facts = catalog.facts()
+    out = ["- A **fact** cube (`meta: { kind: fact }`) holds events. Its measures can be grouped by the dimensions of the cubes it **joins to**: "
+           + (("; ".join(f"`{f}` joins {', '.join(f'`{j}`' for j in sorted(catalog.cubes[f]['joins'] or []))}" for f in facts) + ".") if facts else "(this model has none).")]
+    pair = next(((a, b, m) for a in facts for b in facts if a < b for m in catalog.cubes[a]["measures"] if m in catalog.cubes[b]["measures"]), None)
+    together = f"`sum: [{pair[0]}.{pair[2]}, {pair[1]}.{pair[2]}]`" if pair else "`sum: [a.measure, b.measure]`"
+    out.append(f"- Cube cannot join two fact cubes in one query. To show facts together, use {together}, a `ratio` of two sums or a stacked bar; there is no other arithmetic in a spec.")
     return out
 
 
 def generate(catalog):
     out = ["# The semantic layer", "",
-           "What the Cube model offers a dashboard: the **cubes** (a fact such as `internet_sales`, or a dimension such as `products`), their "
-           "**measures** (numbers: revenue, orders) and **dimensions** (things to group or filter by: region, category, a date). A dashboard spec names "
+           "What the Cube model offers a dashboard: the **cubes** (a fact, which holds events, or a dimension, which describes them), their "
+           "**measures** (numbers to add up or count) and **dimensions** (things to group or filter by: a region, a category, a date). A dashboard spec names "
            "these as `cube.member` and nothing else; every number comes from Cube, which also enforces who may read what.",
-           "", "Generated from `cube/model/cubes/*.yml` by `scripts/dashspec semantic` (descriptions come from the model files; "
+           "", "Generated from the model's cube files by `scripts/dashspec semantic` (descriptions come from the model files; "
            "a test keeps this page current). The guide is [dashboards.md](dashboards.md).", "",
            "## How to think about it", "",
-           "- A **fact** cube holds events (order lines, inventory rows). Its measures can be grouped by the dimensions of the cubes it **joins to**: "
-           "`internet_sales` and `reseller_sales` join `products`, `dates` and `territories`; `inventory_health` joins `products`.",
-           "- Cube cannot join two fact cubes in one query. To show both sales channels together, use `sum: [internet_sales.revenue, reseller_sales.revenue]`, "
-           "a `ratio` of two sums (a margin over both channels) or a stacked bar; there is no other arithmetic in a spec.",
-           "- `orders` is the exact count of distinct orders (right under every filter, slower at scale); `orders_placed` counts each order once on its first line "
-           "(fast, right for date, territory and channel, wrong for product filters).",
-           "- `margin_pct` is in percentage points (0-100). For a percentage in a spec use a `ratio` of `gross_profit` over `revenue` with `format: pct`.",
+           *_how_facts_join(catalog),
            "- A text dimension with a natural order (a month's name, a quarter's, a weekday's) **sorts by another dimension** of its cube, declared in the model as `meta: { sort_by: <number field> }` and shown below as \"Sorted by\": tables, pivots, filter lists and slicers order by that field, so months run January to December, not alphabetically.",
-           "- Row-level security: a person only gets the territories assigned to them (by a rule for them or their groups, else the dbt seed), whatever the dashboard asks for.", "",
+           "- Row-level security: a person only gets the values a row rule gives them (a rule for them or their groups), on every cube the rule covers, whatever the dashboard asks for.", "",
            "## Who can read what", "",
            "Not decided by a role: a person's **role** says what they may *do* (`viewer` views dashboards, `editor` also builds and shares them, `admin` administers), and what data they may read comes from the "
-           "**datasets** and grants and the **row rules** in the admin console (see [admin.md](admin.md)): a cube or single field that sits in a dataset needs a grant, and the sales facts are limited to the person's territories. "
-           "Cube enforces it on every query, so a dashboard that uses something a reader may not read shows Cube's refusal in that panel. Customer data and profit are examples of what a dataset can keep back.", ""]
+           "**datasets** and grants and the **row rules** in the admin console (see [admin.md](admin.md)): a cube or single field that sits in a dataset needs a grant, and the cubes a row rule covers are limited to the person's values. "
+           "Cube enforces it on every query, so a dashboard that uses something a reader may not read shows Cube's refusal in that panel. Whole cubes or single fields can be kept back by a dataset.", ""]
     for c in catalog_json(catalog):
         out += [f"## `{c['cube']}`" + (" (fact)" if c["fact"] else ""), "", c["description"], ""]
         if c.get("extends"):

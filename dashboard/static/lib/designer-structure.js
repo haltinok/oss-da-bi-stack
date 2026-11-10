@@ -8,7 +8,11 @@ export const PANEL_TYPES = ["kpi", "timeseries", "bar", "pie", "treemap", "table
 
 export const clone = (x) => JSON.parse(JSON.stringify(x));
 export const humanize = (name) => memberLabel(name) || String(name).split(".").pop().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
-const PREFERRED_MEASURES = ["revenue", "orders", "units", "stock"];
+/** The order the model prefers its measures in (`meta.primary` in the Cube model, sent with the catalog); a measure that says nothing comes after, in the catalog's order. */
+const preferred = (catalog) => {
+  const rank = new Map(catalog.flatMap((c) => c.measures.map((m) => [m.member, m.primary ?? Infinity])));
+  return (members) => [...members].sort((a, b) => rank.get(a) - rank.get(b));                // stable
+};
 const PREFERRED_DIMENSIONS = ["category", "region", "country", "name", "status", "group_name"];
 
 /** How a measure is shown when nothing says: money for amounts, whole numbers for counts, percent for rates. */
@@ -34,7 +38,7 @@ export function newPanelId(source, base) {
 }
 
 /**
- * The measure a new panel starts with: the first the role may read, preferring revenue, orders and the like; for a panel on a time axis, one whose cube joins to the time
+ * The measure a new panel starts with: the first the role may read, in the order the model prefers (`meta.primary`); for a panel on a time axis, one whose cube joins to the time
  * dimension's cube. null when there is none.
  */
 export function pickMeasure(catalog, source, { time = false } = {}) {
@@ -42,7 +46,7 @@ export function pickMeasure(catalog, source, { time = false } = {}) {
   const all = catalog.flatMap((c) => c.measures.map((m) => m.member));
   const ok = (m) => !time || reachableCubes(catalog, [cubeOf(m)])?.has(timeCube) !== false;
   const usable = all.filter(ok);
-  return PREFERRED_MEASURES.map((n) => usable.find((m) => m.endsWith(`.${n}`))).find(Boolean) || usable[0] || null;
+  return preferred(catalog)(usable)[0] || null;
 }
 
 /**
@@ -64,15 +68,13 @@ export function neededDimensions(catalog, source, panel) {
 }
 
 /**
- * A measure to add to `panel` that fits it: not one in `taken`, and of a cube that can join to everything the panel needs (`neededDimensions`), the usual ones first (revenue, orders,
- * units, stock). When every fitting measure is taken, one of those is returned (a repeat is allowed), and undefined when nothing fits.
+ * A measure to add to `panel` that fits it: not one in `taken`, and of a cube that can join to everything the panel needs (`neededDimensions`), the ones the model prefers first (`meta.primary`). When every fitting measure is taken, one of those is returned (a repeat is allowed), and undefined when nothing fits.
  */
 export function spareMeasure(catalog, source, panel, taken = []) {
   const needed = neededDimensions(catalog, source, panel);
   const fits = (m) => { const reach = reachableCubes(catalog, [cubeOf(m)]); return !reach || needed.every((d) => reach.has(cubeOf(d))); };
   const all = catalog.flatMap((c) => c.measures.map((m) => m.member)).filter(fits);
-  const rank = (m) => { const i = PREFERRED_MEASURES.findIndex((n) => m.endsWith(`.${n}`)); return i < 0 ? PREFERRED_MEASURES.length : i; };
-  const ordered = [...all].sort((a, b) => rank(a) - rank(b));                       // stable: the catalog's order within a rank
+  const ordered = preferred(catalog)(all);                                          // stable: the catalog's order within a rank
   return ordered.find((m) => !taken.includes(m)) ?? ordered[0];
 }
 
