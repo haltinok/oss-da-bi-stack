@@ -11,7 +11,7 @@ import { previousQueries } from "../lib/compare.js";
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
 
-/** "internet_sales.order_number" -> "Order number" (the label of a column that has none). */
+/** "cube.order_number" -> "Order number" (the label of a column that has none). */
 export const humanize = (member) => {
   const role = memberLabel(member);                      // a field of a role-playing cube: "Ship month name"
   if (role) return role;
@@ -496,7 +496,7 @@ const PIVOT_CELLS = 50000;                       // Cube's own ceiling on a resu
 
 const pivotOrder = (def) => { const by = def.order?.by || "total"; return { by, dir: def.order?.dir || (by === "label" ? "asc" : "desc") }; };
 const keyFilter = (member, values) => ({ member, operator: "equals", values });
-/** A pivot's columns are a dimension (`"dates.fiscal_year"`) or a time dimension at a granularity (`{ member, granularity }`) -> { member, granularity? }. */
+/** A pivot's columns are a dimension (`"cube.field"`) or a time dimension at a granularity (`{ member, granularity }`) -> { member, granularity? }. */
 export const pivotColumn = (def) => (typeof def.columns === "string" ? { member: def.columns } : def.columns);
 
 /**

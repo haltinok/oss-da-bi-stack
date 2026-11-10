@@ -4,7 +4,7 @@
 //
 //   const client = createCubeClient({ stack: window.STACK, apiUrl: dataset.cube, onSession: (s) => ... });
 //   await client.token();                          // signs in (redirecting if needed)
-//   const rows = await client.run({ measures: ["internet_sales.revenue"] }, signal);
+//   const rows = await client.run({ measures: ["cube.measure"] }, signal);
 import cubejs from "./vendor/cubejs-client-core.mjs";
 
 const store = {

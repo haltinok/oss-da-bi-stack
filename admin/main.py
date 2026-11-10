@@ -583,7 +583,7 @@ def put_dataset(dataset_id: str, req: DatasetRequest, who: Who) -> dict:
         fields = {f"{c['name']}.{f['name']}" for c in model_cubes() for f in c.get("fields", [])}
         bad = [m for m in req.members if m not in fields]
         if bad:
-            raise HTTPException(400, f"no such field: {bad[0]} (write cube.field, e.g. internet_sales.gross_profit)")
+            raise HTTPException(400, f"no such field: {bad[0]} (write cube.field, e.g. sales.revenue)")
     grants, seen = [], {}
     try:
         users, groups = None, None

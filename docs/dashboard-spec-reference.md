@@ -68,7 +68,7 @@ Each value is `#rrggbb`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `dimension` | member (`cube.name`) | yes | The time dimension of the dashboard's fact data (for example `dates.full_date`). Time charts and KPI sparklines group by it. Must be a `time` dimension. |
+| `dimension` | member (`cube.name`) | yes | The time dimension of the dashboard's fact data (for example `calendar.date`). Time charts and KPI sparklines group by it. Must be a `time` dimension. |
 | `fiscal_year_start` | integer 1-12 |  | The month a fiscal year starts (1-12), used when a click on a time chart sets a fiscal-year filter. A fiscal year is named after the year it ends in (July start: Jul 2020 is FY2021). Default 1. |
 
 ### A calculation (`calculations[]`)
@@ -255,7 +255,7 @@ Exactly one of `measure` or `stack`.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `filter` | id |  | Instead of `dimension`: the id of the filter this slicer draws, in the layout instead of the header (or tab bar, or card). The filter keeps its type, scope and default and still narrows the panels it applies to; the slicer only decides where it is drawn. A filter has at most one slicer; it must be visible; a page filter's slicer sits on its own tab. |
-| `dimension` | member (`cube.name`) |  | Instead of `filter`: a field of the model (`products.color`) whose values the slicer offers. The slicer is then a filter of its own (a select, in the address as `sl_<panel id>`), narrowing only the panels of its own tab (the whole dashboard when there are no tabs); a panel of that tab that cannot be filtered by the field is left out. At least one panel of the tab must be filterable by it, and no other visible filter or slicer may already narrow those panels by the same field (draw that filter with `filter:` instead). A click on a chart by the same field shows in the slicer. |
+| `dimension` | member (`cube.name`) |  | Instead of `filter`: a field of the model (`cube.field`) whose values the slicer offers. The slicer is then a filter of its own (a select, in the address as `sl_<panel id>`), narrowing only the panels of its own tab (the whole dashboard when there are no tabs); a panel of that tab that cannot be filtered by the field is left out. At least one panel of the tab must be filterable by it, and no other visible filter or slicer may already narrow those panels by the same field (draw that filter with `filter:` instead). A click on a chart by the same field shows in the slicer. |
 | `label` | string |  | For a slicer on a field (`dimension`): its name, shown as the card's heading (unless the panel has a `title`) and wherever the page names the filter (the Excel file's list of filters). Default: the field's name. |
 | `filter_type` | `select` \| `multiselect` \| `text` \| `number` \| `date` |  | For a slicer on a field: `select` (one value; the default), `multiselect`, `text`, `number` or `date`, as a filter's `type` (the panel's own `type` is `slicer`). The type must fit the field (`date` needs a time field, `number` a number field). A text, number or date slicer shows its usual control, not a list. |
 | `default` | string |  | For a slicer on a field: the value the page opens with, written as for a filter's `default` (`Red`; `in:Red,Blue`; `rel:last_30_days`). Reset goes back to it. |

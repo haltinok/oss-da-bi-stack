@@ -18,3 +18,5 @@ agent:
   cubes: [inventory_health, offer_performance, products]          # the proposal agent (a service account) may read these cubes and nothing else
 datasets:
   overlay_cubes: [inventory_health, offer_performance]            # cubes of this model that a dataset (250m) adds to the spike model it is built from
+builder:
+  recipe: adventureworks          # the rule-based stand-in's hand-made recipe for this model (builder/recipes/adventureworks.py: a model add-on); a model without one uses the generic composer
