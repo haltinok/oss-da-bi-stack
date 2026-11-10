@@ -6,7 +6,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=dashboards dashspec ./dashspec
 COPY --from=dashboards schema ./schema
 COPY --from=cubemodel cubes ./cube-model/cubes
-COPY --from=modelconfig model.config.yml ./model.config.yml          # the model's own settings sit beside its cube folder (cube-model/)
+# the model's own settings sit beside its cube folder (cube-model/)
+COPY --from=modelconfig model.config.yml ./model.config.yml
 COPY main.py sqlcheck.py store.py queries.py ./
 ENV PYTHONPATH=/app LAB_MODEL_DIR=/app/cube-model
 USER nobody
