@@ -84,6 +84,24 @@ Between two neighbours in a row there is a **bar**: drag it sideways to change t
 (Up, Down, Left, Right, Narrower, Wider, Join the row above or below, Own row, Move to tab), so a keyboard needs no pointer; a button that would do nothing is off. Every row always adds up to 12 and every panel is placed
 once. With tabs, the page view lists them: rename a tab or move it earlier or later.
 
+**Add a tab (a walk-through).** Tabs split a dashboard into pages that share one filter bar and the header. In design mode:
+
+1. Press **+ Tab** in the draft bar (it shows only while **Design** is on). The drawer's Tabs section has an **Add a tab** button too.
+
+   ![Design mode adds a + Tab button to the draft bar](images/designer/tab-1-plus-tab.png)
+
+2. A one-page dashboard becomes two tabs: everything that was on the page goes to **Page 1**, and a new **New tab** follows it with a short note in it. A dashboard that has tabs just gets another one at the end (up to eight). The page is drawn again in place, with the tab bar showing.
+
+   ![Page 1 and the new tab in the tab bar](images/designer/tab-2-two-tabs.png)
+
+3. Rename the tab in the drawer's Tabs section (the arrows reorder, ✕ removes it and keeps its panels on the neighbouring tab). Move panels into it by dragging a panel's grip onto the tab, or with **Move to tab** in a panel's drawer. Delete the note when you no longer need it.
+
+4. A tab can have **filters of its own**. Under the tab's name, pick a field and press **Add to this tab**: the filter's settings (label, type, allowed values, default) open right there, and the reader sees the filter only above that tab's panels. A panel can have its own too: pick the panel and use **Filters on this panel**, which also lists the filters that already reach it and where each comes from (whole dashboard, this tab only, this panel only).
+
+   ![A filter that belongs to the Products tab only, with its settings](images/designer/tab-3-tab-filter.png)
+
+Everything is undoable (Ctrl+Z) and is checked by the same validator as a hand-edited file. The pictures are made by `dashboard/cube/tests/designer_gallery.py`.
+
 **Every panel's own fields are in the drawer.** Besides the ones above: a time chart's time steps to switch between and its drill-down path (Year › Month › Day and others; a drill-down replaces the switch and a click rule); a key-figures row's sparkline step (any of them, or none) and what it is compared with (the previous year or period, or nothing; each tile then has "Which way is good"); a bar's choice between one measure and stacked measures (add and remove measures), its second grouping (`split`) and the name of the grouping; a pie's and a treemap's names for their groupings; a table's sort (one field, either direction); a pivot's column step for a time field; and for every panel the filters it ignores.
 
 **A pie's measure** is one measure or the sum of several (Internet plus Reseller): the drawer shows the members, Add a measure, remove (two stay) and the label, like a key figure's sum.
