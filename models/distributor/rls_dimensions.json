@@ -1,0 +1,14 @@
+{
+  "_": "The distributor's row-level dimensions (same format as cube/rls_dimensions.json). One: a person or group may be limited to the dealers of some regions; with no rule they see every region (when_empty: allow). The access database is seeded from it (access.sql, generated: python3 scripts/rls_dimensions_sql.py --model models/distributor) and Cube reads this file (docker-compose.distributor.yml).",
+  "dimensions": [
+    {
+      "id": "dealer_region",
+      "labels": { "en": "Dealer regions", "tr": "Bayi bölgeleri" },
+      "member": "dealers.region",
+      "cubes": ["orders", "payments", "dealers"],
+      "values": { "kind": "list", "values": ["Marmara", "Ege", "İç Anadolu", "Akdeniz", "Karadeniz", "Doğu Anadolu"] },
+      "when_empty": "allow",
+      "empty_message": "No regions assigned"
+    }
+  ]
+}

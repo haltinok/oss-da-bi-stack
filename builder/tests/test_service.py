@@ -381,3 +381,13 @@ def test_a_viewer_may_look_at_dashboards_and_nothing_else(memory_store):
                                ("get", f"/saved/{id_}/versions", None), ("post", "/folders", {"name": "x"}), ("get", "/trash", None), ("post", f"/trash/{id_}/restore", None)):
         r = getattr(client, method)(path, headers=viewer, **({"json": body} if body is not None else {}))
         assert r.status_code == 403 and "Viewers" in r.json()["detail"], (method, path, r.status_code)
+
+
+def test_info_gives_the_suggestions_of_the_model_the_service_serves(monkeypatch):
+    import pathlib
+
+    from dashspec import catalog as cat
+    other = cat.from_model(pathlib.Path(__file__).resolve().parents[2] / "models" / "distributor" / "cube")
+    monkeypatch.setattr(main, "CATALOG", other)
+    examples = client.get("/info", headers=token("editor", "lang2")).json()["examples"]
+    assert examples and not any(w in " ".join(examples).lower() for w in ("channel", "product", "internet")), examples

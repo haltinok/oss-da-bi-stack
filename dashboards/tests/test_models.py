@@ -97,3 +97,17 @@ def test_the_semantic_layer_guide_is_written_from_the_catalog_not_from_names():
         assert {c["cube"] for c in catalog_json(catalog) if c["fact"]} == set(catalog.facts())
     dist = generate(cat.from_model(MODELS["distributor"][0]))
     assert "internet_sales" not in dist and "reseller_sales" not in dist and "territor" not in dist.lower(), "nothing of the other model in this model's guide"
+
+
+def test_a_models_committed_dashboard_build_is_current(tmp_path):
+    """models/<name>/dashboards/build is committed (nginx serves it as is, docker-compose.distributor.yml): rebuilding from the YAML must change nothing."""
+    from dashspec.cli import main
+    for name, (model_dir, _files) in MODELS.items():
+        if name == "adventureworks":
+            continue                                                           # test_dashspec.py checks dashboards/build
+        out = tmp_path / name
+        assert main(["build", "--model", str(model_dir), "--dir", str(model_dir.parent / "dashboards"), "--out", str(out)]) == 0
+        committed = model_dir.parent / "dashboards" / "build"
+        assert sorted(p.name for p in out.iterdir()) == sorted(p.name for p in committed.iterdir()), name
+        for f in sorted(out.iterdir()):
+            assert (committed / f.name).read_text() == f.read_text(), f"{name}/{f.name} is stale: scripts/dashspec build --model {model_dir} --dir {model_dir.parent}/dashboards --out {model_dir.parent}/dashboards/build"

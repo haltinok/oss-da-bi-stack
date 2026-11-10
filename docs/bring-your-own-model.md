@@ -2,7 +2,7 @@
 
 The app (the renderer, the designer, the builder, dashspec, the SQL lab, the admin console and the auth service) **knows no model**: every cube, member, series label, example query and year field it uses comes from Cube's `/v1/meta`, the model's `meta:` keys or one small file, `model.config.yml`. AdventureWorks (`cube/model/`) and the distributor example (`models/distributor/`) are two such models; the tests run on both, and `scripts/no_model_names.py` (CI job `no-model-names`) fails the build when the app's code names a cube or member of either.
 
-A model is a folder with a `cube/` folder of Cube files (what Cube loads) and, **beside it**, `model.config.yml` (Cube must not see it inside its own folder). For AdventureWorks the folder is `cube/` itself (`cube/model/` is the cube folder). `models/distributor/` is the template: `cube/cubes/*.yml`, `postgres/init.sql` (seed data), `dashboards/*.yml`, `model.config.yml`, `README.md`.
+A model is a folder with a `cube/` folder of Cube files (what Cube loads) and, **beside it**, `model.config.yml` (Cube must not see it inside its own folder). For AdventureWorks the folder is `cube/` itself (`cube/model/` is the cube folder). `models/distributor/` is the template: `cube/cubes/*.yml`, `postgres/10_init.sql` (seed data) and `postgres/20_cube_user.sh` (a read-only login for Cube), `dashboards/*.yml`, `model.config.yml`, `README.md`.
 
 ## `meta:` in the Cube files
 Read from the files by `dashspec` and from `/v1/meta` by a running Cube; both give the same catalog.
@@ -53,6 +53,9 @@ datasets:
 
 ## Row-level security
 The row rules (`rls_dimensions.json`, beside the cube folder: one file that Cube, the auth service and the admin console all read; the images copy it at build time) name the dimension, its member and the cubes it limits. They are data of the model, not of the app.
+
+## Running a model
+A model on another database than StarRocks needs a compose overlay like `docker-compose.distributor.yml`: Cube's `CUBEJS_DB_TYPE` and login, its folder mounted over Cube's model folder, its `model.config.yml` and `rls_dimensions.json` beside `cube.js`, its dashboards' build folder behind nginx, and `ADMIN_MODEL_DIR`, `LAB_MODEL_DIR` and `BUILDER_MODEL_DIR` for the services that read the catalog. The access database is seeded per model (`<model>/access.sql`, generated from `<model>/rls_dimensions.json`). [`models/distributor/README.md`](../models/distributor/README.md) has the commands.
 
 ## Checking a model
 ```bash

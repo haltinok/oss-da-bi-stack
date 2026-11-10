@@ -147,3 +147,26 @@ def test_python_and_cube_compute_the_same_version():
               "console.log(JSON.stringify(JSON.parse(s).map((d) => r.version(r.normalize(d))))));")
     out = subprocess.run(["node", "-e", script, str(REPO / "cube" / "rls_registry.js")], input=json.dumps([DIMS, extra]), capture_output=True, text=True, check=True).stdout
     assert json.loads(out) == [R.version(R.normalize(DIMS)), R.version(R.normalize(extra))]
+
+
+# ---- the distributor example model's own registry and access seed (docker-compose.distributor.yml)
+DIST = REPO / "models" / "distributor"
+DIST_DIMS = json.loads((DIST / "rls_dimensions.json").read_text(encoding="utf-8"))["dimensions"]
+DIST_CATALOG = cat.from_model(DIST / "cube")
+
+
+def test_the_distributors_dimensions_are_valid_and_reachable_in_its_model():
+    R.normalize(DIST_DIMS)
+    for d in DIST_DIMS:
+        cube, member = d["member"].split(".")
+        assert member in DIST_CATALOG.cubes[cube]["dimensions"], d["id"]
+        for c in d["cubes"]:
+            assert c == cube or cube in (DIST_CATALOG.cubes[c]["joins"] or ()), f"{d['id']}: {c} does not join {cube}"
+        assert not any(c in CATALOG.cubes for c in d["cubes"]), "the distributor's rules name none of AdventureWorks' cubes"
+
+
+def test_the_distributors_access_seed_is_current_and_empties_the_default_one_first():
+    assert rls_dimensions_sql.main(["--model", "models/distributor", "--check"]) == 0, "run python3 scripts/rls_dimensions_sql.py --model models/distributor"
+    seed = (DIST / "access.sql").read_text(encoding="utf-8")
+    assert seed.index("DELETE FROM access.rls_dimension") < seed.index("INSERT INTO access.rls_dimension")
+    assert "DELETE FROM access.rls_rule" in seed and 'DELETE FROM access."grant"' in seed and "DELETE FROM access.dataset" in seed
