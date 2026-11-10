@@ -74,6 +74,7 @@ Screenshots from the demo stack's mock data (re-made by `dashboard/cube/tests/pa
 - [The start page and dashboards](docs/dashboards.md#the-start-page): `/home/`.
 - [The admin console](docs/admin.md): people, groups and roles, row rules and datasets, over Keycloak.
 - [The SQL lab](docs/lab.md): ad-hoc SQL over the semantic layer, under the dashboards' rules.
+- [Bring your own model](docs/bring-your-own-model.md): the `meta:` keys and `model.config.yml` that let the app run on any Cube model.
 - [Serving the demo](docs/deploy-demo.md): Caddy, `PUBLIC_URL` and the public overlay.
 - [Spec reference](docs/dashboard-spec-reference.md): every field of a dashboard file. The designer's plan: [`PLAN-designer.md`](PLAN-designer.md).
 
