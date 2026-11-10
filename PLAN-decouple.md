@@ -1,6 +1,6 @@
 # Plan: the app knows no model
 
-Status: **phase 0 built** (PR "Decouple phase 0"); phases 1 to 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
+Status: **phases 0 (#196) and 1 built**; phases 2 to 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
 
 ## Goal
 The dashboard app (renderer, designer, builder, dashspec, lab, admin, auth) runs on **any Cube model**, not only the AdventureWorks one. Everything it knows about the data comes from Cube's `/v1/meta` (with each member's `meta:`) or from a small config file that the model ships. **No cube or member name appears in the app's code.**
