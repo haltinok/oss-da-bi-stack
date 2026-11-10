@@ -759,7 +759,7 @@ services:
 
   dashboard-cube:
     # The dashboard UI (dashboard/static), served as static files with the Cube data source
-    # injected in front of app.js (Keycloak sign-in + Cube queries instead of SQL).
+    # (the pages sign in through Keycloak and query Cube themselves).
     image: nginx:1.31-alpine
     profiles: [starrocks]
     restart: unless-stopped

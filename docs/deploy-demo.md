@@ -160,7 +160,7 @@ keycloak/sync-users.sh               # only if the roles / users added since the
 ```
 `update-public-url.sh` is idempotent. On a public host it also turns off the dashboard client's direct password grant (the browser
 uses the authorization-code flow with PKCE; the grant exists for headless tests and on the internet it is a password-guessing API).
-`--keep-password-grant` leaves it on. The security and browser tests (`cube/tests`, `dashboard/cube/tests/e2e.py`) use that grant:
+`--keep-password-grant` leaves it on. The security tests (`cube/tests`) use that grant:
 run them on a local stack, or against the server before the script, or with the flag.
 
 ## Things to know

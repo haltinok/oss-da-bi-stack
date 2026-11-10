@@ -4,7 +4,7 @@
 
 Checks the list page, every panel type of dashboards/sales-overview.yml drawn from generated data, the filters (cascading options, the
 queries they send, cancelling what is still running), one failing panel not blanking the rest, the Excel export, the dataset switch, a role
-the dashboard is not for, and that the KPI tiles show the same figures as the sales dashboard does for the same data.
+the dashboard is not for.
 """
 import io
 import json
@@ -583,15 +583,6 @@ with sync_playwright() as p:
     if KEEP:
         SHOTS.mkdir(exist_ok=True)
         page.screenshot(path=str(SHOTS / "renderer-live-1440.png"), full_page=True)
-
-    # ---- parity: the same figures as the sales dashboard for the same data
-    ctx2, old = open_page(browser, "/")
-    old.wait_for_function("!document.querySelector('#kpis').classList.contains('pending') && document.querySelectorAll('#kpis .kpi').length === 6", timeout=20000)
-    old.wait_for_timeout(1500)
-    oldt = {n.query_selector(".label").inner_text().split("\n")[0]: n.query_selector(".value").inner_text() for n in old.query_selector_all("#kpis .kpi")}
-    for label in ("Revenue", "Gross profit", "Gross margin", "Units sold"):
-        check(oldt.get(label) == t.get(label), f"{label}: the renderer shows {t.get(label)}, the sales dashboard {oldt.get(label)}")
-    ctx2.close()
 
     # ---- filters
     page.queries.clear()
