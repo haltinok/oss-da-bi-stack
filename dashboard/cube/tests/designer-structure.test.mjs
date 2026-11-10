@@ -193,7 +193,7 @@ test("a default is set and emptied like the other optional fields; a new dimensi
 });
 
 // ---- filter scopes and hidden filters
-import { addScopedFilter, setFilterScope, setFilterVisible } from "../../static/lib/designer-structure.js";
+import { setPrefilter, addScopedFilter, setFilterScope, setFilterVisible } from "../../static/lib/designer-structure.js";
 import { removeTab, tabsToLayout } from "../../static/lib/designer-layout.js";
 
 const TABBED = () => ({
@@ -540,4 +540,14 @@ test("addScopedFilter: a filter born narrowed to a tab or to a panel", () => {
   const g = pane.source.filters.find((x) => x.id === pane.id);
   assert.deepEqual([g.scope, g.panel], ["panel", "top"]);
   assert.equal(addScopedFilter(SOURCE, CATALOG, "territories.region", "page", "b").problem, "notabs");
+});
+
+test("setPrefilter: fixed values, hidden from the reader; none brings the filter back", () => {
+  const base = addScopedFilter(TABBED(), CATALOG, "territories.region", "panel", "top");
+  const one = setPrefilter(base.source, base.id, ["Europe"]).source.filters.find((f) => f.id === base.id);
+  assert.deepEqual([one.allowed, one.default, one.visible, one.type], [["Europe"], "in:Europe", false, "multiselect"]);
+  const two = setPrefilter(base.source, base.id, ["Europe", "Asia"]).source.filters.find((f) => f.id === base.id);
+  assert.deepEqual([two.default, two.visible, two.type], ["in:Europe,Asia", false, "multiselect"]);
+  const back = setPrefilter(setPrefilter(base.source, base.id, ["Europe"]).source, base.id, []).source.filters.find((f) => f.id === base.id);
+  assert.deepEqual([back.allowed, back.default, back.visible], [undefined, undefined, undefined]);
 });
