@@ -1,0 +1,57 @@
+spec: 1
+id: distributor-overview
+title: Satış ve tahsilat
+description: Siparişler, tahsilat ve bayiler (the distributor example model; no AdventureWorks names anywhere).
+tags: [dağıtım, satış]
+locale: tr-TR
+currency: TRY
+time:
+  dimension: calendar.full_date
+filters:
+  - id: year
+    dimension: calendar.calendar_year
+    label: Yıl
+  - id: region
+    dimension: dealers.region
+    label: Bölge
+panels:
+  - id: kpis
+    type: kpi
+    compare: previous_year
+    measures:
+      - { member: orders.revenue, label: Ciro, format: money }
+      - { member: orders.order_count, label: Sipariş, format: int }
+      - { member: payments.collected, label: Tahsilat, format: money }
+      - { member: orders.quantity, label: Adet, format: int }
+    sparkline: { granularity: month }
+  - id: trend
+    type: timeseries
+    title: Aylık ciro ve tahsilat
+    series:
+      - { member: orders.revenue, label: Ciro, color: focus, format: money }
+      - { member: payments.collected, label: Tahsilat, color: good, format: money }
+    granularity: month
+    style: line
+  - id: regions
+    type: bar
+    title: Bölgeye göre ciro
+    by: dealers.region
+    measure: orders.revenue
+    sort: desc
+    format: money
+    on_click: { set_filter: region }
+  - id: categories
+    type: pie
+    title: Kategoriye göre ciro
+    measure: orders.revenue
+    by: items.category
+  - id: dealers
+    type: table
+    title: En büyük bayiler
+    columns: [dealers.name, dealers.region, orders.revenue, orders.order_count]
+    order: { orders.revenue: desc }
+    limit: 15
+layout:
+  - [{ kpis: 12 }]
+  - [{ trend: 8 }, { categories: 4 }]
+  - [{ regions: 6 }, { dealers: 6 }]

@@ -387,6 +387,17 @@ jobs:
           python -m dashspec validate dashboards/*.yml
           for f in dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
 
+  # PLAN-decouple.md: the app knows no model. A warning for now (it lists the hits as annotations); phase 5 makes it an error (--strict).
+  no-model-names:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python scripts/no_model_names.py
+
   # The dashboard page without any service: the shared JS modules (node tests) and the page in a real Chrome against the mock stack
   # (every panel renders from generated data without a console error, the Excel export downloads, the header and the dataset switch).
   dashboard-ui:

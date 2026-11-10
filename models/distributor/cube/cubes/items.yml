@@ -1,0 +1,24 @@
+cubes:
+  - name: items
+    description: "Ürünler: the items the distributor sells (join target for orders)."
+    sql_table: dist.dim_item
+    data_source: default
+
+    dimensions:
+      - name: key
+        description: "Item key."
+        sql: item_key
+        type: number
+        primary_key: true
+      - name: name
+        description: "Item name."
+        sql: item_name
+        type: string
+      - name: category
+        description: "Item category (Gıda, Temizlik, Kırtasiye, Hırdavat)."
+        sql: category
+        type: string
+      - name: brand
+        description: "Brand."
+        sql: brand
+        type: string

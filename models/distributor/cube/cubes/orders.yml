@@ -1,0 +1,45 @@
+cubes:
+  - name: orders
+    description: "Sipariş satırları: one row per item on a dealer's order."
+    sql_table: dist.fact_order_line
+    data_source: default
+
+    joins:
+      - name: dealers
+        relationship: many_to_one
+        sql: "{CUBE}.dealer_key = {dealers}.dealer_key"
+      - name: items
+        relationship: many_to_one
+        sql: "{CUBE}.item_key = {items}.item_key"
+      - name: calendar
+        relationship: many_to_one
+        sql: "{CUBE}.order_date_key = {calendar}.date_key"
+
+    dimensions:
+      - name: line_id
+        description: "Key of the order line."
+        sql: line_id
+        type: string
+        primary_key: true
+      - name: order_number
+        description: "The order number."
+        sql: order_number
+        type: string
+      - name: order_date
+        description: "When the order was placed (a time dimension)."
+        sql: order_date
+        type: time
+
+    measures:
+      - name: revenue
+        description: "Order value in TRY (quantity x unit price, after discount)."
+        sql: amount
+        type: sum
+      - name: quantity
+        description: "Units ordered."
+        sql: quantity
+        type: sum
+      - name: order_count
+        description: "Number of orders."
+        sql: order_number
+        type: count_distinct

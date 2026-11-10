@@ -1,0 +1,51 @@
+cubes:
+  - name: calendar
+    description: "Takvim: zaman ekseni ve yıllar için birleşme noktası. (The calendar: join target for a time axis.)"
+    sql_table: dist.dim_calendar
+    data_source: default
+
+    dimensions:
+      - name: key
+        description: "Date key (YYYYMMDD)."
+        sql: date_key
+        type: number
+        primary_key: true
+      - name: full_date
+        description: "Calendar date (a time dimension)."
+        sql: full_date
+        type: time
+      - name: calendar_year
+        description: "Calendar year."
+        sql: calendar_year
+        type: number
+      - name: calendar_quarter
+        description: "Calendar quarter number, 1 to 4."
+        sql: calendar_quarter
+        type: number
+      - name: month_of_year
+        description: "Month number, 1 (January) to 12 (December)."
+        sql: month_of_year
+        type: number
+      - name: month_name
+        description: "Month name in Turkish (Ocak ... Aralık)."
+        sql: month_name
+        type: string
+        meta:
+          sort_by: month_of_year
+      - name: year_month_number
+        description: "Year and month as a number that sorts in time order: 202403 is March 2024."
+        sql: year_month_number
+        type: number
+      - name: year_month
+        description: "Month and year as text, e.g. Mart 2024."
+        sql: "month_name || ' ' || calendar_year::text"
+        type: string
+        meta:
+          sort_by: year_month_number
+
+  # The same calendar in another role: the day a payment falls due.
+  - name: maturity_dates
+    extends: calendar
+    description: "The calendar in the role of a payment's due date (vade)."
+    meta:
+      label_prefix: Due

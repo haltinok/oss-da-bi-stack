@@ -1,6 +1,6 @@
 # Plan: the app knows no model
 
-Status: **proposed** (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
+Status: **phase 0 built** (PR "Decouple phase 0"); phases 1 to 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
 
 ## Goal
 The dashboard app (renderer, designer, builder, dashspec, lab, admin, auth) runs on **any Cube model**, not only the AdventureWorks one. Everything it knows about the data comes from Cube's `/v1/meta` (with each member's `meta:`) or from a small config file that the model ships. **No cube or member name appears in the app's code.**
@@ -23,6 +23,7 @@ Read from the code on 2026-11-10:
 | `dashboard/static/lib/compare.js` | `YEAR_FIELDS = ["fiscal_year", "calendar_year"]`: the comparison finds the year by the **member's name ending**. (`render/plan.js` only uses `fiscal_year` / `calendar_year` as bucket *kinds*, not member names: no change.) | small, but subtle |
 | `dashboard/cube/cube-source.mjs` (+ `boot.js`, `cube/config.js`) | `app.js`'s data adapter: `CH = { Internet: "internet_sales", Reseller: "reseller_sales" }` and the `noProfit` / `reorder` / `overstock` flags by cube name. **The most coupled file (48 hits).** Goes with `app.js` | medium |
 | `builder/core.py` | `example_spec()` builds the examples **in the LLM prompt** by running the rule-based composer on three fixed sales and inventory requests. On another model the composer finds nothing and the prompt has no example, which is what lets a cheap model write valid files. `EXAMPLES` (the builder page's suggestions, EN and TR) are sales and inventory prompts too | medium, and it breaks "the LLM path needs no change" |
+| `dashboard/static/lib/designer-structure.js` | `PREFERRED_MEASURES` (`revenue`, `orders`, ...): which measure a new panel starts with is picked by **measure name**. Found by the phase 0 guard; it is what `meta.primary` replaces (phase 1) | small |
 | `cube/cube.js` | `AGENT_CUBES` (line 44) and the agent's model files (line 203) name cubes; the `territory` fallback reads the old `territories` token claim (line 172). This is app logic, not model | small |
 | `auth/`, `admin/`, `dashboard/cube/cube-client.mjs` | the token claim `territories`, the dbt seed `mart.dim_user_territory`, `/rls/rules` answering `regions`, an error example naming `internet_sales.gross_profit` | small, spread over files |
 | `dashboard/static/render/lab.js`, `lab-strings.js` | the SQL lab's example queries and placeholder (`from internet_sales cross join products`) | small |
