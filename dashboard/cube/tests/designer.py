@@ -787,7 +787,7 @@ with sync_playwright() as p:
     dctl = f'{dcard} .fc[aria-label="Default value"]'
     page.locator(f"{dctl} select").first.select_option("rel")
     page.locator(f"{dctl} select").nth(1).select_option("last_month")
-    page.wait_for_function("document.querySelectorAll('.dz-filter').length > 0", timeout=5000)
+    page.wait_for_function("(localStorage.getItem('builder.draft') || '').includes('rel:last_month')", timeout=15000)       # the draft is saved after the change settles
     settled(page)
     check(next(f for f in filters() if f["id"] == day["id"]).get("default") == "rel:last_month", "a date default can be a dynamic period (rel:last_month)")
     check("last month" in page.inner_text(dcard), "and the card says it in words")
@@ -1285,6 +1285,49 @@ with sync_playwright() as p:
     back = draft_yaml()
     sl = next(p for p in back["panels"] if p["id"] == "group")
     check(sl.get("dimension") == "territories.group_name" and sl.get("label") == "Sales group" and not any(f["id"] == "group_name" for f in back.get("filters", [])), "and back: the filter folds into the slicer again")
+    check(not page.problems, f"no console errors {page.problems[:2]}")
+    ctx.close()
+
+    # ---- adding a tab from the header, and filters shown per tab and per panel
+    ctx, page = open_page(browser, "/d/draft", draft=kept_draft)
+    page.wait_for_function("!document.querySelector('#bd-design')?.disabled", timeout=20000)
+    settled(page)
+    cur = lambda: yaml.safe_load(json.loads(page.evaluate("localStorage.getItem('builder.draft')"))["yaml"])  # noqa: E731
+    check(page.locator("#bd-addtab").is_hidden(), "the + Tab button is hidden until design mode is on")
+    page.click("#bd-design")
+    check(page.locator("#bd-addtab").is_visible(), "design mode shows a + Tab button in the header")
+    with changes(page):
+        page.click("#bd-addtab")
+    settled(page)
+    tabs = cur().get("tabs")
+    check(tabs and len(tabs) == 2 and "layout" not in cur() and tabs[0]["title"] == "Page 1" and tabs[0]["layout"], f"+ Tab on a one-page dashboard makes its page 'Page 1' and adds a tab ({[t['title'] for t in tabs or []]})")
+    page.wait_for_selector("[role=tab]", timeout=10000)
+    check(page.locator("[role=tab]").count() == 2, "and the page shows both tabs")
+    with changes(page):
+        page.click("#bd-addtab")
+    settled(page)
+    check(len(cur()["tabs"]) == 3, "+ Tab again adds another")
+    page.wait_for_selector("#designer .dz-tabfilters", timeout=10000)
+    check("None: the tab follows" in page.inner_text("#designer") or page.locator("#designer .dz-tabfilters").count() == 3, "each tab says which filters are its own")
+    with changes(page):
+        page.select_option('#designer [data-scoped-field="page:tab_2"]', "products.category")
+        page.click('#designer [data-scoped-add="page:tab_2"]')
+    settled(page)
+    f = next(x for x in cur().get("filters", []) if x.get("scope") == "page")
+    check(f["tab"] == "tab_2", f"Add to this tab makes a filter of that tab only ({f.get('tab')})")
+    check("Category" in page.inner_text('#designer .dz-tabfilters:nth-of-type(2)') or "Category" in page.inner_text("#designer #dz-tabs"), "and the tab lists it")
+    bar = panel_of(page, "bar")
+    page.click(f'[data-panel="{bar}"] h2')
+    check(page.locator("#designer #dz-panelfilters").count() == 1, "a panel's drawer has a Filters on this panel section")
+    with changes(page):
+        page.select_option(f'#designer [data-scoped-field="panel:{bar}"]', "products.color")
+        page.click(f'#designer [data-scoped-add="panel:{bar}"]')
+    settled(page)
+    g = next(x for x in cur()["filters"] if x.get("scope") == "panel")
+    check(g["panel"] == bar, "Add for this panel only makes a filter of that panel")
+    page.wait_for_selector("#designer #dz-panelfilters [data-reach]", timeout=10000)
+    reach = page.locator("#designer #dz-panelfilters [data-reach]")
+    check(reach.count() >= 1 and "this panel only" in page.inner_text("#designer #dz-panelfilters"), "the panel lists the filter with where it comes from")
     check(not page.problems, f"no console errors {page.problems[:2]}")
     ctx.close()
 

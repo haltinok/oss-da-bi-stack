@@ -161,7 +161,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     pick.append(el("option", { value: "" }, esc(dz.pickField)));
     for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
     const add = el("button", { type: "button", class: "dz-mini", "data-scoped-add": `${scope}:${target}` }, esc(label));
-    add.addEventListener("click", () => { if (pick.value) commit(addScopedFilter(source, catalog, pick.value, scope, target), { message: dz.filterAdded, panel: scope === "panel" ? target : null }); });
+    add.addEventListener("click", () => { if (pick.value) commit({ ...addScopedFilter(source, catalog, pick.value, scope, target), id: undefined }, { message: dz.filterAdded, panel: scope === "panel" ? target : null }); });
     row.append(pick, add);
     return row;
   }
