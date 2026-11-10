@@ -1,0 +1,28 @@
+cubes:
+  - name: dealers
+    description: "Bayiler: the dealers the distributor sells to (join target for orders and payments)."
+    sql_table: dist.dim_dealer
+    data_source: default
+
+    dimensions:
+      - name: key
+        description: "Dealer key."
+        sql: dealer_key
+        type: number
+        primary_key: true
+      - name: name
+        description: "Dealer name."
+        sql: dealer_name
+        type: string
+      - name: region
+        description: "Sales region (Marmara, Ege, İç Anadolu, Akdeniz, Karadeniz, Doğu Anadolu)."
+        sql: region
+        type: string
+      - name: city
+        description: "City."
+        sql: city
+        type: string
+      - name: segment
+        description: "Dealer size: Büyük, Orta or Küçük."
+        sql: segment
+        type: string
