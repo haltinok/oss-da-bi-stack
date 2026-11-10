@@ -193,7 +193,7 @@ test("a default is set and emptied like the other optional fields; a new dimensi
 });
 
 // ---- filter scopes and hidden filters
-import { setFilterScope, setFilterVisible } from "../../static/lib/designer-structure.js";
+import { addScopedFilter, setFilterScope, setFilterVisible } from "../../static/lib/designer-structure.js";
 import { removeTab, tabsToLayout } from "../../static/lib/designer-layout.js";
 
 const TABBED = () => ({
@@ -530,4 +530,14 @@ test("the designer says when a slicer's field is in no rollup of its tab's fact 
   assert.equal(slicerOutsideRollups(cat, src, "sl", "products.name"), true, "internet sales has rollups, none by name");
   assert.equal(slicerOutsideRollups(cat, src, "sl", "products.category"), false);
   assert.equal(slicerOutsideRollups(CATALOG, src, "sl", "products.name"), false, "a cube that says nothing about rollups gets no note");
+});
+
+test("addScopedFilter: a filter born narrowed to a tab or to a panel", () => {
+  const tab = addScopedFilter(TABBED(), CATALOG, "territories.region", "page", "b");
+  const f = tab.source.filters.find((x) => x.id === tab.id);
+  assert.deepEqual([f.scope, f.tab], ["page", "b"]);
+  const pane = addScopedFilter(TABBED(), CATALOG, "territories.region", "panel", "top");
+  const g = pane.source.filters.find((x) => x.id === pane.id);
+  assert.deepEqual([g.scope, g.panel], ["panel", "top"]);
+  assert.equal(addScopedFilter(SOURCE, CATALOG, "territories.region", "page", "b").problem, "notabs");
 });

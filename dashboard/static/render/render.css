@@ -443,3 +443,9 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .trash summary { cursor: pointer; color: var(--muted); }
 .trash li { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); list-style: none; }
 .trash li .spacer { flex: 1; }
+
+/* Where a filter applies: the tab's own filters and the ones that reach a panel. */
+.dz-tabfilters { margin: 0 0 .6rem 1rem; }
+.dz-reach { list-style: none; margin: .25rem 0 .5rem; padding: 0; }
+.dz-reach li { margin: .2rem 0; }
+#bd-addtab { margin-inline-start: .25rem; }
