@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { columnsMoved, sideOf } from "../../static/render/designer-dnd.js";
-import { dropPanel, locate, moveCommand, moveTab, moveToTab, renameTab, rowOf, setWidths, tabsOf } from "../../static/lib/designer-layout.js";
+import { dropPanel, locate, moveCommand, moveTab, moveToTab, renameTab, rowOf, setWidths, tabsOf, addTabToPage } from "../../static/lib/designer-layout.js";
 
 const panels = (...ids) => ids.map((id) => ({ id, type: "text", markdown: "x" }));
 const SRC = {
@@ -193,4 +193,15 @@ test("removing a tab keeps its panels on the neighbouring tab, and the last pair
   assert.equal(flat.tabs, undefined);
   assert.deepEqual(placed(flat), ["a", "b", "c"]);
   assert.equal(removeTab(three, "nope").problem, "missing");
+});
+
+test("addTabToPage: a one-page dashboard becomes two tabs (its page, then the new one); a tabbed one just gets another", () => {
+  const one = addTabToPage(SRC, "New", "note", "Page 1");
+  assert.deepEqual(tabsOf(one.source).map((t) => t.title), ["Page 1", "New"]);
+  assert.equal(one.source.layout, undefined);
+  assert.equal(tabsOf(one.source)[0].panels.length, 5);
+  valid(one.source);
+  const more = addTabToPage(TABBED, "Three", "note", "Page 1");
+  assert.deepEqual(tabsOf(more.source).map((t) => t.title), ["One", "Two", "Three"]);
+  assert.equal(addTabToPage({ panels: [], layout: [] }, "x", "n", "p").problem, "rows");
 });

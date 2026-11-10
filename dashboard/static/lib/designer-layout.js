@@ -218,3 +218,13 @@ export function removeTab(source, tabId) {
   for (const f of next.filters || []) if (f.scope === "page" && f.tab === tabId) f.tab = heir.id;           // the tab's page filters go where its panels went
   return next.tabs.length < 2 ? tabsToLayout(next) : { source: next };
 }
+
+/** Adds a tab to any dashboard: a one-page one first becomes a tab of its own ("`firstTitle`") holding every row, then the new tab follows it. */
+export function addTabToPage(source, title, note, firstTitle) {
+  if (source.tabs) return addTab(source, title, note);
+  if (!source.layout?.length) return { problem: "rows" };
+  const next = clone(source);
+  next.tabs = [{ id: "tab_1", title: firstTitle, layout: next.layout }];
+  delete next.layout;
+  return addTab(next, title, note);
+}

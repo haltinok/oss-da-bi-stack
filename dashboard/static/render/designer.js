@@ -9,9 +9,9 @@ import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, m
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar, slicerOutsideRollups } from "../lib/designer-structure.js";
+import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addScopedFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar, slicerOutsideRollups } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
-import { MAX_TABS, addTab, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
+import { MAX_TABS, addTab, addTabToPage, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
 import { mountDnd } from "./designer-dnd.js";
 import { drafts } from "./builder.js";
@@ -43,7 +43,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   if (!head) return;
   const dz = t.designer;
   const button = el("button", { type: "button", id: "bd-design", "aria-pressed": "false" }, esc(dz.button));
-  head.querySelector("[data-tab]")?.before(button);
+  const plusTab = el("button", { type: "button", id: "bd-addtab", title: dz.plusTabTitle, hidden: "" }, esc(dz.plusTab));
+  head.querySelector("[data-tab]")?.before(button, plusTab);
   let source = null, baseCatalog = null, catalog = null, selected = null, on = false, busy = false;
   const state = read();
 
@@ -73,7 +74,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       ${tabsOf(source).length ? `<div id="dz-tabs" class="dz-tabs"></div>
         <div class="dz-add-filter"><input type="text" id="dz-newtab" maxlength="40" placeholder="${esc(dz.newTabName)}" aria-label="${esc(dz.addTab)}"><button type="button" id="dz-addtab" ${tabsOf(source).length >= MAX_TABS ? "disabled" : ""}>${esc(dz.addTab)}</button></div>
         <div class="dz-actions"><button type="button" id="dz-onepage">${esc(dz.onePage)}</button></div>`
-        : `<p class="hint">${esc(dz.noTabs)}</p><div class="dz-actions"><button type="button" id="dz-totabs" ${(source.layout || []).length < 2 ? "disabled" : ""}>${esc(dz.makeTabs)}</button></div>`}
+        : `<p class="hint">${esc(dz.noTabs)}</p><div class="dz-actions"><button type="button" id="dz-addtab-first">${esc(dz.addTab)}</button><button type="button" id="dz-totabs" ${(source.layout || []).length < 2 ? "disabled" : ""}>${esc(dz.makeTabs)}</button></div>`}
       <h3 class="dz-section">${esc(dz.filters)}</h3><div id="dz-filters" class="dz-filters"></div>
       <div class="dz-add-filter"><select id="dz-newfilter" aria-label="${esc(dz.addFilter)}"></select><button type="button" id="dz-addfilter">${esc(dz.addFilter)}</button></div>
       <h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calcs" class="dz-filters"></div>
@@ -94,6 +95,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         el("button", { type: "button", "data-tab-move": `${tab.id}:1`, "aria-label": `${dz.tabLater}: ${tab.title}`, ...(i === all.length - 1 ? { disabled: "" } : {}) }, "↓"),
         el("button", { type: "button", class: "dz-danger", "data-tab-remove": tab.id, "aria-label": `${dz.tabRemove}: ${tab.title}` }, "✕"));
       tabList.append(row);
+      const mine = (source.filters || []).filter((f) => f.scope === "page" && f.tab === tab.id);
+      const sub = el("div", { class: "dz-tabfilters" }, `<span class="hint"><strong>${esc(dz.tabFilters)}:</strong> ${mine.length ? esc(mine.map((f) => f.label || f.id).join(", ")) : esc(dz.noTabFilters)}</span>`);
+      sub.append(scopedAdd("page", tab.id, dz.addTabFilter));
+      tabList.append(sub);
     });
     const list = drawer.querySelector("#dz-filters");
     if (!(source.filters || []).length) list.innerHTML = `<p class="hint">${esc(dz.noFilters)}</p>`;
@@ -147,6 +152,32 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     drawer.querySelector("#dz-calc-add").append(calcEntry(null));
     const pick = drawer.querySelector("#dz-newfilter");
     for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
+  }
+
+  /** A field picker and a button that adds a filter narrowed to a tab (`scope` "page") or a panel (`scope` "panel"). */
+  function scopedAdd(scope, target, label) {
+    const row = el("div", { class: "dz-add-filter" });
+    const pick = el("select", { "aria-label": label, "data-scoped-field": `${scope}:${target}` });
+    pick.append(el("option", { value: "" }, esc(dz.pickField)));
+    for (const o of dimensionList()) pick.append(el("option", { value: o.value, title: o.description || "" }, esc(o.label)));
+    const add = el("button", { type: "button", class: "dz-mini", "data-scoped-add": `${scope}:${target}` }, esc(label));
+    add.addEventListener("click", () => { if (pick.value) commit({ ...addScopedFilter(source, catalog, pick.value, scope, target), id: undefined }, { message: dz.filterAdded, panel: scope === "panel" ? target : null }); });
+    row.append(pick, add);
+    return row;
+  }
+
+  /** Which filters reach a panel, each with where it comes from, and a way to add one for this panel alone. */
+  function panelFilterSection(panel) {
+    const wrap = el("div", { class: "dz-panelfilters" });
+    const tab = tabsOf(source).find((x) => x.panels.includes(panel.id))?.id;
+    const reach = (source.filters || []).filter((f) => { const sc = f.scope || "dashboard"; return sc === "dashboard" || (sc === "panel" && f.panel === panel.id) || (sc === "page" && f.tab === tab); });
+    const ignored = new Set(panel.ignore_filters || []);
+    const from = (f) => ({ dashboard: dz.fromDashboard, page: dz.fromTab, panel: dz.fromPanel })[f.scope || "dashboard"];
+    wrap.append(el("p", { class: "hint" }, esc(dz.panelFiltersHint)));
+    if (!reach.length) wrap.append(el("p", { class: "hint" }, esc(dz.noPanelFilters)));
+    else wrap.append(el("ul", { class: "dz-reach" }, reach.map((f) => `<li data-reach="${esc(f.id)}"><strong>${esc(f.label || f.id)}</strong> <span class="badge">${esc(from(f))}</span>${ignored.has(f.id) ? ` <span class="badge">${esc(dz.ignoredHere)}</span>` : ""}</li>`).join("")));
+    wrap.append(scopedAdd("panel", panel.id, dz.addPanelFilter));
+    return wrap;
   }
 
   /** The way into the calculations window: New, and one button per calculation of the dashboard to edit it. `panelId` is the panel to stay on afterwards (null: the page view). */
@@ -312,6 +343,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     drawer.innerHTML = `<div class="dz-head"><div><h2>${esc(panel.title || panel.id)}</h2><span class="badge">${esc(typeName(panel.type))}</span></div>${closeBtn()}</div>
       <div id="dz-msg" class="bmsg" role="alert" hidden></div><form class="dz-form" onsubmit="return false">${rows}</form>
       ${["text", "slicer"].includes(panel.type) ? "" : `<h3 class="dz-section">${esc(dz.calcs)}</h3><p class="hint">${esc(dz.calcsHint)}</p><div id="dz-calc-add"></div>`}
+      ${["text", "slicer"].includes(panel.type) ? "" : `<h3 class="dz-section">${esc(dz.panelFilters)}</h3><div id="dz-panelfilters"></div>`}
       <h3 class="dz-section">${esc(dz.layout)}</h3>
       <div class="dz-layout" role="group" aria-label="${esc(dz.layout)}">${LAYOUT_COMMANDS.map((cmd) => `<button type="button" data-cmd="${cmd}" ${moveCommand(source, panel.id, cmd).problem ? "disabled" : ""}>${esc(dz.cmd[cmd])}</button>`).join("")}</div>
       <p class="hint">${esc(dz.width(rowOf(source, panel.id).find((c) => c.id === panel.id)?.span ?? 12))}</p>
@@ -319,6 +351,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       <div class="dz-actions"><button type="button" id="dz-back">${esc(dz.back)}</button>${panel.type === "slicer" && panel.dimension !== undefined ? `<button type="button" id="dz-tobar">${esc(dz.toBar)}</button>` : ""}<button type="button" id="dz-dup">${esc(dz.duplicate)}</button><button type="button" id="dz-del" class="dz-danger">${esc(dz.remove)}</button></div>
       <p class="hint">${esc(dz.footer)}</p>`;
     drawer.querySelector("#dz-calc-add")?.append(calcEntry(selected));
+    drawer.querySelector("#dz-panelfilters")?.append(panelFilterSection(panel));
     for (const slot of drawer.querySelectorAll(".dz-input")) {
       const fd = fields.find((x) => x.path === slot.dataset.slot);
       if (!fd) continue;                                                                     // "Move to tab" has a slot of its own that is not a field
@@ -779,6 +812,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       return;
     }
     if (e.target.id === "dz-addtab") { commit(addTab(source, drawer.querySelector("#dz-newtab").value.trim() || dz.newTabName, dz.newTabNote), { message: dz.tabAdded, panel: null }); return; }
+    if (e.target.id === "dz-addtab-first") { commit(addTabToPage(source, dz.newTabName, dz.newTabNote, dz.firstTab), { message: dz.tabAdded, panel: null }); return; }
     if (e.target.id === "dz-totabs") { commit(layoutToTabs(source, [dz.tabOverview, dz.tabDetails]), { message: dz.tabsMade, panel: null }); return; }
     if (e.target.id === "dz-onepage") { if (confirm(dz.confirmOnePage)) commit(tabsToLayout(source), { message: dz.tabsUnmade, panel: null }); return; }
     const tabMove = e.target.closest("[data-tab-move]");
@@ -858,6 +892,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     on = next;
     if (on) dnd.enable(); else dnd.disable();
     button.setAttribute("aria-pressed", String(on));
+    plusTab.hidden = !on;
     document.body.classList.toggle("designing", on);
     drawer.hidden = !on;
     for (const [, p] of panels) { if (on) p.root.setAttribute("tabindex", "0"); else { p.root.removeAttribute("tabindex"); p.root.classList.remove("dz-selected"); } }
@@ -866,6 +901,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     if (on) draw();
   }
   button.addEventListener("click", () => setMode(!on));
+  plusTab.addEventListener("click", () => { if (source) commit(addTabToPage(source, dz.newTabName, dz.newTabNote, dz.firstTab), { message: dz.tabAdded, panel: null }); });
   // The filters' options arrive after the page is drawn (and the designer may already be open): the page view is drawn again so a default value can be picked from them.
   document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) { draw(); restorePlace(); forgetPlace(); } }, { signal });
   for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) drawer.addEventListener(ev, forgetPlace, { passive: true });

@@ -401,6 +401,13 @@ export function addFilter(source, catalog, dimension) {
   return { source: next, id, notes: ignored.length ? ["ignored"] : [] };
 }
 
+/** A filter that is born narrowed: `scope` "page" (`target` a tab id) or "panel" (`target` a panel id). Returns what addFilter or setFilterScope returns. */
+export function addScopedFilter(source, catalog, dimension, scope, target) {
+  const made = addFilter(source, catalog, dimension);
+  const scoped = setFilterScope(made.source, catalog, made.id, scope, target);
+  return scoped.problem ? scoped : { source: scoped.source, id: made.id, notes: [...made.notes, ...scoped.notes] };
+}
+
 export const FILTER_TYPES = ["select", "multiselect", "text", "number", "date"];
 const NEEDS = { text: "string", number: "number", date: "time" };              // the dimension type a filter type needs; select and multiselect take any
 
