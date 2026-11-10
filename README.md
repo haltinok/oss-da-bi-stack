@@ -363,7 +363,7 @@ open http://localhost:8250        # users: admin, na_manager, de_rep -- password
                                   # buyer (group Purchasing) and marketer (group Marketing) get the inventory view only
 ```
 
-An older `.env` needs the secrets this profile uses (`CUBEJS_API_SECRET`, `CUBE_DB_PASSWORD`, `AUTH_DB_PASSWORD`,
+An older `.env` needs the secrets this profile uses (`CUBEJS_API_SECRET`, `CUBE_DB_PASSWORD`,
 `KEYCLOAK_ADMIN_PASSWORD`, `TEST_USER_PASSWORD`; see `.env.example`), because Compose requires every
 secret. `./scripts/generate-env.sh --force` writes a complete `.env` (and replaces your other secrets). The CDC
 -> Kafka -> ClickHouse path (`--profile cdc`) is independent of this profile.
@@ -628,9 +628,8 @@ oss-da-bi-stack/
 │       ├── dbt_project.yml
 │       ├── profiles.yml                  # connection from DBT_SR_* env vars
 │       ├── macros/                       # shift_history_date.sql moves seeded history onto live dates
-│       ├── seeds/dim_user_territory.csv  # which territories each user may see
 │       ├── tests/
-│       └── models/{staging,intermediate,marts,rls}/
+│       └── models/{staging,intermediate,marts}/
 ├── cube/
 │   ├── cube.js                   # dialect fix, sign-in check, row-level security (queryRewrite)
 │   └── model/cubes/              # dims, facts, measures, pre-aggregations

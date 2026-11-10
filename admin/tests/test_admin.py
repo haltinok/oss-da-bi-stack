@@ -18,7 +18,6 @@ def kc(monkeypatch):
     fake.roles_["admin"].add("me")
     monkeypatch.setattr(main, "_kc", fake)
     monkeypatch.setattr(main, "_rules", None)                                    # rules are off unless a test turns them on (whatever the environment says)
-    monkeypatch.setattr(main, "_seed", None)
     main.app.dependency_overrides[main.current_admin] = lambda: ME
     yield fake
     main.app.dependency_overrides.clear()
@@ -157,22 +156,10 @@ def test_only_an_admin_with_the_dashboard_token_gets_in(monkeypatch):
 
 
 # ---- row-level rules
-class FakeSeed:
-    def __init__(self, by_user):
-        self.by_user = by_user
-
-    def regions(self):
-        return ["Canada", "France", "Germany", "United States"]
-
-    def regions_of(self, username):
-        return self.by_user.get(username, [])
-
-
 @pytest.fixture()
 def ruled(api, kc, monkeypatch):
     from access import MemoryRules
     monkeypatch.setattr(main, "_rules", MemoryRules())
-    monkeypatch.setattr(main, "_seed", FakeSeed({"de_rep": ["Germany"]}))
     return api
 
 
@@ -190,7 +177,8 @@ def test_set_list_and_delete_a_rule_for_a_user_and_a_group(ruled, kc):
     assert ruled.put("/rls/rules/group/EU team", json={"values": ["France"]}).status_code == 200
     out = ruled.get("/rls/rules").json()
     assert [(r["type"], r["principal"], r["values"]) for r in out["rules"]] == [("group", "EU team", ["France"]), ("user", "de_rep", ["France", "Germany"])]
-    assert out["regions"] == ["Canada", "France", "Germany", "United States"]
+    territory = next(d for d in out["dimensions"] if d["id"] == "territory")
+    assert "regions" not in out and territory["values"][:3] == ["Australia", "Canada", "Central"] and "Germany" in territory["values"], "the territories are the registry's list, not the dbt seed's"
     assert out["registry"]["source"] == "file" and len(out["registry"]["version"]) == 16, "the screen says where the dimensions came from (no ADMIN_DB_PASSWORD at startup: the file)"
     assert ruled.delete("/rls/rules/user/de_rep").status_code == 204
     assert ruled.delete("/rls/rules/user/de_rep").status_code == 404
@@ -205,18 +193,19 @@ def test_a_rule_needs_a_real_person_or_group_and_real_territories(ruled, kc):
     assert ruled.put("/rls/rules/team/x", json={"values": ["France"]}).status_code == 400
 
 
-def test_preview_shows_the_union_of_the_rules_and_falls_back_to_the_seed(ruled, kc):
+def test_preview_shows_the_union_of_the_rules_and_nothing_without_one(ruled, kc):
     uid = kc.add("de_rep", "editor")
     kc.add("na_manager", "editor")
     gid = ruled.post("/groups", json={"name": "EU team"}).json()["id"]
-    assert ruled.get("/rls/preview/de_rep").json()["territories"] == ["Germany"] and ruled.get("/rls/preview/de_rep").json()["source"] == "seed"
+    nothing = ruled.get("/rls/preview/de_rep").json()
+    assert nothing["territories"] == [] and nothing["source"] == "none", "no rule, and there is no seed to fall back to"
     ruled.put("/rls/rules/group/EU team", json={"values": ["France"]})
     ruled.put(f"/groups/{gid}/members/{uid}")
     ruled.put("/rls/rules/user/de_rep", json={"values": ["Canada"]})
     p = ruled.get("/rls/preview/de_rep").json()
     assert p["source"] == "rules" and p["territories"] == ["Canada", "France"] and len(p["rules"]) == 2 and p["groups"] == ["EU team"]
     none = ruled.get("/rls/preview/na_manager").json()
-    assert none["source"] == "none" and none["territories"] == []                        # no rule, nothing in the seed: they cannot sign in to sales data
+    assert none["source"] == "none" and none["territories"] == []                        # no rule: they cannot see sales data
     assert ruled.get("/rls/preview/ghost").status_code == 404
     kc.add("buyer", "editor")
     assert ruled.get("/rls/preview/buyer").json()["applies"] is True
@@ -354,7 +343,7 @@ def test_preview_gives_every_dimension_and_deleting_a_person_clears_all_their_ru
     api = two_dimensions
     api.put("/rls/rules/user/de_rep?dimension=channel", json={"values": ["Reseller"]})
     p = api.get("/rls/preview/de_rep").json()
-    assert p["dimensions"]["channel"] == {"values": ["Reseller"], "source": "rules"} and p["dimensions"]["territory"]["source"] == "seed" and p["territories"] == ["Germany"]
+    assert p["dimensions"]["channel"] == {"values": ["Reseller"], "source": "rules"} and p["dimensions"]["territory"]["source"] == "none" and p["territories"] == []
     api.put("/rls/rules/user/de_rep", json={"values": ["Germany"]})
     main.rules().delete("user", "de_rep")
     assert api.get("/rls/rules").json()["rules"] == []

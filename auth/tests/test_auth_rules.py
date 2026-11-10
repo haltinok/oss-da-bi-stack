@@ -1,6 +1,6 @@
-"""Row-level rules (Postgres, `access.rls_rule`) decide a person's territories when one applies to them or a group of theirs; the dbt seed decides otherwise.
+"""Row-level rules (Postgres, `access.rls_rule`) decide a person's values in each row-level dimension: the rules for them and for their groups, nothing else (the dbt seed is gone).
 
-  uv run --with pytest --with fastapi --with httpx --with 'pyjwt[crypto]' --with pymysql --with psycopg2-binary python -m pytest auth/tests
+  uv run --with pytest --with fastapi --with httpx --with 'pyjwt[crypto]' --with psycopg2-binary python -m pytest auth/tests
 """
 import importlib
 import pathlib
@@ -22,7 +22,7 @@ def load(monkeypatch):
     return importlib.import_module("main")
 
 
-def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="editor", groups=("Sales",), blocked=(), lab=False, fields=()):
+def sign_in(monkeypatch, *, rules_on, rules=None, role="editor", groups=("Sales",), blocked=(), lab=False, fields=()):
     main = load(monkeypatch)
 
     class Key:
@@ -31,7 +31,6 @@ def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="editor
     monkeypatch.setattr(main, "jwks", type("J", (), {"get_signing_key_from_jwt": lambda self, raw: Key()})())
     monkeypatch.setattr(main.jwt, "decode", lambda raw, key, **kw: {"azp": "dashboard", "preferred_username": "ayse", "realm_access": {"roles": [role]}, "groups": list(groups)})
     monkeypatch.setattr(main, "RULES_ON", rules_on)
-    monkeypatch.setattr(main, "territories_for", lambda user: list(seed))
     calls = []
 
     def fake_access(user, role_, grps):
@@ -46,23 +45,24 @@ def sign_in(monkeypatch, *, rules_on, rules=None, seed=("Canada",), role="editor
 
 
 def cube_territories(r):
-    return REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["territories"]
+    return REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"]["territory"]
 
 
-def test_a_rule_replaces_the_seed(monkeypatch):
+def test_a_rule_gives_the_person_its_values(monkeypatch):
     r, calls = sign_in(monkeypatch, rules_on=True, rules=["Germany", "France"])
-    assert r.status_code == 200 and r.json()["territories"] == cube_territories(r) == ["Germany", "France"]
+    assert r.status_code == 200 and r.json()["rls"]["territory"] == cube_territories(r) == ["Germany", "France"]
     assert calls == [("ayse", "editor", ["Sales"])]                                      # the person and their groups are what the rules are asked about
+    assert "territories" not in r.json() and "territories" not in REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"]), "the old claim is gone: the token carries `rls` only"
 
 
-def test_with_no_rule_the_seed_still_decides(monkeypatch):
+def test_with_no_rule_a_person_has_no_values(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[])
-    assert r.status_code == 200 and r.json()["territories"] == ["Canada"]
+    assert r.status_code == 200 and r.json()["rls"] == {"territory": [], "product_category": []}, "no seed to fall back to: cube.js denies or allows by `when_empty`"
 
 
 def test_without_a_rules_login_the_rules_are_not_even_asked(monkeypatch):
     r, calls = sign_in(monkeypatch, rules_on=False, rules=["Germany"])
-    assert r.json()["territories"] == ["Canada"] and calls == []
+    assert r.json()["rls"]["territory"] == [] and calls == []
 
 
 def test_a_rules_database_that_cannot_be_read_fails_the_sign_in_instead_of_widening_access(monkeypatch):
@@ -70,14 +70,9 @@ def test_a_rules_database_that_cannot_be_read_fails_the_sign_in_instead_of_widen
     assert r.status_code == 503
 
 
-def test_nobody_with_no_rule_or_seed_gets_no_territories_and_cube_refuses_sales_data(monkeypatch):
-    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], seed=())
-    assert r.status_code == 200 and r.json()["territories"] == []
-
-
 def test_a_rule_gives_an_editor_its_territories(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"], role="editor")
-    assert r.status_code == 200 and r.json()["territories"] == ["Germany"]
+    assert r.status_code == 200 and r.json()["rls"]["territory"] == ["Germany"]
 
 
 def test_the_cubes_a_person_may_not_read_travel_in_the_cube_token(monkeypatch):
@@ -104,9 +99,9 @@ def test_the_sql_lab_claim_follows_the_grants_and_admins_always_have_it(monkeypa
 
 def test_a_viewer_is_scoped_by_territory_like_a_rep_and_never_has_the_lab(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Canada"], role="viewer", lab=False)
-    assert r.status_code == 200 and r.json()["role"] == "viewer" and r.json()["territories"] == ["Canada"] and r.json()["lab"] is False
-    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], seed=(), role="viewer")
-    assert r.status_code == 200 and r.json()["territories"] == [], "no territory: cube.js refuses the sales cubes"
+    assert r.status_code == 200 and r.json()["role"] == "viewer" and r.json()["rls"]["territory"] == ["Canada"] and r.json()["lab"] is False
+    r, _ = sign_in(monkeypatch, rules_on=True, rules=[], role="viewer")
+    assert r.status_code == 200 and r.json()["rls"]["territory"] == [], "no territory: cube.js refuses the sales cubes"
 
 
 def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypatch):
@@ -119,10 +114,10 @@ def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypat
 
 def test_the_token_carries_the_values_of_every_dimension_in_rls(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"])
-    assert r.json()["rls"] == {"territory": ["Germany"], "product_category": []} and r.json()["territories"] == ["Germany"]
+    assert r.json()["rls"] == {"territory": ["Germany"], "product_category": []}
     assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"] == {"territory": ["Germany"], "product_category": []}
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[])
-    assert r.json()["rls"] == {"territory": ["Canada"], "product_category": []}, "the seed still decides the territory when no rule applies"
+    assert r.json()["rls"] == {"territory": [], "product_category": []}, "no rule, no value (there is no seed to decide the territory)"
 
 
 def test_the_dimensions_file_is_the_one_cube_reads():

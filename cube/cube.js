@@ -31,12 +31,12 @@ class StarRocksQuery extends MysqlQuery {
 }
 
 // --- Security --------------------------------------------------------------
-// Tokens are minted by auth/ after Keycloak login: {user_id, role, territories, exp}.
+// Tokens are minted by auth/ after Keycloak login: {user_id, role, rls, exp}.
 // checkAuth verifies them itself (rather than relying on dev-mode defaults) so a missing,
 // expired or tampered token is always rejected.
 const SECRET = process.env.CUBEJS_API_SECRET;
 // What a person may read is decided by datasets and grants (blocked_cubes, blocked_members in the token), not by their role; the rules below are the ones that need no configuration: the sales facts
-// are limited to the person's territories, and the proposal agent (a service account, not a person) may only read the cubes the model lists for it (`agent.cubes` in model.config.yml).
+// are limited to the values the person's row rules give them, and the proposal agent (a service account, not a person) may only read the cubes the model lists for it (`agent.cubes` in model.config.yml).
 // The row-level dimensions (territory, ...): access.rls_dimension in Postgres, read once, now, while this file loads (rls_registry.js; the default file
 // rls_dimensions.json when CUBE_ACCESS_PG_PASSWORD is not set). The auth service and the admin console read the same table when they start.
 // A registry that cannot be read or is not valid throws here, so Cube does not start.
@@ -172,10 +172,10 @@ function queryRewrite(query, { securityContext }) {
     throw forbidden('The row-level dimensions changed: restart the auth service and Cube together, then sign in again');
   }
   // Row-level security (access.rls_dimension): for each dimension whose cubes the query touches, only the person's own values. Dimensions are ANDed; the values of one are ORed.
-  // The token's `rls` holds the values per dimension (an older token only has `territories`). Nobody listed for a `deny` dimension gets nothing from its cubes.
+  // The token's `rls` holds the values per dimension. Nobody listed for a `deny` dimension gets nothing from its cubes.
   for (const dim of RLS.dimensions) {
     if (!dim.cubes.some((c) => cubes.has(c))) continue;
-    const mine = sc.rls && Array.isArray(sc.rls[dim.id]) ? sc.rls[dim.id] : (dim.id === 'territory' && Array.isArray(sc.territories) ? sc.territories : []);
+    const mine = sc.rls && Array.isArray(sc.rls[dim.id]) ? sc.rls[dim.id] : [];
     if (mine.length === 0) {
       if (dim.when_empty === 'allow') continue;
       throw forbidden(dim.empty_message || `No ${dim.id} values assigned`);

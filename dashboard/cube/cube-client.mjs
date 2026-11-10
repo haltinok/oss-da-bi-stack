@@ -1,6 +1,6 @@
 // The Cube client every dashboard page shares: Keycloak sign-in (authorization code + PKCE), the 15-minute Cube token from the
 // auth service, and a query runner. Row-level security lives in Cube (cube/cube.js) and the token carries the user's role and
-// territories; nothing here can widen what a user sees.
+// row rules; nothing here can widen what a user sees.
 //
 //   const client = createCubeClient({ stack: window.STACK, apiUrl: dataset.cube, onSession: (s) => ... });
 //   await client.token();                          // signs in (redirecting if needed)
@@ -18,7 +18,7 @@ const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replac
  * @param stack      window.STACK: { keycloak: { url, realm, clientId }, auth, ... }
  * @param apiUrl     the Cube endpoint to query (a dataset's `cube`)
  * @param redirect   where Keycloak sends the browser back to; must be a redirect URI of the Keycloak client (default: the site root)
- * @param onSession  called with { token, expires, user, role, territories } each time a new Cube token is minted
+ * @param onSession  called with { token, expires, user, role } each time a new Cube token is minted
  */
 /** Where Keycloak sends the browser back after a sign-in that began at `pathname`: the start page when the person came in at the site root (the default landing page for everybody), otherwise the page they were on. */
 export const loginRedirect = (pathname, origin, redirect) => (pathname === "/" ? `${origin}/home/` : redirect);
@@ -74,7 +74,7 @@ export function createCubeClient({ stack, apiUrl, redirect = `${location.origin}
     }
   }
 
-  let session = null; // { token, expires, user, role, territories }
+  let session = null; // { token, expires, user, role }
 
   /** The Cube token (a short-lived JWT from the auth service), minted again when it is about to expire. */
   async function token(force = false) {
@@ -84,7 +84,7 @@ export function createCubeClient({ stack, apiUrl, redirect = `${location.origin}
     if (res.status === 401) { store.del("kc"); return login(); }
     if (!res.ok) throw new Error(res.status === 403 ? "Your account has no access to this dashboard" : `Sign-in failed (${res.status})`);
     const t = await res.json();
-    session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, territories: t.territories, lab: !!t.lab };
+    session = { token: t.token, expires: Date.now() + t.expires_in * 1000, user: t.user, role: t.role, lab: !!t.lab };
     onSession(session);
     return session.token;
   }

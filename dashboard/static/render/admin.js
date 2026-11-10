@@ -40,7 +40,7 @@ async function call(method, path, body, base = C.admin) {
   throw new Error("not signed in");
 }
 
-const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], regions: [], dimensions: [], datasets: [], cubes: [], grantRoles: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
+const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], dimensions: [], datasets: [], cubes: [], grantRoles: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
 const main = $("#main");
 const dlg = $("#dlg");
 const nameOf = (u) => [u.firstName, u.lastName].filter(Boolean).join(" ");
@@ -50,7 +50,7 @@ async function load() {
   const qs = new URLSearchParams({ max: "200", ...(s.q ? { search: s.q } : {}), ...(s.role ? { role: s.role } : {}), ...(s.group ? { group: s.group } : {}), ...(s.status ? { enabled: s.status === "active" } : {}) });
   const [u, g] = await Promise.all([call("GET", `/users?${qs}`), call("GET", "/groups")]);
   s.users = u.users; s.total = u.total; s.groups = g.groups;
-  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.regions = r.regions; s.dimensions = r.dimensions || []; s.registry = r.registry || null; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.dimensions = []; s.rulesOff = true; }
+  try { const r = await call("GET", "/rls/rules"); s.rules = r.rules; s.dimensions = r.dimensions || []; s.registry = r.registry || null; s.rulesOff = false; } catch (e) { if (e.status !== 503) throw e; s.rules = []; s.regions = []; s.dimensions = []; s.rulesOff = true; }
   if (!s.rulesOff) { const d = await call("GET", "/datasets"); s.datasets = d.datasets; s.cubes = d.cubes; s.grantRoles = d.roles; } else { s.datasets = []; }
 }
 async function refresh() { try { await load(); draw(); show(""); } catch (e) { show(`${t.failed} ${e.message}`); } }
@@ -167,7 +167,7 @@ async function ruleDialog(rule) {
   const type = rule?.type || "user";
   const picked = new Set(rule?.values || []);
   const boxesFor = (dimId) => {
-    const vals = dimId === "territory" ? s.regions : dimOf(dimId).values;                    // the territories come with the seed; any other dimension lists its own values
+    const vals = dimOf(dimId).values;                                                          // the values a dimension lists (`list` in the registry); none listed: free text
     return vals.length
       ? `<div class="groups-pick" role="group" aria-label="${esc(manyDims() ? t.ruleValues : t.ruleTerritories)}">${vals.map((r) => `<label><input type="checkbox" name="r" value="${esc(r)}"${picked.has(r) ? " checked" : ""}> ${esc(r)}</label>`).join("")}</div>`
       : `<input name="regions" value="${esc([...picked].join(", "))}"><p class="hint">${esc(t.regionsHint)}</p>`;

@@ -117,8 +117,10 @@ The app reads it once at start-up, beside `/v1/meta`. A model without it still w
 ## Added after the six phases
 - **The second model runs on a real stack**: `docker-compose.distributor.yml` (Postgres data, Cube on Postgres, the same Keycloak, auth, dashboard pages, builder, lab and admin console), `scripts/distributor-smoke.sh` and the CI job `distributor-stack`. It found a bug in phase 4 (the builder page's suggestions were still AdventureWorks'), fixed with it. The overlay seeds the access database per model (`models/distributor/access.sql`).
 
+## The territory migration (done after the six phases)
+The dbt seed no longer decides anyone's territories: `postgres/init/12_territory_rules.sql` moved the demo's seed into rules once (preserving each person's effective access) and made the territory dimension a registry `list`; the auth service no longer reads StarRocks (no `territories_for`, no pymysql, no `AUTH_DB_*`), the token carries only `rls`, `cube.js` has no `territories` fallback, the admin console has no seed (no `regions`, no "from the seed" preview), and the dbt seed + `rls.user_regions` model, the `auth_ro` StarRocks login and its grants are gone. An existing install runs `postgres/sync-access.sh` (and its own users need rules first: docs/admin.md, *Moving the dbt seed into rules*). A legacy `seed_regions` / `seed` registry row is still accepted and ignored.
+
 ## Left over
-- The token still carries `territories` and the territory dimension still reads the dbt seed (phase 3: needs the seed migrated into rules first).
 - The generic composer has no inventory-style (snapshot) dashboard and does not edit an existing one; `denied()` stays for the recipe; `builder/evals.md` with a real key on both models.
 - The per-role live-stack browser test and a header-width test for the renderer's pages.
 

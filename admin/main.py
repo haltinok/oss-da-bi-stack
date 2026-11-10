@@ -10,9 +10,9 @@
   POST /users/{id}/reset-password          email Keycloak's "update password" link ({ email: true }) or set a temporary one and return it once
   DELETE /users/{id}?confirm=<username>    delete (deactivating is what the page suggests)
   GET|POST /groups, PUT|DELETE /groups/{id}, PUT|DELETE /groups/{id}/members/{userId}
-  GET  /rls/rules                          { rules, regions }: which territories each user or group may see (Postgres schema `access`)
+  GET  /rls/rules                          { rules, dimensions }: which values of each row-level dimension each user or group may see (Postgres schema `access`)
   PUT|DELETE /rls/rules/{user|group}/{name}  set (values: [region, ...]) or remove one
-  GET  /rls/preview/{username}             what that person will see now: their territories, whether the rules or the dbt seed decided, and the cubes datasets keep from them
+  GET  /rls/preview/{username}             what that person will see now: their values per row-level dimension, from the rules, and the cubes datasets keep from them
   GET  /datasets                           { datasets, cubes, roles }: named sets of cubes and who may use each (a cube in a dataset is readable only by those with a grant)
   PUT|DELETE /datasets/{id}                create or replace one (name, description, cubes, grants: [{type: user|group|role, principal}]), or remove it
 
@@ -38,7 +38,6 @@ import rls_registry
 from access import TYPES, PgRules
 from cubes import cubes as model_cubes
 from keycloak import Keycloak, KeycloakError
-from seed import Seed
 
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
@@ -65,7 +64,6 @@ def kc() -> Keycloak:
 
 
 _rules: PgRules | None | str = "unset"
-_seed: Seed | None | str = "unset"
 
 
 def rules() -> PgRules:
@@ -83,13 +81,6 @@ def rules_or_none():
         return rules()
     except HTTPException:
         return None
-
-
-def seed() -> Seed | None:
-    global _seed
-    if _seed == "unset":
-        _seed = Seed.from_env()
-    return _seed
 
 
 class Admin(BaseModel):
@@ -456,21 +447,14 @@ def dimension_of(id_: str) -> dict:
 def dimension_values(dim: dict) -> list[str] | None:
     """The values a rule on this dimension may name; None when they cannot be listed (then any text is accepted)."""
     kind = dim.get("values", {}).get("kind")
-    if kind == "seed_regions":
-        return known_regions()
     if kind == "list":
         return list(dim["values"].get("values", []))
     return None
 
 
-def known_regions() -> list[str] | None:
-    sd = seed()
-    return sd.regions() if sd else None
-
-
 @app.get("/rls/rules")
 def list_rules(_: Who) -> dict:
-    return {"rules": rules().list(), "regions": known_regions() or [],
+    return {"rules": rules().list(),
             "dimensions": [{"id": d["id"], "labels": d.get("labels", {}), "values": dimension_values(d) or []} for d in DIMENSIONS],
             "registry": {"source": REGISTRY_SOURCE, "version": RLS_VERSION}}
 
@@ -512,7 +496,7 @@ def delete_rule(type_: str, principal: str, who: Who, dimension: str = "territor
 
 @app.get("/rls/preview/{username}")
 def preview(username: str, _: Who) -> dict:
-    """What the auth service will give this person at their next sign-in, per dimension: the union of the rules for them and their groups, else (territory only) the dbt seed."""
+    """What the auth service will give this person at their next sign-in, per dimension: the union of the rules for them and their groups."""
     store = rules()
     try:
         person = next((u for u in kc().users(search=username) if u["username"] == username), None)
@@ -534,10 +518,6 @@ def preview(username: str, _: Who) -> dict:
         mine = [r for r in applying if r.get("dimension", "territory") == d["id"]]
         if mine:
             dims[d["id"]] = {"values": sorted({v for r in mine for v in r["values"]}), "source": "rules"}
-        elif d.get("seed"):
-            sd = seed()
-            seeded = sd.regions_of(username) if sd else None
-            dims[d["id"]] = {"values": seeded or [], "source": "unknown" if seeded is None else ("seed" if seeded else "none")}
         else:
             dims[d["id"]] = {"values": [], "source": "none"}
     first = dims.get("territory", {"values": [], "source": "none"})

@@ -3,7 +3,7 @@
   set -a; . ./.env; set +a
   uv run --with pytest --with requests --with pymysql --with pyjwt python -I -m pytest cube/tests -v
 
-Users (Keycloak realm `spike`, territories from dbt seed dim_user_territory):
+Users (Keycloak realm `spike`, territories from the access rules: postgres/init/12_territory_rules.sql):
   admin       all territories, everything
   na_manager  North America group (6 regions), no customer data
   de_rep      Germany only, no gross profit / margin / cost

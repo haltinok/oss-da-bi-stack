@@ -3,18 +3,16 @@
 POST /token   Authorization: Bearer <Keycloak access token>
   1. verify the token's signature, issuer, expiry and client (azp) against Keycloak's JWKS
   2. map the Keycloak realm role to a Cube role (admin > purchasing > marketing > manager > rep)
-  3. look the user's territories up in mart.dim_user_territory (a dbt seed); purchasing and marketing have none
-  4. mint a Cube JWT {user_id, role, territories} signed with CUBEJS_API_SECRET, 15 min
+  3. read the person's row rules (access.rls_rule: for them and their groups) for each row-level dimension of the registry, and their datasets and grants
+  4. mint a Cube JWT {user_id, role, rls: {dimension: values}, ...} signed with CUBEJS_API_SECRET, 15 min
 
-Cube re-verifies that signature and applies the territory filter in queryRewrite
-(cube/cube.js), so a client can neither widen its territories nor extend the token.
+Cube re-verifies that signature and applies the row filters in queryRewrite
+(cube/cube.js), so a client can neither widen its values nor extend the token.
 """
 import os
-import re
 import time
 
 import jwt
-import pymysql
 
 import access_resolve
 import rls_registry
@@ -33,18 +31,9 @@ ROLE_ORDER = ("admin", "editor", "viewer")
 # The proposal agent is a Keycloak service account (client-credentials grant) of its own client: it may only
 # ever be the `agent` role, and the dashboard client may never be. Neither can borrow the other's roles.
 AGENT_CLIENT_ID = os.environ.get("KEYCLOAK_AGENT_CLIENT_ID", "inventory-agent")
-# DATASET picks the schema the territories come from: rls (live) or rls_<dataset> (e.g. rls_250m, built by dbt with
-# mart_suffix _250m). AUTH_REGIONS_TABLE overrides it. Operator-set, not user input, and checked before it reaches SQL.
-DATASET = os.environ.get("DATASET", "live").lower()
-if not re.fullmatch(r"[a-z0-9]+", DATASET):
-    raise SystemExit(f"DATASET must be letters and digits, got {DATASET!r}")
-# `both` (the live Cube and a 250m Cube side by side): this deployment's users and territories are the live ones for both.
-DATASET_SUFFIX = "" if DATASET in ("live", "both") else f"_{DATASET}"
-REGIONS_TABLE = os.environ.get("AUTH_REGIONS_TABLE") or f"rls{DATASET_SUFFIX}.user_regions"
-
-# Row-level rules the admin console edits (Postgres, schema `access`, read-only login `access_auth`): a person's territories are the union of the rules for them and their
-# groups. Without AUTH_PG_PASSWORD there are no rules and only the dbt seed decides, as before. With it, a rules database that cannot be read fails the sign-in
-# (503) instead of falling back to the seed, which could give someone more than their rule allows.
+# Row-level rules the admin console edits (Postgres, schema `access`, read-only login `access_auth`): a person's values per dimension are the union of the rules for them and their
+# groups. Without AUTH_PG_PASSWORD there are no rules (nobody has a value, so a `deny` dimension gives everyone but an admin nothing). With it, a rules database that cannot be read
+# fails the sign-in (503).
 PG = {"host": os.environ.get("AUTH_PG_HOST", "postgres"), "port": int(os.environ.get("AUTH_PG_PORT", "5432")), "dbname": os.environ.get("AUTH_PG_DB", "postgres"),
       "user": os.environ.get("AUTH_PG_USER", "access_auth"), "password": os.environ.get("AUTH_PG_PASSWORD", "")}
 RULES_ON = bool(PG["password"]) and PG["password"] != "REPLACE_ME"
@@ -70,45 +59,6 @@ app.add_middleware(
     allow_methods=["POST", "GET"],
     allow_headers=["Authorization"],
 )
-
-
-def territories_for(username: str) -> list[str]:
-    # dbt drops and recreates the table on every build: for a split second it does not exist.
-    # Retry that (and only that) briefly instead of failing a login.
-    for attempt in range(4):
-        try:
-            return _territories_for(username)
-        except pymysql.err.ProgrammingError as exc:
-            if exc.args[0] != 5502 or attempt == 3:  # 5502: unknown table
-                raise
-            time.sleep(0.4)
-    return []
-
-
-def _territories_for(username: str) -> list[str]:
-    conn = pymysql.connect(
-        host=os.environ.get("STARROCKS_HOST", "starrocks"),
-        port=int(os.environ.get("STARROCKS_PORT", "9030")),
-        user=os.environ["AUTH_DB_USER"],
-        password=os.environ["AUTH_DB_PASSWORD"],
-        connect_timeout=5,
-    )
-    try:
-        with conn.cursor() as cur:
-            if REGIONS_TABLE:
-                # e.g. rls.user_regions (username, region): a schema with a wildcard grant, so it
-                # stays readable while dbt rebuilds the mart.
-                cur.execute(f"select region from {REGIONS_TABLE} where username = %s order by 1", (username,))
-            else:
-                cur.execute(
-                    "select t.sales_territory_region from mart.dim_user_territory u "
-                    "join mart.dim_sales_territory t on t.sales_territory_key = u.sales_territory_key "
-                    "where u.username = %s order by 1",
-                    (username,),
-                )
-            return [r[0] for r in cur.fetchall()]
-    finally:
-        conn.close()
 
 
 def read_access(username: str, role: str, groups: list[str]) -> tuple[dict[str, list[str]], list[str], bool, list[str]]:
@@ -172,16 +122,12 @@ def token(authorization: str = Header(default="")) -> dict:
     rls: dict[str, list[str]] = {}
     if role != "agent":                                                                              # the agent works on inventory, which is not row-bound
         for dim in DIMENSIONS:
-            values = ruled.get(dim["id"], [])                                                         # a rule for this person or their groups decides ...
-            if not values and dim.get("seed"):
-                values = territories_for(user)                                                        # ... else the dbt seed (territory only); none at all is fine (cube.js then denies or allows by `when_empty`)
-            rls[dim["id"]] = values
-    territories = rls.get("territory", [])                                                            # the claim the older pages read
+            rls[dim["id"]] = ruled.get(dim["id"], [])                                                 # the rules for this person or their groups; none is fine (cube.js denies or allows by `when_empty`)
 
     now = int(time.time())
     cube_token = jwt.encode(
-        {"user_id": user, "role": role, "territories": territories, "rls": rls, "rls_version": RLS_VERSION, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
+        {"user_id": user, "role": role, "rls": rls, "rls_version": RLS_VERSION, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab, "iat": now, "exp": now + TTL},
         CUBE_SECRET,
         algorithm="HS256",
     )
-    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "territories": territories, "rls": rls, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab}
+    return {"token": cube_token, "expires_in": TTL, "user": user, "role": role, "rls": rls, "groups": groups, "blocked_cubes": blocked, "blocked_members": blocked_fields, "lab": lab}

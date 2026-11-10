@@ -2,6 +2,6 @@
 -- never this one). Idempotent: an id already in access.rls_dimension is left as it is, so a change made in the database is never overwritten.
 -- Cube, the auth service and the admin console read the table when they start (PLAN-rls-registry-db.md).
 INSERT INTO access.rls_dimension (id, position, member, cubes, when_empty, values_source, seed, labels, empty_message) VALUES
-    ('territory', 10, 'territories.region', ARRAY['internet_sales', 'reseller_sales', 'territories'], 'deny', '{"kind": "seed_regions"}'::jsonb, true, '{"en": "Territories", "tr": "Bölgeler"}'::jsonb, 'No territories assigned'),
+    ('territory', 10, 'territories.region', ARRAY['internet_sales', 'reseller_sales', 'territories'], 'deny', '{"kind": "list", "values": ["Australia", "Canada", "Central", "France", "Germany", "Northeast", "Northwest", "Southeast", "Southwest", "United Kingdom"]}'::jsonb, false, '{"en": "Territories", "tr": "Bölgeler"}'::jsonb, 'No territories assigned'),
     ('product_category', 20, 'products.category', ARRAY['internet_sales', 'reseller_sales'], 'deny', '{"kind": "list", "values": ["Accessories", "Bikes", "Clothing", "Components", "Uncategorized"]}'::jsonb, false, '{"en": "Product categories", "tr": "Ürün kategorileri"}'::jsonb, 'No product categories assigned')
 ON CONFLICT (id) DO NOTHING;
