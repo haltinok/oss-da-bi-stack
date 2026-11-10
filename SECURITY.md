@@ -30,13 +30,13 @@ public issue.
 * **Only the optional SQL Server load needs a secrets file:**
   `dlt/pipelines/sqlserver_to_postgres/.dlt/secrets.toml`, created from
   `secrets.toml.example` and git-ignored.
-* **Least privilege for reads.** Cube and the auth service read StarRocks as
-  read-only users (`cube_ro`, `auth_ro`; see the `starrocks` profile below).
+* **Least privilege for reads.** Cube reads StarRocks as a read-only user
+  (`cube_ro`; see the `starrocks` profile below).
 * **The `starrocks` profile** adds sign-in and row-level security, which the rest of the stack does not
   have: users log in through Keycloak, a small service (`auth/`) turns the login into a 15-minute
-  Cube token carrying the user's territories, and Cube (`cube/cube.js`) adds the territory filter to
-  every query and refuses profit/margin and customer data to roles that may not see them. Cube and the
-  auth service read StarRocks as read-only users (`cube_ro`: the mart; `auth_ro`: only the `rls` schema).
+  Cube token carrying the user's row-level values (from the rules in the access database), and Cube (`cube/cube.js`) adds the territory filter to
+  every query and refuses profit/margin and customer data to roles that may not see them. Cube reads
+  StarRocks as a read-only user (`cube_ro`: the mart); the auth service does not touch StarRocks.
   **Demo posture, not production:** Keycloak runs in `start-dev` (embedded H2, plain HTTP, direct password
   grants for the tests), the StarRocks `root` user has no password on the internal Docker network, and
   there is no audit log or TLS. A real deployment needs the organisation's identity provider, TLS,

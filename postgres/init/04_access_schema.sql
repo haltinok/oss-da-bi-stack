@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS access;
 
 -- A rule says which values of one dimension (cube/rls_dimensions.json: territory, ...) a person or a group may see. A person's values are the union of the rules for them and for their groups;
--- for the territory dimension, with no rule at all, the dbt seed (rls.user_regions in StarRocks) still decides, as before.
+-- with no rule at all a person has no value (a `deny` dimension then gives them nothing; the registry says).
 CREATE TABLE IF NOT EXISTS access.rls_rule (
     principal_type text        NOT NULL CHECK (principal_type IN ('user', 'group')),
     principal      text        NOT NULL CHECK (char_length(principal) BETWEEN 1 AND 120),     -- the Keycloak username, or the group's name
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS access.rls_dimension (
     cubes          text[]      NOT NULL CHECK (cardinality(cubes) BETWEEN 1 AND 50),                   -- every query touching one of these cubes is filtered
     when_empty     text        NOT NULL CHECK (when_empty IN ('deny', 'allow')),                       -- deny: no value, nothing from those cubes; allow: no value, no limit
     values_source  jsonb       NOT NULL DEFAULT '{"kind": "cube"}' CHECK (values_source->>'kind' IN ('seed_regions', 'list', 'cube')),   -- where the console's value list comes from
-    seed           boolean     NOT NULL DEFAULT false,                                                 -- with no rule, the dbt seed (rls.user_regions) decides (territory)
+    seed           boolean     NOT NULL DEFAULT false,                                                 -- legacy, ignored: the dbt seed no longer decides anything (12_territory_rules.sql)
     labels         jsonb       NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(labels) = 'object'),           -- the console's name for it, per language
     empty_message  text        NOT NULL DEFAULT '' CHECK (char_length(empty_message) <= 200),          -- what Cube answers a person with no value (deny)
     updated_by     text        NOT NULL DEFAULT 'install',

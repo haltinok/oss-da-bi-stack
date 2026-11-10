@@ -28,7 +28,6 @@ def mint(monkeypatch, claims):
     class Key:
         key = "k"
 
-    monkeypatch.setattr(main, "territories_for", lambda user: ["Canada"])
     monkeypatch.setattr(main, "jwks", type("J", (), {"get_signing_key_from_jwt": lambda self, raw: Key()})())
     monkeypatch.setattr(main.jwt, "decode", lambda raw, key, **kw: {"azp": "dashboard", "preferred_username": "ayse", "realm_access": {"roles": ["admin"]}, **claims} if kw.get("issuer") else {})
     r = TestClient(main.app).post("/token", headers={"Authorization": "Bearer t"})

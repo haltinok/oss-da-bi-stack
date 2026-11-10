@@ -98,7 +98,6 @@ pipeline), `250m` (only the 250M tier, built into `mart_250m`, `rls_250m` and `a
 | Service | `DATASET=live` | `DATASET=250m` |
 |---|---|---|
 | Cube | `cube/model` on `mart`, rollups in `dev_pre_aggregations` | the 500M-tuned model (`spike/cube/model`: year-partitioned incremental rollups, hourly refresh) plus the two inventory cubes, read from `mart_250m`, rollups in their **own** schema `dev_pre_aggregations_250m` |
-| auth | territories from `rls.user_regions` | from `rls_250m.user_regions` |
 | actions | reads `mart.inventory_health`, writes `postgres_active` | reads `mart_250m.inventory_health` and **refuses every write** (409); the log and proposals are empty |
 | dashboard | header badge *Live (simulator)* | header badge *250M benchmark*, a banner, **Approve disabled** with the reason |
 

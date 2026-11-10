@@ -12,13 +12,13 @@ const bikes = { product_category: ['Bikes'] };                                 /
 const mk = () => ({ measures: ['internet_sales.revenue'], dimensions: ['products.category'] });       // queryRewrite adds filters to the query it is given
 const filterOn = (r, member) => (r.ok.filters || []).filter((f) => f.member === member);
 
-// territory, from the rls claim and from an older token that only has `territories`
+// territory, from the rls claim (the old `territories` claim is gone: a token that only has it has no territory)
 let r = ask({ ...base, rls: { territory: ['Canada', 'Germany'], ...bikes } }, mk());
 assert.deepStrictEqual(filterOn(r, 'territories.region')[0].values, ['Canada', 'Germany'], 'the rls claim limits the territories');
 r = ask({ ...base, territories: ['Canada'], rls: bikes }, mk());
-assert.deepStrictEqual(filterOn(r, 'territories.region')[0].values, ['Canada'], 'an older token with only territories still works');
+assert(r.error && /No territories assigned/.test(r.error.message), 'an older token with only `territories` is not rescued by it: no territory, no sales data');
 r = ask({ ...base, rls: { territory: [], ...bikes }, territories: ['Canada'] }, mk());
-assert(r.error && /No territories assigned/.test(r.error.message), 'an empty rls list is not rescued by the older claim');
+assert(r.error && /No territories assigned/.test(r.error.message), 'an empty rls list is not rescued by the older claim either');
 assert(ask({ ...base, rls: bikes }, mk()).error, 'no territory: denied (when_empty deny)');
 assert(ask({ ...base, rls: { territory: ['Canada'] } }, { measures: ['inventory_health.stockout_items'] }).ok, 'cubes outside every dimension are not filtered');
 assert(!ask({ ...base, rls: { territory: ['Canada'] } }, { measures: ['inventory_health.stockout_items'] }).ok.filters, 'and get no filter');

@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py keycloak.py access.py seed.py cubes.py access_resolve.py rls_registry.py ./
+COPY main.py keycloak.py access.py cubes.py access_resolve.py rls_registry.py ./
 # the one registry file, shared with Cube and the auth service
 COPY --from=modelconfig rls_dimensions.json ./rls_dimensions.json
 COPY --from=dashboards dashspec ./dashspec

@@ -15,7 +15,7 @@ services:
   postgres:
     container_name: distributor_postgres
     environment:
-      MODEL_ACCESS_SQL: /model/access.sql          # postgres/init/11_model_access.sh: the model's datasets, grants and row-level dimensions instead of AdventureWorks' (first start only)
+      MODEL_ACCESS_SQL: /model/access.sql          # postgres/init/13_model_access.sh: the model's datasets, grants and row-level dimensions instead of AdventureWorks' (first start only)
     volumes:
       - ./models/distributor:/model:ro
 

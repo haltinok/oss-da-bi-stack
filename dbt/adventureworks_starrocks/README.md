@@ -2,7 +2,7 @@
 
 The star schema on StarRocks (it replaced the dbt-postgres project `dbt/adventureworks_dwh`, now in git history).
 By default it reads the live `raw` schema loaded by the `postgres_active_to_starrocks` DAG and builds
-`stage.*` views, `mart.*` tables and the small `rls.*` schema the auth service reads. It can also read the
+`stage.*` views and `mart.*` tables. (Row-level security is not here: a person's territories are rules in the access database, see docs/admin.md.) It can also read the
 benchmark schemas of the spike (`scale_10m` / `scale_100m` / `scale_500m`, built by `spike/scale`).
 
 The pipeline runs it as `dbt build --vars '{aw_source_schema: raw, use_pk_snapshots: true}'`. By hand
@@ -43,7 +43,6 @@ Not ported (the dashboard does not read them): `dim_promotion`, `dim_currency`,
 - `date_shift_years: 12` (as in the Postgres project) so the seeded history meets the live orders; the
   benchmark schemas must pass `date_shift_years: 0`.
 - `data_version` (one row, rewritten every build) lets Cube refresh its rollups when the mart changed;
-  `models/rls/user_regions` is the auth service's table (see `starrocks/init.sh` for why it is its own schema).
 - `use_pk_snapshots: true` drops orders deleted at the source (a merge load never sees deletes).
 - `dbt snapshot` is replaced by `product_versions` (see findings).
 

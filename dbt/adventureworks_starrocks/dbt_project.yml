@@ -43,11 +43,6 @@ vars:
   target_cover_days: 60      # stock above this many days of demand counts as excess
   safety_stock_cap_days: 30  # AdventureWorks' fixed safety stock is capped at this many days of demand
 
-seeds:
-  adventureworks_starrocks:
-    # user -> territory mapping; read via models/rls/user_regions.sql
-    +schema: rls
-
 # Cube's read access is a wildcard grant (ALL TABLES IN DATABASE mart), which survives dbt dropping
 # and recreating tables; this hook only matters for a database granted before (e.g. the benchmark
 # schemas mart_10m / mart_100m). The auth service reads the separate `rls` schema; see models/rls.

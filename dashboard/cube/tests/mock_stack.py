@@ -193,7 +193,6 @@ def saved_answer(path, body, method, c):
 ADMIN = {"users": {}, "groups": {}, "rules": {}, "rules_dim": {}, "channel": False, "datasets": {}, "rules_off": False, "n": 0}
 CUBES = [{"name": n, "description": f"The {n} cube", "measures": 3, "dimensions": 5, "fields": [{"name": "revenue", "kind": "measure"}, {"name": "gross_profit", "kind": "measure"}, {"name": "category", "kind": "dimension"}]} for n in ("customers", "dates", "internet_sales", "inventory_health", "products", "reseller_sales", "territories")]
 REGIONS = ["Canada", "France", "Germany", "United States"]
-SEED_REGIONS = {"admin": REGIONS, "na_manager": ["Canada", "United States"], "de_rep": ["Germany"]}
 ROLES = ["admin", "editor", "viewer"]
 TEMP_VALUE = "x" * 14                                  # what the mock shows as a reset's temporary value (not a secret)
 
@@ -249,7 +248,7 @@ def admin_answer(path, body, method, query):
         if parts == ["rls", "rules"] and method == "GET":
             rows = [{"type": t, "principal": p, "dimension": "territory", "values": v, "updated_by": "admin", "updated_at": "2026-11-02T10:00:00+00:00"} for (t, p), v in sorted(rules.items())]
             rows += [{"type": t, "principal": p, "dimension": d, "values": v, "updated_by": "admin", "updated_at": "2026-11-02T10:00:00+00:00"} for (t, p, d), v in sorted(extra.items())]
-            return 200, {"rules": rows, "regions": REGIONS, "dimensions": dims}
+            return 200, {"rules": rows, "dimensions": dims}
         if len(parts) == 4 and parts[1] == "rules" and dim not in [d["id"] for d in dims]:
             return 400, {"detail": f"unknown dimension '{dim}'"}
         if len(parts) == 4 and parts[1] == "rules" and method == "PUT":
@@ -273,8 +272,7 @@ def admin_answer(path, body, method, query):
             blocked = [] if u["role"] == "admin" else sorted(gov - allowed)
             base = {"username": u["username"], "role": u["role"], "groups": names, "applies": True, "rules": [{"type": t, "principal": p, "values": v} for t, p, v in hits], "blocked_cubes": blocked,
                     "lab": u["role"] == "admin" or any(g.get("permission") == "lab" and ((g["type"] == "user" and g["principal"] == u["username"]) or (g["type"] == "role" and g["principal"] == u["role"]) or (g["type"] == "group" and g["principal"] in names)) for d in ADMIN["datasets"].values() for g in d["grants"])}
-            seeded = SEED_REGIONS.get(u["username"], [])
-            terr = ({"values": sorted({x for _, _, v in hits for x in v}), "source": "rules"} if hits else {"values": seeded, "source": "seed" if seeded else "none"})
+            terr = {"values": sorted({x for _, _, v in hits for x in v}), "source": "rules"} if hits else {"values": [], "source": "none"}
             per = {"territory": terr}
             if ADMIN["channel"]:
                 ch = [v for (t, p, d), v in extra.items() if d == "channel" and ((t == "user" and p == u["username"]) or (t == "group" and p in names))]

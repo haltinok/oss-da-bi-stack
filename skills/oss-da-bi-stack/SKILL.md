@@ -133,14 +133,13 @@ Nine simulator-mutated tables stream through Debezium → Kafka → ClickHouse:
 - **Reset raw** (e.g. after re-seeding the sandbox): `drop database raw force; create database raw` in StarRocks,
   then run the ingest. ingestr's incremental state lives with the destination tables.
 - **dbt drops and recreates tables each build**, and StarRocks drops table-level grants with them. Don't
-  grant on tables: `starrocks/init.sh` gives `cube_ro` a wildcard grant on `mart` and `auth_ro` one on
-  `rls` (whose table is `rls.user_regions`), and wildcard grants survive.
+  grant on tables: `starrocks/init.sh` gives `cube_ro` a wildcard grant on `mart`, and wildcard grants survive.
 - **Cube** (`cube/`): rollups refresh when `mart.data_version` changes (rewritten every build). Rollups are
   deliberately **unpartitioned**: Cube answers from whichever partitions are built, so a partitioned
   rollup returns incomplete totals while rebuilding. Restart Cube after editing the model.
-- **Row-level security** lives in `cube/cube.js` (`checkAuth`, `queryRewrite`); users and territories are
-  `dbt/adventureworks_starrocks/seeds/dim_user_territory.csv`. After changing either, run the security
-  tests (`cube/tests`) and the browser test `dashboard/cube/tests/e2e.py` (both read `.env`; see the docstrings).
+- **Row-level security** lives in `cube/cube.js` (`checkAuth`, `queryRewrite`); each person's row values are
+  rules in the access database (`postgres/init/12_territory_rules.sql`, the admin console). After changing either, run the security
+  tests (`cube/tests`; they read `.env`, see the docstrings).
 - **StarRocks needs a split FE/BE** here: the all-in-one image advertises its backend as `127.0.0.1`, which
   breaks Stream Load from other containers. Memory is the constraint at scale (`spike/results.md`).
 - **`dim_date` runs to 2040** because the simulator stamps new rows with `now()`. `date_shift_years: 12`
