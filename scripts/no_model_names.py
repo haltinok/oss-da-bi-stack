@@ -2,8 +2,8 @@
 """The guard of PLAN-decouple.md: the app knows no model.
 
 Lists every place under the app folders that names a cube or a member of a model the repo ships (cube/model, models/<name>/cube): a qualified member
-(`internet_sales.revenue`, only a member that really exists, so `dates.length` is not a hit) or a quoted cube name (`"internet_sales"`).
-Model add-ons (agent/, actions/), tests, example dashboards, the Cube model, dbt and Airflow may name members and are not scanned.
+(`internet_sales.revenue`, only a member that really exists, so `dates.length` is not a hit) or a quoted cube name with an underscore (`"internet_sales"`; a plain word such as "calendar" or "items" is also a cube name of some model and says nothing).
+Model add-ons (agent/, actions/, builder/recipes/), tests, example dashboards, the Cube model, dbt and Airflow may name members and are not scanned.
 
   python scripts/no_model_names.py            # warning mode (phases 0-4): prints the hits as GitHub annotations, exits 0
   python scripts/no_model_names.py --strict   # phase 5: exits 1 on any hit that scripts/no-model-names.allow does not list
@@ -20,6 +20,7 @@ import yaml
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SCAN = ["dashboard", "builder", "dashboards/dashspec", "lab", "admin", "auth", "cube/cube.js"]
 SKIP_DIRS = {"tests", "node_modules", "__pycache__", "screenshots", ".venv"}
+ADD_ONS = ("builder/recipes/",)          # a model's hand-made rule-based recipe lives beside the app, named in the model's model.config.yml
 SUFFIXES = {".py", ".js", ".mjs", ".html", ".json", ".css", ".yml", ".yaml", ".md", ".template"}
 
 
@@ -42,7 +43,7 @@ def files():
     for entry in SCAN:
         root = REPO / entry
         for path in ([root] if root.is_file() else sorted(root.rglob("*"))):
-            if path.is_file() and path.suffix in SUFFIXES and not SKIP_DIRS & set(path.relative_to(REPO).parts):
+            if path.is_file() and path.suffix in SUFFIXES and not SKIP_DIRS & set(path.relative_to(REPO).parts) and not path.relative_to(REPO).as_posix().startswith(ADD_ONS):
                 yield path
 
 
@@ -59,7 +60,7 @@ def allowed():
 
 def hits():
     cubes, members = names()
-    quoted = re.compile(r"""["'](%s)["']""" % "|".join(sorted(cubes, key=len, reverse=True)))
+    quoted = re.compile(r"""["'](%s)["']""" % "|".join(sorted((c for c in cubes if "_" in c), key=len, reverse=True)))
     qualified = re.compile(r"\b([a-z][a-z_]*)\.([a-z][a-z_]*)\b")
     for path in files():
         for n, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):

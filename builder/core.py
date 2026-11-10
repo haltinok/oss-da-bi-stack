@@ -65,7 +65,7 @@ A click rule: bar and pie -> filter on its `by`; treemap -> filters in the order
 Use a pivot when the request crosses two dimensions ("revenue by category and year", "by region and month"): a bar or a table cannot show a measure against two axes. Use a table for a list, a pivot for a cross-tab.
 Write titles and labels in the language of locale: every `label`, including the `label` / `by_label` / `group_labels` of pie, bar and treemap panels (without one the member's English name is shown). If the request needs a metric the catalog does not have, call cannot_build and say which."""
 
-SYSTEM = """You build dashboards for a business's analysts and managers from a short request. The data is a simulated AdventureWorks company. A person looks at the \
+SYSTEM = """You build dashboards for a business's analysts and managers from a short request. The data is described by the catalog below. A person looks at the \
 result and can ask for changes; you never see data, only the catalog of members (names and types) the signed-in user may read.
 
 {guide}
@@ -102,7 +102,7 @@ def without_members(catalog: cat.Catalog, blocked) -> cat.Catalog:
     cubes = {}
     for n, c in catalog.cubes.items():
         cubes[n] = {**c, "measures": {m: t for m, t in c["measures"].items() if f"{n}.{m}" not in gone}, "dimensions": {d: t for d, t in c["dimensions"].items() if f"{n}.{d}" not in gone}}
-    return cat.Catalog(cubes)
+    return cat.Catalog(cubes, catalog.config)
 
 
 def without_cubes(catalog: cat.Catalog, blocked) -> cat.Catalog:
@@ -111,7 +111,7 @@ def without_cubes(catalog: cat.Catalog, blocked) -> cat.Catalog:
     cubes = {n: dict(c) for n, c in catalog.cubes.items() if n not in gone}
     for c in cubes.values():
         c["joins"] = {j for j in (c["joins"] or ()) if j in cubes} if c["joins"] is not None else None
-    return cat.Catalog(cubes)
+    return cat.Catalog(cubes, catalog.config)
 
 
 def visible_catalog(catalog: cat.Catalog, role: str) -> cat.Catalog:
@@ -121,11 +121,11 @@ def visible_catalog(catalog: cat.Catalog, role: str) -> cat.Catalog:
         ms = {m: t for m, t in c["measures"].items() if denied(role, f"{name}.{m}") is None}
         ds = {d: t for d, t in c["dimensions"].items() if denied(role, f"{name}.{d}") is None}
         if ms or ds:
-            cubes[name] = {"measures": ms, "dimensions": ds, "joins": c["joins"], "description": c.get("description", ""), "docs": c.get("docs", {}), "rollup_dimensions": c.get("rollup_dimensions", [])}
+            cubes[name] = {**c, "measures": ms, "dimensions": ds, "joins": c["joins"], "description": c.get("description", ""), "docs": c.get("docs", {}), "rollup_dimensions": c.get("rollup_dimensions", [])}          # keeps what the model says about the cube (kind, series, sort_by ...)
     # a join to a cube the role cannot see is no use to it
     for c in cubes.values():
         c["joins"] = {j for j in (c["joins"] or ()) if j in cubes} if c["joins"] is not None else None
-    return cat.Catalog(cubes)
+    return cat.Catalog(cubes, catalog.config)
 
 
 def catalog_text(catalog: cat.Catalog) -> str:
@@ -166,9 +166,7 @@ def example_spec(catalog: cat.Catalog, role: str) -> str:
     """Complete specs that are valid for this role, composed from the catalog it may read (so they never name a member the role cannot see)."""
     from builder import composer
     out = []
-    for title, ask in (("a dashboard with KPIs, a time chart, breakdowns, a table and a treemap", "revenue and orders by month, by region and top products, a table of latest orders and a treemap"),
-                       ("a drill-down line chart and a pie with click-to-filter, in Turkish, with labels in Turkish", "Türkçe: yıl ay gün drill çizgi grafik ve alt kategoriye göre pasta grafiği"),
-                       ("an inventory dashboard", "stock status and an excess stock table")):
+    for title, ask in composer.example_requests(catalog):
         comp = composer.compose(ask, catalog, role)
         if comp.spec:
             out.append(f"# {title}\n" + yaml.safe_dump(comp.spec, sort_keys=False, allow_unicode=True, width=140))
@@ -311,27 +309,10 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
     return out
 
 
-EXAMPLES = {
-    "sales": {
-        "en": ["Monthly revenue by channel and the top 5 products, with a table of the latest orders",
-               "Revenue and orders by region and country; click a bar to filter the rest",
-               "Revenue by category as a treemap, and the product mix by month",
-               "Türkçe satış panosu: aylık gelir, bölgeye göre gelir ve son siparişler"],
-        "tr": ["Kanala göre aylık gelir ve en iyi 5 ürün, son siparişlerin tablosuyla",
-               "Bölge ve ülkeye göre gelir ve siparişler; kalanı filtrelemek için bir çubuğa tıklayın",
-               "Kategoriye göre gelir ve aya göre ürün karması, ağaç haritası olarak",
-               "Yıl, ay ve gün detayına inen gelir çizgi grafiği ve alt kategoriye göre pasta grafiği"],
-    },
-    "inventory": {
-        "en": ["Stock status and the reorder list", "Overstock and excess stock, top 10", "Envanter durumu ve yeniden sipariş listesi, Türkçe"],
-        "tr": ["Stok durumu ve yeniden sipariş listesi", "Fazla stok ve ölü stok tablosu, ilk 10", "Tedarikçiye göre envanter durumu"],
-    },
-}
-
-
-def examples_for(role: str, lang: str = "en") -> list[str]:
+def examples_for(role: str, lang: str = "en", catalog: cat.Catalog | None = None) -> list[str]:
     """Requests that work for this role, in the page's language (the stand-in understands them; they are also good starting points for the model)."""
-    return EXAMPLES["sales"].get(lang, EXAMPLES["sales"]["en"])
+    from builder import composer
+    return composer.suggestions(catalog, lang)
 
 
 def check_catalog(model_dir: str) -> cat.Catalog:

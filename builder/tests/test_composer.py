@@ -355,7 +355,7 @@ def test_a_field_that_has_a_filter_gets_a_slicer_drawing_it_not_a_second_control
 
 
 def test_the_fields_of_a_slicer_are_read_before_or_after_the_word():
-    from builder.composer import norm, slicer_fields
+    from builder.recipes.adventureworks import norm, slicer_fields
     for text, keys in [("a slicer for colour", ["color"]), ("colour and country slicers", ["color", "country"]), ("make region a slicer", ["region"]),
                        ("bölge filtresini dilimleyici yap", ["region"]), ("renge göre dilimleyici", ["color"]), ("slicer for sales group", ["group"]),
                        ("slicers for colour, country and fiscal year", ["color", "country", "fy"]), ("a status slicer and a colour slicer", ["status", "color"]),
