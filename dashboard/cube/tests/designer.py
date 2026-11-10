@@ -834,7 +834,7 @@ with sync_playwright() as p:
     check("values it applies with" in page.inner_text("#dz-msg").lower(), "hiding a filter that has no values to apply with is refused, saying why")
     page.wait_for_selector(f"{fcard} .dz-allowed .slicer-item", timeout=15000)
     with changes(page):
-        page.locator(f"{fcard} .dz-allowed .slicer-item input").nth(0).check()
+        page.locator(f"{fcard} .dz-allowed .slicer-item input").nth(0).click()
     settled(page)
     check(next(f for f in filters() if f["id"] == fid).get("visible") is False and "hidden" in page.inner_text(f"{fcard} h4").lower(), "a tab's filter with a value picked is a pre-filter: hidden from the reader (it applies with that value), and the card says so")
     check(page.locator("#tabpanel-tab_1 .tab-filters .field").count() == 0, "a hidden filter has no control on the page")
@@ -957,7 +957,7 @@ with sync_playwright() as p:
     page.wait_for_selector(f"{ncard} .dz-allowed .slicer-item", timeout=15000)
     check(page.locator(f"{ncard} .dz-allowed .slicer-item").count() >= 3, "the values the reader can choose are ticked from a list of the real values")
     with changes(page):
-        page.locator(f"{ncard} .dz-allowed .slicer-item input").nth(0).check()
+        page.locator(f"{ncard} .dz-allowed .slicer-item input").nth(0).click()
     settled(page)
     page.wait_for_selector(f"{ncard} .dz-allowed .slicer-item", timeout=15000)
     with changes(page):
@@ -1336,7 +1336,7 @@ with sync_playwright() as p:
     own.locator(".dz-allowed").wait_for(timeout=15000)
     check(page.locator("#designer #dz-panelfilters .dz-allowed").count() == 1 and "Always filter by" in page.inner_text("#designer #dz-panelfilters"), "a panel's filter offers the values to always filter by")
     with changes(page):
-        page.locator("#designer #dz-panelfilters .dz-allowed .slicer-item input").nth(0).check()
+        page.locator("#designer #dz-panelfilters .dz-allowed .slicer-item input").nth(0).click()
     settled(page)
     pf = next(x for x in cur()["filters"] if x.get("scope") == "panel")
     check(pf.get("visible") is False and pf.get("allowed") and pf.get("default"), f"ticking a value pre-filters the panel and hides the filter ({pf.get('allowed')})")
