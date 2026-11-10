@@ -362,8 +362,10 @@ def test_preview_gives_every_dimension_and_deleting_a_person_clears_all_their_ru
 
 def test_the_dimensions_file_is_the_one_cube_reads():
     import pathlib
+
+    import rls_registry
     root = pathlib.Path(__file__).resolve().parents[2]
-    assert (root / "admin" / "rls_dimensions.json").read_text() == (root / "cube" / "rls_dimensions.json").read_text()
+    assert rls_registry.default_file() == root / "cube" / "rls_dimensions.json", "in the source tree the default is the one file; an image gets it copied next to the module"
 
 
 def test_product_category_rules_take_only_known_categories(ruled, kc):

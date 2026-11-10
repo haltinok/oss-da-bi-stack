@@ -127,12 +127,14 @@ def test_the_token_carries_the_values_of_every_dimension_in_rls(monkeypatch):
 
 def test_the_dimensions_file_is_the_one_cube_reads():
     root = pathlib.Path(__file__).resolve().parents[2]
-    assert (root / "auth" / "rls_dimensions.json").read_text() == (root / "cube" / "rls_dimensions.json").read_text() == (root / "admin" / "rls_dimensions.json").read_text()
+    assert not (root / "auth" / "rls_dimensions.json").exists() and not (root / "admin" / "rls_dimensions.json").exists(), "one file: images copy cube/rls_dimensions.json at build time"
+    import rls_registry
+    assert rls_registry.default_file() == root / "cube" / "rls_dimensions.json"
 
 
 def test_the_cube_token_carries_the_registry_version_cube_checks(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"])
     main = sys.modules["main"]
     claims = REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])
-    assert claims["rls_version"] == main.RLS_VERSION == main.rls_registry.version(main.rls_registry.from_file(pathlib.Path(SERVICE_DIR) / "rls_dimensions.json"))
+    assert claims["rls_version"] == main.RLS_VERSION == main.rls_registry.version(main.rls_registry.from_file(main.rls_registry.default_file()))
     assert main.REGISTRY_SOURCE == "file", "without AUTH_PG_PASSWORD the default file is the registry"

@@ -1,6 +1,6 @@
 # Plan: the app knows no model
 
-Status: **phases 0 (#196), 1 (#197) and 2 built**; phases 3 to 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
+Status: **phases 0 (#196), 1 (#197), 2 (#198) and 3 (mostly) built**; phases 4 and 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
 
 ## Goal
 The dashboard app (renderer, designer, builder, dashspec, lab, admin, auth) runs on **any Cube model**, not only the AdventureWorks one. Everything it knows about the data comes from Cube's `/v1/meta` (with each member's `meta:`) or from a small config file that the model ships. **No cube or member name appears in the app's code.**
@@ -93,6 +93,8 @@ The app reads it once at start-up, beside `/v1/meta`. A model without it still w
 - The calculation hint and the `bar.stack` docs take their examples from the catalog (the first two facts that share a measure name) or use neutral placeholders (`a.revenue`, `b.revenue`).
 
 ### Phase 3: the SQL lab and the row rules (1 day)
+**Built** in three parts: the lab examples (`lab.examples` in model.config.yml, each listing the cubes it reads so it is only offered to someone who can read them; none configured: examples made from the catalog), the agent's cubes (`agent.cubes` and `datasets.overlay_cubes` in model.config.yml, read by `cube/cube.js`), and **one** registry file (`cube/rls_dimensions.json`: the auth and admin images copy it from the `modelconfig` build context, the copies are gone and a test checks it). **Not built, on purpose:** the token carrying only `rls` and `seed_regions` becoming `cube`: the territory dimension still reads the dbt seed (`seed: true`), so changing it would silently drop the access of people who are only in the seed. That needs a migration of the seed into rules first; it is its own piece of work.
+
 - Lab examples and the placeholder come from `model.config.yml`. With none, the lab shows one example built from the catalog (the first fact, its primary measure, its first joined dimension).
 - `rls_dimensions.json` moves next to the model (`cube/model/` or the model's folder). `values.kind: seed_regions` becomes `kind: cube` (distinct values of the member) or `kind: list`. auth/ and admin/ read the one file instead of keeping copies; the copy-check test goes.
 - **The token carries only `rls: { dimension: values }`.** The `territories` claim, the `territory` fallback in `cube/cube.js` and in `cube-client.mjs`, the dbt seed `mart.dim_user_territory` as a special source and `/rls/rules` answering `regions` all go: territory is one row-level dimension among others. The agent's cube list (`AGENT_CUBES`, and the model files `cube.js` loads for it) moves to `agent.cubes` in `model.config.yml`.

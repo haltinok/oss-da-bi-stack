@@ -46,11 +46,8 @@ async function call(method, path, body) {
   throw new Error("not signed in");
 }
 
-const SAMPLES = [
-  ["Revenue by category", "select category, measure(revenue) as revenue\nfrom internet_sales cross join products\ngroup by 1\norder by 2 desc"],
-  ["Orders by year", "select calendar_year, count(distinct order_number) as orders\nfrom internet_sales cross join dates\ngroup by 1\norder by 1"],
-  ["Latest order lines", "select order_number, order_date, product_name\nfrom internet_sales cross join products\norder by order_date desc\nlimit 50"],
-];
+let SAMPLES = [];                                                      // [[title, sql]] from the model (lab.examples in model.config.yml), or made from the cubes this person may read
+const flat = (sql) => sql.replace(/\s+/g, " ").trim();
 
 let tabs = cleanTabs(store.get("labTabs", null));
 let current = tabs.some((t) => t.id === store.get("labTab", 0)) ? store.get("labTab", 0) : tabs[0].id;
@@ -185,7 +182,7 @@ async function deleteQuery() {
 function mountLab() {
   main.innerHTML = `<div class="lab-grid"><aside class="lab-side" aria-label="${esc(w.schema)}"><div id="saved-box" class="lab-saved"></div><input type="search" id="schema-q" placeholder="${esc(w.schemaSearch)}" aria-label="${esc(w.schemaSearch)}"><p class="hint">${esc(w.schemaHint)}</p><div id="schema"></div></aside>
     <section class="lab-main"><div class="lab-tabs" id="tabs" role="tablist"></div><div class="lab-linked" id="linked" hidden></div>
-      <textarea id="sql" spellcheck="false" aria-label="SQL" placeholder="${esc(w.placeholder)}"></textarea>
+      <textarea id="sql" spellcheck="false" aria-label="SQL" placeholder="${esc(SAMPLES[0] ? flat(SAMPLES[0][1]) : w.placeholder)}"></textarea>
       <div class="lab-bar"><button type="button" class="lab-btn primary" id="run">${esc(w.run)}</button><button type="button" class="lab-btn" id="clear">${esc(w.clear)}</button><button type="button" class="lab-btn" id="save" hidden>${esc(w.save)}</button><button type="button" class="lab-btn" id="save-new" hidden>${esc(w.saveNew)}</button><button type="button" class="lab-btn" id="share" hidden>${esc(w.shareBtn)}</button><button type="button" class="lab-btn" id="delete-q" hidden>${esc(w.deleteBtn)}</button>
         <select id="samples" aria-label="${esc(w.samples)}"><option value="">${esc(w.samples)}</option>${SAMPLES.map(([n], i) => `<option value="${i}">${esc(n)}</option>`).join("")}</select>
         <span class="spacer"></span><span class="hint">${esc(w.limits(limits.row_limit, limits.timeout_seconds))} Ctrl/⌘ + Enter</span><button type="button" class="lab-btn" id="copy" hidden>${esc(w.copy)}</button><button type="button" class="lab-btn" id="export-csv" hidden>${esc(w.exportCsv)}</button><button type="button" class="lab-btn" id="export-xlsx" hidden>${esc(w.exportXlsx)}</button></div>
@@ -267,7 +264,9 @@ async function exportAs(format) {
     limits = info.limits || limits;
     saving = !!info.saving;
     if (!info.lab) { main.innerHTML = `<div class="home-sec"><h2>${esc(w.noLab)}</h2><p class="hint">${esc(w.noLabWhy)}</p></div>`; return; }
-    cubes = (await call("GET", "/schema")).cubes;
+    const schema = await call("GET", "/schema");
+    cubes = schema.cubes;
+    SAMPLES = (schema.examples || []).map((e) => [e.title[lang] || e.title.en, e.sql]);
     await loadSaved();
     mountLab();
   } catch (e) { show(`${w.failed} ${e.message}`); }

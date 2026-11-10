@@ -33,6 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+import examples
 import queries
 import sqlcheck
 from store import NotFound, PgStore
@@ -248,7 +249,8 @@ def info(caller: Caller = Who) -> dict:
 @app.get("/schema")
 def schema(caller: Caller = Who) -> dict:
     s = need_lab(cube_session(caller))
-    return {"cubes": schema_for(s)}
+    cubes = schema_for(s)
+    return {"cubes": cubes, "examples": examples.examples_for(catalog(), cubes) if catalog() else []}
 
 
 @app.post("/query")

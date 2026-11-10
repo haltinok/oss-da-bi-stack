@@ -36,10 +36,12 @@ def test_each_dimension_member_exists_and_is_reachable_from_every_cube_it_filter
             assert c == cube or cube in (CATALOG.cubes[c]["joins"] or ()), f"{d['id']}: {c} does not join {cube}, so a filter on {d['member']} would not be valid for it"
 
 
-def test_the_copies_the_services_read_are_identical():
-    text = (REPO / "cube" / "rls_dimensions.json").read_text()
+def test_there_is_one_registry_file_and_the_images_take_it_from_there():
     for svc in ("auth", "admin"):
-        assert (REPO / svc / "rls_dimensions.json").read_text() == text, f"{svc}/rls_dimensions.json differs from cube/rls_dimensions.json"
+        assert not (REPO / svc / "rls_dimensions.json").exists(), f"{svc} must not keep a copy: its image takes cube/rls_dimensions.json (the `modelconfig` build context)"
+        assert "COPY --from=modelconfig rls_dimensions.json" in (REPO / svc / "Dockerfile").read_text(), svc
+    compose = (REPO / "docker-compose.yml").read_text()
+    assert "  auth:\n    build:\n      context: ./auth\n      additional_contexts:\n        modelconfig: ./cube\n" in compose
 
 
 # ---- the registry in the database (PLAN-rls-registry-db.md)

@@ -353,7 +353,9 @@ def lab_answer(path, body, method):
     if not has_lab:
         return 403, {"detail": "You have not been given the SQL lab. Ask an admin to give a dataset you use the SQL lab permission."}
     if path == "/schema":
-        return 200, {"cubes": LAB_SCHEMA}
+        import examples
+        from dashspec import catalog as cat
+        return 200, {"cubes": LAB_SCHEMA, "examples": examples.examples_for(cat.from_model(ROOT / "cube" / "model"), LAB_SCHEMA)}          # the real examples, for the cubes this fake schema lists
     if path.startswith(("/queries", "/query-folders", "/transfer")):
         return lab_queries_answer(path, body, method)
     if path == "/query" and method == "POST":
