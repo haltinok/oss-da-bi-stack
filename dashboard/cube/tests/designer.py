@@ -724,7 +724,7 @@ with sync_playwright() as p:
         page.click("#dz-addfilter")
     settled(page)
     cat = next(f for f in filters() if f["dimension"] == "products.category")
-    card = f'.dz-filter:has(h4:text-is("{cat["id"]}"))'
+    card = f'#dz-filters .dz-filter:has(h4:text-is("{cat["id"]}"))'
     opts = page.locator(f'{card} [data-path="type"] option').evaluate_all("os => os.map((o) => o.value)")
     check(opts == ["select", "multiselect", "text"], f"a text dimension offers select, multiselect and text ({opts})")
     check(cat.get("type") == "multiselect", "a new filter is Several values from the start")
@@ -779,7 +779,7 @@ with sync_playwright() as p:
         page.click("#dz-addfilter")
     settled(page)
     day = next(f for f in filters() if f["dimension"] == "dates.full_date")
-    dcard = f'.dz-filter:has(h4:text-is("{day["id"]}"))'
+    dcard = f'#dz-filters .dz-filter:has(h4:text-is("{day["id"]}"))'
     check(page.locator(f'{dcard} [data-path="type"] option').evaluate_all("os => os.map((o) => o.value)") == ["select", "multiselect", "date"], "a time dimension offers date")
     with changes(page):
         page.select_option(f'{dcard} [data-path="type"]', "date")
@@ -805,7 +805,7 @@ with sync_playwright() as p:
         page.click("#dz-addfilter")
     settled(page)
     fid = next(f for f in filters() if f["dimension"] == "products.category")["id"]
-    fcard = f'.dz-filter:has(h4:text-is("{fid}"))'
+    fcard = f'#dz-filters .dz-filter:has(h4:text-is("{fid}"))'
     check(page.locator(f'{fcard} [data-path="scope"] option').evaluate_all("os => os.map((o) => o.value)") == ["dashboard", "panel"], "without tabs a filter can apply to the dashboard or to one panel")
     with changes(page):
         page.select_option(f'{fcard} [data-path="scope"]', "panel")
@@ -861,7 +861,7 @@ with sync_playwright() as p:
         page.click("#dz-addfilter")
     settled(page)
     fid = next(f for f in filters() if f["dimension"] == "products.category")["id"]
-    fcard = f'.dz-filter:has(h4:text-is("{fid}"))'
+    fcard = f'#dz-filters .dz-filter:has(h4:text-is("{fid}"))'
     with changes(page):
         page.check(f'{fcard} [data-path="slicer"]')
     settled(page)
@@ -956,7 +956,7 @@ with sync_playwright() as p:
     settled(page)
     nf = next(f for f in yaml_of(page).get("filters", []) if f["dimension"] == "products.category")
     check(nf.get("type") == "multiselect", "a filter added in the designer starts as Several values")
-    ncard = f'.dz-filter:has(h4:text-is("{nf["id"]}"))'
+    ncard = f'#dz-filters .dz-filter:has(h4:text-is("{nf["id"]}"))'
     page.wait_for_selector(f"{ncard} .dz-allowed .slicer-item", timeout=15000)
     check(page.locator(f"{ncard} .dz-allowed .slicer-item").count() >= 3, "the values the reader can choose are ticked from a list of the real values")
     with changes(page):
@@ -1315,6 +1315,7 @@ with sync_playwright() as p:
     settled(page)
     f = next(x for x in cur().get("filters", []) if x.get("scope") == "page")
     check(f["tab"] == "tab_2", f"Add to this tab makes a filter of that tab only ({f.get('tab')})")
+    check(page.locator('#designer .dz-tabfilters .dz-filter [data-path="type"]').count() == 1, "the tab's own filter has its settings (type...) under the tab")
     check("Category" in page.inner_text('#designer .dz-tabfilters:nth-of-type(2)') or "Category" in page.inner_text("#designer #dz-tabs"), "and the tab lists it")
     bar = panel_of(page, "bar")
     page.click(f'[data-panel="{bar}"] h2')

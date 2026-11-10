@@ -97,6 +97,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       tabList.append(row);
       const mine = (source.filters || []).filter((f) => f.scope === "page" && f.tab === tab.id);
       const sub = el("div", { class: "dz-tabfilters" }, `<span class="hint"><strong>${esc(dz.tabFilters)}:</strong> ${mine.length ? esc(mine.map((f) => f.label || f.id).join(", ")) : esc(dz.noTabFilters)}</span>`);
+      for (const f of mine) sub.append(filterCard(f));
       sub.append(scopedAdd("page", tab.id, dz.addTabFilter));
       tabList.append(sub);
     });
