@@ -2,7 +2,6 @@
 import pathlib
 
 import examples
-import main
 from dashspec import catalog as cat
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
