@@ -90,8 +90,8 @@ panels:
     type: timeseries
     title: Monthly revenue by channel
     series:
-      - { member: internet_sales.revenue, label: Internet, color: internet }
-      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+      - { member: internet_sales.revenue, label: Internet, color: series1 }
+      - { member: reseller_sales.revenue, label: Reseller, color: series2 }
     granularity: month
     style: stacked-bar
     on_click: { set_filter: fy }       # clicking a month focuses its fiscal year

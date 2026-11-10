@@ -1,4 +1,4 @@
 # What the app needs to know about this model beyond Cube's /v1/meta (see PLAN-decouple.md; read by the app from phase 2 on).
 time:
   dimension: calendar.full_date
-  year_fields: { calendar: calendar.calendar_year }        # no fiscal year
+  year_fields: { calendar: calendar.calendar_year }        # no fiscal year: a comparison with the previous year moves the calendar year

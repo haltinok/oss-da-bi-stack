@@ -6,7 +6,7 @@ cubes:
     sql: >
       SELECT * FROM mart.fact_internet_sales WHERE order_status NOT IN (4, 6)
     data_source: default
-    meta: { kind: fact, series: Internet, color: internet }                 # what the app knows about this cube (PLAN-decouple.md)
+    meta: { kind: fact, series: Internet, color: series1 }                 # what the app knows about this cube (PLAN-decouple.md)
 
     joins:
       - name: products

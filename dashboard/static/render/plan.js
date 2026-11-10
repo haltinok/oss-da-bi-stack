@@ -266,9 +266,9 @@ export function tableParts(p, members) {
   };
 }
 
-/** The CSS colour for a series: a theme name (internet, reseller) is a CSS variable, a hex colour is used as is, none cycles a palette. */
-const CYCLE = ["var(--internet)", "var(--reseller)", "#1baf7a", "#eda100", "#6250d6", "#e87ba4"];
-export const colorOf = (color, i) => (!color ? CYCLE[i % CYCLE.length] : /^[a-z][a-z-]*$/.test(color) ? `var(--${color})` : color);
+/** The CSS colour for a series: a theme name (series1 to series8; the old internet and reseller are aliases of the first two) is a CSS variable, a hex colour is used as is, none cycles the eight. */
+const CYCLE = Array.from({ length: 8 }, (_, i) => `var(--series${i + 1})`);
+export const colorOf = (color, i) => (!color ? CYCLE[i % CYCLE.length] : /^[a-z][a-z0-9-]*$/.test(color) ? `var(--${color})` : color);
 
 /** A subset of Markdown for text panels: paragraphs, **bold**, `code`, [links](https://...), and "- " lists. Everything is escaped first. */
 export function markdown(src, esc) {
@@ -390,7 +390,7 @@ export function kpiQueries(spec, def, t, values) {
   const now = followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters }));
   return {
     now,
-    previous: def.compare ? previousQueries(now, def.compare) : null,
+    previous: def.compare ? previousQueries(now, def.compare, spec.yearFields) : null,
     series: def.sparkline
       ? followPeriod(spec, def, values, queriesPerCube(spec, t.members, { filters, timeDimensions: [{ dimension: timeDimOf(spec, def), granularity: def.sparkline.granularity }] })) : null,
   };

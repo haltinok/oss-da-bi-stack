@@ -56,7 +56,7 @@ panels: list of { id, type, title?, ignore_filters?, ... }, types:
              OR filter: <id of a visible filter> (draws that filter here instead of above the panels); display?: list | chips | dropdown (chips for a few values, dropdown for many).
              Write a slicer only when the request asks for one ("a slicer for colour", "dilimleyici"); a field that already has a filter gets filter: <its id>, never a second control. Place it in the layout, usually under the key figures.
 A measure is one of: member: cube.measure | sum: [a.m, b.m] (the same measure of two fact cubes, added; needs label) | ratio: { num: [..], den: [..] } (needs label; format pct).
-format: money | int | pct (a fraction) | decimal | number.   color: internet | reseller | #rrggbb.
+format: money | int | pct (a fraction) | decimal | number.   color: series1 … series8 | #rrggbb.
 layout: rows of 12 columns, every panel exactly once: - [kpis: 12]  - [trend: 8, lines: 4]
 tabs: INSTEAD of layout, 2-8 pages: [ { id, title, layout: <rows as above> } ]. Every panel is placed on exactly one tab; the filters and a drill-down's period are shared by all tabs, and only the open tab loads. Use tabs ONLY when the request asks for pages or separate topics or audiences ("an overview and a details page"), or the dashboard would pass about 8 panels; otherwise one layout. Put the KPIs and the main chart on the first tab; titles of 1-3 words in the dashboard's language.
 Rules: use only members from the catalog. Cube cannot join two fact cubes in one query, so combine channels with sum/ratio/stack, nothing else:

@@ -38,8 +38,8 @@ panels:
     type: timeseries
     title: Revenue by channel
     series:
-      - { member: internet_sales.revenue, label: Internet, color: internet, format: money }
-      - { member: reseller_sales.revenue, label: Reseller, color: reseller, format: money }
+      - { member: internet_sales.revenue, label: Internet, color: series1, format: money }
+      - { member: reseller_sales.revenue, label: Reseller, color: series2, format: money }
     granularity: year
     drill: [year, month, day]
     style: stacked-area
@@ -59,8 +59,8 @@ panels:
     title: Revenue by category
     orientation: vertical
     stack:
-      - { member: internet_sales.revenue, label: Internet, color: internet }
-      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+      - { member: internet_sales.revenue, label: Internet, color: series1 }
+      - { member: reseller_sales.revenue, label: Reseller, color: series2 }
     by: products.category
     sort: desc
     limit: 6
@@ -70,8 +70,8 @@ panels:
     type: bar
     title: Revenue by region
     stack:
-      - { member: internet_sales.revenue, label: Internet, color: internet }
-      - { member: reseller_sales.revenue, label: Reseller, color: reseller }
+      - { member: internet_sales.revenue, label: Internet, color: series1 }
+      - { member: reseller_sales.revenue, label: Reseller, color: series2 }
     by: territories.region
     sort: desc
     limit: 10

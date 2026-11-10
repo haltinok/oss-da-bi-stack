@@ -10,8 +10,19 @@ class Catalog:
     """cubes: {cube: {"measures": {name: type}, "dimensions": {name: type}, "joins": set | None, "description": str, "docs": {name: str}}}.
     joins is None when the source does not say (Cube's /v1/meta), which turns the join check off. `docs` holds the description of each member."""
 
-    def __init__(self, cubes):
+    def __init__(self, cubes, config=None):
         self.cubes = cubes
+        self.config = config or {}              # what the model ships in model.config.yml (see PLAN-decouple.md)
+
+    def year_fields(self):
+        """The year fields a comparison with the previous year moves, from `time.year_fields` of the model's config: { "fiscal": [members], "calendar": [members] } (a key is left out
+        when the model has none). A cube that `extends` the one that holds the field (a role of the calendar) has it too."""
+        out = {}
+        for kind, member in (self.config.get("time", {}).get("year_fields") or {}).items():
+            cube, _, name = str(member).partition(".")
+            roles = [c for c, v in self.cubes.items() if v.get("extends") == cube and name in v["dimensions"]]
+            out[kind] = [str(member), *(f"{c}.{name}" for c in sorted(roles))]
+        return out
 
     def lookup(self, member):
         """-> (kind, type) for 'cube.name', or None when the cube or the member does not exist."""
@@ -163,7 +174,8 @@ def from_model(model_dir):
         }
     if not cubes:
         raise SystemExit(f"no cubes found under {model_dir}")
-    return Catalog(cubes)
+    config_file = pathlib.Path(model_dir).parent / "model.config.yml"          # the model's own settings sit beside its cube folder
+    return Catalog(cubes, yaml.safe_load(config_file.read_text()) if config_file.exists() else None)
 
 
 def from_cube(url, token):

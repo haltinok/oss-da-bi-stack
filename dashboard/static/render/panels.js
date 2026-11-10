@@ -116,7 +116,7 @@ const clickable = (node, fn) => {
 export function showChange(node, { now, before, previous, kind, points, better }, ctx) {
   const w = ctx.t.compare;
   if (!previous) { node.classList.add("cmp"); node.innerHTML = `<span class="vs">${esc(w.none)}</span>`; return; }
-  const label = compareLabel(previous.moved, kind);
+  const label = compareLabel(previous.moved, kind, ctx.spec.yearFields);
   const vs = label.year ? (label.fiscal ? w.vs.fy(label.year) : w.vs.year(label.year)) : w.vs[label.kind];
   node.title = w.title(previous.moved.map((m) => `${humanize(m.member)} ${m.to.length === 2 && m.to[0].includes("-") ? `${m.to[0]} – ${m.to[1]}` : m.to.join(", ")}`).join("; "));
   const c = change(now, before, points);
@@ -434,7 +434,7 @@ function barPanel(def, ctx) {
         if (def.orientation === "vertical") { host.append(columnChart(rows, parts, ctx, def, f, fullF, totalLabel)); return; }
         const list = el("div", { class: "rrows" });
         for (const r of rows) {
-          const segs = parts.length ? parts.map((p) => ({ value: r.parts.get(p.key) || 0, color: p.color })) : [{ value: r.total, color: colorOf("internet", 0) }];
+          const segs = parts.length ? parts.map((p) => ({ value: r.parts.get(p.key) || 0, color: p.color })) : [{ value: r.total, color: colorOf("series1", 0) }];
           const lines = parts.map((p) => [p.name, fullF(r.parts.get(p.key) || 0), p.color]);
           const row = el("div", { class: "rrow", tabindex: 0, "data-tip": ctx.tooltip.tipAttr(ctx.tooltip.tipLines(r.label, [...lines, [totalLabel, fullF(r.total)]])) },
             `<span class="name">${esc(r.label)}</span>${stackBarHtml(segs, max)}<span class="num">${esc(f(r.total))}</span>`);
@@ -478,7 +478,7 @@ function columnChart(rows, parts, ctx, def, f, fullF, totalLabel) {
     const on = ids.length ? isSelected(cur, ids, [r.label]) : false;
     const g = svgEl("g", picked && !on ? { class: "dim" } : {});
     let acc = 0;
-    const segs = parts.length ? parts.map((p) => ({ v: r.parts.get(p.key) || 0, color: p.color })) : [{ v: r.total, color: colorOf("internet", 0) }];
+    const segs = parts.length ? parts.map((p) => ({ v: r.parts.get(p.key) || 0, color: p.color })) : [{ v: r.total, color: colorOf("series1", 0) }];
     segs.forEach((sg, k) => {
       if (sg.v <= 0) return;
       const y1 = y(acc + sg.v), h = y(acc) - y1;

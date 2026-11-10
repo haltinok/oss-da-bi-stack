@@ -6,7 +6,6 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 COMPARE_KINDS = ("previous_year", "previous_period")
-YEAR_FIELDS = ("fiscal_year", "calendar_year")
 OPEN = ("beforeDate", "afterDate", "beforeOrOnDate", "afterOrOnDate", "notInDateRange")
 _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _INT = re.compile(r"^-?\d+$")
@@ -55,11 +54,12 @@ def shift_years(values, kind):
     return [str(y - by) for y in ys]
 
 
-def is_year_field(member):
-    return str(member).partition(".")[2] in YEAR_FIELDS
+def is_year_field(member, year_fields):
+    """`year_fields` is the model's { "fiscal": [members], "calendar": [members] } (compiled into the spec as `yearFields`); a model with none has no year to move."""
+    return member in [*(year_fields or {}).get("fiscal", []), *(year_fields or {}).get("calendar", [])]
 
 
-def shift_query(query, kind):
+def shift_query(query, kind, year_fields=None):
     """{ query, moved } or None (see shiftQuery in compare.js)."""
     if kind not in COMPARE_KINDS:
         return None
@@ -76,7 +76,7 @@ def shift_query(query, kind):
             else:
                 moved.append({"member": f["member"], "from": list(f["values"]), "to": to})
                 f = {**f, "values": to}
-        elif is_year_field(f.get("member")) and op not in ("set", "notSet"):
+        elif is_year_field(f.get("member"), year_fields) and op not in ("set", "notSet"):
             to = shift_years(f.get("values"), kind) if op == "equals" else None
             if to is None:
                 ok = False
@@ -104,13 +104,13 @@ def shift_query(query, kind):
     return {"query": out, "moved": moved}
 
 
-def previous_queries(queries, kind):
+def previous_queries(queries, kind, year_fields=None):
     """{ queries, moved } or None (see previousQueries in compare.js)."""
     if not kind or not queries:
         return None
     out, moved, seen = [], [], set()
     for q in queries:
-        s = shift_query(q["query"], kind)
+        s = shift_query(q["query"], kind, year_fields)
         if s is None:
             return None
         out.append({**q, "query": s["query"]})
@@ -122,7 +122,7 @@ def previous_queries(queries, kind):
     return {"queries": out, "moved": moved}
 
 
-def compare_label(moved, kind):
-    if len(moved) == 1 and is_year_field(moved[0]["member"]) and len(moved[0]["to"]) == 1:
-        return {"year": moved[0]["to"][0], "fiscal": moved[0]["member"].endswith(".fiscal_year")}
+def compare_label(moved, kind, year_fields=None):
+    if len(moved) == 1 and is_year_field(moved[0]["member"], year_fields) and len(moved[0]["to"]) == 1:
+        return {"year": moved[0]["to"][0], "fiscal": moved[0]["member"] in (year_fields or {}).get("fiscal", [])}
     return {"kind": kind}

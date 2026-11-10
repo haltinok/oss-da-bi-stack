@@ -272,7 +272,7 @@ def panel_queries(spec, panel, values):
             out += now
             if "sparkline" in panel:
                 out += follow_period(spec, panel, values, per_cube(spec, members, {"filters": filters, "timeDimensions": [{"dimension": time_dim_of(spec, panel), "granularity": panel["sparkline"]["granularity"]}]}))
-            previous = previous_queries(now, panel.get("compare"))
+            previous = previous_queries(now, panel.get("compare"), spec.get("yearFields"))
             out += previous["queries"] if previous else []
         return out
     if kind == "timeseries":

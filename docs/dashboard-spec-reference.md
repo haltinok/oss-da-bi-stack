@@ -48,8 +48,16 @@ Each value is `#rrggbb`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `internet` | `#rrggbb` |  | First series colour (and the blue in `color: internet`). |
-| `reseller` | `#rrggbb` |  | Second series colour (`color: reseller`). |
+| `series1` | `#rrggbb` |  | First series colour (a series says `color: series1`; a chart with no colours takes series1 to series8 in order). |
+| `series2` | `#rrggbb` |  | Second series colour (`color: series2`). |
+| `series3` | `#rrggbb` |  | Third series colour. |
+| `series4` | `#rrggbb` |  | Fourth series colour. |
+| `series5` | `#rrggbb` |  | Fifth series colour. |
+| `series6` | `#rrggbb` |  | Sixth series colour. |
+| `series7` | `#rrggbb` |  | Seventh series colour. |
+| `series8` | `#rrggbb` |  | Eighth series colour. |
+| `internet` | `#rrggbb` |  | Deprecated name of `series1` (still accepted). |
+| `reseller` | `#rrggbb` |  | Deprecated name of `series2` (still accepted). |
 | `focus` | `#rrggbb` |  | Selection and focus outlines, filters that are set. |
 | `live` | `#rrggbb` |  | The status dot when the data is current. |
 | `good` | `#rrggbb` |  | Positive change. |
@@ -114,7 +122,7 @@ Like a KPI measure (`member`, `sum` or `ratio`), plus a colour.
 | `sum` | list of member (`cube.name`) (2+) |  | Two or more measures added together (needs a `label`). |
 | `ratio` | ratio |  | A ratio of sums, as for a KPI (needs a `label`). |
 | `label` | string |  | The series' name in the legend and tooltip. |
-| `color` | string |  | A theme token (`internet`, `reseller`, ...), a `#rrggbb` colour or nothing (a palette is used in order). |
+| `color` | string |  | A theme token (`series1` to `series8`, `focus`, `good`, ...; `internet` and `reseller` are the old names of `series1` and `series2`), a `#rrggbb` colour or nothing (the eight series colours are used in order). |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How values are shown on the axis, in the tooltip and in the Table view. Default `number`. |
 
 ### A table column (`table.columns[]`)
@@ -179,7 +187,7 @@ Exactly one of `measure` or `stack`.
 | `measure` | member (`cube.name`) |  | The measure ranked. Use this or `stack`. |
 | `label` | string |  | The measure's name in tooltips, the Table view and Excel (with `measure`). Default: the measure's name, capitalised (English): write it in your language. |
 | `by_label` | string |  | The name of the `by` dimension in the Table view and Excel. Default: the dimension's name, capitalised. |
-| `stack` | list of object (2+) |  | Two or more measures stacked in one bar (internet and reseller revenue), ranked by their total after merging the per-cube results. |
+| `stack` | list of object (2+) |  | Two or more measures stacked in one bar (the same measure of two facts, say), ranked by their total after merging the per-cube results. |
 | `by` | member (`cube.name`) | yes | The dimension each bar stands for. |
 | `split` | member (`cube.name`) |  | Splits each bar by another dimension (with `measure`, not with `stack`). |
 | `sort_by` | `value` \| `label` |  | What the bars are ordered by: `value` (default: the measure, or the total of the stack) or `label` (the name of the grouping, in its own order: a month by its number, a number by its size, text alphabetically). With `limit`, the bars kept are the first in this order. |

@@ -39,6 +39,8 @@ def compile_spec(spec, used, catalog=None):
     out["members"] = {m: used[m] for m in sorted(used)}
     for panel in out["panels"]:
         _calculation_formats(panel, out["members"])
+    if catalog is not None and catalog.year_fields():
+        out["yearFields"] = catalog.year_fields()          # the fields a comparison with the previous year moves (the model's `time.year_fields`)
     if catalog is not None:
         # a table that aggregates dimension fields needs to tell the rows of their cube apart: the cube's primary key (the renderer asks for it with those fields)
         keys = {}

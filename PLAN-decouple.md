@@ -1,6 +1,6 @@
 # Plan: the app knows no model
 
-Status: **phases 0 (#196) and 1 built**; phases 2 to 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
+Status: **phases 0 (#196), 1 (#197) and 2 built**; phases 3 to 5 proposed (written 2026-11-10, reviewed against the code the same day: the table below, the rule, phases 0, 1, 3, 4 and 5 and the estimate carry the review's corrections). Six phases, one PR each, like [`PLAN-slicer-fields.md`](PLAN-slicer-fields.md). Phase 0 ships first: it is the test every later phase is checked against.
 
 ## Goal
 The dashboard app (renderer, designer, builder, dashspec, lab, admin, auth) runs on **any Cube model**, not only the AdventureWorks one. Everything it knows about the data comes from Cube's `/v1/meta` (with each member's `meta:`) or from a small config file that the model ships. **No cube or member name appears in the app's code.**
@@ -89,7 +89,7 @@ The app reads it once at start-up, beside `/v1/meta`. A model without it still w
 
 ### Phase 2: theme tokens and time (1–2 days)
 - `series1…8` in the schema, the themes CSS and the renderer. `internet` / `reseller` become aliases with a lint warning. Rewrite the example dashboards with the new names.
-- `compare.js` and `plan.js` find the fiscal and calendar year fields from `model.config.yml` (`time.year_fields`), not by name ending. When none are configured, `compare: previous_year` is refused by the validator with a message that says what to add.
+- `compare.js` and `plan.js` find the fiscal and calendar year fields from `model.config.yml` (`time.year_fields`), not by name ending. When none are configured, a comparison moves only date ranges (a year filter is not a year to it). **Built differently from the first draft:** the validator does not refuse `compare` (a date-range comparison needs no year field); the config sits beside the model's cube folder (`<model>/model.config.yml`, so `cube/model.config.yml` for AdventureWorks, which Cube must not see inside its model folder), is read by `catalog.from_model` and compiled into the spec as `yearFields` (with the roles of the calendar), and the three Docker images that read the model get it through a `modelconfig` build context.
 - The calculation hint and the `bar.stack` docs take their examples from the catalog (the first two facts that share a measure name) or use neutral placeholders (`a.revenue`, `b.revenue`).
 
 ### Phase 3: the SQL lab and the row rules (1 day)
