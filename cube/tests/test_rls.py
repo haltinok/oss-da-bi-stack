@@ -233,7 +233,7 @@ def test_garbage_token_rejected():
 
 def test_expired_token_rejected():
     now = int(time.time())
-    tok = jwt.encode({"user_id": "admin", "role": "admin", "territories": [], "iat": now - 7200, "exp": now - 3600}, SECRET, algorithm="HS256")
+    tok = jwt.encode({"user_id": "admin", "role": "admin", "rls": {}, "iat": now - 7200, "exp": now - 3600}, SECRET, algorithm="HS256")
     assert rejected(*load(QUERY, tok))
 
 
@@ -262,7 +262,7 @@ def test_token_without_role_rejected():
 
 
 def test_non_admin_token_with_no_territories_rejected():
-    tok = jwt.encode({"user_id": "x", "role": "editor", "territories": [], "exp": int(time.time()) + 600}, SECRET, algorithm="HS256")
+    tok = jwt.encode({"user_id": "x", "role": "editor", "rls": {}, "exp": int(time.time()) + 600}, SECRET, algorithm="HS256")
     assert rejected(*load(QUERY, tok))
 
 
@@ -351,9 +351,9 @@ def agent_token():
     return r.json()
 
 
-def test_agent_gets_the_agent_role_and_no_territories():
+def test_agent_gets_the_agent_role_and_no_row_values():
     t = agent_token()
-    assert t["role"] == "agent" and t["territories"] == []
+    assert t["role"] == "agent" and t["rls"] == {}
 
 
 def test_agent_reads_inventory_in_full_but_nothing_else():

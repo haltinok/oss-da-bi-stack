@@ -13,7 +13,7 @@ import pytest
 import requests
 
 CUBE = os.environ.get("CUBE_URL", "http://localhost:4000/cubejs-api/v1/load")
-TOKEN = jwt.encode({"user_id": "granularities", "role": "admin", "territories": [], "exp": int(time.time()) + 3600}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
+TOKEN = jwt.encode({"user_id": "granularities", "role": "admin", "rls": {}, "exp": int(time.time()) + 3600}, os.environ["CUBEJS_API_SECRET"], algorithm="HS256")
 
 
 def load(query):
