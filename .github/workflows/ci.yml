@@ -495,7 +495,8 @@ jobs:
           set -euo pipefail
           B=http://localhost:8088
           code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-          test "$(code $B/)" = 200
+          test "$(code $B/)" = 302          # the root redirects to the start page
+          test "$(code $B/home/)" = 200
           curl -s $B/cube/config.js | grep -q 'keycloak: { url: "http://localhost:8088/kc"'
           issuer=$(curl -s $B/kc/realms/spike/.well-known/openid-configuration | jq -r .issuer)
           test "$issuer" = "$B/kc/realms/spike"
