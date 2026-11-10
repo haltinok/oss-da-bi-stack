@@ -9,7 +9,7 @@ import { FORMATS, anyMemberOptions, dimensionOptions, noted, fieldsFor, getAt, m
 import { createControl, createSlicer } from "./filter-controls.js";
 import { setMemberLabels } from "../lib/labels.js";
 import { describeValue, formatValue, parseValue } from "../lib/filters.js";
-import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addScopedFilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar, slicerOutsideRollups } from "../lib/designer-structure.js";
+import { PANEL_TYPES, removeCalculation, saveCalculation, withCalculations, addFilter, addScopedFilter, setPrefilter, addPanel, duplicatePanel, humanize, removeFilter, removePanel, setCrossFilter, spareMeasure, crossModeOf, setFilter, setFilterScope, setFilterSlicer, setFilterType, setFilterVisible, slicerOf, setPageField, timeDimensions, typesFor, dimensionTypeOf, slicerFieldOptions, setSlicerMode, setSlicerOption, moveSlicerToBar, slicerOutsideRollups } from "../lib/designer-structure.js";
 import { DRILL_PRESETS, LISTS, drillKeyOf, setBarKind, setDrill, setGranularities, setIgnoredFilters, setPivotColumnStep, setTableOrder, addPieSum, pieKind, removePieSum, setPieKind, setPieSum, addColumn, aggregatesFor, moveColumn, setColumnAggregate, setColumnHidden, addItem, addRule, addPart, canRemovePart, changeKind, describe, firstMember, kindOf, listRule, removeItem, removePart, setPart } from "../lib/designer-items.js";
 import { MAX_TABS, addTab, addTabToPage, dropPanel, layoutToTabs, moveCommand, moveTab, moveToTab, removeTab, renameTab, rowOf, tabsOf, tabsToLayout } from "../lib/designer-layout.js";
 import { ACCEPTED, ENCODINGS, fits, sizesToTry } from "../lib/designer-logo.js";
@@ -131,7 +131,8 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       card.append(field({ path: "type", kind: "choice", key: "filterType", options: typesFor(dimensionTypeOf(catalog, f.dimension)) }, { ...f, type: typ },
         (v) => commit(setFilterType(source, catalog, f.id, v), { message: dz.filterChanged, panel: keep })));
       if (typ === "select" || typ === "multiselect") card.append(field(FILTER_FIELDS.find((x) => x.path === "parent"), f, (v) => edit("parent", v)));
-      card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
+      if ((f.scope || "dashboard") === "dashboard") card.append(...allowedRow(f, typ, (v) => edit("allowed", v)));
+      else card.append(...allowedRow(f, typ, (v) => commit(setPrefilter(source, f.id, v), { message: dz.filterChanged, panel: keep }), { label: dz.prefilterLabel, hint: dz.prefilterHint }));          // a tab's or a panel's own filter: fixed values, not seen by the reader
       if (typ !== "select" && typ !== "multiselect") card.append(defaultRow(f, typ, (v) => edit("default", v)));           // a list filter has the allowed values instead; the reader picks on the page
       // Where it applies and whether the reader sees it.
       const scope = f.scope || "dashboard", hasTabs = tabsOf(source).length > 0;
@@ -608,10 +609,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   }
 
   /** The designer's limit on a filter: the values the reader can choose from on the page (nothing ticked: all of them). Only a select or multiselect with a list of real values has one. */
-  function allowedRow(f, typ, set) {
+  function allowedRow(f, typ, set, { label = dz.f.filterAllowed, hint = dz.allowedHint } = {}) {
     const known = (typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : [];
-    if (!known.length) return [];
-    const picker = createSlicer({ ...f, type: "multiselect", label: dz.f.filterAllowed }, t, "list");
+    if (!known.length) return (typ === "select" || typ === "multiselect") && label !== dz.f.filterAllowed ? [el("p", { class: "hint", role: "status" }, esc(dz.valuesLoading))] : [];
+    const picker = createSlicer({ ...f, type: "multiselect", label }, t, "list");
     picker.setOptions(known.map((value) => ({ value })));
     picker.show(f.allowed?.length ? formatValue({ op: "in", args: f.allowed }) : "");
     picker.onChange = (v) => {
@@ -619,10 +620,10 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       set(!m ? [] : m.op === "not" ? known.filter((x) => !m.args.includes(x)) : m.args);          // "all except these" is stored as the list it stands for
     };
     picker.el.classList.add("dz-default");
-    const wrap = el("div", { class: "dz-field dz-default dz-allowed" }, `<span>${esc(dz.f.filterAllowed)}</span>`);
+    const wrap = el("div", { class: "dz-field dz-default dz-allowed" }, `<span>${esc(label)}</span>`);
     const slot = el("span", { class: "dz-input" });
     slot.append(picker.el);
-    wrap.append(slot, el("p", { class: "hint dz-allowed-count", role: "status" }, `<strong>${esc(dz.allowedCount(f.allowed?.length || 0, known.length))}</strong> · ${esc(dz.allowedHint)}`));
+    wrap.append(slot, el("p", { class: "hint dz-allowed-count", role: "status" }, `<strong>${esc(dz.allowedCount(f.allowed?.length || 0, known.length))}</strong> · ${esc(hint)}`));
     return [wrap];
   }
 
@@ -910,7 +911,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   button.addEventListener("click", () => setMode(!on));
   plusTab.addEventListener("click", () => { if (source) commit(addTabToPage(source, dz.newTabName, dz.newTabNote, dz.firstTab), { message: dz.tabAdded, panel: null }); });
   // The filters' options arrive after the page is drawn (and the designer may already be open): the page view is drawn again so a default value can be picked from them.
-  document.addEventListener("filters:options", () => { if (on && !selected && !busy && source) { draw(); restorePlace(); forgetPlace(); } }, { signal });
+  document.addEventListener("filters:options", () => { if (on && !busy && source) { draw(); restorePlace(); forgetPlace(); } }, { signal });          // the values arrive after the page: a panel's drawer needs them too
   for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) drawer.addEventListener(ev, forgetPlace, { passive: true });
 
   // The data the drawer needs: the source of this draft and the members the role may read.

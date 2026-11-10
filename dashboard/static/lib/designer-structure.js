@@ -521,6 +521,24 @@ export function setFilterVisible(source, id, visible) {
   return { source: next, notes };
 }
 
+/**
+ * A pre-filter: the data is always narrowed to `values`, and the reader does not see the filter. It keeps them as the allowed values and the default, hides the filter (see setFilterVisible)
+ * and turns a single-value select into a multiselect when there is more than one. No values: the filter is an ordinary, visible one again.
+ */
+export function setPrefilter(source, id, values) {
+  const next = clone(source);
+  const filter = (next.filters || []).find((f) => f.id === id);
+  if (!filter) return { problem: "missing" };
+  if (!values.length) {
+    delete filter.allowed; delete filter.default; delete filter.visible;
+    return { source: next, notes: [] };
+  }
+  filter.allowed = [...values];
+  if ((filter.type || "select") === "select" && values.length > 1) filter.type = "multiselect";
+  filter.default = filter.type === "multiselect" ? `in:${values.map(encodeURIComponent).join(",")}` : values[0];
+  return setFilterVisible(next, id, false);
+}
+
 /** Removes a filter, and every mention of it: panels' `ignore_filters` and the click rules that name it (those are dropped, with a note). */
 export function removeFilter(source, id) {
   const next = clone(source);

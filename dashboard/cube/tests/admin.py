@@ -52,7 +52,7 @@ with sync_playwright() as p:
     check(names(page) == ["de_rep"], "the role filter narrows the list")
     page.select_option("#f-role", "")
     page.fill("#q", "na_")
-    page.wait_for_function("document.querySelectorAll('.adm-table tbody tr').length === 1")
+    page.wait_for_function("document.querySelectorAll('.adm-table tbody tr').length === 1 && document.querySelector('.adm-table tbody tr').textContent.includes('na_manager')")          # not the one row the role filter left
     check(names(page) == ["na_manager"], "search finds a person by part of the username")
     page.fill("#q", "")
     page.wait_for_function("document.querySelectorAll('.adm-table tbody tr').length === 3")
