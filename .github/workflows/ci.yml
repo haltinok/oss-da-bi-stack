@@ -398,6 +398,27 @@ jobs:
       - run: pip install pyyaml
       - run: python scripts/no_model_names.py --strict
 
+  # The second model end to end (docker-compose.distributor.yml): the app on Postgres with the distributor's cubes, dashboards, rules and examples, no AdventureWorks name
+  # anywhere. scripts/distributor-smoke.sh signs in, queries Cube on Postgres and asks the dashboards, the builder, the SQL lab and the admin console what they know.
+  distributor-stack:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.distributor.yml
+      COMPOSE_PROJECT_NAME: distributor
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: fill .env
+        run: ./scripts/generate-env.sh
+      - name: start the stack
+        run: |
+          docker compose --profile distributor up -d --build postgres distributor-db cubestore cubestore-worker keycloak auth cube dashboard-cube builder lab admin
+          for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile distributor ps -q cube)")" = healthy ] && break; sleep 3; done
+      - name: the smoke test
+        run: scripts/distributor-smoke.sh
+      - name: logs on failure
+        if: failure()
+        run: for c in $(docker compose --profile distributor ps -a --format '{{.Name}}'); do echo "::group::$c"; docker logs --tail 40 "$c" 2>&1 || true; echo "::endgroup::"; done
+
   # The dashboard page without any service: the shared JS modules (node tests) and the page in a real Chrome against the mock stack
   # (every panel renders from generated data without a console error, the Excel export downloads, the header and the dataset switch).
   dashboard-ui:

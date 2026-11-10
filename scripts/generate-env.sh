@@ -44,6 +44,7 @@ CLICKHOUSE_PASSWORD=$(hex)
 # `starrocks` profile
 CUBEJS_API_SECRET=$(hex)
 CUBE_DB_PASSWORD=$(openssl rand -hex 16)
+DISTRIBUTOR_DB_PASSWORD=$(openssl rand -hex 16)
 AUTH_DB_PASSWORD=$(openssl rand -hex 16)
 ACTIONS_DB_PASSWORD=$(openssl rand -hex 16)
 BUILDER_DB_PASSWORD=$(openssl rand -hex 16)

@@ -1,0 +1,167 @@
+{
+  "spec": 1,
+  "id": "collections",
+  "title": "Tahsilat takibi",
+  "description": "Money collected by method and by dealer, and when it fell due.",
+  "tags": [
+    "dağıtım",
+    "tahsilat"
+  ],
+  "locale": "tr-TR",
+  "currency": "TRY",
+  "time": {
+    "dimension": "calendar.full_date"
+  },
+  "filters": [
+    {
+      "id": "year",
+      "dimension": "calendar.calendar_year",
+      "label": "Yıl"
+    },
+    {
+      "id": "xf_by_method_1",
+      "dimension": "payments.method",
+      "label": "Method",
+      "implicit": true,
+      "source": "by_method"
+    },
+    {
+      "id": "xf_by_dealer_1",
+      "dimension": "dealers.name",
+      "label": "Name",
+      "implicit": true,
+      "source": "by_dealer"
+    }
+  ],
+  "panels": [
+    {
+      "id": "kpis",
+      "type": "kpi",
+      "measures": [
+        {
+          "member": "payments.collected",
+          "label": "Tahsilat",
+          "format": "money"
+        },
+        {
+          "member": "payments.payment_count",
+          "label": "Ödeme",
+          "format": "int"
+        }
+      ]
+    },
+    {
+      "id": "by_month",
+      "type": "timeseries",
+      "title": "Aylık tahsilat",
+      "series": [
+        {
+          "member": "payments.collected",
+          "label": "Tahsilat",
+          "color": "good",
+          "format": "money"
+        }
+      ],
+      "granularity": "month",
+      "style": "bar"
+    },
+    {
+      "id": "by_method",
+      "type": "pie",
+      "title": "Ödeme yöntemi",
+      "measure": "payments.collected",
+      "by": "payments.method",
+      "on_click": {
+        "set_filter": [
+          "xf_by_method_1"
+        ]
+      }
+    },
+    {
+      "id": "by_dealer",
+      "type": "bar",
+      "title": "Bayiye göre tahsilat",
+      "by": "dealers.name",
+      "measure": "payments.collected",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_by_dealer_1"
+        ]
+      }
+    }
+  ],
+  "layout": [
+    [
+      {
+        "panel": "kpis",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "by_month",
+        "span": 8
+      },
+      {
+        "panel": "by_method",
+        "span": 4
+      }
+    ],
+    [
+      {
+        "panel": "by_dealer",
+        "span": 12
+      }
+    ]
+  ],
+  "members": {
+    "calendar.calendar_year": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "calendar.full_date": {
+      "kind": "dimension",
+      "type": "time"
+    },
+    "dealers.name": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "payments.collected": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "payments.method": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "payments.payment_count": {
+      "kind": "measure",
+      "type": "count"
+    }
+  },
+  "yearFields": {
+    "calendar": [
+      "calendar.calendar_year",
+      "maturity_dates.calendar_year"
+    ]
+  },
+  "cubes": {
+    "calendar": {
+      "joins": []
+    },
+    "dealers": {
+      "joins": []
+    },
+    "payments": {
+      "joins": [
+        "calendar",
+        "dealers",
+        "maturity_dates"
+      ]
+    }
+  }
+}

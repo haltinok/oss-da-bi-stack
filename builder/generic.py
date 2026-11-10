@@ -178,6 +178,12 @@ def compose(prompt: str, catalog, role: str, current_yaml: str | None = None, fo
     return Composition(spec=spec, notes=[("Anladığım: " if tr else "Understood: ") + "; ".join(heard) + "."])
 
 
+def _say(member: str) -> str:
+    """How a request names a field: its own name, or its cube's (singular) when it is just called `name` ("dealer", not "name")."""
+    cube, _, name = member.partition(".")
+    return (_stem(cube) if name == "name" else name).replace("_", " ")
+
+
 def example_requests(catalog) -> list[tuple[str, str]]:
     """[(what the example shows, a request for it)]: what the model's prompt is shown, made from this catalog's first facts, measures and fields."""
     model = Model(catalog)
@@ -186,7 +192,7 @@ def example_requests(catalog) -> list[tuple[str, str]]:
         return []
     dims = model.pick_dimensions([_stem(w) for m in measures for d in model.dimensions(m)[:3] for w in d.partition(".")[2].split("_")], measures)[:2] or model.dimensions(measures[0])[:2]
     said = [m.partition(".")[2].replace("_", " ") for m in measures[:2]]
-    by = " and ".join(d.partition(".")[2].replace("_", " ") for d in dims)
+    by = " and ".join(_say(d) for d in dims)
     return [("a dashboard with key figures, a time chart, breakdowns and a table", f"{' and '.join(said)} by month" + (f", by {by}" if by else "") + ", a table")]
 
 
@@ -197,5 +203,5 @@ def suggestions(catalog) -> dict[str, list[str]]:
     measure = next((f"{f}.{catalog.primary(f)}" for f in model.facts), None)
     if measure:
         said = measure.partition(".")[2].replace("_", " ")
-        asks += [f"{said} by month"] + [f"{said} by {d.partition('.')[2].replace('_', ' ')}" for d in model.dimensions(measure)[:2]]
+        asks += [f"{said} by month"] + [f"{said} by {_say(d)}" for d in model.dimensions(measure)[:2]]
     return {"en": asks[:4], "tr": asks[:4]}

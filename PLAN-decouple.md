@@ -114,10 +114,12 @@ The app reads it once at start-up, beside `/v1/meta`. A model without it still w
 ### Phase 5: retire `app.js`, close the gate (1–2 days)
 **Built differently from the first draft** (the docs page is [bring-your-own-model.md](docs/bring-your-own-model.md)): `app.js`, `index.html`, its Cube adapter (`cube-source.mjs`, `boot.js`) and the `sub_filter` that patched them in are **deleted** (git history keeps them), and `/` redirects to the start page. `dashboards/sales-overview.yml` already covers the old page (KPIs with a year comparison, a channel trend, territory and product bars, the latest orders), so no new `live-sales.yml` was written. The tests of the old page went with it: `render.py`, `header.py`, `dataset.py` and the per-role `e2e.py` (the renderer's own suites cover the dataset switch and the panels; **the per-role live-stack browser test and the header-width test are not replaced**: they would need porting to `/d/`), and renderer.py's parity check against the old page. The guard is an **error** in CI (`--strict`), with zero hits, and a test checks it finds a planted name.
 
+## Added after the six phases
+- **The second model runs on a real stack**: `docker-compose.distributor.yml` (Postgres data, Cube on Postgres, the same Keycloak, auth, dashboard pages, builder, lab and admin console), `scripts/distributor-smoke.sh` and the CI job `distributor-stack`. It found a bug in phase 4 (the builder page's suggestions were still AdventureWorks'), fixed with it. The overlay seeds the access database per model (`models/distributor/access.sql`).
+
 ## Left over
 - The token still carries `territories` and the territory dimension still reads the dbt seed (phase 3: needs the seed migrated into rules first).
 - The generic composer has no inventory-style (snapshot) dashboard and does not edit an existing one; `denied()` stays for the recipe; `builder/evals.md` with a real key on both models.
-- Running the second model on a real Postgres Cube stack (a compose profile) is not wired: only its model, seed data, dashboards and tests exist.
 - The per-role live-stack browser test and a header-width test for the renderer's pages.
 
 - Rebuild the live AdventureWorks dashboard as a YAML dashboard (`dashboards/live-sales.yml`): KPIs, trend, channel split and latest orders, with the polling the renderer already has (`live` theme token). Order status labels go in the Cube model (a `case` dimension) or the dbt mart, not in JS.

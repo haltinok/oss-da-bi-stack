@@ -212,7 +212,8 @@ function datasetRepository() {
 }
 
 module.exports = {
-  dialectFactory: () => StarRocksQuery,
+  // The StarRocks dialect fix is for StarRocks (it speaks the MySQL protocol); any other database (a model on Postgres) keeps Cube's own dialect.
+  ...(process.env.CUBEJS_DB_TYPE === 'mysql' && { dialectFactory: () => StarRocksQuery }),
   checkAuth,
   checkSqlAuth,
   queryRewrite,

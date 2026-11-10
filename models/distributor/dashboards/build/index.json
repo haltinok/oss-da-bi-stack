@@ -1,0 +1,22 @@
+[
+  {
+    "id": "collections",
+    "title": "Tahsilat takibi",
+    "description": "Money collected by method and by dealer, and when it fell due.",
+    "roles": [],
+    "tags": [
+      "dağıtım",
+      "tahsilat"
+    ]
+  },
+  {
+    "id": "distributor-overview",
+    "title": "Satış ve tahsilat",
+    "description": "Siparişler, tahsilat ve bayiler (the distributor example model; no AdventureWorks names anywhere).",
+    "roles": [],
+    "tags": [
+      "dağıtım",
+      "satış"
+    ]
+  }
+]
