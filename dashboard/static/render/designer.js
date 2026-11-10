@@ -141,18 +141,20 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
         (v) => commit(setFilterScope(source, catalog, f.id, v), { message: dz.filterChanged, panel: keep })));
       if (scope === "page") card.append(field({ path: "tab", kind: "choice", key: "filterTab", options: tabsOf(source).map((x) => x.id), labels: Object.fromEntries(tabsOf(source).map((x) => [x.id, x.title])) }, f, (v) => edit("tab", v)));
       if (scope === "panel") card.append(field({ path: "panel", kind: "choice", key: "filterPanel", options: source.panels.filter((p) => p.type !== "text").map((p) => p.id), labels: Object.fromEntries(source.panels.map((p) => [p.id, p.title || p.id])) }, f, (v) => edit("panel", v)));
-      const eye = el("input", { type: "checkbox", "data-path": "visible", "aria-label": dz.f.filterVisible });
-      eye.checked = f.visible !== false;
-      eye.addEventListener("change", async () => { if (!(await commit(setFilterVisible(source, f.id, eye.checked), { message: dz.filterChanged, panel: keep }))) eye.checked = !eye.checked; });         // a refused change puts the box back
-      const eyeRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterVisible)}</span>`);
-      eyeRow.append(el("span", { class: "dz-input" }, "")); eyeRow.lastChild.append(eye);
-      card.append(eyeRow);
-      const slicer = el("input", { type: "checkbox", "data-path": "slicer", "aria-label": dz.f.filterSlicer });
-      slicer.checked = !!slicerOf(source, f.id);
-      slicer.addEventListener("change", async () => { if (!(await commit(setFilterSlicer(source, f.id, slicer.checked, { tab: activeTab() }), { message: dz.filterChanged, panel: keep }))) slicer.checked = !slicer.checked; });
-      const slicerRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterSlicer)}</span>`);
-      slicerRow.append(el("span", { class: "dz-input" }, "")); slicerRow.lastChild.append(slicer);
-      card.append(slicerRow);
+      if ((f.scope || "dashboard") === "dashboard") {                         // a tab's or a panel's own filter is a pre-filter: always hidden, never drawn as a slicer
+        const eye = el("input", { type: "checkbox", "data-path": "visible", "aria-label": dz.f.filterVisible });
+        eye.checked = f.visible !== false;
+        eye.addEventListener("change", async () => { if (!(await commit(setFilterVisible(source, f.id, eye.checked), { message: dz.filterChanged, panel: keep }))) eye.checked = !eye.checked; });         // a refused change puts the box back
+        const eyeRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterVisible)}</span>`);
+        eyeRow.append(el("span", { class: "dz-input" }, "")); eyeRow.lastChild.append(eye);
+        card.append(eyeRow);
+        const slicer = el("input", { type: "checkbox", "data-path": "slicer", "aria-label": dz.f.filterSlicer });
+        slicer.checked = !!slicerOf(source, f.id);
+        slicer.addEventListener("change", async () => { if (!(await commit(setFilterSlicer(source, f.id, slicer.checked, { tab: activeTab() }), { message: dz.filterChanged, panel: keep }))) slicer.checked = !slicer.checked; });
+        const slicerRow = el("label", { class: "dz-field dz-eye" }, `<span>${esc(dz.f.filterSlicer)}</span>`);
+        slicerRow.append(el("span", { class: "dz-input" }, "")); slicerRow.lastChild.append(slicer);
+        card.append(slicerRow);
+      }
       if (f.visible === false) card.querySelector("h4").insertAdjacentHTML("beforeend", ` <span class="badge" title="${esc(dz.hiddenHint)}">${esc(dz.hidden)}</span>`);
       const rm = el("button", { type: "button", class: "dz-danger", "data-rm-filter": f.id }, esc(dz.removeFilter));
       card.append(rm);
@@ -611,7 +613,11 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
   /** The designer's limit on a filter: the values the reader can choose from on the page (nothing ticked: all of them). Only a select or multiselect with a list of real values has one. */
   function allowedRow(f, typ, set, { label = dz.f.filterAllowed, hint = dz.allowedHint } = {}) {
     const known = (typ === "select" || typ === "multiselect") ? window.__render?.filterOptions?.(f.id) || [] : [];
-    if (!known.length) return (typ === "select" || typ === "multiselect") && label !== dz.f.filterAllowed ? [el("p", { class: "hint", role: "status" }, esc(dz.valuesLoading))] : [];
+    if (!known.length) {
+      if (typ !== "select" && typ !== "multiselect") return [];
+      window.__render?.ensureOptions?.(f.id);                                                 // a hidden filter has no control on the page that loads them
+      return label !== dz.f.filterAllowed ? [el("p", { class: "hint", role: "status" }, esc(dz.valuesLoading))] : [];
+    }
     const picker = createSlicer({ ...f, type: "multiselect", label }, t, "list");
     picker.setOptions(known.map((value) => ({ value })));
     picker.show(f.allowed?.length ? formatValue({ op: "in", args: f.allowed }) : "");

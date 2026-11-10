@@ -528,7 +528,7 @@ async function showDashboard({ again = false, counts = {}, carry = null } = {}) 
    * Returns true when the change was applied here.
    */
   function patch(next) {
-    const rest = (s) => JSON.stringify({ ...s, filters: s.filters?.map(({ default: _d, allowed: _a, ...f }) => f), panels: undefined, members: undefined, cubes: undefined, layout: undefined, tabs: undefined });   // a filter's default and allowed values are applied below
+    const rest = (s) => JSON.stringify({ ...s, filters: s.filters?.map(({ default: _d, allowed: _a, visible: _v, ...f }) => f), panels: undefined, members: undefined, cubes: undefined, layout: undefined, tabs: undefined });   // a filter's default and allowed values are applied below
     const tabHeads = (s) => JSON.stringify(s.tabs ? s.tabs.map((t) => [t.id, t.title]) : null);
     if (rest(next) !== rest(spec) || tabHeads(next) !== tabHeads(spec) || next.panels.length !== spec.panels.length || next.panels.some((p, i) => p.id !== spec.panels[i].id)) return false;
     const changed = next.panels.map((def, i) => [def, i]).filter(([def, i]) => JSON.stringify(def) !== JSON.stringify(spec.panels[i]));
@@ -537,12 +537,17 @@ async function showDashboard({ again = false, counts = {}, carry = null } = {}) 
     spec.members = next.members;
     spec.cubes = next.cubes;
     const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const shown = (f) => f.visible !== false;
+    if ((next.filters || []).some((f, i) => shown(f) && !shown(spec.filters[i]))) return false;                     // a hidden filter shown again needs its control built: left to a reload
+    const hiddenNow = (next.filters || []).filter((f, i) => !shown(f) && shown(spec.filters[i]));              // a filter that became a pre-filter: its control just goes
     const defaultsMoved = (next.filters || []).filter((f, i) => !same(f.default, spec.filters[i].default));
     const allowedMoved = (next.filters || []).filter((f, i) => !same(f.allowed, spec.filters[i].allowed));
-    for (const f of [...defaultsMoved, ...allowedMoved]) {
+    for (const f of [...defaultsMoved, ...allowedMoved, ...hiddenNow]) {
       const mine = spec.filters.find((x) => x.id === f.id);
       for (const k of ["default", "allowed"]) { if (f[k]) mine[k] = f[k]; else delete mine[k]; }
+      if (f.visible === false) mine.visible = false;
     }
+    for (const f of hiddenNow) { filterEls.get(f.id)?.remove(); filterEls.delete(f.id); selects.delete(f.id); controls.delete(f.id); document.querySelector(".pane-filters:empty")?.remove(); }
     for (const f of defaultsMoved) values[f.id] = f.default || "";       // a new default is where the filter stands now (the reader's own picks are what the designer is replacing)
     const rebuilt = [];
     for (const [def, i] of changed) {
@@ -557,7 +562,7 @@ async function showDashboard({ again = false, counts = {}, carry = null } = {}) 
       ctx.attachPaneFilters?.(def.id);
       rebuilt.push(made);
     }
-    const filtersMoved = defaultsMoved.length + allowedMoved.length > 0;
+    const filtersMoved = defaultsMoved.length + allowedMoved.length + hiddenNow.length > 0;
     if (filtersMoved) {
       for (const f of allowedMoved) { const mine = spec.filters.find((x) => x.id === f.id); fillOptions(mine); syncLimitNote(mine); }
       for (const f of visibleFilters()) showValue(f);
@@ -584,8 +589,17 @@ async function showDashboard({ again = false, counts = {}, carry = null } = {}) 
   }
   /** The values a select or multiselect filter offers (for the designer's default-value picker); [] until its options have loaded. */
   const filterOptions = (id) => { const f = (spec.filters || []).find((x) => x.id === id); return f ? optionsOf(optionRows.get(id) || [], f, "", sortKeyOf(spec, f.dimension)).map((o) => o.value) : []; };
+  /** Loads the values of any select filter, hidden or not (the designer's picker needs them for a pre-filter, which has no control on the page). Says so with `filters:options` once. */
+  async function ensureOptions(id) {
+    const f = (spec.filters || []).find((x) => x.id === id);
+    if (!f || optionRows.has(id) || (f.type && f.type !== "select" && f.type !== "multiselect")) return;
+    const measures = optionMeasures(spec, f);
+    optionRows.set(id, []);                                                              // a second ask while this one runs (or when there is nothing to load) does nothing
+    try { optionRows.set(id, measures.length ? await runAll(ctx.run, queriesPerCube(spec, measures, { dimensions: withSortKeys(spec, [...(f.parent ? [f.parent] : []), f.dimension]) }), new AbortController().signal) : []); } catch (e) { console.warn(`options of ${id} failed:`, e?.message || e); }
+    document.dispatchEvent(new CustomEvent("filters:options"));
+  }
   // patchCount and mountCount (for the tests: a change applied in place, the page drawn again in place) carry over a remount
-  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, activeTab: () => activeTab, ready: null, remount, patchCount: counts.patchCount || 0, mountCount: counts.mountCount || 0,
+  window.__render = { spec, values, panels, loadAll, tabLoadedAt, openTab, patch, filterOptions, ensureOptions, activeTab: () => activeTab, ready: null, remount, patchCount: counts.patchCount || 0, mountCount: counts.mountCount || 0,
     keptCount: [...panels.values()].filter((p) => carry?.panels.get(p.root.dataset.panel) === p).length };          // for the tests: panels the last remount took over
 
   $("#export-all").hidden = false;
