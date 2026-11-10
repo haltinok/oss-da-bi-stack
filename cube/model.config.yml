@@ -3,3 +3,18 @@ time:
   dimension: dates.full_date
   fiscal_year_start: 7
   year_fields: { fiscal: dates.fiscal_year, calendar: dates.calendar_year }        # a comparison with the previous year moves these (their roles, ship_dates.fiscal_year ..., too)
+lab:
+  examples:                       # the SQL lab's examples; each lists the cubes it reads, so it is only offered to someone who can read them
+    - title: { en: Revenue by category, tr: Kategoriye göre ciro }
+      cubes: [internet_sales, products]
+      sql: "select category, measure(revenue) as revenue\nfrom internet_sales cross join products\ngroup by 1\norder by 2 desc"
+    - title: { en: Orders by year, tr: Yıla göre sipariş }
+      cubes: [internet_sales, dates]
+      sql: "select calendar_year, count(distinct order_number) as orders\nfrom internet_sales cross join dates\ngroup by 1\norder by 1"
+    - title: { en: Latest order lines, tr: Son sipariş satırları }
+      cubes: [internet_sales, products]
+      sql: "select order_number, order_date, product_name\nfrom internet_sales cross join products\norder by order_date desc\nlimit 50"
+agent:
+  cubes: [inventory_health, offer_performance, products]          # the proposal agent (a service account) may read these cubes and nothing else
+datasets:
+  overlay_cubes: [inventory_health, offer_performance]            # cubes of this model that a dataset (250m) adds to the spike model it is built from

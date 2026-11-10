@@ -36,12 +36,18 @@ class StarRocksQuery extends MysqlQuery {
 // expired or tampered token is always rejected.
 const SECRET = process.env.CUBEJS_API_SECRET;
 // What a person may read is decided by datasets and grants (blocked_cubes, blocked_members in the token), not by their role; the rules below are the ones that need no configuration: the sales facts
-// are limited to the person's territories, and the proposal agent (a service account, not a person) may only read the two inventory cubes and the products.
+// are limited to the person's territories, and the proposal agent (a service account, not a person) may only read the cubes the model lists for it (`agent.cubes` in model.config.yml).
 // The row-level dimensions (territory, ...): access.rls_dimension in Postgres, read once, now, while this file loads (rls_registry.js; the default file
 // rls_dimensions.json when CUBE_ACCESS_PG_PASSWORD is not set). The auth service and the admin console read the same table when they start.
 // A registry that cannot be read or is not valid throws here, so Cube does not start.
 const RLS = require('./rls_registry').init();
-const AGENT_CUBES = new Set(['inventory_health', 'offer_performance', 'products']);
+// What this model says about itself (model.config.yml, beside this file): the cubes the proposal agent may read, and the cubes of this model a dataset adds to the spike model.
+// No file or no key means no cubes (an agent token then reads nothing): the app knows no model.
+const MODEL = (() => {
+  try { return require('js-yaml').load(require('fs').readFileSync(require('path').join(__dirname, 'model.config.yml'), 'utf8')) || {}; } catch (e) { return {}; }
+})();
+const AGENT_CUBES = new Set((MODEL.agent && MODEL.agent.cubes) || []);
+const DATASET_OVERLAY = ((MODEL.datasets && MODEL.datasets.overlay_cubes) || []).map((n) => `${n}.yml`);
 
 // Cube turns a thrown CubejsHandlerError into its HTTP status; any other error is a 500
 // (with a stack trace in dev mode). Messages stay generic: they go back to the caller.
@@ -200,7 +206,7 @@ function datasetRepository() {
     localPath: () => __dirname,
     dataSchemaFiles: async () => [
       ...read(spike, fs.readdirSync(spike).filter((n) => n.endsWith('.yml'))),
-      ...read(own, ['inventory_health.yml', 'offer_performance.yml']),
+      ...read(own, DATASET_OVERLAY),
     ],
   };
 }

@@ -1,7 +1,7 @@
 """The row-level dimension registry (PLAN-rls-registry-db.md): which field each row rule limits, on which cubes, and whether no value denies or allows.
 
 It lives in Postgres, `access.rls_dimension`, and a service reads it once, when it starts. Without an access-database login the default file
-(rls_dimensions.json, next to this module) is used instead. A registry that cannot be read, or is not valid, stops the service: it never runs on half a list.
+(rls_dimensions.json: the one file, cube/rls_dimensions.json, which an image gets at build time next to this module) is used instead. A registry that cannot be read, or is not valid, stops the service: it never runs on half a list.
 
 Identical copies: auth/rls_registry.py and admin/rls_registry.py (admin/tests/test_resolve.py checks). cube/cube.js has a JavaScript mirror of
 `normalize` and `version`; dashboards/tests/test_rls_dimensions.py checks both give the same version.
@@ -118,10 +118,16 @@ def from_db(connect, wait: float = 60.0, pause: float = 2.0, log=print) -> list[
     return normalize([from_row(r) for r in rows])
 
 
+def default_file() -> pathlib.Path:
+    """The model's registry file: next to this module in an image (copied from the one file, cube/rls_dimensions.json, at build time), else the source tree's own."""
+    here = pathlib.Path(__file__).resolve().parent
+    return next((p for p in (here / "rls_dimensions.json", here.parent / "cube" / "rls_dimensions.json") if p.exists()), here / "rls_dimensions.json")
+
+
 def load(connect=None, path: pathlib.Path | None = None, wait: float = 60.0, log=print) -> tuple[list[dict], str]:
     """(dimensions, source): from the database when `connect` is given, else from the default file. Raises on any failure (the caller stops)."""
     if connect is None:
-        path = path or pathlib.Path(__file__).with_name("rls_dimensions.json")
+        path = path or default_file()
         dims, source = from_file(path), "file"
     else:
         dims, source = from_db(connect, wait=wait, log=log), "database"
