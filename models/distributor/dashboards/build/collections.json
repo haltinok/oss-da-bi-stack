@@ -2,11 +2,10 @@
   "spec": 1,
   "model": "distributor",
   "id": "collections",
-  "title": "Tahsilat takibi",
-  "description": "Money collected by method and by dealer, and when it fell due.",
+  "title": "Tahsilat ve vade",
+  "description": "Faturalanan, tahsil edilen, açık ve vadesi geçmiş bakiye; vade yaşlandırması.",
   "tags": [
-    "dağıtım",
-    "tahsilat"
+    "dağıtım"
   ],
   "locale": "tr-TR",
   "currency": "TRY",
@@ -20,18 +19,30 @@
       "label": "Yıl"
     },
     {
-      "id": "xf_by_method_1",
+      "id": "region",
+      "dimension": "dealers.region",
+      "label": "Bölge"
+    },
+    {
+      "id": "xf_methods_1",
       "dimension": "payments.method",
       "label": "Method",
       "implicit": true,
-      "source": "by_method"
+      "source": "methods"
     },
     {
-      "id": "xf_by_dealer_1",
+      "id": "xf_aging_1",
+      "dimension": "invoices.aging_bucket",
+      "label": "Aging bucket",
+      "implicit": true,
+      "source": "aging"
+    },
+    {
+      "id": "xf_overdue_1",
       "dimension": "dealers.name",
       "label": "Name",
       "implicit": true,
-      "source": "by_dealer"
+      "source": "overdue"
     }
   ],
   "panels": [
@@ -40,22 +51,42 @@
       "type": "kpi",
       "measures": [
         {
+          "member": "invoices.invoiced",
+          "label": "Faturalanan",
+          "format": "money"
+        },
+        {
           "member": "payments.collected",
           "label": "Tahsilat",
           "format": "money"
         },
         {
-          "member": "payments.payment_count",
-          "label": "Ödeme",
-          "format": "int"
+          "member": "invoices.open_balance",
+          "label": "Açık bakiye",
+          "format": "money"
+        },
+        {
+          "member": "invoices.overdue_balance",
+          "label": "Vadesi geçmiş",
+          "format": "money"
         }
+      ],
+      "ignore_filters": [
+        "xf_methods_1",
+        "xf_aging_1"
       ]
     },
     {
-      "id": "by_month",
+      "id": "trend",
       "type": "timeseries",
-      "title": "Aylık tahsilat",
+      "title": "Aylık fatura ve tahsilat",
       "series": [
+        {
+          "member": "invoices.invoiced",
+          "label": "Fatura",
+          "color": "focus",
+          "format": "money"
+        },
         {
           "member": "payments.collected",
           "label": "Tahsilat",
@@ -64,34 +95,60 @@
         }
       ],
       "granularity": "month",
-      "style": "bar"
+      "style": "line",
+      "ignore_filters": [
+        "xf_methods_1",
+        "xf_aging_1"
+      ]
     },
     {
-      "id": "by_method",
+      "id": "methods",
       "type": "pie",
       "title": "Ödeme yöntemi",
       "measure": "payments.collected",
       "by": "payments.method",
       "on_click": {
         "set_filter": [
-          "xf_by_method_1"
+          "xf_methods_1"
         ]
-      }
+      },
+      "ignore_filters": [
+        "xf_aging_1"
+      ]
     },
     {
-      "id": "by_dealer",
+      "id": "aging",
       "type": "bar",
-      "title": "Bayiye göre tahsilat",
+      "title": "Vade yaşlandırması (açık bakiye)",
+      "by": "invoices.aging_bucket",
+      "measure": "invoices.open_balance",
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_aging_1"
+        ]
+      },
+      "ignore_filters": [
+        "xf_methods_1"
+      ]
+    },
+    {
+      "id": "overdue",
+      "type": "bar",
+      "title": "Vadesi geçmiş bakiye, bayiye göre",
       "by": "dealers.name",
-      "measure": "payments.collected",
+      "measure": "invoices.overdue_balance",
       "sort": "desc",
       "limit": 10,
       "format": "money",
       "on_click": {
         "set_filter": [
-          "xf_by_dealer_1"
+          "xf_overdue_1"
         ]
-      }
+      },
+      "ignore_filters": [
+        "xf_methods_1"
+      ]
     }
   ],
   "layout": [
@@ -103,18 +160,22 @@
     ],
     [
       {
-        "panel": "by_month",
+        "panel": "trend",
         "span": 8
       },
       {
-        "panel": "by_method",
+        "panel": "methods",
         "span": 4
       }
     ],
     [
       {
-        "panel": "by_dealer",
-        "span": 12
+        "panel": "aging",
+        "span": 6
+      },
+      {
+        "panel": "overdue",
+        "span": 6
       }
     ]
   ],
@@ -131,6 +192,27 @@
       "kind": "dimension",
       "type": "string"
     },
+    "dealers.region": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "invoices.aging_bucket": {
+      "kind": "dimension",
+      "type": "string",
+      "sort_by": "invoices.aging_order"
+    },
+    "invoices.invoiced": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "invoices.open_balance": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "invoices.overdue_balance": {
+      "kind": "measure",
+      "type": "sum"
+    },
     "payments.collected": {
       "kind": "measure",
       "type": "sum"
@@ -138,10 +220,6 @@
     "payments.method": {
       "kind": "dimension",
       "type": "string"
-    },
-    "payments.payment_count": {
-      "kind": "measure",
-      "type": "count"
     }
   },
   "yearFields": {
@@ -155,13 +233,21 @@
       "joins": []
     },
     "dealers": {
-      "joins": []
+      "joins": [
+        "reps"
+      ]
     },
-    "payments": {
+    "invoices": {
       "joins": [
         "calendar",
         "dealers",
         "maturity_dates"
+      ]
+    },
+    "payments": {
+      "joins": [
+        "calendar",
+        "dealers"
       ]
     }
   }

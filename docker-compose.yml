@@ -672,12 +672,32 @@ services:
       timeout: 3s
       retries: 20
 
+  # The live distributor: on first start it writes three years of history up to now (about a minute), then every 15 minutes the orders, payments and returns of the
+  # time since the last run (it catches up after downtime). Ready (and Cube starts) once the history is in.
+  distributor-sim:
+    build: ./models/distributor/sim
+    profiles: [distributor]
+    restart: unless-stopped
+    depends_on:
+      distributor-db:
+        condition: service_healthy
+    environment:
+      DISTRIBUTOR_DB_HOST: distributor-db
+      DISTRIBUTOR_DB_PASSWORD: ${DISTRIBUTOR_DB_PASSWORD:?set DISTRIBUTOR_DB_PASSWORD in .env}
+      SIM_INTERVAL_SECONDS: ${DISTRIBUTOR_SIM_INTERVAL:-900}
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 10s
+
   cube-distributor:
     image: cubejs/cube:${CUBE_VERSION:-latest}
     profiles: [distributor]
     restart: unless-stopped
     depends_on:
-      distributor-db:
+      distributor-sim:
         condition: service_healthy
       cubestore:                       # Cube keeps its query cache in Cube Store
         condition: service_started

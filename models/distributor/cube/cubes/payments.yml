@@ -1,6 +1,6 @@
 cubes:
   - name: payments
-    description: "Tahsilat: money collected from dealers."
+    description: "Tahsilat: money collected from dealers (every few minutes the payments that fall due arrive)."
     sql_table: dist.fact_payment
     data_source: default
     meta: { kind: fact }
@@ -12,9 +12,6 @@ cubes:
       - name: calendar
         relationship: many_to_one
         sql: "{CUBE}.paid_date_key = {calendar}.date_key"
-      - name: maturity_dates
-        relationship: many_to_one
-        sql: "{CUBE}.due_date_key = {maturity_dates}.date_key"
 
     dimensions:
       - name: payment_id
@@ -27,17 +24,17 @@ cubes:
         sql: paid_date
         type: time
       - name: method
-        description: "Payment method: Havale, Çek, Kredi kartı or Nakit."
+        description: "Payment method: Havale/EFT, Çek, Senet, Kredi Kartı (POS) or Nakit."
         sql: method
         type: string
 
     measures:
       - name: collected
-        meta: { format: money, primary: 1 }
         description: "Money collected in TRY."
+        meta: { format: money, primary: 1 }
         sql: amount
         type: sum
       - name: payment_count
-        meta: { format: int, primary: 2 }
         description: "Number of payments."
+        meta: { format: int, primary: 2 }
         type: count

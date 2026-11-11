@@ -1,0 +1,20 @@
+cubes:
+  - name: reps
+    description: "Satış temsilcileri: the sales representatives (join target for the dealers)."
+    sql_table: dist.dim_rep
+    data_source: default
+
+    dimensions:
+      - name: key
+        description: "Representative key."
+        sql: rep_key
+        type: number
+        primary_key: true
+      - name: name
+        description: "Representative name."
+        sql: rep_name
+        type: string
+      - name: username
+        description: "The representative's username."
+        sql: rep_username
+        type: string

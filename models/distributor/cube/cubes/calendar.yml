@@ -1,6 +1,6 @@
 cubes:
   - name: calendar
-    description: "Takvim: zaman ekseni ve yıllar için birleşme noktası. (The calendar: join target for a time axis.)"
+    description: "Takvim: zaman ekseni ve yıllar için birleşme noktası; Türkçe ay ve gün adları, resmî tatil ve bayram günleri. (The calendar: join target for a time axis.)"
     sql_table: dist.dim_calendar
     data_source: default
 
@@ -42,10 +42,28 @@ cubes:
         type: string
         meta:
           sort_by: year_month_number
+      - name: week_of_year
+        description: "ISO week number."
+        sql: week_of_year
+        type: number
+      - name: day_of_week
+        description: "Day of the week, 1 (Monday) to 7 (Sunday)."
+        sql: day_of_week
+        type: number
+      - name: weekday_name
+        description: "Weekday name in Turkish."
+        sql: weekday_name
+        type: string
+        meta:
+          sort_by: day_of_week
+      - name: holiday_name
+        description: "The public holiday or bayram of the day (empty on other days)."
+        sql: holiday_name
+        type: string
 
-  # The same calendar in another role: the day a payment falls due.
+  # The same calendar in another role: the day an invoice falls due.
   - name: maturity_dates
     extends: calendar
-    description: "The calendar in the role of a payment's due date (vade)."
+    description: "The calendar in the role of an invoice's due date (vade)."
     meta:
       label_prefix: Due

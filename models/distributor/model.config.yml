@@ -12,7 +12,15 @@ vocabulary:                       # what the rule-based stand-in understands bey
     tahsilat: payments.collected
     odeme: payments.payment_count
     bolge: dealers.region
-    sehir: dealers.city
+    sehir: dealers.province
+    il: dealers.province
+    fatura: invoices.invoiced
+    bakiye: invoices.open_balance
+    vade: invoices.overdue_balance
+    iade: returns.returned_amount
+    stok: stock.stock_value
+    kar: orders.gross_margin
+    temsilci: reps.name
     segment: dealers.segment
     bayi: dealers.name
     kategori: items.category
@@ -20,6 +28,13 @@ vocabulary:                       # what the rule-based stand-in understands bey
     marka: items.brand
   labels:                         # the names a Turkish page shows
     orders.revenue: Ciro
+    orders.gross_margin: Brüt kâr
+    invoices.invoiced: Fatura
+    invoices.open_balance: Açık bakiye
+    invoices.overdue_balance: Vadesi geçmiş
+    returns.returned_amount: İade
+    stock.stock_value: Stok değeri
+    reps.name: Temsilci
     orders.order_count: Sipariş
     orders.quantity: Adet
     payments.collected: Tahsilat
@@ -28,3 +43,26 @@ vocabulary:                       # what the rule-based stand-in understands bey
     dealers.name: Bayi
     items.category: Kategori
     items.name: Ürün
+lab:
+  examples:                       # the SQL lab's examples; each lists the cubes it reads
+    - title: { en: Revenue by region, tr: Bölgeye göre ciro }
+      cubes: [orders, dealers]
+      sql: "select region, measure(revenue) as revenue\nfrom orders cross join dealers\ngroup by 1\norder by 2 desc"
+    - title: { en: Overdue balance by dealer, tr: Bayiye göre vadesi geçmiş bakiye }
+      cubes: [invoices, dealers]
+      sql: "select name, measure(overdue_balance) as overdue\nfrom invoices cross join dealers\ngroup by 1\norder by 2 desc\nlimit 20"
+    - title: { en: Collected by month, tr: Aylık tahsilat }
+      cubes: [payments, calendar]
+      sql: "select year_month, measure(collected) as collected\nfrom payments cross join calendar\ngroup by 1\norder by 1"
+builder:
+  examples:                       # what the builder page offers to type (a list per language)
+    en:
+      - revenue and collected by month, by region and category, a table
+      - revenue by dealer
+      - orders by region
+      - payments by month
+    tr:
+      - ciro ve tahsilat aylık, bölge ve kategori, tablo
+      - bayiye göre ciro
+      - bölgeye göre sipariş
+      - aylık tahsilat

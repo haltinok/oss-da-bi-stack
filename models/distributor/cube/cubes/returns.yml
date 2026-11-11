@@ -1,0 +1,52 @@
+cubes:
+  - name: returns
+    description: "İadeler: goods that dealers sent back (about 2.5 % of the lines), with the reason."
+    sql_table: dist.fact_return
+    data_source: default
+    meta: { kind: fact }
+
+    joins:
+      - name: dealers
+        relationship: many_to_one
+        sql: "{CUBE}.dealer_key = {dealers}.dealer_key"
+      - name: items
+        relationship: many_to_one
+        sql: "{CUBE}.item_key = {items}.item_key"
+      - name: calendar
+        relationship: many_to_one
+        sql: "{CUBE}.return_date_key = {calendar}.date_key"
+
+    dimensions:
+      - name: return_id
+        description: "Key of the return."
+        sql: return_id
+        type: number
+        primary_key: true
+      - name: order_number
+        description: "The order the goods came from."
+        sql: order_number
+        type: string
+      - name: return_date
+        description: "When the goods came back (a time dimension)."
+        sql: return_date
+        type: time
+      - name: reason
+        description: "Why: Hasarlı ürün, Yanlış ürün, Son kullanma tarihi, Fazla sipariş or Kalite şikâyeti."
+        sql: reason
+        type: string
+
+    measures:
+      - name: returned_amount
+        description: "Value of the returned goods in TRY."
+        meta: { format: money, primary: 1 }
+        sql: amount
+        type: sum
+      - name: returned_quantity
+        description: "Units returned."
+        meta: { format: int, primary: 2 }
+        sql: quantity
+        type: sum
+      - name: return_count
+        description: "Number of returns."
+        meta: { format: int }
+        type: count

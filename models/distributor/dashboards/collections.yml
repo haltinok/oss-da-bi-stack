@@ -1,9 +1,9 @@
 spec: 1
 model: distributor
 id: collections
-title: Tahsilat takibi
-description: Money collected by method and by dealer, and when it fell due.
-tags: [dağıtım, tahsilat]
+title: Tahsilat ve vade
+description: Faturalanan, tahsil edilen, açık ve vadesi geçmiş bakiye; vade yaşlandırması.
+tags: [dağıtım]
 locale: tr-TR
 currency: TRY
 time:
@@ -12,33 +12,45 @@ filters:
   - id: year
     dimension: calendar.calendar_year
     label: Yıl
+  - id: region
+    dimension: dealers.region
+    label: Bölge
 panels:
   - id: kpis
     type: kpi
     measures:
+      - { member: invoices.invoiced, label: Faturalanan, format: money }
       - { member: payments.collected, label: Tahsilat, format: money }
-      - { member: payments.payment_count, label: Ödeme, format: int }
-  - id: by_month
+      - { member: invoices.open_balance, label: Açık bakiye, format: money }
+      - { member: invoices.overdue_balance, label: Vadesi geçmiş, format: money }
+  - id: trend
     type: timeseries
-    title: Aylık tahsilat
+    title: Aylık fatura ve tahsilat
     series:
+      - { member: invoices.invoiced, label: Fatura, color: focus, format: money }
       - { member: payments.collected, label: Tahsilat, color: good, format: money }
     granularity: month
-    style: bar
-  - id: by_method
+    style: line
+  - id: methods
     type: pie
     title: Ödeme yöntemi
     measure: payments.collected
     by: payments.method
-  - id: by_dealer
+  - id: aging
     type: bar
-    title: Bayiye göre tahsilat
+    title: Vade yaşlandırması (açık bakiye)
+    by: invoices.aging_bucket
+    measure: invoices.open_balance
+    format: money
+  - id: overdue
+    type: bar
+    title: Vadesi geçmiş bakiye, bayiye göre
     by: dealers.name
-    measure: payments.collected
+    measure: invoices.overdue_balance
     sort: desc
     limit: 10
     format: money
 layout:
   - [{ kpis: 12 }]
-  - [{ by_month: 8 }, { by_method: 4 }]
-  - [{ by_dealer: 12 }]
+  - [{ trend: 8 }, { methods: 4 }]
+  - [{ aging: 6 }, { overdue: 6 }]

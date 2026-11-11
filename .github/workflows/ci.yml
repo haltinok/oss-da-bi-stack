@@ -379,11 +379,12 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: pip install pytest pyyaml 'jsonschema>=4.18'
+      - run: pip install pytest pyyaml 'jsonschema>=4.18' faker
       - env:
           PYTHONPATH: dashboards
         run: |
           python -m pytest dashboards/tests -q
+          python -m pytest models/distributor/sim/tests -q          # the distributor simulator's engine (no database)
           python -m dashspec validate dashboards/*.yml models/*/dashboards/*.yml
           for f in dashboards/*.yml models/*/dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
 
@@ -411,7 +412,7 @@ jobs:
         run: ./scripts/generate-env.sh
       - name: start the stack
         run: |
-          docker compose --profile distributor up -d --build postgres distributor-db cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
+          docker compose --profile distributor up -d --build postgres distributor-db distributor-sim cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
           for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile distributor ps -q cube-distributor)")" = healthy ] && break; sleep 3; done
       - name: the smoke test
         run: scripts/distributor-smoke.sh

@@ -1,0 +1,193 @@
+{
+  "spec": 1,
+  "model": "distributor",
+  "id": "stock",
+  "title": "Stok durumu",
+  "description": "Bugünkü stok: değer, kritik ve fazla stok, kapsama günü.",
+  "tags": [
+    "dağıtım"
+  ],
+  "locale": "tr-TR",
+  "currency": "TRY",
+  "time": {
+    "dimension": "calendar.full_date"
+  },
+  "panels": [
+    {
+      "id": "kpis",
+      "type": "kpi",
+      "measures": [
+        {
+          "member": "stock.stock_value",
+          "label": "Stok değeri",
+          "format": "money"
+        },
+        {
+          "member": "stock.on_hand",
+          "label": "Eldeki adet",
+          "format": "int"
+        },
+        {
+          "member": "stock.below_reorder",
+          "label": "Kritik ürün",
+          "format": "int"
+        },
+        {
+          "member": "stock.out_of_stock",
+          "label": "Stokta yok",
+          "format": "int"
+        }
+      ]
+    },
+    {
+      "id": "status",
+      "type": "pie",
+      "title": "Stok durumu",
+      "measure": "stock.item_count",
+      "by": "stock.status",
+      "on_click": {
+        "set_filter": [
+          "xf_status_1"
+        ]
+      }
+    },
+    {
+      "id": "categories",
+      "type": "bar",
+      "title": "Kategoriye göre stok değeri",
+      "by": "items.category",
+      "measure": "stock.stock_value",
+      "sort": "desc",
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_categories_1"
+        ]
+      }
+    },
+    {
+      "id": "critical",
+      "type": "table",
+      "title": "Kritik ürünler",
+      "columns": [
+        {
+          "member": "items.name"
+        },
+        {
+          "member": "items.category"
+        },
+        {
+          "member": "stock.on_hand"
+        },
+        {
+          "member": "stock.avg_cover_days"
+        }
+      ],
+      "order": {
+        "stock.avg_cover_days": "asc"
+      },
+      "limit": 15
+    }
+  ],
+  "filters": [
+    {
+      "id": "xf_status_1",
+      "dimension": "stock.status",
+      "label": "Status",
+      "implicit": true,
+      "source": "status"
+    },
+    {
+      "id": "xf_categories_1",
+      "dimension": "items.category",
+      "label": "Category",
+      "implicit": true,
+      "source": "categories"
+    }
+  ],
+  "layout": [
+    [
+      {
+        "panel": "kpis",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "status",
+        "span": 4
+      },
+      {
+        "panel": "categories",
+        "span": 8
+      }
+    ],
+    [
+      {
+        "panel": "critical",
+        "span": 12
+      }
+    ]
+  ],
+  "members": {
+    "calendar.full_date": {
+      "kind": "dimension",
+      "type": "time"
+    },
+    "items.category": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "items.name": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "stock.avg_cover_days": {
+      "kind": "measure",
+      "type": "avg"
+    },
+    "stock.below_reorder": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "stock.item_count": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "stock.on_hand": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "stock.out_of_stock": {
+      "kind": "measure",
+      "type": "count"
+    },
+    "stock.status": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "stock.stock_value": {
+      "kind": "measure",
+      "type": "sum"
+    }
+  },
+  "yearFields": {
+    "calendar": [
+      "calendar.calendar_year",
+      "maturity_dates.calendar_year"
+    ]
+  },
+  "cubes": {
+    "calendar": {
+      "joins": []
+    },
+    "items": {
+      "joins": []
+    },
+    "stock": {
+      "joins": [
+        "items"
+      ]
+    }
+  }
+}

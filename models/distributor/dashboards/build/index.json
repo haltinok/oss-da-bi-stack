@@ -1,22 +1,56 @@
 [
   {
     "id": "collections",
-    "title": "Tahsilat takibi",
-    "description": "Money collected by method and by dealer, and when it fell due.",
+    "title": "Tahsilat ve vade",
+    "description": "Faturalanan, tahsil edilen, açık ve vadesi geçmiş bakiye; vade yaşlandırması.",
     "roles": [],
     "tags": [
-      "dağıtım",
-      "tahsilat"
+      "dağıtım"
+    ]
+  },
+  {
+    "id": "dealers",
+    "title": "Bayi performansı",
+    "description": "En büyük bayiler, bölgeler ve temsilciler.",
+    "roles": [],
+    "tags": [
+      "dağıtım"
     ]
   },
   {
     "id": "distributor-overview",
-    "title": "Satış ve tahsilat",
-    "description": "Siparişler, tahsilat ve bayiler (the distributor example model; no AdventureWorks names anywhere).",
+    "title": "Satış özeti",
+    "description": "Ciro, marj, sipariş ve tahsilat; yıl, bölge ve bayi tipine göre.",
     "roles": [],
     "tags": [
-      "dağıtım",
-      "satış"
+      "dağıtım"
+    ]
+  },
+  {
+    "id": "products",
+    "title": "Ürün ve kategori",
+    "description": "Kategori, marka ve ürün; marj ve iade.",
+    "roles": [],
+    "tags": [
+      "dağıtım"
+    ]
+  },
+  {
+    "id": "returns",
+    "title": "İade analizi",
+    "description": "İade tutarı, nedenler ve en çok iade edilen ürünler.",
+    "roles": [],
+    "tags": [
+      "dağıtım"
+    ]
+  },
+  {
+    "id": "stock",
+    "title": "Stok durumu",
+    "description": "Bugünkü stok: değer, kritik ve fazla stok, kapsama günü.",
+    "roles": [],
+    "tags": [
+      "dağıtım"
     ]
   }
 ]
