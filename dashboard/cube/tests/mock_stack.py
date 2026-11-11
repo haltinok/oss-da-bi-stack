@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 PORT = 19350
 hits: dict[str, int] = {}
 BENCH = {"on": True}
+MODELS = {"on": False}      # True: the stack serves two models (models.yml: AdventureWorks and the distributor), each with its own Cube, dashboards, catalog and lab schema
 USER = {"name": "admin"}     # who the mock auth service says is signed in (the owner of what they save)
 ROLE = {"role": "admin"}  # what the mock auth service says the signed-in user is
 FAIL = {"members": set(), "message": "Profit and margin are not available for your role"}   # queries naming these members answer 403
@@ -95,27 +96,37 @@ def builder_answer(path, body, method="GET", query=None):
         from builder.standin import StandInClient
         from dashspec import catalog as cat
         from dashspec.semantic import catalog_json
-        _builder_cache.update(core=core, standin=StandInClient, catalog=cat.from_model(ROOT / "cube" / "model"), catalog_json=catalog_json)
+        aw, dist = cat.from_model(ROOT / "cube" / "model"), cat.from_model(ROOT / "models" / "distributor" / "cube")
+        _builder_cache.update(core=core, standin=StandInClient, catalog=aw, catalogs={"adventureworks": aw, "distributor": dist}, catalog_json=catalog_json)
     c, role = dict(_builder_cache), ROLE["role"]
+    asked = (query or {}).get("model", [None])[0] or (body or {}).get("model") if MODELS["on"] else None
+    model = asked if asked in c["catalogs"] else "adventureworks"
+    c["catalog"] = c["catalogs"][model]
     if BUILDER["blocked_cubes"]:
         c["catalog"] = c["core"].without_cubes(c["catalog"], BUILDER["blocked_cubes"])
     if BUILDER["blocked_members"]:
         c["catalog"] = c["core"].without_members(c["catalog"], BUILDER["blocked_members"])
     if path == "/info":
-        return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role, (query or {}).get("lang", ["en"])[0]),
+        return 200, {"mode": "standin", "model": "rule-based stand-in", "role": role, "user": "admin", "rate_limit_per_hour": 20, "examples": c["core"].examples_for(role, (query or {}).get("lang", ["en"])[0], c["catalog"] if MODELS["on"] else None),
                      "saving": BUILDER["saving"], "builds_left": 20, "note": "A rule-based stand-in answers."}
     if path == "/catalog":
         return 200, c["catalog_json"](c["catalog"], role)
     if path == "/samples":
-        return 200, [{"id": f.stem, "readable": f.stem not in BUILDER["unreadable_samples"]} for f in sorted((ROOT / "dashboards").glob("*.yml"))]
+        folder = ROOT / ("models/distributor/dashboards" if model == "distributor" else "dashboards")
+        return 200, [{"id": f.stem, "readable": f.stem not in BUILDER["unreadable_samples"]} for f in sorted(folder.glob("*.yml"))]
     if path == "/build":
         if BUILDER["limit"]:
             return 429, {"detail": "You can build 20 dashboards an hour; try again in 42 minutes."}
-        return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin", focus=body.get("focus"))
+        return 200, c["core"].run_build(c["standin"](c["catalog"], role), c["catalog"], role, body["prompt"], body.get("current_yaml"), mode="standin", focus=body.get("focus"), model=None if model == "adventureworks" else model)
+    if MODELS["on"]:
+        c["catalog"] = c["core"].Catalogs(c["catalogs"], "adventureworks")             # a saved dashboard or a draft is checked against its own model's catalog (its `model:`)
     if path.startswith(("/saved", "/folders", "/trash", "/transfer")):
         if not BUILDER["saving"]:
             return 503, {"detail": "Saving is not set up on this server (BUILDER_DB_PASSWORD is empty)."}
-        return saved_answer(path, body, method, c)
+        status, out = saved_answer(path, body, method, c)
+        if MODELS["on"] and asked and path == "/saved" and method == "GET" and status == 200:
+            out = [r for r in out if (r.get("model") or "adventureworks") == model]          # the list of the model the page is in
+        return status, out
     if path == "/validate":
         built, problems = c["core"].check_submission(body["yaml"], c["catalog"], role)
         return 200, {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "source": built and built["source"], "notes": built["notes"] if built else [], "problems": problems}
@@ -342,7 +353,7 @@ LAB_SCHEMA = [
 ]
 
 
-def lab_answer(path, body, method):
+def lab_answer(path, body, method, query=None):
     sys.path.insert(0, str(ROOT / "lab"))
     import sqlcheck
     has_lab = LAB["on"] or ROLE["role"] == "admin"
@@ -353,9 +364,14 @@ def lab_answer(path, body, method):
     if path == "/schema":
         import examples
         from dashspec import catalog as cat
+        if MODELS["on"] and (query or {}).get("model", [None])[0] == "distributor":
+            dist = cat.from_model(ROOT / "models" / "distributor" / "cube")
+            schema = [{"name": n, "description": v.get("description", ""), "dimensions": [{"name": d, "type": t, "description": ""} for d, t in sorted(v["dimensions"].items())],
+                       "measures": [{"name": m, "type": t, "description": ""} for m, t in sorted(v["measures"].items())], "joins": sorted(v["joins"] or ())} for n, v in sorted(dist.cubes.items())]
+            return 200, {"cubes": schema, "model": "distributor", "examples": examples.examples_for(dist, schema)}
         return 200, {"cubes": LAB_SCHEMA, "examples": examples.examples_for(cat.from_model(ROOT / "cube" / "model"), LAB_SCHEMA)}          # the real examples, for the cubes this fake schema lists
     if path.startswith(("/queries", "/query-folders", "/transfer")):
-        return lab_queries_answer(path, body, method)
+        return lab_queries_answer(path, body, method, query)
     if path == "/query" and method == "POST":
         try:
             sql = sqlcheck.check(body.get("sql", ""))
@@ -374,7 +390,7 @@ def lab_answer(path, body, method):
     return 404, {"detail": "not found"}
 
 
-def lab_queries_answer(path, body, method):
+def lab_queries_answer(path, body, method, query=None):
     """Saved queries on an in-memory store, through the same rules (lab/queries.py) the service uses."""
     import queries as labq
     from store import MemoryStore as LabStore
@@ -387,9 +403,11 @@ def lab_queries_answer(path, body, method):
         if parts == ["query-folders"]:
             return 200, labq.list_folders(st, who)
         if parts == ["queries"] and method == "GET":
-            return 200, labq.list_queries(st, who)
+            rows = labq.list_queries(st, who)
+            asked = (query or {}).get("model", [None])[0]
+            return 200, [r for r in rows if (r.get("model") or "adventureworks") == asked] if asked else rows
         if parts == ["queries"] and method == "POST":
-            return 201, labq.create(st, who, title=body.get("title"), sql=body.get("sql", ""), description=body.get("description", ""), folder_id=body.get("folder_id"), shares=body.get("shares"))
+            return 201, labq.create(st, who, title=body.get("title"), sql=body.get("sql", ""), description=body.get("description", ""), folder_id=body.get("folder_id"), shares=body.get("shares"), model=body.get("model") or "")
         if len(parts) == 2 and parts[0] == "queries" and method == "GET":
             return 200, labq.get(st, who, parts[1])
         if len(parts) == 2 and parts[0] == "queries" and method == "PUT":
@@ -465,7 +483,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/lab-api/"):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
-            status, answer = lab_answer(path[len("/lab-api"):], body, self.command)
+            status, answer = lab_answer(path[len("/lab-api"):], body, self.command, parse_qs(urlparse(self.path).query))
             return self._send(b"" if status == 204 else json.dumps(answer).encode(), status=status)
         if path.startswith("/admin-api/"):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "{}") if self.command in ("POST", "PUT") else {}
@@ -501,6 +519,9 @@ class Handler(BaseHTTPRequestHandler):
             js = (f'window.STACK = {{ keycloak: {{ url: "http://localhost:{PORT}/kc", realm: "spike", clientId: "dashboard" }}, '
                   f'auth: "http://localhost:{PORT}/auth", actions: "http://localhost:{PORT}/actions", builder: "http://localhost:{PORT}/builder", admin: "http://localhost:{PORT}/admin-api", lab: "http://localhost:{PORT}/lab-api", cube: "http://localhost:{PORT}/cube-live" }}; '
                   f"window.STACK.datasets = {ds}];")
+            if MODELS["on"]:
+                js += (f' window.STACK.models = [{{ id: "adventureworks", label: "AdventureWorks", cube: window.STACK.cube }}, '
+                       f'{{ id: "distributor", label: "Anadolu Dağıtım", cube: "http://localhost:{PORT}/cube-distributor" }}];')
             return self._send(js.encode(), "application/javascript")
         if path == "/d" or path.startswith("/d/"):          # the renderer page, for /d/ and /d/<id>
             path = "/d.html"
@@ -515,7 +536,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Location", "/home/")
             self.end_headers()
             return
-        for base, strip in ((ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
+        for base, strip in ((ROOT / "dashboards/build", "/dashboards/adventureworks/"), (ROOT / "models/distributor/dashboards/build", "/dashboards/distributor/"), (ROOT / "dashboards/build", "/dashboards/"), (ROOT / "dashboard/cube", "/cube/"), (ROOT / "dashboard/static", "/")):
             if path.startswith(strip):
                 rel = path[len(strip):]
                 f = base / rel

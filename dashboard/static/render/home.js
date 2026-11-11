@@ -9,6 +9,7 @@ import { langOf, stringsFor, uiLocale } from "./strings.js";
 import { mountLangSwitch } from "./lang.js";
 import { createBuilderApi } from "./builder.js";
 import { homeStrings } from "./home-strings.js";
+import { dashboardsBase, modelParam, mountModelSwitch, pickModel } from "../lib/model.js";
 
 const C = window.STACK;
 const lang = langOf(uiLocale(navigator.language));
@@ -22,8 +23,10 @@ document.title = w.title;
 $("#title").textContent = w.title;
 const show = (msg) => { const e = $("#error"); e.textContent = msg; e.hidden = !msg; };
 
+const here = pickModel(C);                                           // the model the start page is in (PLAN-models.md): its dashboards, its saved ones
+mountModelSwitch(here, { label: stringsFor(uiLocale(navigator.language)).modelLabel });
 const client = createCubeClient({
-  stack: C, apiUrl: C.cube, redirect: `${location.origin}/home/`,
+  stack: C, apiUrl: here.model.cube, redirect: `${location.origin}/home/`,
   onSession(s) {
     if ($("#who")) return;
     const admin = s.role === "admin" ? `<a href="/admin/" id="admin-link">${esc(w.admin)}</a> · ` : "";
@@ -43,11 +46,11 @@ async function start() {
   await client.token();                                                  // signs in (or back in) and tells us the role
   const session = client.session();
   const t = stringsFor(uiLocale(navigator.language));
-  const api = createBuilderApi({ stack: C, client, t });
+  const api = createBuilderApi({ stack: C, client, t, model: modelParam(here) });
   $("#brand-sub").textContent = w.sub;
   const problems = [];
   const [index, saved, folders] = await Promise.all([
-    fetch("/dashboards/index.json", { cache: "no-store" }).then((r) => r.json()).catch(() => { problems.push("dashboards"); return []; }),
+    fetch(`${dashboardsBase(here)}index.json`, { cache: "no-store" }).then((r) => r.json()).catch(() => { problems.push("dashboards"); return []; }),
     api.available ? api.listSaved().catch(() => []) : [],
     api.available ? api.listFolders().catch(() => []) : [],
   ]);

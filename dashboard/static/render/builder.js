@@ -58,8 +58,9 @@ export const drafts = {
 const ROLES = ["admin", "editor", "viewer"];
 
 // ------------------------------------------------------------------------------------------------------------------ the service
-export function createBuilderApi({ stack, client, t }) {
+export function createBuilderApi({ stack, client, t, model }) {
   const base = stack.builder;
+  const q = (path, extra = "") => `${path}${path.includes("?") ? "&" : "?"}${extra}${model ? `${extra ? "&" : ""}model=${encodeURIComponent(model)}` : ""}`.replace(/[?&]$/, "");          // the model the page is in (none on a one-model stack)
   async function call(method, path, body) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const kc = await client.keycloak();
@@ -82,18 +83,18 @@ export function createBuilderApi({ stack, client, t }) {
   let catalog;
   return {
     available: !!base,
-    info: () => call("GET", `/info?lang=${t.dateLocale.startsWith("tr") ? "tr" : "en"}`),             // the examples come in the page's language
-    catalog: () => (catalog ||= call("GET", "/catalog")),
-    build: (prompt, currentYaml, focus) => call("POST", "/build", { prompt, ...(currentYaml ? { current_yaml: currentYaml } : {}), ...(currentYaml && focus ? { focus } : {}) }),
+    info: () => call("GET", q("/info", `lang=${t.dateLocale.startsWith("tr") ? "tr" : "en"}`)),             // the examples come in the page's language
+    catalog: () => (catalog ||= call("GET", q("/catalog"))),
+    build: (prompt, currentYaml, focus) => call("POST", "/build", { prompt, ...(model ? { model } : {}), ...(currentYaml ? { current_yaml: currentYaml } : {}), ...(currentYaml && focus ? { focus } : {}) }),
     validate: (yaml) => call("POST", "/validate", { yaml }),
-    listSaved: () => call("GET", "/saved"),
+    listSaved: () => call("GET", q("/saved")),
     save: (body) => call("POST", "/saved", body),
     openSaved: (id, version) => call("GET", `/saved/${encodeURIComponent(id)}${version ? `?version=${version}` : ""}`),
     updateSaved: (id, body) => call("PUT", `/saved/${encodeURIComponent(id)}`, body),
     deleteSaved: (id) => call("DELETE", `/saved/${encodeURIComponent(id)}`),
     savedVersions: (id) => call("GET", `/saved/${encodeURIComponent(id)}/versions`),
     restoreSaved: (id, version) => call("POST", `/saved/${encodeURIComponent(id)}/restore`, { version }),
-    samples: () => call("GET", "/samples"),
+    samples: () => call("GET", q("/samples")),
     listFolders: () => call("GET", "/folders"),
     createFolder: (name) => call("POST", "/folders", { name }),
     updateFolder: (id, body) => call("PUT", `/folders/${encodeURIComponent(id)}`, body),

@@ -4,7 +4,8 @@ import { createCubeClient } from "/cube/cube-client.mjs";
 import { $, esc } from "../lib/dom.js";
 import { cleanTabs, formatCell, insertAt, pushHistory, sortRows, toTsv } from "../lib/lab-grid.js";
 import { initTheme, mountThemeMenu } from "../lib/theme.js";
-import { langOf, uiLocale } from "./strings.js";
+import { langOf, stringsFor, uiLocale } from "./strings.js";
+import { modelParam, mountModelSwitch, pickModel } from "../lib/model.js";
 import { mountLangSwitch } from "./lang.js";
 import { labStrings } from "./lab-strings.js";
 import { nameDialog, shareDialog, words as sharingWords } from "./sharing.js";
@@ -23,7 +24,11 @@ $("#home-text").textContent = w.home;
 $("#brand-sub").textContent = w.sub;
 const show = (msg) => { const e = $("#error"); e.textContent = msg; e.hidden = !msg; };
 
-const client = createCubeClient({ stack: C, apiUrl: C.cube, redirect: `${location.origin}/lab/` });
+const here = pickModel(C);                                           // the model the lab is in (PLAN-models.md): its schema, its Cube, its saved queries
+const MODEL = modelParam(here);                                      // sent with every call; nothing on a one-model stack
+const withModel = (body) => (MODEL ? { ...body, model: MODEL } : body);
+mountModelSwitch(here, { label: stringsFor(uiLocale(navigator.language)).modelLabel });
+const client = createCubeClient({ stack: C, apiUrl: here.model.cube, redirect: `${location.origin}/lab/` });
 const store = {
   get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable: the lab still works, it just forgets */ } },
@@ -102,7 +107,7 @@ async function run() {
   try {
     const q = savedOf();
     const keep = q && q.sql.trim() === sql;                                          // the tab is a saved query, unchanged: run it as a saved query, which keeps the result as your snapshot
-    const out = keep ? await call("POST", `/queries/${encodeURIComponent(q.id)}/run`) : await call("POST", "/query", { sql });
+    const out = keep ? await call("POST", `/queries/${encodeURIComponent(q.id)}/run`) : await call("POST", "/query", withModel({ sql }));
     last = { ...out, sort: null };
     if (keep && out.snapshot) $("#note").textContent = w.snapshotNote(new Date().toLocaleString(lang === "tr" ? "tr-TR" : "en-US"), new Date(out.snapshot.expires_at).toLocaleString(lang === "tr" ? "tr-TR" : "en-US"));
     history = pushHistory(history, sql);
@@ -121,7 +126,7 @@ const sw = () => sharingWords({ dateLocale: lang === "tr" ? "tr-TR" : "en-US" })
 
 async function loadSaved() {
   if (!saving) return;
-  [saved, folders] = await Promise.all([call("GET", "/queries").catch(() => []), call("GET", "/query-folders").catch(() => [])]);
+  [saved, folders] = await Promise.all([call("GET", `/queries${MODEL ? `?model=${encodeURIComponent(MODEL)}` : ""}`).catch(() => []), call("GET", "/query-folders").catch(() => [])]);
 }
 
 function drawSaved() {
@@ -163,7 +168,7 @@ async function saveQuery(asNew) {
   if (!sql) return;
   const done = async (out) => { tab.queryId = out.id; save(); await loadSaved(); drawSaved(); drawLinked(); $("#status").textContent = w.saved1; };
   if (q && !asNew) { try { await done(await call("PUT", `/queries/${encodeURIComponent(q.id)}`, { sql })); } catch (e) { $("#err").textContent = `${w.failed} ${e.message}`; $("#err").hidden = false; } return; }
-  nameDialog({ ...sw(), folderName: w.queryTitle }, w.saveTitle, q && asNew ? q.title : "", w.save, async (title) => { await done(await call("POST", "/queries", { title, sql })); });
+  nameDialog({ ...sw(), folderName: w.queryTitle }, w.saveTitle, q && asNew ? q.title : "", w.save, async (title) => { await done(await call("POST", "/queries", withModel({ title, sql }))); });
 }
 
 function shareQuery() {
@@ -244,7 +249,7 @@ async function exportAs(format) {
   $("#err").hidden = true;
   try {
     const kc = await client.keycloak();
-    const res = await fetch(`${C.lab}/export`, { method: "POST", headers: { Authorization: `Bearer ${kc.access}`, "Content-Type": "application/json" }, body: JSON.stringify({ sql, format }) });
+    const res = await fetch(`${C.lab}/export`, { method: "POST", headers: { Authorization: `Bearer ${kc.access}`, "Content-Type": "application/json" }, body: JSON.stringify(withModel({ sql, format })) });
     if (!res.ok) { const d = (await res.json().catch(() => ({}))).detail; throw new Error(typeof d === "string" ? d : `HTTP ${res.status}`); }
     const blob = await res.blob();
     const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `lab.${format}`;
@@ -264,7 +269,7 @@ async function exportAs(format) {
     limits = info.limits || limits;
     saving = !!info.saving;
     if (!info.lab) { main.innerHTML = `<div class="home-sec"><h2>${esc(w.noLab)}</h2><p class="hint">${esc(w.noLabWhy)}</p></div>`; return; }
-    const schema = await call("GET", "/schema");
+    const schema = await call("GET", `/schema${MODEL ? `?model=${encodeURIComponent(MODEL)}` : ""}`);
     cubes = schema.cubes;
     SAMPLES = (schema.examples || []).map((e) => [e.title[lang] || e.title.en, e.sql]);
     await loadSaved();

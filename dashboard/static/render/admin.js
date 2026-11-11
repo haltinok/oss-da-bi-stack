@@ -40,6 +40,8 @@ async function call(method, path, body, base = C.admin) {
   throw new Error("not signed in");
 }
 
+/** ", Anadolu Dağıtım" after a cube's size when the stack serves several models (a dataset is a set of cubes; cube names differ between models, so it may mix them). */
+const modelOf = (c) => { const ms = window.STACK.models || []; return ms.length > 1 && c.model ? `, ${ms.find((m) => m.id === c.model)?.label || c.model}` : ""; };
 const s = { tab: "users", users: [], total: 0, groups: [], roles: [], rules: [], dimensions: [], datasets: [], cubes: [], grantRoles: [], rulesOff: false, preview: null, me: null, q: "", role: "", group: "", status: "" };
 const main = $("#main");
 const dlg = $("#dlg");
@@ -222,9 +224,9 @@ async function datasetDialog(d) {
   const form = openForm(`<h2>${esc(d ? `${t.edit}: ${d.name}` : t.newDataset)}</h2>
     <label>${esc(t.datasetName)}<input name="name" value="${esc(d?.name || "")}" maxlength="80" required></label>
     <label>${esc(t.datasetDesc)}<input name="description" value="${esc(d?.description || "")}" maxlength="400"></label>
-    <label>${esc(t.datasetCubes)}<div class="groups-pick" role="group" aria-label="${esc(t.datasetCubes)}">${s.cubes.map((c) => `<label title="${esc(c.description)}"><input type="checkbox" name="c" value="${esc(c.name)}"${picked.has(c.name) ? " checked" : ""}> ${esc(c.name)} <span class="hint">(${c.measures + c.dimensions})</span></label>`).join("")}</div></label>
+    <label>${esc(t.datasetCubes)}<div class="groups-pick" role="group" aria-label="${esc(t.datasetCubes)}">${s.cubes.map((c) => `<label title="${esc(c.description)}"><input type="checkbox" name="c" value="${esc(c.name)}"${picked.has(c.name) ? " checked" : ""}> ${esc(c.name)} <span class="hint">(${c.measures + c.dimensions}${modelOf(c)})</span></label>`).join("")}</div></label>
     <div><span class="hint">${esc(t.datasetFields)}</span> <span class="hint">${esc(t.datasetFieldsHint)}</span><div id="member-list" class="adm-grants"></div>
-      <div class="row"><select id="m-cube" aria-label="${esc(t.fieldPickCube)}"><option value="">${esc(t.fieldPickCube)}</option>${s.cubes.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("")}</select>
+      <div class="row"><select id="m-cube" aria-label="${esc(t.fieldPickCube)}"><option value="">${esc(t.fieldPickCube)}</option>${s.cubes.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}${esc(modelOf(c))}</option>`).join("")}</select>
       <select id="m-field" aria-label="${esc(t.fieldPick)}"><option value="">${esc(t.fieldPick)}</option></select></div><button type="button" class="adm-btn mini" id="m-add">${esc(t.fieldAdd)}</button></div>
     <div><span class="hint">${esc(t.datasetAccess)}</span><div id="grant-list" class="adm-grants"></div>
       <div class="row"><select id="g-type" aria-label="${esc(t.ruleFor)}">${opts([["user", t.grantType.user], ["group", t.grantType.group], ["role", t.grantType.role]], "role")}</select>
