@@ -7,7 +7,7 @@ The validator and compiler
 ```bash
 scripts/dashspec validate dashboards/*.yml                          # schema + member checks against cube/model; exit 1 on any problem
 scripts/dashspec compile dashboards/sales-overview.yml -o /tmp/x.json                  # one file, to look at
-scripts/dashspec build                                              # every dashboards/*.yml -> dashboards/build/<id>.json + index.json
+scripts/dashspec build                                              # every model's dashboards (models.yml) -> its build/<id>.json + index.json
 scripts/dashspec meta                                               # the cubes, measures and dimensions a spec may use
 scripts/dashspec meta --json                                        # the same for a program (the authoring agent)
 ```

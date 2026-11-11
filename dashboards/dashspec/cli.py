@@ -7,6 +7,7 @@ import sys
 import yaml
 
 from . import catalog as cat
+from . import models
 from .compile import compile_spec
 from .lint import cube_planner, lint
 from .validate import validate
@@ -20,7 +21,7 @@ def _catalog(args):
         if not token:
             sys.exit("--cube-url needs a Cube JWT in the CUBE_TOKEN environment variable")
         return cat.from_cube(args.cube_url, token)
-    return cat.from_model(args.model)
+    return cat.from_model(args.model or models.default().dir)
 
 
 def _load(path):
@@ -33,16 +34,43 @@ def _load(path):
     return spec, []
 
 
-def _check(path, catalog):
+_catalogs: dict = {}
+
+
+def _check(path, catalog=None):
+    """-> (spec, used, errors). `catalog` is the one to check against; without it the file's own model decides (its `model:`, else the default model of models.yml)."""
     spec, errs = _load(path)
     used = {}
     if spec is not None:
-        errs, used = validate(spec, catalog)
+        if catalog is None:
+            catalog, errs = _catalog_of(spec)
+        if not errs:
+            errs, used = validate(spec, catalog)
     return spec, used, errs
 
 
+def _model_of(spec):
+    """The model a dashboard is for (None when `model:` names one models.yml does not have)."""
+    return models.get(spec.get("model") if isinstance(spec.get("model"), str) else None)
+
+
+def _catalog_of(spec):
+    """-> (catalog, []) for the dashboard's model, or (None, [problem])."""
+    m = _model_of(spec)
+    if m is None:
+        return None, [f"dashboard: model: '{spec.get('model')}' is not a model of this stack (models.yml has: {models.known()})"]
+    if m.id not in _catalogs:
+        _catalogs[m.id] = cat.from_model(m.dir)
+    return _catalogs[m.id], []
+
+
+def _explicit(args):
+    """The catalog the command line named (--model folder or --cube-url), else None: each dashboard then goes by its own model."""
+    return _catalog(args) if (args.cube_url or args.model) else None
+
+
 def cmd_validate(args):
-    catalog, bad = _catalog(args), 0
+    catalog, bad = _explicit(args), 0
     for path in args.files:
         _, _, errs = _check(path, catalog)
         if errs:
@@ -56,12 +84,14 @@ def cmd_validate(args):
 
 
 def cmd_compile(args):
-    spec, used, errs = _check(args.file, _catalog(args))
+    catalog = _explicit(args)
+    spec, used, errs = _check(args.file, catalog)
     if errs:
         for e in errs:
             print(f"{args.file}: {e}", file=sys.stderr)
         return 1
-    text = json.dumps(compile_spec(spec, used, _catalog(args)), indent=2, ensure_ascii=False) + "\n"
+    catalog = catalog or _catalog_of(spec)[0]
+    text = json.dumps(compile_spec(spec, used, catalog, model=None if args.model else _model_of(spec).id), indent=2, ensure_ascii=False) + "\n"
     if args.output:
         out = pathlib.Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -73,12 +103,21 @@ def cmd_compile(args):
 
 
 def cmd_build(args):
-    """Compile every dashboards/*.yml into <out>/<id>.json and write <out>/index.json (the list the renderer shows)."""
-    catalog = _catalog(args)
-    src, out = pathlib.Path(args.dir), pathlib.Path(args.out)
+    """Compile every dashboard of a folder into <out>/<id>.json and write <out>/index.json (the list the renderer shows). With no --dir, --out or --model: every model of
+    models.yml, each from its own dashboards folder into its own build/ folder."""
+    if not (args.dir or args.out or args.model or args.cube_url):
+        return max(_build(m.dashboards, m.build, cat.from_model(m.dir), m.id) for m in models.load())
+    return _build(pathlib.Path(args.dir or REPO / "dashboards"), pathlib.Path(args.out or REPO / "dashboards" / "build"), _catalog(args) if (args.cube_url or args.model) else None, None)
+
+
+def _build(src, out, catalog, model_id):
+    """One folder. `catalog` None: each dashboard by its own model. `model_id`: the model the folder is for (a dashboard that names another one is refused; the compiled file says it)."""
+    src, out = pathlib.Path(src), pathlib.Path(out)
     index, bad = [], 0
     for path in sorted(src.glob("*.yml")):
         spec, used, errs = _check(path, catalog)
+        if not errs and model_id and spec.get("model", model_id) != model_id:
+            errs = [f"dashboard: model: '{spec['model']}' but this folder is the dashboards of '{model_id}'"]
         if errs:
             bad += 1
             print(f"{path}: {len(errs)} problem(s)", file=sys.stderr)
@@ -90,7 +129,7 @@ def cmd_build(args):
             print(f"{path}: the file name must be the dashboard id ('{spec['id']}.yml')", file=sys.stderr)
             continue
         out.mkdir(parents=True, exist_ok=True)
-        (out / f"{spec['id']}.json").write_text(json.dumps(compile_spec(spec, used, catalog), indent=2, ensure_ascii=False) + "\n")
+        (out / f"{spec['id']}.json").write_text(json.dumps(compile_spec(spec, used, catalog or _catalog_of(spec)[0], model=model_id or _model_of(spec).id), indent=2, ensure_ascii=False) + "\n")
         index.append({"id": spec["id"], "title": spec["title"], "description": spec.get("description", ""), "roles": spec.get("roles", []), **({"tags": spec["tags"]} if spec.get("tags") else {})})
     if bad:
         return 1
@@ -109,14 +148,14 @@ def cmd_lint(args):
     if not token or not args.cube_url:
         sys.exit("lint asks a running Cube: pass --cube-url and set CUBE_TOKEN to a Cube JWT (role admin)")
     plan = cube_planner(args.cube_url, token)
-    catalog, status = cat.from_model(args.model), 0        # the members and joins come from the model files; Cube only plans queries
+    catalog, status = (cat.from_model(args.model) if args.model else None), 0        # the members and joins come from the model files (each dashboard's own model); Cube only plans queries
     for path in args.files:
         spec, used, errs = _check(path, catalog)
         if errs:
             print(f"{path}: {len(errs)} problem(s) (run validate)")
             status = 1
             continue
-        found = lint(compile_spec(spec, used, catalog), plan)
+        found = lint(compile_spec(spec, used, catalog or _catalog_of(spec)[0]), plan)
         print(f"{path}: " + ("every query is served by a pre-aggregation" if not found else f"{len(found)} warning(s)"))
         for severity, message in found:
             print(f"  - {severity}: {message}")
@@ -138,7 +177,7 @@ def cmd_semantic(args):
     """Write the semantic-layer page generated from the Cube model (docs/semantic-layer.md)."""
     from .semantic import generate
     out = pathlib.Path(args.output)
-    out.write_text(generate(cat.from_model(args.model)))
+    out.write_text(generate(cat.from_model(args.model or models.default().dir)))
     print(f"wrote {out}")
     return 0
 
@@ -162,7 +201,7 @@ def cmd_meta(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dashspec", description="Validate and compile dashboard specs (YAML) against the Cube model.")
     src = argparse.ArgumentParser(add_help=False)
-    src.add_argument("--model", default=str(REPO / "cube" / "model"), help="Cube model directory (default: cube/model)")
+    src.add_argument("--model", help="a Cube model directory to check against (default: each dashboard's own model, from models.yml)")
     src.add_argument("--cube-url", help="read the members from a running Cube instead (a Cube JWT in $CUBE_TOKEN; no join check)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate", parents=[src], help="schema and member checks; exit 1 on any problem")
@@ -173,8 +212,8 @@ def main(argv=None):
     c.add_argument("-o", "--output")
     c.set_defaults(fn=cmd_compile)
     b = sub.add_parser("build", parents=[src], help="compile every dashboard in a directory (default dashboards/) into dashboards/build")
-    b.add_argument("--dir", default=str(REPO / "dashboards"))
-    b.add_argument("--out", default=str(REPO / "dashboards" / "build"))
+    b.add_argument("--dir", help="one folder of dashboards (default: every model's, see models.yml)")
+    b.add_argument("--out", help="where to write it (default: dashboards/build)")
     b.set_defaults(fn=cmd_build)
     li = sub.add_parser("lint", parents=[src], help="does a Cube pre-aggregation serve every query? (needs --cube-url and $CUBE_TOKEN)")
     li.add_argument("files", nargs="+")

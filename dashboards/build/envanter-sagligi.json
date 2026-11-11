@@ -190,6 +190,7 @@
       "markdown": "Bu sayfa **demo verisi** üzerindedir. Tutarlar kaynakta ABD doları cinsindedir; burada yalnızca biçim (₺ simgesi, Türkçe ayraçlar) gösterilir, kur dönüşümü yapılmaz.\n"
     }
   ],
+  "model": "adventureworks",
   "layout": [
     [
       {

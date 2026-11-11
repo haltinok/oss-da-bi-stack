@@ -57,6 +57,9 @@ The row rules (`rls_dimensions.json`, beside the cube folder: one file that Cube
 ## Running a model
 A model on another database than StarRocks needs a compose overlay like `docker-compose.distributor.yml`: Cube's `CUBEJS_DB_TYPE` and login, its folder mounted over Cube's model folder, its `model.config.yml` and `rls_dimensions.json` beside `cube.js`, its dashboards' build folder behind nginx, and `ADMIN_MODEL_DIR`, `LAB_MODEL_DIR` and `BUILDER_MODEL_DIR` for the services that read the catalog. The access database is seeded per model (`<model>/access.sql`, generated from `<model>/rls_dimensions.json`). [`models/distributor/README.md`](../models/distributor/README.md) has the commands.
 
+## Several models
+`models.yml` (repo root) lists the models a stack serves: `id`, `label`, the Cube model folder (`dir`), the folder of its dashboards and its Cube's compose service. The first is the default. A dashboard says which model it is for with a top-level `model: <id>` (none: the default model); `dashspec validate` checks it against that model's cubes, `dashspec build` writes each model's dashboards into its own `build/` folder, and the compiled file carries the model. Two models share nothing but sign-in and the people: different dashboards, catalogs, row rules and Cube.
+
 ## Checking a model
 ```bash
 scripts/dashspec validate --model models/<name>/cube models/<name>/dashboards/*.yml

@@ -13,6 +13,7 @@ A dashboard is one YAML file, `dashboards/<id>.yml`.
 | `title` | string | yes | The page title and the heading. |
 | `description` | string |  | One line under the title, and on the list page (`/d/`). |
 | `tags` | list of string |  | Up to 5 short labels for finding and grouping dashboards on the list page: lower case, 1 to 24 characters, letters (of any language), digits, spaces and hyphens, no repeats. Put the most important first. Tags are visible to everyone who can see the dashboard, so they must not carry anything sensitive. |
+| `model` | string |  | Which model (Cube model, with its own members, row rules and Cube) this dashboard is for: an `id` of `models.yml`. Nothing says it for a stack with one model: the first model of the file is the default. |
 | `locale` | string |  | Number and date formats, month names, and the language of the page's own words (buttons, "All", status): `en` and `tr` exist, any other language shows English. Default `en-US`. |
 | `currency` | string |  | The currency sign on screen and in Excel files, an ISO code such as `USD` or `TRY`. Display only: nothing is converted. Default `USD`. |
 | `calculations` | list of calculation |  | Named formulas over measures, used like a measure as `calc.<id>` in any panel that takes a measure (a key figure, a series, a bar, a pie, a treemap, a table column, a pivot measure), also as the field a table or bar is sorted by. Up to 20. The formula reads in the browser on the numbers Cube returns, so it can mix measures of cubes that do not join (two fact cubes). |

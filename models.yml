@@ -1,0 +1,10 @@
+# The models this stack serves (PLAN-models.md). A model is a Cube model plus its own dashboards, catalog, row rules and Cube; nothing is shared between models but sign-in
+# and the people. The first one is the default (a dashboard that names no `model:` is for it).
+#   id          what a dashboard's `model:` says, `?model=` in the address
+#   label       the name the header switch shows
+#   dir         the Cube model folder (its model.config.yml is beside it, see docs/bring-your-own-model.md)
+#   dashboards  the folder of the model's dashboard YAML files (`dashspec build` writes its build/ folder)
+#   cube        the compose service of the model's Cube (profile `distributor` adds one for the second model)
+models:
+  - { id: adventureworks, label: AdventureWorks, dir: cube/model, dashboards: dashboards, cube: cube }
+  - { id: distributor, label: Anadolu Dağıtım, dir: models/distributor/cube, dashboards: models/distributor/dashboards, cube: cube-distributor }

@@ -12,6 +12,7 @@ D = {  # "<section>.<field>": meaning
     "dashboard.title": "The page title and the heading.",
     "dashboard.description": "One line under the title, and on the list page (`/d/`).",
     "dashboard.tags": "Up to 5 short labels for finding and grouping dashboards on the list page: lower case, 1 to 24 characters, letters (of any language), digits, spaces and hyphens, no repeats. Put the most important first. Tags are visible to everyone who can see the dashboard, so they must not carry anything sensitive.",
+    "dashboard.model": "Which model (Cube model, with its own members, row rules and Cube) this dashboard is for: an `id` of `models.yml`. Nothing says it for a stack with one model: the first model of the file is the default.",
     "dashboard.locale": "Number and date formats, month names, and the language of the page's own words (buttons, \"All\", status): `en` and `tr` exist, any other language shows English. Default `en-US`.",
     "dashboard.currency": "The currency sign on screen and in Excel files, an ISO code such as `USD` or `TRY`. Display only: nothing is converted. Default `USD`.",
     "dashboard.roles": "Deprecated and ignored (kept so older files still validate). A role says what a person may do; what data they may read comes from datasets, grants and row rules, so a dashboard is shown to whoever can read everything it uses.",

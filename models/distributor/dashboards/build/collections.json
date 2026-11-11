@@ -1,5 +1,6 @@
 {
   "spec": 1,
+  "model": "distributor",
   "id": "collections",
   "title": "Tahsilat takibi",
   "description": "Money collected by method and by dealer, and when it fell due.",

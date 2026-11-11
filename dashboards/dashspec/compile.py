@@ -19,11 +19,13 @@ def _calculation_formats(panel, members):
             panel["format"] = fmt(first)
 
 
-def compile_spec(spec, used, catalog=None):
+def compile_spec(spec, used, catalog=None, model=None):
     catalog = with_calculations(catalog, spec) if catalog is not None else None
     spec = expand_slicers(spec, catalog)          # a slicer on a field becomes a slicer of a filter made for it (dashspec/slicers.py); before the cross-filtering, which reuses it
     spec = expand(spec, used, catalog)            # `cross_filter` on a panel becomes filters and an `on_click` (dashspec/crossfilter.py)
     out = copy.deepcopy({k: v for k, v in spec.items() if k not in ("layout", "tabs")})
+    if model:
+        out["model"] = model                       # which model the dashboard is for (the renderer asks that model's Cube); the file may not say it, the default model is then named here
     for panel in out["panels"]:
         if panel["type"] == "table":     # every column as { member, label?, format? }, so the renderer reads one shape
             panel["columns"] = [{"member": col} if isinstance(col, str) else col for col in panel["columns"]]
