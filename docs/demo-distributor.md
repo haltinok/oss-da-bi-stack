@@ -3,7 +3,14 @@
 A second model in the same app: a fictional Turkish FMCG distributor on **Postgres** (the first model is AdventureWorks on StarRocks). The data is live: a simulator adds orders, payments and returns every 15 minutes, so the numbers change while you look.
 
 ## Start it
-Put `DISTRIBUTOR_DB_PASSWORD` in `.env` (`openssl rand -hex 16`), then either
+Put these in `.env` (`openssl rand -hex 16` for the password):
+
+```
+DISTRIBUTOR_DB_PASSWORD=...
+MODELS=adventureworks,distributor        # which models the pages, builder, lab and admin serve: the header's model switch appears when there are two
+```
+
+(The default is `MODELS=adventureworks`: starting the `distributor` profile alone does not show the switch.) On a stack that already has data, run `postgres/sync-access.sh` (the access tables for the row rules) and `keycloak/sync-users.sh` (the demo users) once, then `psql -f models/distributor/rules.sql` against the access database for their rules. Then either
 
 ```bash
 # next to the AdventureWorks stack (both models, one switch)
