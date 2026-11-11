@@ -58,6 +58,8 @@ grep -q '^MODELS=' .env || echo 'MODELS=adventureworks,distributor' >> .env     
 postgres/sync-access.sh && keycloak/sync-users.sh                                  # an existing server: the access tables and the demo people (a new one gets them itself)
 docker compose --profile starrocks --profile distributor up -d --build
 docker compose exec -T postgres psql -U postgres -d postgres < models/distributor/rules.sql   # the demo people's row rules
+docker compose restart caddy                                                       # Caddy must read the new Caddyfile (the /cubejs-distributor/ route); a git pull replaces the file and the container keeps the old one
+curl -s -o /dev/null -w '%{http_code}\n' "$PUBLIC_URL/cubejs-distributor/v1/meta"   # 401 = routed (a token is needed); 404 = Caddy still has the old file, and the model's panels say "the service answered with a web page instead of data"
 ```
 
 The first start of `distributor-sim` writes three years of history (about a minute) and then adds orders every 15 minutes; `cube-distributor` waits for it. Behind Caddy the model's Cube is at `/cubejs-distributor/` (no extra port to open); `CUBE_PORTS` and `MODEL_LABELS` are only needed to rename or move them. The distributor's data is in the `distributor_data` volume (about 200 MB after the first start, growing slowly), separate from StarRocks: remove the profile and `docker compose up -d --remove-orphans` to go back to one model.
