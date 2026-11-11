@@ -3,7 +3,7 @@
 apache-airflow-providers-fab==3.10.2
 
 # Ingestion
-dlt[postgres]==1.31.0
+dlt[postgres]==1.32.0
 setuptools<85
 pyodbc==5.3.0
 
