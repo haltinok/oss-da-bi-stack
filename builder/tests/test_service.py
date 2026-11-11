@@ -429,7 +429,7 @@ def test_the_catalog_and_the_samples_follow_the_model(two_models):
     assert "orders" in names("distributor") and "internet_sales" not in names("distributor")
     assert client.get("/catalog", headers=h).json() == client.get("/catalog?model=adventureworks", headers=h).json(), "no model: the default's"
     samples = {s["id"]: s["readable"] for s in client.get("/samples?model=distributor", headers=h).json()}
-    assert samples == {"collections": True, "distributor-overview": True}
+    assert sorted(samples) == ["collections", "dealers", "distributor-overview", "products", "returns", "stock"] and all(samples.values())
     assert "sales-overview" in {s["id"] for s in client.get("/samples", headers=h).json()}
 
 

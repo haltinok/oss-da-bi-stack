@@ -18,7 +18,3 @@ cubes:
         description: "The representative's username."
         sql: rep_username
         type: string
-      - name: region
-        description: "The representative's region."
-        sql: region
-        type: string

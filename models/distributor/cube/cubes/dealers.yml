@@ -43,10 +43,10 @@ cubes:
         description: "Credit limit in TRY."
         sql: credit_limit
         type: number
-      - name: opened_date
-        description: "When the dealer joined (a time dimension)."
-        sql: opened_date
-        type: time
+      - name: opened_year
+        description: "The year the dealer joined."
+        sql: "EXTRACT(YEAR FROM opened_date)"
+        type: number
       - name: rep_username
         description: "The sales representative's username (what the row rule 'sales_rep' filters by)."
         sql: rep_username

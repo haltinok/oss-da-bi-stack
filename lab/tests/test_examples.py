@@ -29,10 +29,12 @@ def test_an_example_whose_cube_is_blocked_is_left_out():
 
 
 def test_a_model_with_no_examples_gets_ones_made_from_its_catalog():
-    ex = examples.examples_for(DIST, _schema(DIST, ()))
+    bare = cat.from_model(REPO / "models" / "distributor" / "cube")
+    bare.config = {k: v for k, v in bare.config.items() if k != "lab"}          # the model's own examples would win
+    ex = examples.examples_for(bare, _schema(bare, ()))
     assert ex and all("internet_sales" not in e["sql"] for e in ex)
     first = ex[0]["sql"]
-    assert first.startswith("select ") and "measure(revenue)" in first and "from orders cross join " in first and "group by 1" in first, first
+    assert first.startswith("select ") and "measure(invoiced)" in first and "from invoices cross join " in first and "group by 1" in first, first
     assert {"en", "tr"} <= set(ex[0]["title"])
 
 
