@@ -47,7 +47,20 @@ Then fill the data: unpause the two DAGs in Airflow (`http://localhost:8080` thr
 `simulate_adventureworks` and `postgres_active_to_starrocks` (the second builds the mart in about a minute and refreshes it
 every 5 minutes). For the weekly proposal agent also unpause `inventory_weekly_proposals`.
 
-The demo users all use `TEST_USER_PASSWORD` from `.env`: `admin` (the admin role: everything, the admin console and the SQL lab) and four editors, each in one group: `na_manager` (Managers), `de_rep` (Reps), `buyer` (Purchasing), `marketer` (Marketing). A role only says what a person may do; which data they see comes from their group's dataset grants and row rules (territory and product category), set in the admin console ([admin.md](admin.md)). Signing in at `/` lands on the start page, `/home/`.
+The demo users all use `TEST_USER_PASSWORD` from `.env`: `admin` (the admin role: everything, the admin console and the SQL lab) and four editors, each in one group: `na_manager` (Managers), `de_rep` (Reps), `buyer` (Purchasing), `marketer` (Marketing). A role only says what a person may do; which data they see comes from their group's dataset grants and row rules (territory and product category), set in the admin console ([admin.md](admin.md)). Signing in at `/` lands on the start page, `/home/`. With the second model (below) there are three more: `marmara_mudur` (RegionManagers: sees the Marmara dealers only), `marmara_temsilci` and `ege_temsilci` (FieldReps: each sees only their own dealers).
+
+## A second model: the distributor demo
+The server can also serve the Turkish distributor model (live data on Postgres) next to AdventureWorks, with a **model** select in the header ([demo-distributor.md](demo-distributor.md) has the walk-through):
+
+```bash
+grep -q '^DISTRIBUTOR_DB_PASSWORD=' .env || echo "DISTRIBUTOR_DB_PASSWORD=$(openssl rand -hex 16)" >> .env
+grep -q '^MODELS=' .env || echo 'MODELS=adventureworks,distributor' >> .env      # without it the services serve one model and there is no switch
+postgres/sync-access.sh && keycloak/sync-users.sh                                  # an existing server: the access tables and the demo people (a new one gets them itself)
+docker compose --profile starrocks --profile distributor up -d --build
+docker compose exec -T postgres psql -U postgres -d postgres < models/distributor/rules.sql   # the demo people's row rules
+```
+
+The first start of `distributor-sim` writes three years of history (about a minute) and then adds orders every 15 minutes; `cube-distributor` waits for it. Behind Caddy the model's Cube is at `/cubejs-distributor/` (no extra port to open); `CUBE_PORTS` and `MODEL_LABELS` are only needed to rename or move them. The distributor's data is in the `distributor_data` volume (about 200 MB after the first start, growing slowly), separate from StarRocks: remove the profile and `docker compose up -d --remove-orphans` to go back to one model.
 
 ## Update a running server
 For a server deployed as above (`COMPOSE_FILE` and `PUBLIC_URL` are in `.env`). **The order matters**: the auth service reads the access rules from Postgres and fails the sign-in (503) rather than guess, and Cube, the auth service and the admin console read the row-level dimensions (`access.rls_dimension`) when they start and do not start without them, so the database schemas must exist before they restart with the new code.
