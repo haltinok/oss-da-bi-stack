@@ -190,7 +190,33 @@ def system_blocks(catalog: cat.Catalog, role: str) -> list[dict]:
 
 
 # ------------------------------------------------------------------------------------------------------------------ checking a submission
-def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict | None, list[str]]:
+class Catalogs:
+    """The catalogs of every model a person may read, by model id (the first is the default). Where a function takes a catalog, this does too: it then picks the catalog by the `model:` of
+    the dashboard it is given (check_submission). `cubes` is only there to make cache keys (it names every cube of every model)."""
+
+    def __init__(self, by_id: dict[str, cat.Catalog], default: str):
+        self.by_id, self.default = by_id, default
+
+    def get(self, model_id: str | None) -> cat.Catalog | None:
+        return self.by_id.get(model_id or self.default)
+
+    @property
+    def cubes(self) -> dict:
+        return {f"{m}/{c}": None for m, k in self.by_id.items() for c in k.cubes}
+
+
+def resolve(catalog, spec) -> tuple[cat.Catalog | None, str | None]:
+    """-> (the catalog a dashboard is checked against, a problem): a plain catalog stays as it is; Catalogs gives the one of the spec's `model:` (the default's when it names none)."""
+    if not isinstance(catalog, Catalogs):
+        return catalog, None
+    named = spec.get("model") if isinstance(spec, dict) else None
+    found = catalog.get(named if isinstance(named, str) else None)
+    if found is None:
+        return None, f"model: '{named}' is not a model of this stack (it has: {', '.join(catalog.by_id)})"
+    return found, None
+
+
+def check_submission(text: str, catalog: cat.Catalog, role: str, model: str | None = None) -> tuple[dict | None, list[str]]:
     """-> ({ yaml, spec, source, notes }, []) for a spec this role can render, or (None, problems) to give back to the model.
     `spec` is the compiled one the page draws; `source` is the validated file as a mapping, which is what the designer edits (JSON is YAML, so it sends it back as it is)."""
     if len(text) > MAX_YAML:
@@ -203,6 +229,11 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     if not isinstance(spec, dict):
         return None, ["the file must be a YAML mapping"]
     notes = []
+    if model and "model" not in spec:
+        spec["model"] = model                      # a dashboard built for a model says so (the default model's are left unnamed)
+    catalog, problem = resolve(catalog, spec)
+    if problem:
+        return None, [problem]
     spec["id"] = "draft"
     spec.pop("roles", None)                        # a role is not a data rule any more: the catalog this person holds (what datasets leave them) is what the spec is checked against
     theme = spec.get("theme")
@@ -219,7 +250,7 @@ def check_submission(text: str, catalog: cat.Catalog, role: str) -> tuple[dict |
     errors, used = validate(spec, catalog)
     if errors:
         return None, errors[:12]
-    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used, catalog), "source": spec, "notes": notes}, []
+    return {"yaml": yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=140), "spec": compile_spec(spec, used, catalog, model=spec.get("model")), "source": spec, "notes": notes}, []
 
 
 # ------------------------------------------------------------------------------------------------------------------ the loop
@@ -239,7 +270,7 @@ def _picked_panel(current_yaml: str | None, focus: str | None) -> dict | None:
 
 
 def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml: str | None = None,
-              log: Callable[[str, dict], None] = lambda kind, data: None, mode: str = "llm", focus: str | None = None) -> dict:
+              log: Callable[[str, dict], None] = lambda kind, data: None, mode: str = "llm", focus: str | None = None, model: str | None = None) -> dict:
     """Run the tool-use loop. `client` is an anthropic.Anthropic or the stand-in. -> { status: ok | cannot | failed, ... }."""
     if role not in ROLES:
         raise ValueError(f"unknown role {role!r}")
@@ -281,7 +312,7 @@ def run_build(client, catalog: cat.Catalog, role: str, prompt: str, current_yaml
                 done = True
             elif call.name == "submit_dashboard":
                 failures_before = failures
-                built, problems = check_submission(str(args.get("yaml", "")), catalog, role)
+                built, problems = check_submission(str(args.get("yaml", "")), catalog, role, model)
                 out["attempts"] += 1
                 log("submission", {"attempt": out["attempts"], "problems": problems})
                 if built:

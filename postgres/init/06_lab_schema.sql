@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS lab.saved_queries (
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saved_queries_owner ON lab.saved_queries (owner);
+-- the model it is for (models.yml id); empty: the default model
+ALTER TABLE lab.saved_queries ADD COLUMN IF NOT EXISTS model text NOT NULL DEFAULT '' CHECK (char_length(model) <= 40);
 
 -- The last result of a saved query for the person who ran it. It is that person's own copy (computed under their rules: territories, role, blocked cubes), so it is never shown to anyone else,
 -- whoever the query is shared with. It expires (LAB_SNAPSHOT_HOURS) and goes with the query.

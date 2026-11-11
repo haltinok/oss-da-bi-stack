@@ -64,7 +64,7 @@ Today's data is 6,000 random rows. The demo is a **fictional** Turkish FMCG dist
 
 ## Phases
 **0. The models file and the `model` field (small)**: `models.yml`, a loader in dashspec (`models.load()`), the optional `model:` in the spec (schema, validator picks the catalog, compiler carries it), `dashspec build` writes `build/<model>/`, `index.json` per model. Tests: both models' dashboards build into their folders; a dashboard naming an unknown model is refused. No behaviour change for one model.
-**1. The services take the model**: builder, lab and admin load every model in `models.yml` and take `model` per request (default: the first, so nothing breaks); saved dashboards and saved queries get `model` (migration SQL, existing rows default); lab routes to the model's Cube SQL port. Tests on both models.
+**1. The services take the model (built)**: builder, lab and admin load every model in `models.yml` and take `model` per request (default: the first, so nothing breaks); saved dashboards and saved queries get `model` (migration SQL, existing rows default); lab routes to the model's Cube SQL port. Tests on both models.
 **2. Cube per model and the stack**: `cube-distributor` and `distributor-db` as an additive profile; `MODELS`; nginx writes `STACK.models`; `/dashboards/<model>/`; the standalone overlay kept; CI: a job with both models running (smoke script extended: a query on each Cube, a dashboard list per model, a builder build per model).
 **3. The switch in the app**: `STACK.models`, the header select, `?model=` and storage, every page scoped (list, home, builder, lab, admin), a dashboard opens in its own model, locale and currency per model, Turkish strings for the select. Browser tests: switch, each page's lists, a dashboard of the other model opens and switches.
 **4. The distributor, realistic**: the generator and simulator (Python, above), the cubes, `access.sql` and the realm's demo people, the six dashboards, the `model.config.yml` vocabulary; a data check (row counts, totals that reconcile, aging buckets that add up, no negative stock, the catch-up fills a gap) as a test against the generated database; screenshots for the docs.
@@ -85,3 +85,8 @@ Every phase keeps both models passing the same suites (`dashboards/tests/test_mo
 
 ## Estimate
 About **2 to 3 weeks**: phases 0-2 are plumbing (about a week), phase 3 the visible part (about 4 days), phase 4 the most work and the most value (about a week: the data and the dashboards, and making them look right).
+
+## Phase 1 as built
+- `dashspec.models.served()` narrows models.yml to `$MODELS`. **builder**: loads a catalog per model (`BUILDER_MODEL_DIR` still names a single model for an older setup); `/info`, `/catalog`, `/samples`, `/saved` (filter) take `?model=`, `POST /build` takes `model`, and a build for a non-default model comes back with `model: <id>` in its YAML; saved dashboards are validated against the catalog of the `model:` their YAML names (`core.Catalogs` stands in where a catalog was passed); `/info` lists the models. No new column: the model is the YAML's, read and cached like the tags.
+- **lab**: `/schema`, `/query`, `/export` and the saved-query endpoints take `model`; a statement goes to that model's Cube SQL host (models.yml `cube`); `lab.saved_queries` gets a `model` column (06_lab_schema.sql, idempotent, run by sync-lab.sh), empty meaning the default.
+- **admin**: the datasets screen's cube list covers every model, each cube tagged with its model.

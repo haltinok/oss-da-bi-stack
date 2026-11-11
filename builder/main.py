@@ -39,7 +39,35 @@ from builder.store import PgStore
 ISSUER = os.environ["KEYCLOAK_ISSUER"]
 JWKS_URL = os.environ["KEYCLOAK_JWKS_URL"]
 CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "dashboard")
-CATALOG = cat.from_model(os.environ.get("BUILDER_MODEL_DIR", "/app/cube-model"))
+
+
+def load_catalogs() -> dict[str, "cat.Catalog"]:
+    """The catalog of every model this service serves (models.yml narrowed by $MODELS). BUILDER_MODEL_DIR names one model's folder instead (an older single-model setup)."""
+    from dashspec import models
+    if os.environ.get("BUILDER_MODEL_DIR"):
+        only = pathlib.Path(os.environ["BUILDER_MODEL_DIR"])
+        try:
+            named = next((m.id for m in models.served() if m.dir.resolve() == only.resolve()), None)
+        except (OSError, ValueError):                                              # no models.yml here (the image of an older setup)
+            named = None
+        return {named or "default": cat.from_model(only)}
+    return {m.id: cat.from_model(m.dir) for m in models.served()}
+
+
+CATALOGS = load_catalogs()
+
+
+def _labels() -> dict[str, str]:
+    try:
+        from dashspec import models
+        return {m.id: m.label for m in models.served()}
+    except (OSError, ValueError):
+        return {}
+
+
+MODEL_LABELS = _labels()
+DEFAULT_MODEL = next(iter(CATALOGS))
+CATALOG = CATALOGS[DEFAULT_MODEL]                                               # the default model's (what a request that names no model gets)
 RATE_LIMIT = int(os.environ.get("BUILDER_RATE_LIMIT", "20"))
 DAILY_TOKENS = int(os.environ.get("BUILDER_DAILY_TOKENS", "300000"))           # model tokens per user per UTC day (the stand-in uses none)
 MAX_CONCURRENT = int(os.environ.get("BUILDER_MAX_CONCURRENT", "4"))
@@ -72,14 +100,34 @@ def blocked_for(user: "User") -> tuple[list[str], list[str]]:
         return [], []
 
 
-def catalog_for(user: "User"):
-    cubes, fields = blocked_for(user)
-    out = CATALOG
+def narrowed(base, cubes, fields):
+    out = base
     if cubes:
         out = core.without_cubes(out, cubes)
     if fields:
         out = core.without_members(out, fields)
     return out
+
+
+def known_model(model: str | None) -> str:
+    """The id of the model a request names (the default when it names none); 404 for one this service does not serve."""
+    mid = model or DEFAULT_MODEL
+    if mid not in CATALOGS and mid != DEFAULT_MODEL:
+        raise HTTPException(404, f"There is no model '{mid}' here (this server has: {', '.join(CATALOGS)}).")
+    return mid
+
+
+def catalog_for(user: "User", model: str | None = None):
+    """The catalog a person holds for one model (what datasets leave them); with no model, the default's. (A monkeypatched CATALOG still counts for the default.)"""
+    cubes, fields = blocked_for(user)
+    mid = known_model(model)
+    return narrowed(CATALOG if mid == DEFAULT_MODEL else CATALOGS[mid], cubes, fields)
+
+
+def catalogs_for(user: "User") -> "core.Catalogs":
+    """Every model's catalog for a person, for the functions that pick by a dashboard's own `model:`."""
+    cubes, fields = blocked_for(user)
+    return core.Catalogs({mid: narrowed(CATALOG if mid == DEFAULT_MODEL else c, cubes, fields) for mid, c in CATALOGS.items()}, DEFAULT_MODEL)
 
 
 def mode() -> str:
@@ -92,7 +140,7 @@ def mode() -> str:
 
 def make_client(m: str, role: str):
     if m == "standin":
-        return StandInClient(CATALOG, role)
+        return StandInClient(CATALOG, role)                                       # build() gives it the catalog of the model asked for
     return provider.make_client(TIMEOUT)
 
 
@@ -178,6 +226,7 @@ class BuildRequest(BaseModel):
     prompt: str = Field(min_length=3, max_length=core.MAX_PROMPT)
     current_yaml: str | None = Field(default=None, max_length=core.MAX_YAML)
     focus: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")        # the id of the panel the designer has picked
+    model: str | None = Field(default=None, max_length=40, pattern=r"^[a-z][a-z0-9_-]*$")      # which model the dashboard is for (none: the default's)
 
 
 User_ = Annotated[User, Depends(current_user)]
@@ -199,22 +248,32 @@ def healthz() -> dict:
 
 
 @app.get("/info")
-def info(user: User_, lang: str = "en") -> dict:
+def info(user: User_, lang: str = "en", model: str | None = None) -> dict:
     m = mode()
-    return {"mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role, lang, CATALOG), "saving": STORE is not None,
+    mid = known_model(model)
+    return {"models": [{"id": i, "label": MODEL_LABELS.get(i, i)} for i in CATALOGS], "model_id": mid, "mode": m, "model": provider.model() if m == "llm" else "rule-based stand-in", "provider": provider.label() if m == "llm" else "stand-in", "role": user.role, "user": user.name, "rate_limit_per_hour": RATE_LIMIT, "builds_left": max(0, RATE_LIMIT - _builds_last_hour(user)), "examples": core.examples_for(user.role, lang, CATALOG if mid == DEFAULT_MODEL else CATALOGS[mid]), "saving": STORE is not None,
             "note": f"A language model ({provider.label()}, {provider.model()}) reads your request." if m == "llm" else "A rule-based stand-in answers: it understands a fixed set of phrases, not free text."}
 
 
-SAMPLES_DIR = os.environ.get("BUILDER_SAMPLES_DIR", "/app/dashboards-src")
+SAMPLES_DIR = os.environ.get("BUILDER_SAMPLES_DIR", "/app/dashboards-src")           # an older single-model setup's folder; otherwise a model's own dashboards folder (models.yml)
+
+
+def samples_dir(model: str) -> pathlib.Path:
+    if os.environ.get("BUILDER_MODEL_DIR") or model == "default":
+        return pathlib.Path(SAMPLES_DIR)
+    from dashspec import models
+    return next((m.dashboards for m in models.served() if m.id == model), pathlib.Path(SAMPLES_DIR))
 
 
 @app.get("/samples")
-def samples(user: User_) -> list[dict]:
-    """Which of the checked-in sample dashboards this person can open: those whose members are all in the catalog they hold (what datasets leave them). Open to a viewer too."""
-    cat = catalog_for(user)
+def samples(user: User_, model: str | None = None) -> list[dict]:
+    """Which of the checked-in sample dashboards of a model this person can open: those whose members are all in the catalog they hold (what datasets leave them). Open to a viewer too."""
+    mid = known_model(model)
+    cat = catalog_for(user, mid)
+    folder = samples_dir(mid)
     out = []
-    for path in sorted(pathlib.Path(SAMPLES_DIR).glob("*.yml")) if pathlib.Path(SAMPLES_DIR).is_dir() else []:
-        built, problems = core.check_submission(path.read_text(encoding="utf-8"), cat, user.role)
+    for path in sorted(folder.glob("*.yml")) if folder.is_dir() else []:
+        built, problems = core.check_submission(path.read_text(encoding="utf-8"), cat, user.role, None if mid == DEFAULT_MODEL else mid)
         out.append({"id": path.stem, "readable": built is not None, **({} if built else {"problems": problems[:2]})})
     return out
 
@@ -226,8 +285,8 @@ def usage(user: Editor_) -> dict:
 
 
 @app.get("/catalog")
-def catalog(user: Editor_) -> list[dict]:
-    return catalog_json(catalog_for(user), user.role)
+def catalog(user: Editor_, model: str | None = None) -> list[dict]:
+    return catalog_json(catalog_for(user, model), user.role)
 
 
 def need_store():
@@ -277,20 +336,24 @@ class RestoreRequest(BaseModel):
 
 
 @app.get("/saved")
-def saved_list(user: User_, everything: bool = False) -> list[dict]:
-    return saved_call(saved.list_saved, need_store(), catalog_for(user), who(user), everything=everything)
+def saved_list(user: User_, everything: bool = False, model: str | None = None) -> list[dict]:
+    rows = saved_call(saved.list_saved, need_store(), catalogs_for(user), who(user), everything=everything)
+    if model is None:
+        return rows
+    mid = known_model(model)
+    return [r for r in rows if (r.get("model") or DEFAULT_MODEL) == mid]          # a dashboard that names no model is the default's
 
 
 @app.post("/saved", status_code=201)
 def saved_create(req: SaveRequest, user: Editor_) -> dict:
-    out = saved_call(saved.save_new, need_store(), catalog_for(user), who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED, folder_id=req.folder_id, shares=req.shares)
+    out = saved_call(saved.save_new, need_store(), catalogs_for(user), who(user), req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, max_saved=MAX_SAVED, folder_id=req.folder_id, shares=req.shares)
     audit({"user": user.name, "role": user.role, "id": out["id"], "visibility": out["visibility"], "shared_roles": out["shared_roles"], "title": out["title"][:80]}, "saved")
     return out
 
 
 @app.get("/saved/{id}")
 def saved_open(id: str, user: User_, version: int | None = None) -> dict:
-    return saved_call(saved.open_saved, need_store(), catalog_for(user), who(user), id, version)
+    return saved_call(saved.open_saved, need_store(), catalogs_for(user), who(user), id, version)
 
 
 @app.put("/saved/{id}")
@@ -301,7 +364,7 @@ def saved_update(id: str, req: UpdateRequest, user: Editor_) -> dict:
         extra["folder_id"] = req.folder_id
     if "owner" in given and req.owner is not None:
         extra["owner"] = req.owner
-    out = saved_call(saved.update_saved, need_store(), catalog_for(user), who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, **extra)
+    out = saved_call(saved.update_saved, need_store(), catalogs_for(user), who(user), id, yaml_text=req.yaml, title=req.title, visibility=req.visibility, shared_roles=req.shared_roles, tags=req.tags, **extra)
     audit({"user": user.name, "role": user.role, "id": id, "version": out["version"], "visibility": out["visibility"], "shared_roles": out["shared_roles"],
            **({"shares": extra["shares"]} if "shares" in extra else {}), **({"folder": extra["folder_id"]} if "folder_id" in extra else {}), **({"new_owner": extra["owner"]} if "owner" in extra else {})}, "saved_update")
     return out
@@ -321,7 +384,7 @@ def saved_versions(id: str, user: Editor_) -> list[dict]:
 
 @app.post("/saved/{id}/restore")
 def saved_restore(id: str, req: RestoreRequest, user: Editor_) -> dict:
-    out = saved_call(saved.restore, need_store(), catalog_for(user), who(user), id, req.version)
+    out = saved_call(saved.restore, need_store(), catalogs_for(user), who(user), id, req.version)
     audit({"user": user.name, "role": user.role, "id": id, "restored": req.version, "version": out["version"]}, "saved_restore")
     return out
 
@@ -367,7 +430,7 @@ def folders_delete(id: str, user: Editor_) -> Response:
 
 @app.get("/trash")
 def trash_list(user: Editor_) -> list[dict]:
-    return saved_call(saved.list_trash, need_store(), catalog_for(user), who(user))
+    return saved_call(saved.list_trash, need_store(), catalogs_for(user), who(user))
 
 
 @app.post("/trash/{id}/restore")
@@ -398,7 +461,7 @@ class ValidateRequest(BaseModel):
 
 @app.post("/validate")
 def validate(req: ValidateRequest, user: Editor_) -> dict:
-    built, problems = core.check_submission(req.yaml, catalog_for(user), user.role)
+    built, problems = core.check_submission(req.yaml, catalogs_for(user), user.role)
     return {"ok": built is not None, "yaml": built and built["yaml"], "spec": built and built["spec"], "source": built and built["source"], "notes": built["notes"] if built else [], "problems": problems}
 
 
@@ -410,12 +473,13 @@ def build(req: BuildRequest, user: Editor_) -> dict:
         _recent[user.name].pop()                                  # a refused request does not count against the user
         raise HTTPException(503, "The builder is busy with other requests; try again in a moment.")
     t0, prompt = time.time(), clean(req.prompt)
-    mycat = catalog_for(user)
+    mid = known_model(req.model)
+    mycat = catalog_for(user, mid)
     try:
         client = make_client(m, user.role)
         if isinstance(client, StandInClient):
             client.catalog = mycat                                   # the stand-in composes only from what this person may read
-        result = core.run_build(client, mycat, user.role, prompt, req.current_yaml, mode=m, focus=req.focus)
+        result = core.run_build(client, mycat, user.role, prompt, req.current_yaml, mode=m, focus=req.focus, model=None if mid == DEFAULT_MODEL else mid)
     except HTTPException:
         raise
     except Exception as exc:  # the model API: a key that is rejected, a timeout, an outage. Never echo anything but the kind of failure.

@@ -76,7 +76,7 @@ def meta(row: dict, who: Who, folders: dict) -> dict:
     folder = folders.get(row.get("folder_id"))
     out = {"id": row["id"], "title": row["title"], "description": row["description"], "sql": row["sql"], "owner": row["owner"], "mine": mine, "can_edit": _can_edit(row, who, folders), "can_manage": manage,
            "folder_id": row.get("folder_id") if folder else None, "folder_name": folder["name"] if folder else None, "shared_with_me": not mine and _level(row, who, folders) is not None,
-           "created_at": row["created_at"], "updated_at": row["updated_at"]}
+           "model": row.get("model") or "", "created_at": row["created_at"], "updated_at": row["updated_at"]}
     if manage:
         out["shares"] = row.get("shares") or []
     return out
@@ -108,7 +108,7 @@ def list_queries(store, who: Who) -> list[dict]:
     return [meta(r, who, folders) for r in store.list() if _can_see(r, who, folders)]
 
 
-def create(store, who: Who, *, title, sql, description="", folder_id=None, shares=None) -> dict:
+def create(store, who: Who, *, title, sql, description="", folder_id=None, shares=None, model="") -> dict:
     try:
         sql = sqlcheck.check(sql)
     except sqlcheck.SqlRefused as e:
@@ -118,7 +118,7 @@ def create(store, who: Who, *, title, sql, description="", folder_id=None, share
         _folder_for_putting(folders, who, folder_id)
     if store.count_owned(who.name) >= MAX_QUERIES:
         raise QueryError(409, f"You can keep {MAX_QUERIES} saved queries; delete one first.")
-    row = store.create(owner=who.name, title=_title(title), description=(description or "").strip()[:400], sql=sql, folder_id=folder_id, shares=_clean_shares(shares) if shares is not None else [])
+    row = store.create(owner=who.name, title=_title(title), description=(description or "").strip()[:400], sql=sql, folder_id=folder_id, model=model or "", shares=_clean_shares(shares) if shares is not None else [])
     return meta(row, who, folders)
 
 
