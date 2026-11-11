@@ -1,0 +1,56 @@
+spec: 1
+model: distributor
+id: returns
+title: İade analizi
+description: İade tutarı, nedenler ve en çok iade edilen ürünler.
+tags: [dağıtım]
+locale: tr-TR
+currency: TRY
+time:
+  dimension: calendar.full_date
+filters:
+  - id: year
+    dimension: calendar.calendar_year
+    label: Yıl
+  - id: region
+    dimension: dealers.region
+    label: Bölge
+panels:
+  - id: kpis
+    type: kpi
+    measures:
+      - { member: returns.returned_amount, label: İade tutarı, format: money }
+      - { member: returns.returned_quantity, label: İade adedi, format: int }
+      - { member: returns.return_count, label: İade, format: int }
+  - id: trend
+    type: timeseries
+    title: Aylık iade tutarı
+    series:
+      - { member: returns.returned_amount, label: İade, color: bad, format: money }
+    granularity: month
+    style: bar
+  - id: reasons
+    type: pie
+    title: İade nedeni
+    measure: returns.returned_amount
+    by: returns.reason
+  - id: items
+    type: bar
+    title: En çok iade edilen ürünler
+    by: items.name
+    measure: returns.returned_amount
+    sort: desc
+    limit: 10
+    format: money
+  - id: dealers
+    type: bar
+    title: Bayiye göre iade
+    by: dealers.name
+    measure: returns.returned_amount
+    sort: desc
+    limit: 10
+    format: money
+layout:
+  - [{ kpis: 12 }]
+  - [{ trend: 8 }, { reasons: 4 }]
+  - [{ items: 6 }, { dealers: 6 }]

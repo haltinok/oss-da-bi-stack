@@ -64,7 +64,9 @@
       "member": "dealers.region",
       "cubes": [
         "orders",
+        "invoices",
         "payments",
+        "returns",
         "dealers"
       ],
       "values": {
@@ -75,11 +77,32 @@
           "İç Anadolu",
           "Akdeniz",
           "Karadeniz",
-          "Doğu Anadolu"
+          "Doğu Anadolu",
+          "Güneydoğu Anadolu"
         ]
       },
       "when_empty": "allow",
       "empty_message": "No regions assigned"
+    },
+    {
+      "id": "sales_rep",
+      "labels": {
+        "en": "Sales representative",
+        "tr": "Satış temsilcisi"
+      },
+      "member": "dealers.rep_username",
+      "cubes": [
+        "orders",
+        "invoices",
+        "payments",
+        "returns",
+        "dealers"
+      ],
+      "values": {
+        "kind": "cube"
+      },
+      "when_empty": "allow",
+      "empty_message": "No representative assigned"
     }
   ]
 }

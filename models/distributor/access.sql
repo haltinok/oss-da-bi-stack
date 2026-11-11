@@ -5,5 +5,6 @@ DELETE FROM access."grant";
 DELETE FROM access.dataset;
 DELETE FROM access.rls_dimension;
 INSERT INTO access.rls_dimension (id, position, member, cubes, when_empty, values_source, seed, labels, empty_message) VALUES
-    ('dealer_region', 10, 'dealers.region', ARRAY['orders', 'payments', 'dealers'], 'allow', '{"kind": "list", "values": ["Marmara", "Ege", "İç Anadolu", "Akdeniz", "Karadeniz", "Doğu Anadolu"]}'::jsonb, false, '{"en": "Dealer regions", "tr": "Bayi bölgeleri"}'::jsonb, 'No regions assigned')
+    ('dealer_region', 10, 'dealers.region', ARRAY['orders', 'invoices', 'payments', 'returns', 'dealers'], 'allow', '{"kind": "list", "values": ["Marmara", "Ege", "İç Anadolu", "Akdeniz", "Karadeniz", "Doğu Anadolu", "Güneydoğu Anadolu"]}'::jsonb, false, '{"en": "Dealer regions", "tr": "Bayi bölgeleri"}'::jsonb, 'No regions assigned'),
+    ('sales_rep', 20, 'dealers.rep_username', ARRAY['orders', 'invoices', 'payments', 'returns', 'dealers'], 'allow', '{"kind": "cube"}'::jsonb, false, '{"en": "Sales representative", "tr": "Satış temsilcisi"}'::jsonb, 'No representative assigned')
 ON CONFLICT (id) DO NOTHING;

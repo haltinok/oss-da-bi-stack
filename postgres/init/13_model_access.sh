@@ -4,4 +4,6 @@
 set -euo pipefail
 if [ -n "${MODEL_ACCESS_SQL:-}" ]; then
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$MODEL_ACCESS_SQL"
+  rules="$(dirname "$MODEL_ACCESS_SQL")/rules.sql"      # the model's people (optional)
+  if [ -f "$rules" ]; then psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$rules"; fi
 fi

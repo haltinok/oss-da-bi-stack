@@ -1,8 +1,13 @@
 cubes:
   - name: dealers
-    description: "Bayiler: the dealers the distributor sells to (join target for orders and payments)."
+    description: "Bayiler: the dealers the distributor sells to (join target for every fact). Row-level security limits a person to some regions or to their own dealers."
     sql_table: dist.dim_dealer
     data_source: default
+
+    joins:
+      - name: reps
+        relationship: many_to_one
+        sql: "{CUBE}.rep_key = {reps}.rep_key"
 
     dimensions:
       - name: key
@@ -10,19 +15,44 @@ cubes:
         sql: dealer_key
         type: number
         primary_key: true
+      - name: code
+        description: "Dealer code (B0001 ...)."
+        sql: dealer_code
+        type: string
       - name: name
         description: "Dealer name."
         sql: dealer_name
         type: string
       - name: region
-        description: "Sales region (Marmara, Ege, İç Anadolu, Akdeniz, Karadeniz, Doğu Anadolu)."
+        description: "Sales region (Marmara, Ege, İç Anadolu, Akdeniz, Karadeniz, Doğu Anadolu, Güneydoğu Anadolu)."
         sql: region
         type: string
-      - name: city
-        description: "City."
-        sql: city
+      - name: province
+        description: "Province (il)."
+        sql: province
         type: string
       - name: segment
-        description: "Dealer size: Büyük, Orta or Küçük."
+        description: "Dealer type: Zincir Market, Toptancı, Otel-Restoran-Kafe or Bakkal."
         sql: segment
         type: string
+      - name: payment_term
+        description: "The dealer's payment term in days (vade)."
+        sql: payment_term_days
+        type: number
+      - name: credit_limit
+        description: "Credit limit in TRY."
+        sql: credit_limit
+        type: number
+      - name: opened_date
+        description: "When the dealer joined (a time dimension)."
+        sql: opened_date
+        type: time
+      - name: rep_username
+        description: "The sales representative's username (what the row rule 'sales_rep' filters by)."
+        sql: rep_username
+        type: string
+
+    measures:
+      - name: dealer_count
+        description: "Number of dealers."
+        type: count

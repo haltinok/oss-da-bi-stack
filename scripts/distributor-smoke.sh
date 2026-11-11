@@ -14,10 +14,10 @@ AW='internet_sales|reseller_sales|inventory_health|offer_performance|AdventureWo
 kc=$(curl -sf -X POST $K/realms/spike/protocol/openid-connect/token -d grant_type=password -d client_id=dashboard -d username=admin -d "password=$TEST_USER_PASSWORD" | jq -r .access_token)
 [ -n "$kc" ] && [ "$kc" != null ] || fail "sign in (is the password grant on? see docs/deploy-demo.md)"; ok "signed in as admin"
 session=$(curl -sf -X POST $A/token -H "Authorization: Bearer $kc"); cube=$(echo "$session" | jq -r .token)
-[ "$(echo "$session" | jq -r '.rls | keys | join(",")')" = "dealer_region" ] || fail "the token's row-level dimensions are the distributor's: $(echo "$session" | jq -c .rls)"; ok "the auth service mints a Cube token with the distributor's row-level dimension"
+[ "$(echo "$session" | jq -r '.rls | keys | join(",")')" = "dealer_region,sales_rep" ] || fail "the token's row-level dimensions are the distributor's: $(echo "$session" | jq -c .rls)"; ok "the auth service mints a Cube token with the distributor's row-level dimensions"
 
 meta=$(curl -sf -H "Authorization: $cube" $C/cubejs-api/v1/meta)
-echo "$meta" | jq -e '[.cubes[].name] | contains(["orders","payments","dealers","items","calendar"])' >/dev/null || fail "Cube's cubes"; ok "Cube serves the distributor's cubes"
+echo "$meta" | jq -e '[.cubes[].name] | contains(["orders","invoices","payments","returns","stock","dealers","items","calendar"])' >/dev/null || fail "Cube's cubes"; ok "Cube serves the distributor's cubes"
 echo "$meta" | grep -qE "$AW" && fail "Cube's meta names an AdventureWorks cube" || ok "no AdventureWorks name in Cube's meta"
 rev=$(curl -sf -G -H "Authorization: $cube" $C/cubejs-api/v1/load --data-urlencode 'query={"measures":["orders.revenue","orders.order_count"],"dimensions":["dealers.region"],"order":{"orders.revenue":"desc"},"limit":3}' | jq -r '.data[0]["orders.revenue"]')
 [ -n "$rev" ] && [ "$rev" != null ] || fail "a query through Cube on Postgres"; ok "a query through Cube on Postgres: top region revenue $rev"
@@ -26,8 +26,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -G -H "Authorization: $cube" $C/cu
 [ "$(curl -s -o /dev/null -w '%{http_code}' $D/)" = 302 ] && [ "$(curl -s -o /dev/null -w '%{http_code}' $D/home/)" = 200 ] || fail "the start page"; ok "the start page is served"
 curl -sf $D/cube/config.js > /tmp/distributor-config.js
 node -e 'const window = {}; eval(require("fs").readFileSync("/tmp/distributor-config.js", "utf8")); const m = window.STACK.models; process.exit(m.length === 1 && m[0].id === "distributor" && m[0].label === "Anadolu Dağıtım" && window.STACK.cube === m[0].cube ? 0 : 1)' || fail "the browser config lists the model (STACK.models)"; ok "the browser's config lists the model"
-[ "$(curl -sf $D/dashboards/distributor/index.json | jq -c '[.[].id] | sort')" = '["collections","distributor-overview"]' ] || fail "the dashboards at /dashboards/<model>/"; ok "the model's dashboards are served at /dashboards/distributor/ too"
-idx=$(curl -sf $D/dashboards/index.json); echo "$idx" | jq -e '[.[].id] | sort == ["collections","distributor-overview"]' >/dev/null || fail "the dashboards list: $(echo "$idx" | jq -c '[.[].id]')"; ok "the dashboards are the distributor's"
+[ "$(curl -sf $D/dashboards/distributor/index.json | jq -c '[.[].id] | sort')" = '["collections","dealers","distributor-overview","products","returns","stock"]' ] || fail "the dashboards at /dashboards/<model>/"; ok "the model's dashboards are served at /dashboards/distributor/ too"
+idx=$(curl -sf $D/dashboards/index.json); echo "$idx" | jq -e '[.[].id] | sort == ["collections","dealers","distributor-overview","products","returns","stock"]' >/dev/null || fail "the dashboards list: $(echo "$idx" | jq -c '[.[].id]')"; ok "the dashboards are the distributor's"
 curl -sf $D/dashboards/distributor-overview.json | jq -e '.panels | length > 3' >/dev/null || fail "a compiled dashboard"; ok "a compiled dashboard is served"
 
 info=$(curl -sf -H "Authorization: Bearer $kc" $B/info); echo "$info" | jq -e '.models == [{"id":"distributor","label":"Anadolu Dağıtım"}] and .model_id == "distributor"' >/dev/null || fail "the builder lists the model: $(echo "$info" | jq -c .models)"

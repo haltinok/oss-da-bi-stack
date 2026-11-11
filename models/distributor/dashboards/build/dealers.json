@@ -1,0 +1,255 @@
+{
+  "spec": 1,
+  "model": "distributor",
+  "id": "dealers",
+  "title": "Bayi performansı",
+  "description": "En büyük bayiler, bölgeler ve temsilciler.",
+  "tags": [
+    "dağıtım"
+  ],
+  "locale": "tr-TR",
+  "currency": "TRY",
+  "time": {
+    "dimension": "calendar.full_date"
+  },
+  "filters": [
+    {
+      "id": "year",
+      "dimension": "calendar.calendar_year",
+      "label": "Yıl"
+    },
+    {
+      "id": "region",
+      "dimension": "dealers.region",
+      "label": "Bölge"
+    },
+    {
+      "id": "segment",
+      "dimension": "dealers.segment",
+      "label": "Bayi tipi"
+    },
+    {
+      "id": "xf_top_1",
+      "dimension": "dealers.name",
+      "label": "Name",
+      "implicit": true,
+      "source": "top"
+    },
+    {
+      "id": "xf_provinces_1",
+      "dimension": "dealers.province",
+      "label": "Province",
+      "implicit": true,
+      "source": "provinces"
+    },
+    {
+      "id": "xf_reps_1",
+      "dimension": "reps.name",
+      "label": "Name",
+      "implicit": true,
+      "source": "reps"
+    }
+  ],
+  "panels": [
+    {
+      "id": "kpis",
+      "type": "kpi",
+      "measures": [
+        {
+          "member": "orders.revenue",
+          "label": "Ciro",
+          "format": "money"
+        },
+        {
+          "member": "orders.avg_order_value",
+          "label": "Ortalama sipariş",
+          "format": "money"
+        },
+        {
+          "member": "orders.margin_pct",
+          "label": "Marj",
+          "format": "pct"
+        },
+        {
+          "member": "orders.order_count",
+          "label": "Sipariş",
+          "format": "int"
+        }
+      ]
+    },
+    {
+      "id": "top",
+      "type": "bar",
+      "title": "En büyük 10 bayi",
+      "by": "dealers.name",
+      "measure": "orders.revenue",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_top_1"
+        ]
+      }
+    },
+    {
+      "id": "provinces",
+      "type": "bar",
+      "title": "İle göre ciro",
+      "by": "dealers.province",
+      "measure": "orders.revenue",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_provinces_1"
+        ]
+      }
+    },
+    {
+      "id": "reps",
+      "type": "bar",
+      "title": "Temsilciye göre ciro",
+      "by": "reps.name",
+      "measure": "orders.revenue",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_reps_1"
+        ]
+      }
+    },
+    {
+      "id": "table",
+      "type": "table",
+      "title": "Bayiler",
+      "columns": [
+        {
+          "member": "dealers.name"
+        },
+        {
+          "member": "dealers.region"
+        },
+        {
+          "member": "dealers.segment"
+        },
+        {
+          "member": "orders.revenue"
+        },
+        {
+          "member": "orders.order_count"
+        },
+        {
+          "member": "orders.margin_pct"
+        }
+      ],
+      "order": {
+        "orders.revenue": "desc"
+      },
+      "limit": 20
+    }
+  ],
+  "layout": [
+    [
+      {
+        "panel": "kpis",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "top",
+        "span": 6
+      },
+      {
+        "panel": "provinces",
+        "span": 6
+      }
+    ],
+    [
+      {
+        "panel": "reps",
+        "span": 6
+      },
+      {
+        "panel": "table",
+        "span": 6
+      }
+    ]
+  ],
+  "members": {
+    "calendar.calendar_year": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "calendar.full_date": {
+      "kind": "dimension",
+      "type": "time"
+    },
+    "dealers.name": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "dealers.province": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "dealers.region": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "dealers.segment": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "orders.avg_order_value": {
+      "kind": "measure",
+      "type": "number"
+    },
+    "orders.margin_pct": {
+      "kind": "measure",
+      "type": "number"
+    },
+    "orders.order_count": {
+      "kind": "measure",
+      "type": "count_distinct"
+    },
+    "orders.revenue": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "reps.name": {
+      "kind": "dimension",
+      "type": "string"
+    }
+  },
+  "yearFields": {
+    "calendar": [
+      "calendar.calendar_year",
+      "maturity_dates.calendar_year"
+    ]
+  },
+  "cubes": {
+    "calendar": {
+      "joins": []
+    },
+    "dealers": {
+      "joins": [
+        "reps"
+      ]
+    },
+    "orders": {
+      "joins": [
+        "calendar",
+        "dealers",
+        "items"
+      ]
+    },
+    "reps": {
+      "joins": []
+    }
+  }
+}

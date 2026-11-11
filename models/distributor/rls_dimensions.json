@@ -1,14 +1,54 @@
 {
-  "_": "The distributor's row-level dimensions (same format as cube/rls_dimensions.json). One: a person or group may be limited to the dealers of some regions; with no rule they see every region (when_empty: allow). The access database is seeded from it (access.sql, generated: python3 scripts/rls_dimensions_sql.py --model models/distributor) and Cube reads this file (docker-compose.distributor.yml).",
+  "_": "The distributor's row-level dimensions (same format as cube/rls_dimensions.json). Two: a person or group may be limited to the dealers of some regions, or to the dealers of one sales representative; with no rule they see everything (when_empty: allow). The access database is seeded from it (access.sql, generated: python3 scripts/rls_dimensions_sql.py --model models/distributor) and Cube reads this file (docker-compose.distributor.yml).",
   "dimensions": [
     {
       "id": "dealer_region",
-      "labels": { "en": "Dealer regions", "tr": "Bayi bölgeleri" },
+      "labels": {
+        "en": "Dealer regions",
+        "tr": "Bayi bölgeleri"
+      },
       "member": "dealers.region",
-      "cubes": ["orders", "payments", "dealers"],
-      "values": { "kind": "list", "values": ["Marmara", "Ege", "İç Anadolu", "Akdeniz", "Karadeniz", "Doğu Anadolu"] },
+      "cubes": [
+        "orders",
+        "invoices",
+        "payments",
+        "returns",
+        "dealers"
+      ],
+      "values": {
+        "kind": "list",
+        "values": [
+          "Marmara",
+          "Ege",
+          "İç Anadolu",
+          "Akdeniz",
+          "Karadeniz",
+          "Doğu Anadolu",
+          "Güneydoğu Anadolu"
+        ]
+      },
       "when_empty": "allow",
       "empty_message": "No regions assigned"
+    },
+    {
+      "id": "sales_rep",
+      "labels": {
+        "en": "Sales representative",
+        "tr": "Satış temsilcisi"
+      },
+      "member": "dealers.rep_username",
+      "cubes": [
+        "orders",
+        "invoices",
+        "payments",
+        "returns",
+        "dealers"
+      ],
+      "values": {
+        "kind": "cube"
+      },
+      "when_empty": "allow",
+      "empty_message": "No representative assigned"
     }
   ]
 }

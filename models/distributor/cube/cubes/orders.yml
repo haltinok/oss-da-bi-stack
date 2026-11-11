@@ -1,6 +1,6 @@
 cubes:
   - name: orders
-    description: "Sipariş satırları: one row per item on a dealer's order."
+    description: "Sipariş satırları: one row per item on a dealer's order, with price, discount and cost. New orders arrive every few minutes."
     sql_table: dist.fact_order_line
     data_source: default
     meta: { kind: fact }
@@ -20,30 +20,46 @@ cubes:
       - name: line_id
         description: "Key of the order line."
         sql: line_id
-        type: string
+        type: number
         primary_key: true
       - name: order_number
         description: "The order number."
         sql: order_number
         type: string
       - name: order_date
-        description: "When the order was placed (a time dimension)."
-        sql: order_date
+        description: "When the order was placed (a time dimension: use it for a time axis)."
+        sql: order_ts
         type: time
 
     measures:
       - name: revenue
+        description: "Net sales in TRY: quantity times price, after discount, before VAT."
         meta: { format: money, primary: 1 }
-        description: "Order value in TRY (quantity x unit price, after discount)."
-        sql: amount
-        type: sum
-      - name: quantity
-        meta: { format: int, primary: 3 }
-        description: "Units ordered."
-        sql: quantity
+        sql: net_amount
         type: sum
       - name: order_count
+        description: "Number of orders (exact distinct count)."
         meta: { format: int, primary: 2 }
-        description: "Number of orders."
         sql: order_number
         type: count_distinct
+      - name: quantity
+        description: "Units sold."
+        meta: { format: int, primary: 3 }
+        sql: quantity
+        type: sum
+      - name: gross_margin
+        description: "Gross margin in TRY: net sales minus the cost of the goods."
+        meta: { format: money }
+        sql: "net_amount - cost_amount"
+        type: sum
+      - name: margin_pct
+        description: "Gross margin as a fraction of net sales (0.2 is 20 %; use format pct)."
+        sql: "{gross_margin} / NULLIF({revenue}, 0)"
+        type: number
+      - name: avg_order_value
+        description: "Net sales per order in TRY."
+        sql: "{revenue} / NULLIF({order_count}, 0)"
+        type: number
+      - name: line_count
+        description: "Number of order lines."
+        type: count

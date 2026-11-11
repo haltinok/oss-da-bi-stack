@@ -1,0 +1,94 @@
+cubes:
+  - name: invoices
+    description: "Faturalar: one invoice per order, with its due date (vade) and what has been paid; open and overdue balances and their aging move with the data."
+    sql_table: dist.fact_invoice
+    data_source: default
+    meta: { kind: fact }
+
+    joins:
+      - name: dealers
+        relationship: many_to_one
+        sql: "{CUBE}.dealer_key = {dealers}.dealer_key"
+      - name: calendar
+        relationship: many_to_one
+        sql: "{CUBE}.invoice_date_key = {calendar}.date_key"
+      - name: maturity_dates
+        relationship: many_to_one
+        sql: "{CUBE}.due_date_key = {maturity_dates}.date_key"
+
+    dimensions:
+      - name: invoice_number
+        description: "The invoice number."
+        sql: invoice_number
+        type: string
+        primary_key: true
+      - name: order_number
+        description: "The order it invoices."
+        sql: order_number
+        type: string
+      - name: invoice_date
+        description: "The invoice date (a time dimension)."
+        sql: invoice_date
+        type: time
+      - name: due_date
+        description: "The due date, vade (a time dimension)."
+        sql: due_date
+        type: time
+      - name: status
+        description: "Ödendi (paid), Kısmen ödendi, Açık (open, not due yet) or Vadesi geçmiş (open and overdue)."
+        sql: "CASE WHEN gross_amount - paid_amount < 0.01 THEN 'Ödendi' WHEN due_date < CURRENT_DATE THEN 'Vadesi geçmiş' WHEN paid_amount > 0 THEN 'Kısmen ödendi' ELSE 'Açık' END"
+        type: string
+      - name: aging_order
+        description: "Sort key of the aging buckets (0 not due ... 4 over 90 days)."
+        sql: "CASE WHEN gross_amount - paid_amount < 0.01 OR due_date >= CURRENT_DATE THEN 0 WHEN CURRENT_DATE - due_date <= 30 THEN 1 WHEN CURRENT_DATE - due_date <= 60 THEN 2 WHEN CURRENT_DATE - due_date <= 90 THEN 3 ELSE 4 END"
+        type: number
+      - name: aging_bucket
+        description: "How long an open invoice is overdue: Vadesi gelmemiş, 1-30 gün, 31-60 gün, 61-90 gün, 90+ gün (paid invoices are in the first)."
+        sql: "CASE WHEN gross_amount - paid_amount < 0.01 OR due_date >= CURRENT_DATE THEN 'Vadesi gelmemiş' WHEN CURRENT_DATE - due_date <= 30 THEN '1-30 gün' WHEN CURRENT_DATE - due_date <= 60 THEN '31-60 gün' WHEN CURRENT_DATE - due_date <= 90 THEN '61-90 gün' ELSE '90+ gün' END"
+        type: string
+        meta:
+          sort_by: aging_order
+
+    measures:
+      - name: invoiced
+        description: "Invoiced in TRY including VAT."
+        meta: { format: money, primary: 1 }
+        sql: gross_amount
+        type: sum
+      - name: invoiced_net
+        description: "Invoiced in TRY before VAT."
+        meta: { format: money }
+        sql: net_amount
+        type: sum
+      - name: vat
+        description: "VAT in TRY."
+        meta: { format: money }
+        sql: vat_amount
+        type: sum
+      - name: paid
+        description: "Paid so far in TRY."
+        meta: { format: money }
+        sql: paid_amount
+        type: sum
+      - name: open_balance
+        description: "Açık bakiye: what is still owed in TRY (invoiced minus paid)."
+        meta: { format: money, primary: 2 }
+        sql: "gross_amount - paid_amount"
+        type: sum
+      - name: overdue_balance
+        description: "Vadesi geçmiş bakiye: what is owed and past its due date, in TRY."
+        meta: { format: money }
+        sql: "gross_amount - paid_amount"
+        type: sum
+        filters:
+          - sql: "{CUBE}.due_date < CURRENT_DATE AND {CUBE}.gross_amount - {CUBE}.paid_amount >= 0.01"
+      - name: invoice_count
+        description: "Number of invoices."
+        meta: { format: int }
+        type: count
+      - name: overdue_count
+        description: "Number of invoices that are overdue."
+        meta: { format: int }
+        type: count
+        filters:
+          - sql: "{CUBE}.due_date < CURRENT_DATE AND {CUBE}.gross_amount - {CUBE}.paid_amount >= 0.01"

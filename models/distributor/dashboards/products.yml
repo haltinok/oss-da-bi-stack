@@ -1,0 +1,66 @@
+spec: 1
+model: distributor
+id: products
+title: Ürün ve kategori
+description: Kategori, marka ve ürün; marj ve iade.
+tags: [dağıtım]
+locale: tr-TR
+currency: TRY
+time:
+  dimension: calendar.full_date
+filters:
+  - id: year
+    dimension: calendar.calendar_year
+    label: Yıl
+  - id: region
+    dimension: dealers.region
+    label: Bölge
+  - id: segment
+    dimension: dealers.segment
+    label: Bayi tipi
+panels:
+  - id: kpis
+    type: kpi
+    measures:
+      - { member: orders.revenue, label: Ciro, format: money }
+      - { member: orders.quantity, label: Adet, format: int }
+      - { member: orders.margin_pct, label: Marj, format: pct }
+  - id: trend
+    type: timeseries
+    title: Aylık ciro
+    series:
+      - { member: orders.revenue, label: Ciro, color: focus, format: money }
+    granularity: month
+    style: bar
+  - id: categories
+    type: pie
+    title: Kategoriye göre ciro
+    measure: orders.revenue
+    by: items.category
+  - id: subs
+    type: bar
+    title: Alt kategoriye göre ciro
+    by: items.subcategory
+    measure: orders.revenue
+    sort: desc
+    limit: 10
+    format: money
+  - id: brands
+    type: bar
+    title: Markaya göre ciro
+    by: items.brand
+    measure: orders.revenue
+    sort: desc
+    limit: 10
+    format: money
+  - id: table
+    type: table
+    title: En çok satan ürünler
+    columns: [items.name, items.category, orders.quantity, orders.revenue, orders.margin_pct]
+    order: { orders.revenue: desc }
+    limit: 15
+layout:
+  - [{ kpis: 12 }]
+  - [{ trend: 8 }, { categories: 4 }]
+  - [{ subs: 6 }, { brands: 6 }]
+  - [{ table: 12 }]

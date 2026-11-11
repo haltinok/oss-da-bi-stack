@@ -7,7 +7,7 @@
 #   - the base file's fixed subnet (it pins StarRocks' node addresses) is dropped, so this can run next to a StarRocks stack.
 #
 #   docker compose -p distributor -f docker-compose.yml -f docker-compose.distributor.yml --profile distributor up -d --build \
-#     postgres distributor-db cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
+#     postgres distributor-db distributor-sim cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
 #
 # (name the services: the base file's Airflow, Kafka and the rest have no profile and would start too.) Use its own project name (-p), stop the other stack first or move this
 # one's ports (every published port is a variable in .env: POSTGRES_PORT, KEYCLOAK_PORT, AUTH_PORT, CUBE_DISTRIBUTOR_PORT, DASHBOARD_CUBE_PORT, ...). Sign in as admin

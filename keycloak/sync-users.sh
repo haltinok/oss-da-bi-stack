@@ -15,10 +15,10 @@ kc_login
 for role in editor viewer agent; do
   kc create roles -r spike -s "name=$role" >/dev/null 2>&1 && echo "role $role: created" || echo "role $role: exists"
 done
-for group in Managers Reps Purchasing Marketing; do
+for group in Managers Reps Purchasing Marketing RegionManagers FieldReps; do
   kc create groups -r spike -s "name=$group" >/dev/null 2>&1 && echo "group $group: created" || echo "group $group: exists"
 done
-for pair in buyer:Purchasing marketer:Marketing; do
+for pair in buyer:Purchasing marketer:Marketing marmara_mudur:RegionManagers marmara_temsilci:FieldReps ege_temsilci:FieldReps; do
   user=${pair%%:*}; group=${pair##*:}
   if [ -n "$(kc get users -r spike -q "username=$user" --fields id --format csv --noquotes)" ]; then
     echo "user $user: exists"
