@@ -27,13 +27,29 @@ def test_every_dimension_is_well_formed_and_unique():
         assert d["labels"]["en"], d["id"]
 
 
-def test_each_dimension_member_exists_and_is_reachable_from_every_cube_it_filters():
+def _catalog_of(dimension):
+    """The catalog of the model whose cube a dimension filters by (every model the stack can serve is in the registry)."""
+    from dashspec import models
+    cube = dimension["member"].split(".")[0]
+    return next((cat.from_model(m.dir) for m in models.load() if cube in cat.from_model(m.dir).cubes), None)
+
+
+def test_each_dimension_member_exists_and_is_reachable_from_every_cube_it_filters_in_its_own_model():
     for d in DIMS:
+        catalog = _catalog_of(d)
         cube, member = d["member"].split(".")
-        assert cube in CATALOG.cubes and member in CATALOG.cubes[cube]["dimensions"], f"{d['id']}: {d['member']} is not a dimension in the model"
+        assert catalog is not None, f"{d['id']}: no model has a cube {cube}"
+        assert member in catalog.cubes[cube]["dimensions"], f"{d['id']}: {d['member']} is not a dimension in its model"
         for c in d["cubes"]:
-            assert c in CATALOG.cubes, f"{d['id']}: no cube {c}"
-            assert c == cube or cube in (CATALOG.cubes[c]["joins"] or ()), f"{d['id']}: {c} does not join {cube}, so a filter on {d['member']} would not be valid for it"
+            assert c in catalog.cubes, f"{d['id']}: no cube {c} in the model of {cube}"
+            assert c == cube or cube in (catalog.cubes[c]["joins"] or ()), f"{d['id']}: {c} does not join {cube}, so a filter on {d['member']} would not be valid for it"
+
+
+def test_the_stacks_registry_lists_every_models_own_dimensions_the_same_way():
+    ids = {d["id"]: d for d in DIMS}
+    for path in (REPO / "models").glob("*/rls_dimensions.json"):
+        for own in json.loads(path.read_text(encoding="utf-8"))["dimensions"]:
+            assert ids.get(own["id"]) == own, f"{path.parent.name}'s dimension {own['id']} must be in cube/rls_dimensions.json, identical (one registry for the stack)"
 
 
 def test_there_is_one_registry_file_and_the_images_take_it_from_there():

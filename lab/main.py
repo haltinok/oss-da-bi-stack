@@ -124,7 +124,7 @@ def served() -> dict:
     try:
         from dashspec import models
         return {m.id: (str(m.dir), m.cube) for m in models.served()}
-    except (ImportError, OSError, ValueError):
+    except (ImportError, OSError):                                                  # no models.yml (an image run without its mount): the one model the image carries
         return {"": ("/app/cube-model", CUBE_SQL_HOST)}
 
 

@@ -411,8 +411,8 @@ jobs:
         run: ./scripts/generate-env.sh
       - name: start the stack
         run: |
-          docker compose --profile distributor up -d --build postgres distributor-db cubestore cubestore-worker keycloak auth cube dashboard-cube builder lab admin
-          for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile distributor ps -q cube)")" = healthy ] && break; sleep 3; done
+          docker compose --profile distributor up -d --build postgres distributor-db cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
+          for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose --profile distributor ps -q cube-distributor)")" = healthy ] && break; sleep 3; done
       - name: the smoke test
         run: scripts/distributor-smoke.sh
       - name: logs on failure

@@ -1,5 +1,5 @@
 {
-  "_": "The row-level dimensions. A rule (admin console) lists the values of one dimension a person or group may see; cube.js adds `member in values` to every query that touches one of `cubes`. Different dimensions are ANDed, the values of one are ORed. This file is the source (the auth and admin images copy it at build time); a test checks that each member is reachable from each cube. `when_empty`: deny = a person with no value gets nothing from those cubes, allow = no value means no restriction. `values`: list = the fixed values given, cube = the distinct values of the member (the console accepts any text).",
+  "_": "The row-level dimensions. A rule (admin console) lists the values of one dimension a person or group may see; cube.js adds `member in values` to every query that touches one of `cubes`. Different dimensions are ANDed, the values of one are ORed. This file is the stack's registry: the dimensions of every model it can serve (a dimension of a model that is not served is inert: no query touches its cubes), so Cube, the auth service and the admin console all enforce one list with one version. The auth and admin images copy it at build time; a test checks that each member is reachable from each cube. `when_empty`: deny = a person with no value gets nothing from those cubes, allow = no value means no restriction. `values`: list = the fixed values given, cube = the distinct values of the member (the console accepts any text).",
   "dimensions": [
     {
       "id": "territory",
@@ -54,6 +54,32 @@
       },
       "when_empty": "deny",
       "empty_message": "No product categories assigned"
+    },
+    {
+      "id": "dealer_region",
+      "labels": {
+        "en": "Dealer regions",
+        "tr": "Bayi bölgeleri"
+      },
+      "member": "dealers.region",
+      "cubes": [
+        "orders",
+        "payments",
+        "dealers"
+      ],
+      "values": {
+        "kind": "list",
+        "values": [
+          "Marmara",
+          "Ege",
+          "İç Anadolu",
+          "Akdeniz",
+          "Karadeniz",
+          "Doğu Anadolu"
+        ]
+      },
+      "when_empty": "allow",
+      "empty_message": "No regions assigned"
     }
   ]
 }

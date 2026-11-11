@@ -51,7 +51,10 @@ def load_catalogs() -> dict[str, "cat.Catalog"]:
         except (OSError, ValueError):                                              # no models.yml here (the image of an older setup)
             named = None
         return {named or "default": cat.from_model(only)}
-    return {m.id: cat.from_model(m.dir) for m in models.served()}
+    try:
+        return {m.id: cat.from_model(m.dir) for m in models.served()}
+    except OSError:                                                                # no models.yml (an image run without its mount): the one model the image carries
+        return {"default": cat.from_model("/app/cube-model")}
 
 
 CATALOGS = load_catalogs()
@@ -61,7 +64,7 @@ def _labels() -> dict[str, str]:
     try:
         from dashspec import models
         return {m.id: m.label for m in models.served()}
-    except (OSError, ValueError):
+    except OSError:
         return {}
 
 

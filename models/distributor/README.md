@@ -18,13 +18,15 @@ scripts/dashspec validate --model models/distributor/cube models/distributor/das
 Load the data: `psql -f models/distributor/postgres/10_init.sql`, or mount the file into `/docker-entrypoint-initdb.d/` of a Postgres container.
 
 ## Run the whole app on it
-`docker-compose.distributor.yml` points the same services (Keycloak, the auth service, Cube on Postgres, the dashboard pages, the builder, the SQL lab and the admin console) at this model; nothing else (no StarRocks, Kafka, Airflow, dbt) is needed. Add `DISTRIBUTOR_DB_PASSWORD` to `.env` (`openssl rand -hex 16`; `scripts/generate-env.sh` writes it for a new `.env`), then:
+`docker-compose.yml` has the model's services under the profile `distributor` (`distributor-db` with the data, `cube-distributor`: Cube on Postgres, plus Cube Store). With `--profile starrocks --profile distributor` and `MODELS=adventureworks,distributor` one stack serves both models, each with its own Cube; the services read `models.yml` (mounted at `/srv/models`) and the browser gets `STACK.models`.
+
+To run it as the **only** model (no StarRocks, Kafka, Airflow or dbt) use the overlay `docker-compose.distributor.yml`. Add `DISTRIBUTOR_DB_PASSWORD` to `.env` (`openssl rand -hex 16`; `scripts/generate-env.sh` writes it for a new `.env`), then:
 
 ```bash
 docker compose -p distributor -f docker-compose.yml -f docker-compose.distributor.yml --profile distributor up -d --build \
-  postgres distributor-db cubestore cubestore-worker keycloak auth cube dashboard-cube builder lab admin
+  postgres distributor-db cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
 scripts/distributor-smoke.sh        # signs in as admin and checks the model end to end
 ```
 
-Open http://localhost:8250 and sign in as `admin` (`TEST_USER_PASSWORD` in `.env`). Use the `-p distributor` project name (the access database is seeded on its first start with this model's row-level dimension, `access.sql`, generated from `rls_dimensions.json` by `python3 scripts/rls_dimensions_sql.py --model models/distributor`), and stop the AdventureWorks stack first or move this one's ports (every published port is a variable in `.env`).
+Open http://localhost:8250 and sign in as `admin` (`TEST_USER_PASSWORD` in `.env`). Use the `-p distributor` project name (the access database is seeded on its first start with this model's row-level dimension, `access.sql`, generated from `rls_dimensions.json` by `python3 scripts/rls_dimensions_sql.py --model models/distributor`), and stop the AdventureWorks stack first or move this one's ports (every published port is a variable in `.env`; this model's Cube is `CUBE_DISTRIBUTOR_PORT`, default 4010).
 CI runs the same thing (job `distributor-stack`).
