@@ -60,6 +60,8 @@ A model is added to the stack as its own Cube service (see `cube-distributor` in
 ## Several models
 `models.yml` (repo root) lists the models a stack serves: `id`, `label`, the Cube model folder (`dir`), the folder of its dashboards and its Cube's compose service. The first is the default. A dashboard says which model it is for with a top-level `model: <id>` (none: the default model); `dashspec validate` checks it against that model's cubes, `dashspec build` writes each model's dashboards into its own `build/` folder, and the compiled file carries the model. Two models share nothing but sign-in and the people: different dashboards, catalogs, row rules and Cube.
 
+In the app the header has a model switch (shown when a stack serves more than one); the page's `?model=<id>` carries the choice, and every page (list, dashboard, builder, SQL lab, admin) shows that model's things. A dashboard of another model opens the page in that model. It is not a dataset switch: the AdventureWorks live / 250 M choice stays inside a model. A worked second model with live data: [the distributor demo](demo-distributor.md).
+
 ## Checking a model
 ```bash
 scripts/dashspec validate --model models/<name>/cube models/<name>/dashboards/*.yml
