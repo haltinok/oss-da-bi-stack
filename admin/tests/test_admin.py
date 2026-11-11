@@ -362,3 +362,22 @@ def test_product_category_rules_take_only_known_categories(ruled, kc):
     assert ruled.put("/rls/rules/user/de_rep?dimension=product_category", json={"values": ["Bikes", "Clothing"]}).status_code == 200
     r = ruled.put("/rls/rules/user/de_rep?dimension=product_category", json={"values": ["Spaceships"]})
     assert r.status_code == 400 and "Spaceships" in r.json()["detail"]
+
+
+def test_the_cubes_of_every_model_are_listed_with_their_model(monkeypatch):
+    import pathlib
+
+    import cubes
+    root = pathlib.Path(__file__).resolve().parents[2]
+    monkeypatch.delenv("ADMIN_MODEL_DIR", raising=False)
+    monkeypatch.setattr(cubes, "_cache", None)
+    monkeypatch.setenv("MODELS_FILE", str(root / "models.yml"))
+    listed = cubes.cubes()
+    by_model = {}
+    for c in listed:
+        by_model.setdefault(c["model"], set()).add(c["name"])
+    assert set(by_model) == {"adventureworks", "distributor"} and "internet_sales" in by_model["adventureworks"] and {"orders", "dealers"} <= by_model["distributor"]
+    assert not by_model["adventureworks"] & by_model["distributor"], "cube names differ between models, so a dataset (a set of cube names) works for both"
+    monkeypatch.setenv("MODELS", "distributor")
+    monkeypatch.setattr(cubes, "_cache", None)
+    assert {c["model"] for c in cubes.cubes()} == {"distributor"}

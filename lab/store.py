@@ -50,10 +50,10 @@ class MemoryStore:
         with self.lock:
             return sum(1 for r in self.rows.values() if r["owner"] == owner)
 
-    def create(self, *, owner, title, description, sql, folder_id, shares) -> dict:
+    def create(self, *, owner, title, description, sql, folder_id, shares, model="") -> dict:
         with self.lock:
             now = _iso(_now())
-            row = {"id": str(uuid.uuid4()), "owner": owner, "title": title, "description": description, "sql": sql, "folder_id": folder_id, "shares": copy.deepcopy(shares), "created_at": now, "updated_at": now}
+            row = {"id": str(uuid.uuid4()), "owner": owner, "title": title, "description": description, "sql": sql, "folder_id": folder_id, "shares": copy.deepcopy(shares), "model": model, "created_at": now, "updated_at": now}
             self.rows[row["id"]] = row
             return copy.deepcopy(row)
 
@@ -167,11 +167,11 @@ class PgStore:
             cur.execute("SELECT count(*) AS n FROM lab.saved_queries WHERE owner = %s", (owner,))
             return cur.fetchone()["n"]
 
-    def create(self, *, owner, title, description, sql, folder_id, shares) -> dict:
+    def create(self, *, owner, title, description, sql, folder_id, shares, model="") -> dict:
         import psycopg2.extras
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute("INSERT INTO lab.saved_queries (id, owner, title, description, sql, folder_id, shares) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
-                        (str(uuid.uuid4()), owner, title, description, sql, folder_id, psycopg2.extras.Json(shares)))
+            cur.execute("INSERT INTO lab.saved_queries (id, owner, title, description, sql, folder_id, shares, model) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                        (str(uuid.uuid4()), owner, title, description, sql, folder_id, psycopg2.extras.Json(shares), model))
             return self._row(cur.fetchone())
 
     def patch(self, id_, **fields) -> dict:

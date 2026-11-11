@@ -391,3 +391,68 @@ def test_info_gives_the_suggestions_of_the_model_the_service_serves(monkeypatch)
     monkeypatch.setattr(main, "CATALOG", other)
     examples = client.get("/info", headers=token("editor", "lang2")).json()["examples"]
     assert examples and not any(w in " ".join(examples).lower() for w in ("channel", "product", "internet")), examples
+
+
+# ---- several models (PLAN-models.md phase 1)
+@pytest.fixture()
+def two_models(monkeypatch):
+    """The service serving both of the repo's models, AdventureWorks the default (the module itself is loaded in its older single-model setup)."""
+    import pathlib
+
+    from dashspec import catalog as cat
+    from builder.store import MemoryStore
+    root = pathlib.Path(__file__).resolve().parents[2]
+    monkeypatch.delenv("BUILDER_MODEL_DIR", raising=False)
+    aw, dist = cat.from_model(root / "cube" / "model"), cat.from_model(root / "models" / "distributor" / "cube")
+    monkeypatch.setattr(main, "CATALOGS", {"adventureworks": aw, "distributor": dist})
+    monkeypatch.setattr(main, "DEFAULT_MODEL", "adventureworks")
+    monkeypatch.setattr(main, "CATALOG", aw)
+    monkeypatch.setattr(main, "MODEL_LABELS", {"adventureworks": "AdventureWorks", "distributor": "Anadolu Dağıtım"})
+    monkeypatch.setattr(main, "STORE", MemoryStore())
+    return root
+
+
+def test_info_lists_the_models_and_gives_each_its_own_suggestions(two_models):
+    h = token("editor", "m1")
+    info = client.get("/info", headers=h).json()
+    assert info["models"] == [{"id": "adventureworks", "label": "AdventureWorks"}, {"id": "distributor", "label": "Anadolu Dağıtım"}] and info["model_id"] == "adventureworks"
+    assert info["examples"][0].startswith("Monthly revenue")
+    other = client.get("/info?model=distributor", headers=h).json()
+    assert other["model_id"] == "distributor" and not any(w in " ".join(other["examples"]).lower() for w in ("channel", "product", "internet"))
+    assert client.get("/info?model=atlantis", headers=h).status_code == 404
+
+
+def test_the_catalog_and_the_samples_follow_the_model(two_models):
+    h = token("editor", "m2")
+    names = lambda model: {c["cube"] for c in client.get(f"/catalog?model={model}", headers=h).json()}  # noqa: E731
+    assert "internet_sales" in names("adventureworks") and "orders" not in names("adventureworks")
+    assert "orders" in names("distributor") and "internet_sales" not in names("distributor")
+    assert client.get("/catalog", headers=h).json() == client.get("/catalog?model=adventureworks", headers=h).json(), "no model: the default's"
+    samples = {s["id"]: s["readable"] for s in client.get("/samples?model=distributor", headers=h).json()}
+    assert samples == {"collections": True, "distributor-overview": True}
+    assert "sales-overview" in {s["id"] for s in client.get("/samples", headers=h).json()}
+
+
+def test_a_build_is_for_the_model_asked_and_says_so(two_models):
+    h = token("editor", "m3")
+    r = client.post("/build", headers=h, json={"prompt": "revenue by region", "model": "distributor"}).json()
+    assert r["status"] == "ok" and "model: distributor" in r["yaml"] and "dealers.region" in r["yaml"] and r["spec"]["model"] == "distributor"
+    r = client.post("/build", headers=h, json={"prompt": "monthly revenue by channel"}).json()
+    assert r["status"] == "ok" and "model:" not in r["yaml"] and "internet_sales" in r["yaml"], "the default model's dashboards are left unnamed"
+    assert client.post("/build", headers=h, json={"prompt": "revenue by region", "model": "atlantis"}).status_code == 404
+
+
+def test_saved_dashboards_belong_to_the_model_their_yaml_names(two_models):
+    h = token("editor", "m4")
+    dist_yaml = (two_models / "models" / "distributor" / "dashboards" / "collections.yml").read_text()
+    aw_yaml = (two_models / "dashboards" / "regional-sales.yml").read_text()
+    a = client.post("/saved", headers=h, json={"yaml": dist_yaml})
+    b = client.post("/saved", headers=h, json={"yaml": aw_yaml})
+    assert a.status_code == 201 and b.status_code == 201, (a.text, b.text)
+    assert a.json()["model"] == "distributor" and b.json()["model"] is None
+    ids = lambda q: {r["id"] for r in client.get(f"/saved{q}", headers=h).json()}  # noqa: E731
+    assert ids("") == {a.json()["id"], b.json()["id"]}
+    assert ids("?model=distributor") == {a.json()["id"]} and ids("?model=adventureworks") == {b.json()["id"]}, "a dashboard that names no model is the default's"
+    assert client.get(f"/saved/{a.json()['id']}", headers=h).json()["spec"]["model"] == "distributor", "it opens against its own model's catalog"
+    wrong = client.post("/saved", headers=h, json={"yaml": dist_yaml.replace("model: distributor", "model: atlantis")})
+    assert wrong.status_code == 422 and "is not a model of this stack" in str(wrong.json())

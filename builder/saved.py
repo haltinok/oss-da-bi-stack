@@ -110,12 +110,29 @@ def tags_of(row: dict) -> list[str]:
     return list(_tags[key])
 
 
+_models: dict = {}
+
+
+def model_of(row: dict) -> str | None:
+    """The model a saved dashboard says it is for (its YAML's `model:`; None: the default model), cached by id and version like the tags."""
+    key = (row["id"], row["version"])
+    if key not in _models:
+        if len(_models) > 5000:
+            _models.clear()
+        try:
+            named = (yaml.safe_load(row["yaml"]) or {}).get("model")
+        except (yaml.YAMLError, AttributeError):
+            named = None
+        _models[key] = named if isinstance(named, str) else None
+    return _models[key]
+
+
 def meta(row: dict, who: Who, folders: dict | None = None) -> dict:
     folders = folders or {}
     mine = row["owner"] == who.name
     manage = mine or who.role == "admin"
     folder = folders.get(row.get("folder_id"))
-    out = {"id": row["id"], "title": row["title"], "description": row["description"], "tags": tags_of(row), "owner": row["owner"], "owner_role": row["owner_role"], "visibility": row["visibility"],
+    out = {"id": row["id"], "title": row["title"], "description": row["description"], "tags": tags_of(row), "model": model_of(row), "owner": row["owner"], "owner_role": row["owner_role"], "visibility": row["visibility"],
            "shared_roles": row["shared_roles"], "version": row["version"], "created_at": row["created_at"], "updated_at": row["updated_at"],
            "mine": mine, "can_edit": _can_edit(row, who, folders), "can_manage": manage, "folder_id": row.get("folder_id") if folder else None,
            "folder_name": folder["name"] if folder else None, "shared_with_me": not mine and _level(row, who, folders) is not None}

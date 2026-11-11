@@ -114,23 +114,44 @@ def need_lab(session: dict) -> dict:
 
 
 # -------------------------------------------------------------------------------------------------------------------- schema
-_catalog = None
+_catalogs: dict = {}
 
 
-def catalog():
-    global _catalog
-    if _catalog is None:
+def served() -> dict:
+    """The models this service serves, id -> (model folder, Cube service): models.yml narrowed by $MODELS; LAB_MODEL_DIR names one model's folder instead (an older single-model setup)."""
+    if os.environ.get("LAB_MODEL_DIR"):
+        return {"": (os.environ["LAB_MODEL_DIR"], CUBE_SQL_HOST)}
+    try:
+        from dashspec import models
+        return {m.id: (str(m.dir), m.cube) for m in models.served()}
+    except (ImportError, OSError, ValueError):
+        return {"": ("/app/cube-model", CUBE_SQL_HOST)}
+
+
+def model_id(model: str | None) -> str:
+    """The id of the model a request names (the default, the first, when it names none); 404 for one this service does not serve."""
+    ids = list(served())
+    if not model:
+        return ids[0]
+    if model not in ids:
+        raise HTTPException(404, f"There is no model '{model}' here (this server has: {', '.join(i or 'the default' for i in ids)}).")
+    return model
+
+
+def catalog(model: str | None = None):
+    mid = model_id(model)
+    if mid not in _catalogs:
         try:
             from dashspec import catalog as cat
-            _catalog = cat.from_model(os.environ.get("LAB_MODEL_DIR", "/app/cube-model"))
+            _catalogs[mid] = cat.from_model(served()[mid][0])
         except (ImportError, SystemExit, OSError):
-            _catalog = False
-    return _catalog or None
+            _catalogs[mid] = False
+    return _catalogs[mid] or None
 
 
-def schema_for(session: dict) -> list[dict]:
+def schema_for(session: dict, model: str | None = None) -> list[dict]:
     """The cubes and members this person may query: what the role rules and the blocked cubes leave (the same rules Cube enforces; this only keeps the browser from listing what would be refused)."""
-    cat = catalog()
+    cat = catalog(model)
     if cat is None:
         return []
     blocked, fields = set(session.get("blocked_cubes") or []), set(session.get("blocked_members") or [])
@@ -169,10 +190,10 @@ def plain(v):
     return str(v)
 
 
-def execute(user: str, token: str, sql: str, limit: int) -> dict:
+def execute(user: str, token: str, sql: str, limit: int, host: str | None = None) -> dict:
     """Run one statement on Cube's SQL API as `user` (the Cube token is the password). Blocking: called in a worker thread."""
     import psycopg2
-    conn = psycopg2.connect(host=CUBE_SQL_HOST, port=CUBE_SQL_PORT, dbname="db", user=user, password=token, connect_timeout=5, sslmode="disable")
+    conn = psycopg2.connect(host=host or CUBE_SQL_HOST, port=CUBE_SQL_PORT, dbname="db", user=user, password=token, connect_timeout=5, sslmode="disable")
     try:
         conn.autocommit = True
         with conn.cursor() as cur:
@@ -193,7 +214,7 @@ def user_slot(user: str) -> threading.BoundedSemaphore:
         return _per_user.setdefault(user, threading.BoundedSemaphore(PER_USER))
 
 
-def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = None, timeout: float | None = None, event: str = "lab") -> dict:
+def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = None, timeout: float | None = None, event: str = "lab", model: str | None = None) -> dict:
     mine, anyone = user_slot(caller.name), _slots
     if not mine.acquire(blocking=False):
         raise HTTPException(429, f"You already have {PER_USER} queries running; wait for one to finish.")
@@ -201,7 +222,9 @@ def run_limited(caller: Caller, session: dict, sql: str, *, limit: int | None = 
         mine.release()
         raise HTTPException(503, "The SQL lab is busy; try again in a moment.")
     t0 = time.time()
-    future = _pool.submit(execute, caller.name, session["token"], sql, limit or ROW_LIMIT)
+    host = served()[model_id(model)][1]
+    more = {} if host == CUBE_SQL_HOST else {"host": host}                      # only a model with a Cube of its own names its host (the default's is CUBE_SQL_HOST)
+    future = _pool.submit(execute, caller.name, session["token"], sql, limit or ROW_LIMIT, **more)
     future.add_done_callback(lambda _f: (mine.release(), anyone.release()))        # the slots are held until Cube is really done, even if we stopped waiting
     try:
         out = future.result(timeout=timeout or TIMEOUT)
@@ -229,6 +252,7 @@ def clean_error(exc: Exception) -> str:
 # -------------------------------------------------------------------------------------------------------------------- routes
 class QueryRequest(BaseModel):
     sql: str = Field(max_length=sqlcheck.MAX_SQL + 1000)
+    model: str | None = Field(default=None, max_length=40)                      # which model's Cube to ask (none: the default's)
 
 
 @app.get("/healthz")
@@ -247,10 +271,10 @@ def info(caller: Caller = Who) -> dict:
 
 
 @app.get("/schema")
-def schema(caller: Caller = Who) -> dict:
+def schema(caller: Caller = Who, model: str | None = None) -> dict:
     s = need_lab(cube_session(caller))
-    cubes = schema_for(s)
-    return {"cubes": cubes, "examples": examples.examples_for(catalog(), cubes) if catalog() else []}
+    cubes = schema_for(s, model)
+    return {"cubes": cubes, "model": model_id(model), "examples": examples.examples_for(catalog(model), cubes) if catalog(model) else []}
 
 
 @app.post("/query")
@@ -260,7 +284,7 @@ def query(req: QueryRequest, caller: Caller = Who) -> dict:
         sql = sqlcheck.check(req.sql)
     except sqlcheck.SqlRefused as exc:
         raise HTTPException(400, str(exc)) from None
-    return run_limited(caller, s, sql)
+    return run_limited(caller, s, sql, model=req.model)
 
 
 # -------------------------------------------------------------------------------------------------------------------- export
@@ -320,6 +344,7 @@ def xlsx_bytes(columns: list[dict], rows: list[list]) -> bytes:
 class ExportRequest(BaseModel):
     sql: str = Field(max_length=sqlcheck.MAX_SQL + 1000)
     format: str = "csv"
+    model: str | None = Field(default=None, max_length=40)
 
 
 @app.post("/export")
@@ -331,7 +356,7 @@ def export(req: ExportRequest, caller: Caller = Who):
         sql = sqlcheck.check(req.sql)
     except sqlcheck.SqlRefused as exc:
         raise HTTPException(400, str(exc)) from None
-    out = run_limited(caller, s, sql, limit=EXPORT_ROWS, timeout=TIMEOUT * 2, event="lab_export")
+    out = run_limited(caller, s, sql, limit=EXPORT_ROWS, timeout=TIMEOUT * 2, event="lab_export", model=req.model)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     headers = {"Content-Disposition": f'attachment; filename="lab-{stamp}.{req.format}"', "X-Lab-Truncated": "true" if out["truncated"] else "false", "X-Lab-Rows": str(out["row_count"])}
     if req.format == "csv":
@@ -360,6 +385,7 @@ def qcall(fn, *args, **kw):
 
 
 class QueryIn(BaseModel):
+    model: str | None = Field(default=None, max_length=40)
     title: str = Field(max_length=120)
     sql: str = Field(max_length=sqlcheck.MAX_SQL + 1000)
     description: str = Field(default="", max_length=400)
@@ -388,17 +414,21 @@ def query_folders(caller: Caller = Who) -> list[dict]:
 
 
 @app.get("/queries")
-def queries_list(caller: Caller = Who) -> list[dict]:
+def queries_list(caller: Caller = Who, model: str | None = None) -> list[dict]:
     s = need_lab(cube_session(caller))
     store = need_store()
     store.purge()
-    return qcall(queries.list_queries, store, who_of(s, caller))
+    rows = qcall(queries.list_queries, store, who_of(s, caller))
+    if model is None:
+        return rows
+    mid, default = model_id(model), next(iter(served()))
+    return [r for r in rows if (r.get("model") or default) == mid]                 # a query saved before models existed is the default model's
 
 
 @app.post("/queries", status_code=201)
 def queries_create(req: QueryIn, caller: Caller = Who) -> dict:
     s = need_lab(cube_session(caller))
-    out = qcall(queries.create, need_store(), who_of(s, caller), title=req.title, sql=req.sql, description=req.description, folder_id=req.folder_id, shares=req.shares)
+    out = qcall(queries.create, need_store(), who_of(s, caller), title=req.title, sql=req.sql, description=req.description, folder_id=req.folder_id, shares=req.shares, model=model_id(req.model))
     audit({"event": "lab_query_save", "user": caller.name, "id": out["id"], "title": out["title"][:80]})
     return out
 
@@ -438,7 +468,7 @@ def queries_run(id: str, caller: Caller = Who) -> dict:
     s = need_lab(cube_session(caller))
     store, who = need_store(), who_of(s, caller)
     q = qcall(queries.get, store, who, id)
-    out = run_limited(caller, s, q["sql"])
+    out = run_limited(caller, s, q["sql"], model=q.get("model") or None)            # a saved query runs on the model it was saved for
     snap = store.put_snapshot(id, caller.name, out, SNAPSHOT_HOURS)
     return {**out, "snapshot": {"created_at": snap["created_at"], "expires_at": snap["expires_at"]}}
 

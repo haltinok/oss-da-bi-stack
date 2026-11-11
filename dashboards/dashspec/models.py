@@ -46,6 +46,18 @@ def load(path=None, base=None) -> list[Model]:
     return out
 
 
+def served(path=None) -> list[Model]:
+    """The models this process serves: models.yml, narrowed to $MODELS (a comma-separated list of ids; unset or empty: all of them). An id models.yml does not have is a mistake."""
+    every = load(path)
+    wanted = [x.strip() for x in os.environ.get("MODELS", "").split(",") if x.strip()]
+    if not wanted:
+        return every
+    unknown = [x for x in wanted if x not in {m.id for m in every}]
+    if unknown:
+        raise ValueError(f"MODELS names {', '.join(unknown)}, which models.yml does not have (it has: {', '.join(m.id for m in every)})")
+    return [m for m in every if m.id in wanted]
+
+
 def get(model_id: str | None, path=None) -> Model | None:
     """The model with this id; the default one for None or an empty id; None when there is no such model."""
     models = load(path)
