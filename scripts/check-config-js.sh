@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 render() {  # env assignments as arguments; prints the JS of config.js
-  docker run --rm "${@/#/-e}" -e KEYCLOAK_PORT=8180 -e AUTH_PORT=8200 -e CUBE_PORT=4000 -e ACTIONS_PORT=8300 -e BUILDER_PORT=8350 -e ADMIN_PORT=8400 -e LAB_PORT=8450 \
+  docker run --rm -e MODELS=adventureworks,distributor -e MODEL_LABELS="adventureworks=AdventureWorks,distributor=Anadolu Dağıtım" -e CUBE_PORTS="adventureworks=4000,distributor=4010" "${@/#/-e}" -e KEYCLOAK_PORT=8180 -e AUTH_PORT=8200 -e CUBE_PORT=4000 -e ACTIONS_PORT=8300 -e BUILDER_PORT=8350 -e ADMIN_PORT=8400 -e LAB_PORT=8450 \
     -v "$PWD/dashboard/cube/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro" nginx:1.27-alpine \
     sh -c '/docker-entrypoint.d/20-envsubst-on-templates.sh >/dev/null 2>&1; nginx -t >/dev/null 2>&1 || { echo "nginx -t failed" >&2; exit 1; }; grep "return 200" /etc/nginx/conf.d/default.conf' \
     | sed -E "s/^ *return 200 '//; s/';\$//"
@@ -31,3 +31,9 @@ js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=both CUBE_250
 check "local, both, second port from CUBE_250M_PORT" "$js" 'S.datasets[1].cube === "http://localhost:4101/cubejs-api/v1"'
 js=$(render PUBLIC_URL=https://demo.example.test PATH_ROUTING=1 DATASET=both CUBE_250M_PORT=)
 check "public, both (Caddy paths)" "$js" 'S.datasets[0].cube === "https://demo.example.test/cubejs-api/v1" && S.datasets[1].cube === "https://demo.example.test/cubejs-250m/v1" && S.datasets[1].mart === "mart_250m"'
+js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=live CUBE_250M_PORT=)
+check "models, local" "$js" 'S.models.length === 2 && S.models[0].id === "adventureworks" && S.models[0].label === "AdventureWorks" && S.models[0].cube === "http://localhost:4000/cubejs-api/v1" && S.models[1].id === "distributor" && S.models[1].label === "Anadolu Dağıtım" && S.models[1].cube === "http://localhost:4010/cubejs-api/v1" && S.cube === S.models[0].cube'
+js=$(render PUBLIC_URL=https://demo.example.test PATH_ROUTING=1 DATASET=live CUBE_250M_PORT=)
+check "models, public (the first at /cubejs-api, the others at /cubejs-<id>)" "$js" 'S.models[0].cube === "https://demo.example.test/cubejs-api/v1" && S.models[1].cube === "https://demo.example.test/cubejs-distributor/v1" && S.cube === S.models[0].cube'
+js=$(render PUBLIC_URL=http://localhost:8250 PATH_ROUTING= DATASET=live CUBE_250M_PORT= MODELS=distributor)
+check "one model, the second (a standalone stack): it is the default" "$js" 'S.models.length === 1 && S.models[0].id === "distributor" && S.cube === "http://localhost:4010/cubejs-api/v1" && S.datasets[0].cube === S.cube'

@@ -9,7 +9,7 @@ COPY --from=cubemodel cubes ./cube-model/cubes
 # the model's own settings sit beside its cube folder (cube-model/)
 COPY --from=modelconfig model.config.yml ./model.config.yml
 COPY main.py sqlcheck.py store.py queries.py examples.py ./
-ENV PYTHONPATH=/app LAB_MODEL_DIR=/app/cube-model
+ENV PYTHONPATH=/app MODELS_FILE=/srv/models/models.yml
 USER nobody
 EXPOSE 8450
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8450"]

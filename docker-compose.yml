@@ -492,14 +492,20 @@ services:
         dashboards: ./dashboards
         cubemodel: ./cube/model
         modelconfig: ./cube
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     depends_on:
       keycloak:
         condition: service_healthy
     ports:
       - "127.0.0.1:${ADMIN_PORT:-8400}:8400"
+    volumes:
+      - ./models.yml:/srv/models/models.yml:ro                                  # the models this stack serves (and their folders, at the same relative paths)
+      - ./cube:/srv/models/cube:ro
+      - ./models:/srv/models/models:ro
+      - ./dashboards:/srv/models/dashboards:ro
     environment:
+      MODELS: ${MODELS:-adventureworks}
       KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
@@ -526,14 +532,20 @@ services:
         dashboards: ./dashboards
         cubemodel: ./cube/model
         modelconfig: ./cube
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     depends_on:
       auth:
         condition: service_healthy
     ports:
       - "127.0.0.1:${LAB_PORT:-8450}:8450"
+    volumes:
+      - ./models.yml:/srv/models/models.yml:ro                                  # the models this stack serves (and their folders, at the same relative paths)
+      - ./cube:/srv/models/cube:ro
+      - ./models:/srv/models/models:ro
+      - ./dashboards:/srv/models/dashboards:ro
     environment:
+      MODELS: ${MODELS:-adventureworks}
       KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
       AUTH_URL: http://auth:8200
@@ -559,7 +571,7 @@ services:
 
   cubestore:
     image: cubejs/cubestore:${CUBE_VERSION:-latest}
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     environment:
       CUBESTORE_SERVER_NAME: cubestore:9999
@@ -571,7 +583,7 @@ services:
 
   cubestore-worker:
     image: cubejs/cubestore:${CUBE_VERSION:-latest}
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     depends_on:
       - cubestore
@@ -607,7 +619,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.0}
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     # Dev mode (embedded H2, plain HTTP): fine for the demo, not for production.
     command: ["start-dev", "--import-realm"]
@@ -639,12 +651,65 @@ services:
       retries: 20
       start_period: 45s
 
+  # The second model (models.yml, profile `distributor`): its own data (distributor-db, seeded by models/distributor/postgres) and its own Cube, on Postgres, with the
+  # model's folder and config mounted over Cube's model folder. Same secret, so one token works for every Cube. `MODELS=distributor` (and the standalone overlay,
+  # docker-compose.distributor.yml) serves it without StarRocks.
+  distributor-db:
+    image: postgres:16
+    profiles: [distributor]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: distributor
+      POSTGRES_PASSWORD: ${DISTRIBUTOR_DB_PASSWORD:-}          # required by the distributor profile (openssl rand -hex 16 in .env): the database will not start without it
+      POSTGRES_DB: distributor
+      CUBE_DB_PASSWORD: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env}
+    volumes:
+      - distributor_data:/var/lib/postgresql/data
+      - ./models/distributor/postgres:/docker-entrypoint-initdb.d:ro          # the schema, the data and cube_ro (a read-only login for Cube)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U distributor -d distributor"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  cube-distributor:
+    image: cubejs/cube:${CUBE_VERSION:-latest}
+    profiles: [distributor]
+    restart: unless-stopped
+    depends_on:
+      distributor-db:
+        condition: service_healthy
+      cubestore:                       # Cube keeps its query cache in Cube Store
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CUBE_DISTRIBUTOR_PORT:-4010}:4000"
+    volumes:
+      - ./cube:/cube/conf
+      - ./models/distributor/cube:/cube/conf/model:ro                          # the model's cubes in Cube's model folder ...
+      - ./models/distributor/model.config.yml:/cube/conf/model.config.yml:ro    # ... and its config beside cube.js
+    environment:
+      <<: *cube-env
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: distributor-db
+      CUBEJS_DB_PORT: "5432"
+      CUBEJS_DB_NAME: distributor
+      CUBEJS_DB_USER: cube_ro
+      CUBEJS_DB_PASS: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
   auth:
     build:
       context: ./auth
       additional_contexts:
         modelconfig: ./cube
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     depends_on:
       keycloak:
@@ -711,14 +776,20 @@ services:
         dashboards: ./dashboards
         cubemodel: ./cube/model
         modelconfig: ./cube
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     depends_on:
       keycloak:
         condition: service_healthy
     ports:
       - "127.0.0.1:${BUILDER_PORT:-8350}:8350"
+    volumes:
+      - ./models.yml:/srv/models/models.yml:ro                                  # the models this stack serves (and their folders, at the same relative paths)
+      - ./cube:/srv/models/cube:ro
+      - ./models:/srv/models/models:ro
+      - ./dashboards:/srv/models/dashboards:ro
     environment:
+      MODELS: ${MODELS:-adventureworks}
       KEYCLOAK_ISSUER: http://localhost:${KEYCLOAK_PORT:-8180}/realms/spike
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/spike/protocol/openid-connect/certs
       ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost:${DASHBOARD_CUBE_PORT:-8250}}
@@ -751,7 +822,7 @@ services:
     # The dashboard UI (dashboard/static), served as static files with the Cube data source
     # (the pages sign in through Keycloak and query Cube themselves).
     image: nginx:1.31-alpine
-    profiles: [starrocks]
+    profiles: [starrocks, distributor]
     restart: unless-stopped
     depends_on:
       auth:
@@ -761,7 +832,9 @@ services:
     volumes:
       - ./dashboard/static:/usr/share/nginx/html:ro
       - ./dashboard/cube:/srv/cube:ro
-      - ./dashboards/build:/srv/dashboards:ro
+      - ./dashboards/build:/srv/dashboards:ro                                    # the first model's dashboards, at the old address (/dashboards/<id>.json)
+      - ./dashboards/build:/srv/models-dashboards/adventureworks:ro              # every model's own, at /dashboards/<model>/<id>.json
+      - ./models/distributor/dashboards/build:/srv/models-dashboards/distributor:ro
       - ./dashboard/cube/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     environment:
       KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8180}
@@ -779,6 +852,11 @@ services:
       PATH_ROUTING: ${PATH_ROUTING:-}
       # The dataset this deployment serves (live | 250m): shown in the page header; a non-live dataset is read-only.
       DATASET: ${DATASET:-live}
+      # The models this stack serves (the first is the default), their names in the header switch and the port of each one's Cube (the browser asks it directly; PATH_ROUTING:
+      # /cubejs-api for the first, /cubejs-<id> for the others, see caddy/Caddyfile).
+      MODELS: ${MODELS:-adventureworks}
+      MODEL_LABELS: ${MODEL_LABELS:-adventureworks=AdventureWorks,distributor=Anadolu Dağıtım}
+      CUBE_PORTS: ${CUBE_PORTS:-adventureworks=${CUBE_PORT:-4000},distributor=${CUBE_DISTRIBUTOR_PORT:-4010}}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8250/"]
       interval: 15s
@@ -786,6 +864,7 @@ services:
       retries: 5
 
 volumes:
+  distributor_data:
   postgres_data:
   postgres_active_data:
   kafka_data:

@@ -316,6 +316,8 @@ def test_a_dataset_can_hold_single_fields_and_they_are_checked_against_the_model
 # ------------------------------------------------------------------------------------------------------------------ more than one dimension
 @pytest.fixture()
 def two_dimensions(ruled, monkeypatch):
+    served = main.model_cubes
+    monkeypatch.setattr(main, "model_cubes", lambda: [*served(), {"name": "x"}])          # the fake dimension's cube counts as served
     monkeypatch.setattr(main, "DIMENSIONS", [*main.DIMENSIONS, {"id": "channel", "labels": {"en": "Channels"}, "member": "x.channel", "cubes": ["x"], "values": {"kind": "list", "values": ["Internet", "Reseller"]}, "when_empty": "deny"}])
     return ruled
 
@@ -381,3 +383,10 @@ def test_the_cubes_of_every_model_are_listed_with_their_model(monkeypatch):
     monkeypatch.setenv("MODELS", "distributor")
     monkeypatch.setattr(cubes, "_cache", None)
     assert {c["model"] for c in cubes.cubes()} == {"distributor"}
+
+
+def test_a_dimension_of_a_model_that_is_not_served_is_not_listed(ruled, monkeypatch):
+    monkeypatch.setattr(main, "model_cubes", lambda: [{"name": "internet_sales"}, {"name": "products"}, {"name": "territories"}])
+    assert [d["id"] for d in ruled.get("/rls/rules").json()["dimensions"]] == ["territory", "product_category"], "the registry also lists the distributor's dealer_region: inert here, so not shown"
+    monkeypatch.setattr(main, "model_cubes", lambda: [{"name": "orders"}, {"name": "dealers"}])
+    assert [d["id"] for d in ruled.get("/rls/rules").json()["dimensions"]] == ["dealer_region"]

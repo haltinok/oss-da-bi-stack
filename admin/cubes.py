@@ -23,7 +23,7 @@ def cubes() -> list[dict]:
                 from dashspec import models
                 try:
                     _cache = [c for m in models.served() for c in _read(str(m.dir), m.id)]
-                except (OSError, ValueError):                                         # no models.yml here (the image of an older setup)
+                except OSError:                                                       # no models.yml (an image run without its mount): the one model the image carries
                     _cache = _read("/app/cube-model", "")
         except (ImportError, SystemExit, OSError):
             _cache = []

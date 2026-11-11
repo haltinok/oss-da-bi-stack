@@ -1,15 +1,17 @@
-# The "distributor" example model (models/distributor/: a Turkish SME on Postgres) instead of AdventureWorks on StarRocks. The app knows no model (PLAN-decouple.md), so this
-# file only points the same services at another model; it does not need StarRocks, Kafka, Airflow, dbt or Cube Store.
+# The distributor example model (models/distributor/: a Turkish SME on Postgres) as the ONLY model of a stack: no StarRocks, Kafka, Airflow or dbt. (docker-compose.yml itself has
+# the model's services under the profile `distributor`; together with `starrocks` it serves both models side by side, see PLAN-models.md.) This overlay is what is different when the
+# distributor is the whole stack:
+#   - MODELS=distributor (the pages, the builder, the lab and the admin console serve only it, and it is the default);
+#   - the access database is seeded on its first start with the distributor's datasets and row-level dimension (access.sql, from rls_dimensions.json) instead of
+#     AdventureWorks', and Cube reads the same dimensions from the model's file;
+#   - the base file's fixed subnet (it pins StarRocks' node addresses) is dropped, so this can run next to a StarRocks stack.
 #
 #   docker compose -p distributor -f docker-compose.yml -f docker-compose.distributor.yml --profile distributor up -d --build \
-#     postgres distributor-db cubestore cubestore-worker keycloak auth cube dashboard-cube builder lab admin
+#     postgres distributor-db cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
 #
-# (name the services: the base file's Airflow, Kafka and the rest have no profile and would start too.)
-#
-# Use its own project name (-p): the access database is seeded on first start with the distributor's datasets and row-level dimensions (access.sql), and must not be the AdventureWorks stack's. Stop the other
-# stack first or move this one's ports (every published port is a variable in .env: POSTGRES_PORT, KEYCLOAK_PORT, AUTH_PORT, CUBE_PORT, DASHBOARD_CUBE_PORT, ...).
-# The services: Postgres (the access rules, saved dashboards and queries) and distributor-db (the model's data), Keycloak, auth, Cube on Postgres, the dashboard pages, the builder,
-# the SQL lab and the admin console. Sign in as admin (TEST_USER_PASSWORD from .env); the distributor has one row-level dimension (dealer regions, no rule = every region).
+# (name the services: the base file's Airflow, Kafka and the rest have no profile and would start too.) Use its own project name (-p), stop the other stack first or move this
+# one's ports (every published port is a variable in .env: POSTGRES_PORT, KEYCLOAK_PORT, AUTH_PORT, CUBE_DISTRIBUTOR_PORT, DASHBOARD_CUBE_PORT, ...). Sign in as admin
+# (TEST_USER_PASSWORD from .env).
 
 services:
   postgres:
@@ -19,91 +21,32 @@ services:
     volumes:
       - ./models/distributor:/model:ro
 
-  distributor-db:
-    image: postgres:16
-    profiles: [distributor]
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: distributor
-      POSTGRES_PASSWORD: ${DISTRIBUTOR_DB_PASSWORD:?set DISTRIBUTOR_DB_PASSWORD in .env}
-      POSTGRES_DB: distributor
-      CUBE_DB_PASSWORD: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env}
+  cube-distributor:
     volumes:
-      - distributor_data:/var/lib/postgresql/data
-      - ./models/distributor/postgres:/docker-entrypoint-initdb.d:ro          # 10_init.sql (the data), 20_cube_user.sh (cube_ro)
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U distributor -d distributor"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  cube:
-    profiles: !override [distributor]
-    depends_on: !override
-      distributor-db:
-        condition: service_healthy
-      cubestore:                       # Cube keeps its query cache (and, later, rollups) in Cube Store
-        condition: service_started
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./models/distributor/cube:/cube/conf/model:ro                          # the model's cubes in Cube's model folder ...
-      - ./models/distributor/model.config.yml:/cube/conf/model.config.yml:ro    # ... and its config beside cube.js
       - ./models/distributor/rls_dimensions.json:/cube/conf/rls_dimensions.json:ro   # its row-level dimensions (the access database is seeded with the same)
-    environment:
-      CUBEJS_DB_TYPE: postgres
-      CUBEJS_DB_HOST: distributor-db
-      CUBEJS_DB_PORT: "5432"
-      CUBEJS_DB_NAME: distributor
-      CUBEJS_DB_USER: cube_ro
-      CUBEJS_DB_PASS: ${CUBE_DB_PASSWORD:?set CUBE_DB_PASSWORD in .env}
-
-  cubestore:
-    profiles: !override [distributor]
-
-  cubestore-worker:
-    profiles: !override [distributor]
-
-  keycloak:
-    profiles: !override [distributor]
-
-  auth:
-    profiles: !override [distributor]
 
   admin:
-    profiles: !override [distributor]
-    volumes:
-      - ./models/distributor:/model:ro
     environment:
-      ADMIN_MODEL_DIR: /model/cube
+      MODELS: distributor
 
   lab:
-    profiles: !override [distributor]
-    volumes:
-      - ./models/distributor:/model:ro
     environment:
-      LAB_MODEL_DIR: /model/cube
+      MODELS: distributor
 
   builder:
-    profiles: !override [distributor]
-    volumes:
-      - ./models/distributor:/model:ro
     environment:
-      BUILDER_MODEL_DIR: /model/cube
-      BUILDER_SAMPLES_DIR: /model/dashboards
+      MODELS: distributor
 
   dashboard-cube:
-    profiles: !override [distributor]
+    environment:
+      MODELS: distributor
     volumes: !override
       - ./dashboard/static:/usr/share/nginx/html:ro
       - ./dashboard/cube:/srv/cube:ro
-      - ./models/distributor/dashboards/build:/srv/dashboards:ro
+      - ./models/distributor/dashboards/build:/srv/dashboards:ro                  # the default model's, at the old address
+      - ./models/distributor/dashboards/build:/srv/models-dashboards/distributor:ro
       - ./dashboard/cube/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
 
-volumes:
-  distributor_data:
-
-# The base file pins StarRocks' node addresses with a fixed subnet; nothing here needs that, and a fixed subnet cannot be shared with a StarRocks stack running next to this one.
 networks:
   default:
     ipam: !reset null

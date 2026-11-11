@@ -60,6 +60,12 @@
 		reverse_proxy cube-250m:4000
 	}
 
+	# The second model's Cube (profile `distributor`, models.yml), at /cubejs-<model>: same prefix swap as the 250M one. Without it running, 502; nothing else is affected.
+	handle_path /cubejs-distributor/* {
+		rewrite * /cubejs-api{uri}
+		reverse_proxy cube-distributor:4000
+	}
+
 	handle {
 		reverse_proxy dashboard-cube:8250
 	}

@@ -437,6 +437,12 @@ DIMENSIONS, REGISTRY_SOURCE = rls_registry.load(_registry_pg._conn if _registry_
 RLS_VERSION = rls_registry.version(DIMENSIONS)
 
 
+def shown_dimensions() -> list[dict]:
+    """The dimensions of the models this console serves (the registry lists every model's, so one list is enforced everywhere; one of a model that is not served is inert here)."""
+    names = {c["name"] for c in model_cubes()}
+    return [d for d in DIMENSIONS if not names or d["member"].split(".")[0] in names or any(c in names for c in d["cubes"])]
+
+
 def dimension_of(id_: str) -> dict:
     dim = next((d for d in DIMENSIONS if d["id"] == id_), None)
     if dim is None:
@@ -455,7 +461,7 @@ def dimension_values(dim: dict) -> list[str] | None:
 @app.get("/rls/rules")
 def list_rules(_: Who) -> dict:
     return {"rules": rules().list(),
-            "dimensions": [{"id": d["id"], "labels": d.get("labels", {}), "values": dimension_values(d) or []} for d in DIMENSIONS],
+            "dimensions": [{"id": d["id"], "labels": d.get("labels", {}), "values": dimension_values(d) or []} for d in shown_dimensions()],
             "registry": {"source": REGISTRY_SOURCE, "version": RLS_VERSION}}
 
 
@@ -514,7 +520,7 @@ def preview(username: str, _: Who) -> dict:
            "blocked_members": access_resolve.blocked_members(datasets, grants, username, shaped["role"] or "", names),
            "lab": access_resolve.lab_allowed(grants, username, shaped["role"] or "", names)}
     dims = {}
-    for d in DIMENSIONS:
+    for d in shown_dimensions():
         mine = [r for r in applying if r.get("dimension", "territory") == d["id"]]
         if mine:
             dims[d["id"]] = {"values": sorted({v for r in mine for v in r["values"]}), "source": "rules"}

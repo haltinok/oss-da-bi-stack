@@ -10,7 +10,7 @@ COPY --from=cubemodel cubes ./cube-model/cubes
 COPY --from=modelconfig model.config.yml ./model.config.yml
 COPY --from=dashboards *.yml ./dashboards-src/
 COPY . ./builder
-ENV PYTHONPATH=/app BUILDER_MODEL_DIR=/app/cube-model BUILDER_SAMPLES_DIR=/app/dashboards-src
+ENV PYTHONPATH=/app MODELS_FILE=/srv/models/models.yml BUILDER_SAMPLES_DIR=/app/dashboards-src
 USER nobody
 EXPOSE 8350
 CMD ["uvicorn", "builder.main:app", "--host", "0.0.0.0", "--port", "8350"]
