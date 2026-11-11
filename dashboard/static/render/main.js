@@ -19,6 +19,7 @@ import { mountDesigner } from "./designer.js";
 import { mountList } from "./list.js";
 import { noteRecent } from "../lib/recent.js";
 import { life, onGo, onRedraw, renew } from "../lib/life.js";
+import { dashboardsBase, modelParam, mountModelSwitch, pickModel } from "../lib/model.js";
 
 const REFRESH_MS = 5 * 60_000;
 const C = window.STACK;
@@ -31,8 +32,21 @@ const pageCtx = {};
 initTheme();
 mountThemeMenu($("#theme"), { locale: () => document.documentElement.lang || "en" });
 
-// ------------------------------------------------------------------ dataset (the same choice and storage as the sales dashboard)
-const DATASETS = C.datasets || [{ id: "live", label: "Live (simulator)", mart: "mart", cube: C.cube }];
+// ------------------------------------------------------------------ model (PLAN-models.md) and dataset (the same choice and storage as the sales dashboard)
+// The page is in one model: ?model=, else the draft's, else the last used (lib/model.js). Its datasets are the stack's for the default model (live / 250M of the same data); another
+// model has its own Cube and one dataset. A saved dashboard or one in the other model's folder says its model, and the page follows it (see showDashboard).
+const draftModel = () => { try { return JSON.parse(localStorage.getItem("builder.draft") || "{}")?.spec?.model || null; } catch { return null; } };
+const here = pickModel(C, { hint: /^\/d\/draft\/?$/.test(location.pathname) ? draftModel() : null });
+const DATASETS = here.isDefault ? (C.datasets || [{ id: "live", label: "Live (simulator)", mart: "mart", cube: C.cube }]) : [{ id: "live", label: here.model.label, mart: here.model.id, cube: here.model.cube }];
+/** Opens this address in another model (the model is a choice of the page: its Cube, its dashboards, its catalog); the switch in the header does the same for the list. */
+function goToModel(modelId) {
+  try { localStorage.setItem("model", modelId); } catch { /* ignore */ }
+  const q = new URLSearchParams(location.search);
+  q.set("model", modelId);
+  q.delete("dataset");
+  location.replace(`${location.pathname}?${q.toString()}`);
+}
+const builderApi = (t, client_) => createBuilderApi({ stack: C, client: client_, t, model: modelParam(here) });
 const keep = { get: () => { try { return localStorage.getItem("dataset"); } catch { return null; } }, set: (v) => { try { localStorage.setItem("dataset", v); } catch { /* ignore */ } } };
 const wanted = new URLSearchParams(location.search).get("dataset") || keep.get();
 const dataset = DATASETS.find((d) => d.id === wanted) || DATASETS[0];
@@ -54,11 +68,14 @@ const client = createCubeClient({
   },
 });
 
+let modelSwitchMounted = false;
+
 /** The words the page's HTML holds in English (dataset, theme button, signed-in line, first status), in the page's language; the EN | TR switch too. */
 function localizeChrome(t, locale) {
   const lang = langOf(locale);
   document.documentElement.lang = lang;
   mountLangSwitch(t, lang);
+  if (!modelSwitchMounted) { modelSwitchMounted = true; mountModelSwitch(here, { label: t.modelLabel }); }        // once: a remount calls this again
   $("#dataset-badge").title = t.datasetTitle(dataset.label, dataset.mart);
   $("#dataset-label").textContent = t.datasetLabel;
   $("#f-dataset").setAttribute("aria-label", t.datasetLabel);
@@ -119,11 +136,11 @@ function setHomeLink(t, hidden = false) {
 
 async function showList() {
   document.title = "Dashboards";
-  const index = await (await fetch("/dashboards/index.json", { cache: "no-store" })).json().catch(() => []);
+  const index = await (await fetch(`${dashboardsBase(here)}index.json`, { cache: "no-store" })).json().catch(() => []);
   const role = client.session().role;
   const locale = uiLocale(navigator.language);
   const t = stringsFor(locale);
-  const api = createBuilderApi({ stack: C, client, t });
+  const api = builderApi(t, client);
   let readable = null;                                                          // the samples this person can open (what datasets leave them); all of them when the builder cannot say
   if (api.available) { try { readable = new Set((await api.samples()).filter((x) => x.readable).map((x) => x.id)); } catch { readable = null; } }
   const mine = index.filter((d) => !readable || readable.has(d.id));
@@ -150,21 +167,27 @@ async function showDashboard({ again = false, counts = {}, carry = null } = {}) 
   let draft = id === "draft" ? drafts.current() : null;       // a draft lives in this browser (see builder.js); a saved dashboard (s/<id>) comes from the builder service; every other id is a built file
   let spec, savedDash = null;
   if (id.startsWith("s/")) {
-    const api = createBuilderApi({ stack: C, client, t: t0 });
+    const api = builderApi(t0, client);
     try { savedDash = await api.openSaved(id.slice(2)); } catch (e) { throw new Error(e.problems?.length ? `${e.message} ${e.problems[0]}` : e.message); }
     spec = savedDash.spec;
   } else if (id === "draft") {
     if (!draft?.spec) throw new Error(t0.noDraft);
-    const api = createBuilderApi({ stack: C, client, t: t0 });
+    const api = builderApi(t0, client);
     if (api.available && draft.yaml && !again) {                // the stored page may predate the compiler (cross-filtering, say): compile the file again
       try { const r = await api.validate(draft.yaml); if (r?.ok && r.spec) draft = drafts.recompiled(r.spec) || draft; } catch { /* keep the stored page */ }
     }
     spec = draft.spec;
   } else {
-    const res = await fetch(`/dashboards/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+    let res = await fetch(`${dashboardsBase(here)}${encodeURIComponent(id)}.json`, { cache: "no-store" });
+    if (res.status === 404 && here.multiple) {                  // not in this model: it may be another model's dashboard (a shared link): open the page in that model
+      for (const other of here.models.filter((m) => m !== here.model)) {
+        if ((await fetch(`/dashboards/${other.id}/${encodeURIComponent(id)}.json`, { cache: "no-store" })).ok) { goToModel(other.id); return; }
+      }
+    }
     if (!res.ok) throw new Error(res.status === 404 ? t0.noSuchDashboard(id) : t0.loadFailed(res.status));
     spec = await res.json();
   }
+  if (here.multiple && (spec.model || here.models[0].id) !== here.model.id) { goToModel(spec.model || here.models[0].id); return; }          // a dashboard says its model: the page is in that one (its Cube)
   if (pageSignal.aborted) return;                                // drawn again (or another dashboard) while this one was being fetched: that one draws the page
   const role = client.session().role;
   if (id !== "draft") noteRecent({ kind: id.startsWith("s/") ? "saved" : "built", id: id.startsWith("s/") ? id.slice(2) : id, title: spec.title });        // for the start page's "pick up where you left off"
@@ -617,7 +640,7 @@ async function showDashboard({ again = false, counts = {}, carry = null } = {}) 
   $("#refresh").addEventListener("click", () => { loadOptions(new AbortController().signal).catch(() => {}); loadAll({ force: true }); }, { signal: pageSignal });
   if (role === "viewer" && draft) throw new Error(t0.noDraft);                       // a viewer builds nothing: no drafts
   if ((draft || savedDash) && role !== "viewer") {                                    // ... and has no builder bar or designer on a dashboard
-    const api = createBuilderApi({ stack: C, client, t });
+    const api = builderApi(t, client);
     if (api.available) { const host = el("div", { id: "builder-host" }); $("#filters").before(host); if (draft) { mountDraftBar(host, api, t, draft); mountDesigner({ api, t, draft, spec, panels, host }); } else mountSavedBar(host, api, t, savedDash); }
   }
   buildFilters();
