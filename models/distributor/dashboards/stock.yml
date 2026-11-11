@@ -1,0 +1,40 @@
+spec: 1
+model: distributor
+id: stock
+title: Stok durumu
+description: "Bugünkü stok: değer, kritik ve fazla stok, kapsama günü."
+tags: [dağıtım]
+locale: tr-TR
+currency: TRY
+time:
+  dimension: calendar.full_date
+panels:
+  - id: kpis
+    type: kpi
+    measures:
+      - { member: stock.stock_value, label: Stok değeri, format: money }
+      - { member: stock.on_hand, label: Eldeki adet, format: int }
+      - { member: stock.below_reorder, label: Kritik ürün, format: int }
+      - { member: stock.out_of_stock, label: Stokta yok, format: int }
+  - id: status
+    type: pie
+    title: Stok durumu
+    measure: stock.item_count
+    by: stock.status
+  - id: categories
+    type: bar
+    title: Kategoriye göre stok değeri
+    by: items.category
+    measure: stock.stock_value
+    sort: desc
+    format: money
+  - id: critical
+    type: table
+    title: Kritik ürünler
+    columns: [items.name, items.category, stock.on_hand, stock.avg_cover_days]
+    order: { stock.avg_cover_days: asc }
+    limit: 15
+layout:
+  - [{ kpis: 12 }]
+  - [{ status: 4 }, { categories: 8 }]
+  - [{ critical: 12 }]

@@ -2,11 +2,10 @@
   "spec": 1,
   "model": "distributor",
   "id": "distributor-overview",
-  "title": "Satış ve tahsilat",
-  "description": "Siparişler, tahsilat ve bayiler (the distributor example model; no AdventureWorks names anywhere).",
+  "title": "Satış özeti",
+  "description": "Ciro, marj, sipariş ve tahsilat; yıl, bölge ve bayi tipine göre.",
   "tags": [
-    "dağıtım",
-    "satış"
+    "dağıtım"
   ],
   "locale": "tr-TR",
   "currency": "TRY",
@@ -23,6 +22,11 @@
       "id": "region",
       "dimension": "dealers.region",
       "label": "Bölge"
+    },
+    {
+      "id": "segment",
+      "dimension": "dealers.segment",
+      "label": "Bayi tipi"
     },
     {
       "id": "xf_categories_1",
@@ -44,6 +48,11 @@
           "format": "money"
         },
         {
+          "member": "orders.gross_margin",
+          "label": "Brüt kâr",
+          "format": "money"
+        },
+        {
           "member": "orders.order_count",
           "label": "Sipariş",
           "format": "int"
@@ -52,11 +61,6 @@
           "member": "payments.collected",
           "label": "Tahsilat",
           "format": "money"
-        },
-        {
-          "member": "orders.quantity",
-          "label": "Adet",
-          "format": "int"
         }
       ],
       "sparkline": {
@@ -91,6 +95,16 @@
       ]
     },
     {
+      "id": "segments",
+      "type": "pie",
+      "title": "Bayi tipine göre ciro",
+      "measure": "orders.revenue",
+      "by": "dealers.segment",
+      "on_click": {
+        "set_filter": "segment"
+      }
+    },
+    {
       "id": "regions",
       "type": "bar",
       "title": "Bölgeye göre ciro",
@@ -104,38 +118,17 @@
     },
     {
       "id": "categories",
-      "type": "pie",
+      "type": "bar",
       "title": "Kategoriye göre ciro",
-      "measure": "orders.revenue",
       "by": "items.category",
+      "measure": "orders.revenue",
+      "sort": "desc",
+      "format": "money",
       "on_click": {
         "set_filter": [
           "xf_categories_1"
         ]
       }
-    },
-    {
-      "id": "dealers",
-      "type": "table",
-      "title": "En büyük bayiler",
-      "columns": [
-        {
-          "member": "dealers.name"
-        },
-        {
-          "member": "dealers.region"
-        },
-        {
-          "member": "orders.revenue"
-        },
-        {
-          "member": "orders.order_count"
-        }
-      ],
-      "order": {
-        "orders.revenue": "desc"
-      },
-      "limit": 15
     }
   ],
   "layout": [
@@ -151,7 +144,7 @@
         "span": 8
       },
       {
-        "panel": "categories",
+        "panel": "segments",
         "span": 4
       }
     ],
@@ -161,7 +154,7 @@
         "span": 6
       },
       {
-        "panel": "dealers",
+        "panel": "categories",
         "span": 6
       }
     ]
@@ -175,11 +168,11 @@
       "kind": "dimension",
       "type": "time"
     },
-    "dealers.name": {
+    "dealers.region": {
       "kind": "dimension",
       "type": "string"
     },
-    "dealers.region": {
+    "dealers.segment": {
       "kind": "dimension",
       "type": "string"
     },
@@ -187,13 +180,13 @@
       "kind": "dimension",
       "type": "string"
     },
+    "orders.gross_margin": {
+      "kind": "measure",
+      "type": "sum"
+    },
     "orders.order_count": {
       "kind": "measure",
       "type": "count_distinct"
-    },
-    "orders.quantity": {
-      "kind": "measure",
-      "type": "sum"
     },
     "orders.revenue": {
       "kind": "measure",
@@ -215,7 +208,9 @@
       "joins": []
     },
     "dealers": {
-      "joins": []
+      "joins": [
+        "reps"
+      ]
     },
     "items": {
       "joins": []
@@ -230,8 +225,7 @@
     "payments": {
       "joins": [
         "calendar",
-        "dealers",
-        "maturity_dates"
+        "dealers"
       ]
     }
   }

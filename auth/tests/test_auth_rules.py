@@ -57,7 +57,7 @@ def test_a_rule_gives_the_person_its_values(monkeypatch):
 
 def test_with_no_rule_a_person_has_no_values(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[])
-    assert r.status_code == 200 and r.json()["rls"] == {"territory": [], "product_category": [], "dealer_region": []}, "no seed to fall back to: cube.js denies or allows by `when_empty`"
+    assert r.status_code == 200 and r.json()["rls"] == {"territory": [], "product_category": [], "dealer_region": [], "sales_rep": []}, "no seed to fall back to: cube.js denies or allows by `when_empty`"
 
 
 def test_without_a_rules_login_the_rules_are_not_even_asked(monkeypatch):
@@ -114,10 +114,10 @@ def test_the_fields_a_person_may_not_read_travel_in_the_cube_token_too(monkeypat
 
 def test_the_token_carries_the_values_of_every_dimension_in_rls(monkeypatch):
     r, _ = sign_in(monkeypatch, rules_on=True, rules=["Germany"])
-    assert r.json()["rls"] == {"territory": ["Germany"], "product_category": [], "dealer_region": []}
-    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"] == {"territory": ["Germany"], "product_category": [], "dealer_region": []}
+    assert r.json()["rls"] == {"territory": ["Germany"], "product_category": [], "dealer_region": [], "sales_rep": []}
+    assert REAL_DECODE(r.json()["token"], "secret", algorithms=["HS256"])["rls"] == {"territory": ["Germany"], "product_category": [], "dealer_region": [], "sales_rep": []}
     r, _ = sign_in(monkeypatch, rules_on=True, rules=[])
-    assert r.json()["rls"] == {"territory": [], "product_category": [], "dealer_region": []}, "no rule, no value (there is no seed to decide the territory)"
+    assert r.json()["rls"] == {"territory": [], "product_category": [], "dealer_region": [], "sales_rep": []}, "no rule, no value (there is no seed to decide the territory)"
 
 
 def test_the_dimensions_file_is_the_one_cube_reads():

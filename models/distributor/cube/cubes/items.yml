@@ -1,6 +1,6 @@
 cubes:
   - name: items
-    description: "Ürünler: the items the distributor sells (join target for orders)."
+    description: "Ürünler: the items the distributor sells, about 370 SKUs in 5 categories (join target for orders, returns and stock)."
     sql_table: dist.dim_item
     data_source: default
 
@@ -10,15 +10,35 @@ cubes:
         sql: item_key
         type: number
         primary_key: true
+      - name: sku
+        description: "Stock-keeping unit code."
+        sql: sku
+        type: string
       - name: name
-        description: "Item name."
+        description: "Item name with its pack size."
         sql: item_name
         type: string
       - name: category
-        description: "Item category (Gıda, Temizlik, Kırtasiye, Hırdavat)."
+        description: "Category (Gıda, İçecek, Atıştırmalık, Temizlik, Kişisel Bakım)."
         sql: category
+        type: string
+      - name: subcategory
+        description: "Subcategory (Makarna, Bakliyat, Yağ, Gazlı İçecek ...)."
+        sql: subcategory
         type: string
       - name: brand
         description: "Brand."
         sql: brand
         type: string
+      - name: case_size
+        description: "Units per case (koli)."
+        sql: case_size
+        type: number
+      - name: vat_rate
+        description: "VAT rate in percent (1, 10 or 20)."
+        sql: vat_rate
+        type: number
+      - name: list_price
+        description: "The current list price in TRY (prices follow inflation)."
+        sql: unit_price
+        type: number

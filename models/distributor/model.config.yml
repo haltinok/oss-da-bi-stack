@@ -12,7 +12,15 @@ vocabulary:                       # what the rule-based stand-in understands bey
     tahsilat: payments.collected
     odeme: payments.payment_count
     bolge: dealers.region
-    sehir: dealers.city
+    sehir: dealers.province
+    il: dealers.province
+    fatura: invoices.invoiced
+    bakiye: invoices.open_balance
+    vade: invoices.overdue_balance
+    iade: returns.returned_amount
+    stok: stock.stock_value
+    kar: orders.gross_margin
+    temsilci: reps.name
     segment: dealers.segment
     bayi: dealers.name
     kategori: items.category
@@ -20,6 +28,13 @@ vocabulary:                       # what the rule-based stand-in understands bey
     marka: items.brand
   labels:                         # the names a Turkish page shows
     orders.revenue: Ciro
+    orders.gross_margin: Brüt kâr
+    invoices.invoiced: Fatura
+    invoices.open_balance: Açık bakiye
+    invoices.overdue_balance: Vadesi geçmiş
+    returns.returned_amount: İade
+    stock.stock_value: Stok değeri
+    reps.name: Temsilci
     orders.order_count: Sipariş
     orders.quantity: Adet
     payments.collected: Tahsilat

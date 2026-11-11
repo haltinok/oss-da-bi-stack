@@ -180,6 +180,69 @@
       ]
     },
     {
+      "username": "marmara_mudur",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "marmara_mudur@spike.local",
+      "firstName": "Marmara",
+      "lastName": "Dağıtım",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "editor"
+      ],
+      "groups": [
+        "RegionManagers"
+      ]
+    },
+    {
+      "username": "marmara_temsilci",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "marmara_temsilci@spike.local",
+      "firstName": "Marmara",
+      "lastName": "Dağıtım",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "editor"
+      ],
+      "groups": [
+        "FieldReps"
+      ]
+    },
+    {
+      "username": "ege_temsilci",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ege_temsilci@spike.local",
+      "firstName": "Ege",
+      "lastName": "Dağıtım",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "editor"
+      ],
+      "groups": [
+        "FieldReps"
+      ]
+    },
+    {
       "username": "service-account-inventory-agent",
       "enabled": true,
       "serviceAccountClientId": "inventory-agent",
@@ -214,6 +277,12 @@
     },
     {
       "name": "Marketing"
+    },
+    {
+      "name": "RegionManagers"
+    },
+    {
+      "name": "FieldReps"
     }
   ]
 }

@@ -24,7 +24,7 @@ To run it as the **only** model (no StarRocks, Kafka, Airflow or dbt) use the ov
 
 ```bash
 docker compose -p distributor -f docker-compose.yml -f docker-compose.distributor.yml --profile distributor up -d --build \
-  postgres distributor-db cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
+  postgres distributor-db distributor-sim cubestore cubestore-worker keycloak auth cube-distributor dashboard-cube builder lab admin
 scripts/distributor-smoke.sh        # signs in as admin and checks the model end to end
 ```
 

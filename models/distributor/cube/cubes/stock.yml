@@ -1,0 +1,96 @@
+cubes:
+  - name: stock
+    description: "Stok durumu: today's stock per item (on hand, reorder point, days of cover): a snapshot, not a flow."
+    sql: "SELECT * FROM dist.fact_stock WHERE snapshot_date = (SELECT max(snapshot_date) FROM dist.fact_stock)"
+    data_source: default
+    meta: { kind: fact, snapshot: true }
+
+    joins:
+      - name: items
+        relationship: many_to_one
+        sql: "{CUBE}.item_key = {items}.item_key"
+
+    dimensions:
+      - name: item_key
+        description: "Key of the item."
+        sql: item_key
+        type: number
+        primary_key: true
+      - name: snapshot_date
+        description: "The day of the snapshot (the newest)."
+        sql: snapshot_date
+        type: time
+      - name: status
+        description: "Stokta yok (out), Kritik (below the reorder point), Normal or Fazla (over 45 days of cover)."
+        sql: "CASE WHEN on_hand = 0 THEN 'Stokta yok' WHEN on_hand < reorder_point THEN 'Kritik' WHEN cover_days > 45 THEN 'Fazla' ELSE 'Normal' END"
+        type: string
+
+    measures:
+      - name: on_hand
+        description: "Units on hand."
+        meta: { format: int, primary: 2 }
+        sql: on_hand
+        type: sum
+      - name: stock_value
+        description: "Stock value at cost in TRY."
+        meta: { format: money, primary: 1 }
+        sql: stock_value
+        type: sum
+      - name: item_count
+        description: "Number of items."
+        meta: { format: int }
+        type: count
+      - name: below_reorder
+        description: "Items below their reorder point (including those out of stock)."
+        meta: { format: int }
+        type: count
+        filters:
+          - sql: "{CUBE}.on_hand < {CUBE}.reorder_point"
+      - name: out_of_stock
+        description: "Items out of stock."
+        meta: { format: int }
+        type: count
+        filters:
+          - sql: "{CUBE}.on_hand = 0"
+      - name: avg_cover_days
+        description: "Average days of cover (on hand divided by the recent daily sales)."
+        meta: { format: decimal }
+        sql: cover_days
+        type: avg
+
+  - name: stock_history
+    description: "Stok geçmişi: the stock at the end of each month (and today), per item: for the stock value over time."
+    sql_table: dist.fact_stock
+    data_source: default
+    meta: { kind: fact, snapshot: true }
+
+    joins:
+      - name: items
+        relationship: many_to_one
+        sql: "{CUBE}.item_key = {items}.item_key"
+      - name: calendar
+        relationship: many_to_one
+        sql: "{CUBE}.snapshot_date_key = {calendar}.date_key"
+
+    dimensions:
+      - name: snapshot_item
+        description: "Key of the snapshot row."
+        sql: "snapshot_date::text || '-' || item_key::text"
+        type: string
+        primary_key: true
+      - name: snapshot_date
+        description: "The day of the snapshot (month ends, and today): a time dimension."
+        sql: snapshot_date
+        type: time
+
+    measures:
+      - name: stock_value
+        description: "Stock value at cost in TRY at the snapshot."
+        meta: { format: money, primary: 1 }
+        sql: stock_value
+        type: sum
+      - name: on_hand
+        description: "Units on hand at the snapshot."
+        meta: { format: int }
+        sql: on_hand
+        type: sum

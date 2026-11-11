@@ -1,0 +1,62 @@
+spec: 1
+model: distributor
+id: dealers
+title: Bayi performansı
+description: En büyük bayiler, bölgeler ve temsilciler.
+tags: [dağıtım]
+locale: tr-TR
+currency: TRY
+time:
+  dimension: calendar.full_date
+filters:
+  - id: year
+    dimension: calendar.calendar_year
+    label: Yıl
+  - id: region
+    dimension: dealers.region
+    label: Bölge
+  - id: segment
+    dimension: dealers.segment
+    label: Bayi tipi
+panels:
+  - id: kpis
+    type: kpi
+    measures:
+      - { member: orders.revenue, label: Ciro, format: money }
+      - { member: orders.avg_order_value, label: Ortalama sipariş, format: money }
+      - { member: orders.margin_pct, label: Marj, format: pct }
+      - { member: orders.order_count, label: Sipariş, format: int }
+  - id: top
+    type: bar
+    title: En büyük 10 bayi
+    by: dealers.name
+    measure: orders.revenue
+    sort: desc
+    limit: 10
+    format: money
+  - id: provinces
+    type: bar
+    title: İle göre ciro
+    by: dealers.province
+    measure: orders.revenue
+    sort: desc
+    limit: 10
+    format: money
+  - id: reps
+    type: bar
+    title: Temsilciye göre ciro
+    by: reps.name
+    measure: orders.revenue
+    sort: desc
+    limit: 10
+    format: money
+  - id: table
+    type: table
+    title: Bayiler
+    columns: [dealers.name, dealers.region, dealers.segment, orders.revenue, orders.order_count, orders.margin_pct]
+    order: { orders.revenue: desc }
+    limit: 20
+layout:
+  - [{ kpis: 12 }]
+  - [{ top: 6 }, { provinces: 6 }]
+  - [{ reps: 6 }, { table: 6 }]

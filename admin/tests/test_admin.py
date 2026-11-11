@@ -389,4 +389,4 @@ def test_a_dimension_of_a_model_that_is_not_served_is_not_listed(ruled, monkeypa
     monkeypatch.setattr(main, "model_cubes", lambda: [{"name": "internet_sales"}, {"name": "products"}, {"name": "territories"}])
     assert [d["id"] for d in ruled.get("/rls/rules").json()["dimensions"]] == ["territory", "product_category"], "the registry also lists the distributor's dealer_region: inert here, so not shown"
     monkeypatch.setattr(main, "model_cubes", lambda: [{"name": "orders"}, {"name": "dealers"}])
-    assert [d["id"] for d in ruled.get("/rls/rules").json()["dimensions"]] == ["dealer_region"]
+    assert [d["id"] for d in ruled.get("/rls/rules").json()["dimensions"]] == ["dealer_region", "sales_rep"]

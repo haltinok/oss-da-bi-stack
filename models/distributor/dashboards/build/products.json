@@ -1,0 +1,265 @@
+{
+  "spec": 1,
+  "model": "distributor",
+  "id": "products",
+  "title": "Ürün ve kategori",
+  "description": "Kategori, marka ve ürün; marj ve iade.",
+  "tags": [
+    "dağıtım"
+  ],
+  "locale": "tr-TR",
+  "currency": "TRY",
+  "time": {
+    "dimension": "calendar.full_date"
+  },
+  "filters": [
+    {
+      "id": "year",
+      "dimension": "calendar.calendar_year",
+      "label": "Yıl"
+    },
+    {
+      "id": "region",
+      "dimension": "dealers.region",
+      "label": "Bölge"
+    },
+    {
+      "id": "segment",
+      "dimension": "dealers.segment",
+      "label": "Bayi tipi"
+    },
+    {
+      "id": "xf_categories_1",
+      "dimension": "items.category",
+      "label": "Category",
+      "implicit": true,
+      "source": "categories"
+    },
+    {
+      "id": "xf_subs_1",
+      "dimension": "items.subcategory",
+      "label": "Subcategory",
+      "implicit": true,
+      "source": "subs"
+    },
+    {
+      "id": "xf_brands_1",
+      "dimension": "items.brand",
+      "label": "Brand",
+      "implicit": true,
+      "source": "brands"
+    }
+  ],
+  "panels": [
+    {
+      "id": "kpis",
+      "type": "kpi",
+      "measures": [
+        {
+          "member": "orders.revenue",
+          "label": "Ciro",
+          "format": "money"
+        },
+        {
+          "member": "orders.quantity",
+          "label": "Adet",
+          "format": "int"
+        },
+        {
+          "member": "orders.margin_pct",
+          "label": "Marj",
+          "format": "pct"
+        }
+      ]
+    },
+    {
+      "id": "trend",
+      "type": "timeseries",
+      "title": "Aylık ciro",
+      "series": [
+        {
+          "member": "orders.revenue",
+          "label": "Ciro",
+          "color": "focus",
+          "format": "money"
+        }
+      ],
+      "granularity": "month",
+      "style": "bar"
+    },
+    {
+      "id": "categories",
+      "type": "pie",
+      "title": "Kategoriye göre ciro",
+      "measure": "orders.revenue",
+      "by": "items.category",
+      "on_click": {
+        "set_filter": [
+          "xf_categories_1"
+        ]
+      }
+    },
+    {
+      "id": "subs",
+      "type": "bar",
+      "title": "Alt kategoriye göre ciro",
+      "by": "items.subcategory",
+      "measure": "orders.revenue",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_subs_1"
+        ]
+      }
+    },
+    {
+      "id": "brands",
+      "type": "bar",
+      "title": "Markaya göre ciro",
+      "by": "items.brand",
+      "measure": "orders.revenue",
+      "sort": "desc",
+      "limit": 10,
+      "format": "money",
+      "on_click": {
+        "set_filter": [
+          "xf_brands_1"
+        ]
+      }
+    },
+    {
+      "id": "table",
+      "type": "table",
+      "title": "En çok satan ürünler",
+      "columns": [
+        {
+          "member": "items.name"
+        },
+        {
+          "member": "items.category"
+        },
+        {
+          "member": "orders.quantity"
+        },
+        {
+          "member": "orders.revenue"
+        },
+        {
+          "member": "orders.margin_pct"
+        }
+      ],
+      "order": {
+        "orders.revenue": "desc"
+      },
+      "limit": 15
+    }
+  ],
+  "layout": [
+    [
+      {
+        "panel": "kpis",
+        "span": 12
+      }
+    ],
+    [
+      {
+        "panel": "trend",
+        "span": 8
+      },
+      {
+        "panel": "categories",
+        "span": 4
+      }
+    ],
+    [
+      {
+        "panel": "subs",
+        "span": 6
+      },
+      {
+        "panel": "brands",
+        "span": 6
+      }
+    ],
+    [
+      {
+        "panel": "table",
+        "span": 12
+      }
+    ]
+  ],
+  "members": {
+    "calendar.calendar_year": {
+      "kind": "dimension",
+      "type": "number"
+    },
+    "calendar.full_date": {
+      "kind": "dimension",
+      "type": "time"
+    },
+    "dealers.region": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "dealers.segment": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "items.brand": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "items.category": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "items.name": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "items.subcategory": {
+      "kind": "dimension",
+      "type": "string"
+    },
+    "orders.margin_pct": {
+      "kind": "measure",
+      "type": "number"
+    },
+    "orders.quantity": {
+      "kind": "measure",
+      "type": "sum"
+    },
+    "orders.revenue": {
+      "kind": "measure",
+      "type": "sum"
+    }
+  },
+  "yearFields": {
+    "calendar": [
+      "calendar.calendar_year",
+      "maturity_dates.calendar_year"
+    ]
+  },
+  "cubes": {
+    "calendar": {
+      "joins": []
+    },
+    "dealers": {
+      "joins": [
+        "reps"
+      ]
+    },
+    "items": {
+      "joins": []
+    },
+    "orders": {
+      "joins": [
+        "calendar",
+        "dealers",
+        "items"
+      ]
+    }
+  }
+}
