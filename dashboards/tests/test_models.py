@@ -111,3 +111,62 @@ def test_a_models_committed_dashboard_build_is_current(tmp_path):
         assert sorted(p.name for p in out.iterdir()) == sorted(p.name for p in committed.iterdir()), name
         for f in sorted(out.iterdir()):
             assert (committed / f.name).read_text() == f.read_text(), f"{name}/{f.name} is stale: scripts/dashspec build --model {model_dir} --dir {model_dir.parent}/dashboards --out {model_dir.parent}/dashboards/build"
+
+
+# ---------------------------------------------------------------------------------------------------------------- models.yml and the `model:` field (PLAN-models.md phase 0)
+def test_models_yml_lists_the_models_the_repo_ships_and_each_folder_exists():
+    from dashspec import models
+    listed = models.load()
+    assert [m.id for m in listed][:2] == ["adventureworks", "distributor"] and models.default().id == "adventureworks"
+    for m in listed:
+        assert m.dir.is_dir() and m.dashboards.is_dir() and m.config_file.parent == m.dir.parent, m.id
+    assert {m.id for m in listed} == set(MODELS), "test_models.py finds the same models by folder"
+    assert models.get(None).id == "adventureworks" and models.get("distributor").label == "Anadolu Dağıtım" and models.get("nope") is None
+
+
+@pytest.mark.parametrize("text,problem", [
+    ("models: []", "at least one model"), ("models: [{id: a, label: A, dir: d}]", "needs id, label, dir, dashboards and cube"),
+    ("models: [{id: A, label: A, dir: d, dashboards: x, cube: c}]", "lower-case"),
+    ("models: [{id: a, label: A, dir: d, dashboards: x, cube: c}, {id: a, label: B, dir: d, dashboards: x, cube: c}]", "used once"),
+])
+def test_a_models_file_that_cannot_be_used_says_why(tmp_path, text, problem):
+    from dashspec import models
+    f = tmp_path / "models.yml"
+    f.write_text(text)
+    with pytest.raises(ValueError, match=problem):
+        models.load(f)
+
+
+def test_a_dashboard_is_checked_against_its_own_model_and_a_wrong_one_is_refused(tmp_path, capsys):
+    from dashspec.cli import main
+    dist = (REPO / "models" / "distributor" / "dashboards" / "collections.yml").read_text()
+    good = tmp_path / "collections.yml"
+    good.write_text(dist)
+    assert main(["validate", str(good)]) == 0, "it says model: distributor, so it is checked against the distributor's cubes"
+    no_model = tmp_path / "no_model.yml"
+    no_model.write_text(dist.replace("model: distributor\n", ""))
+    assert main(["validate", str(no_model)]) == 1 and "payments.collected" in capsys.readouterr().out, "no model: the default one (AdventureWorks), which has no payments cube"
+    wrong = tmp_path / "wrong.yml"
+    wrong.write_text(dist.replace("model: distributor", "model: atlantis"))
+    assert main(["validate", str(wrong)]) == 1 and "is not a model of this stack" in capsys.readouterr().out
+
+
+def test_the_compiled_dashboard_says_its_model_and_the_default_is_named(tmp_path):
+    from dashspec.cli import main
+    out = tmp_path / "out.json"
+    assert main(["compile", str(REPO / "dashboards" / "sales-overview.yml"), "-o", str(out)]) == 0
+    assert json.loads(out.read_text())["model"] == "adventureworks", "a dashboard that names no model is compiled with the default's"
+    assert main(["compile", str(REPO / "models" / "distributor" / "dashboards" / "collections.yml"), "-o", str(out)]) == 0
+    assert json.loads(out.read_text())["model"] == "distributor"
+
+
+def test_build_with_no_arguments_builds_every_model_into_its_own_folder_and_a_folder_may_not_hold_another_models_dashboard(tmp_path):
+    from dashspec import cli, models
+    for m in models.load():
+        committed = json.loads((m.build / "index.json").read_text())
+        assert [d["id"] for d in committed] == sorted(p.stem for p in m.dashboards.glob("*.yml")), m.id
+        assert all(json.loads(p.read_text())["model"] == m.id for p in m.build.glob("*.json") if p.name != "index.json"), m.id
+    stray = tmp_path / "stray"
+    stray.mkdir()
+    (stray / "collections.yml").write_text((REPO / "models" / "distributor" / "dashboards" / "collections.yml").read_text())
+    assert cli._build(stray, tmp_path / "out", cat.from_model(MODELS["adventureworks"][0]), "adventureworks") == 1, "a dashboard for another model in this model's folder is refused"

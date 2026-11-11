@@ -384,8 +384,8 @@ jobs:
           PYTHONPATH: dashboards
         run: |
           python -m pytest dashboards/tests -q
-          python -m dashspec validate dashboards/*.yml
-          for f in dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
+          python -m dashspec validate dashboards/*.yml models/*/dashboards/*.yml
+          for f in dashboards/*.yml models/*/dashboards/*.yml; do python -m dashspec compile "$f" -o "/tmp/dashspec-build/$(basename "${f%.yml}").json"; done
 
   # PLAN-decouple.md: the app knows no model. An error on any hit that scripts/no-model-names.allow does not list.
   no-model-names:

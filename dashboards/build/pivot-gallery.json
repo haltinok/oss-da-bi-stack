@@ -177,6 +177,7 @@
       }
     }
   ],
+  "model": "adventureworks",
   "tabs": [
     {
       "id": "overview",

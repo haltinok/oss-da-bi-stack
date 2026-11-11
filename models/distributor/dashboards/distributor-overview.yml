@@ -1,4 +1,5 @@
 spec: 1
+model: distributor
 id: distributor-overview
 title: Satış ve tahsilat
 description: Siparişler, tahsilat ve bayiler (the distributor example model; no AdventureWorks names anywhere).
