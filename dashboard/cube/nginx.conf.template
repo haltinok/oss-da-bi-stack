@@ -5,6 +5,8 @@
 # CUBE_250M_PORT (optional) adds a second dataset: the 250M benchmark Cube from spike/bench/run_scale.sh 250m.
 server {
     listen 8250;
+    # Relative Location headers: the host port (DASHBOARD_CUBE_PORT) or Caddy's URL may differ from 8250.
+    absolute_redirect off;
     root /usr/share/nginx/html;
     index index.html;
 
