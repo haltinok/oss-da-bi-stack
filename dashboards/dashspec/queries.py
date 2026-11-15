@@ -2,7 +2,7 @@
 `dashspec lint` asks Cube about these, so they must be the queries the page really sends; dashboards/tests runs the JS builders and
 compares, on every checked-in dashboard and several filter states."""
 
-from .calculations import PREFIX, real_members
+from .calculations import PREFIX, real_members, time_calls
 from .compare import previous_queries
 from .filters import applies, default_env, effective_value, to_cube
 from .timecalc import with_time_calcs
@@ -53,6 +53,9 @@ def per_cube(spec, measures, base=None):
     if calcs:
         base = dict(base or {})
         post = {"calcs": calcs, **{k: base.pop(k) for k in ("order", "limit") if k in base}}
+        tc = time_calls(list(calcs.values()))
+        if tc["prior"] or tc["rolling"]:                                  # what prior() and rolling() need (timecalc.py)
+            post["time"] = {"yearFields": spec.get("yearFields") or {}, "fiscalStart": spec.get("time", {}).get("fiscal_year_start") or 1}
         measures = real_members(members, measures)
     groups = {}
     for m in measures:

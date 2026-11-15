@@ -1,6 +1,6 @@
 # Plan: time intelligence in calculations, `prior()` and `rolling()`
 
-Status: **phase 1 done** (2026-11-15): the formula, the validator and the queries (Python and JS, lint sees them). Until phase 2 the page does not send the added queries yet, so a `prior()` or `rolling()` shows no value.
+Status: **phases 1 and 2 done** (2026-11-15): the formula, the validator, the queries (Python and JS, lint sees them), and the page: it sends the added queries and puts the rows together. Phase 3 (the benchmark) needs the real stack.
 
 ### As built (phase 1)
 - The rolling node is `{"rolling": m, "over": N}`, not `"n"`: `{"n": ...}` is a number's node, and the evaluator read `rolling(x, 12)` as 12.
@@ -10,7 +10,7 @@ Status: **phase 1 done** (2026-11-15): the formula, the validator and the querie
 - With a fiscal-year select, `prior(·, month)` sends no moved query (a month back cannot be written as a year select). On a time chart the month before is then found among the chart's own rows (phase 2), so only the first month of the year has no value.
 - The queries are added by `withTimeCalcs` (`lib/timecalc.js`) / `with_time_calcs` (`dashspec/timecalc.py`) at the end of `panelQueries` / `panel_queries`. Widened queries carry `widened`, moved ones `prior: <unit>`. Phase 2 calls `withTimeCalcs` where the page runs its queries, and puts the rows together.
 - Additivity: `Catalog.agg_type` (a model file's measure type, or Cube's `aggType` from `/v1/meta`).
-- Tests: `dashboards/tests/test_timecalc.py` (+ `dump_timecalc.mjs`: about 3,600 cases, Python against JS), the evaluator cases in `dashboard/cube/tests/lib_render.test.mjs`.
+- Tests (phase 1): `dashboards/tests/test_timecalc.py` (+ `dump_timecalc.mjs`: about 3,600 cases, Python against JS), the evaluator cases in `dashboard/cube/tests/lib_render.test.mjs`.
 
 ## Goal
 A calculation (`calculations[]`, used as `calc.<id>`) is arithmetic over the measures of **one result row**. It is parsed in `dashboards/dashspec/calculations.py` and evaluated in the browser by `dashboard/static/lib/calc.js` through `queriesPerCube` → `runAll` → `combine` in `dashboard/static/render/plan.js`. Time intelligence needs values from **other rows**: the same group one period earlier (YoY, MoM), or the last N time buckets (rolling sums and averages).
@@ -25,6 +25,15 @@ calculations:
   - { id: revenue_r12, label: Revenue, last 12 months, formula: rolling(a.revenue, 12) }
   - { id: price_r3,    label: Average price, 3-month rolling, formula: rolling(a.revenue, 3) / rolling(a.units, 3) }
 ```
+
+### As built (phase 2)
+- `queriesPerCube` / `per_cube` put `post.time` (`yearFields`, `fiscalStart`) on a calculation that uses prior() or rolling(); `runAll` adds the queries (`withTimeCalcs`) unless the list already has them, and sends each distinct query once.
+- `combine` merges the rows of the panel's own queries only; `withTimeValues` (`lib/timecalc.js`) then moves the rows of each moved query (or, with none, the panel's own rows) forward by the unit and puts their values on the row they land on, works the rolling sums out per group over the bucket order, and drops the rows that were only asked for to fill the first windows (before the asked range, or outside the chosen fiscal years).
+- A bucket moved by months that lands on a day the month does not have (Jan 31 + 1 month, Feb 29 + 12 months) has no match, so two days never claim one.
+- A rolling window that starts before the first data the panel asked for has no value: with a widened range or year select that start is known; with all time it is the first bucket in the rows.
+- Not done: the same query in a key figure's `compare` and a `prior(·, year)` is still sent twice (they run in separate `runAll` calls; Cube's result cache answers the second).
+- Examples: `dashboards/sales-drilldown.yml` and `models/distributor/dashboards/distributor-overview.yml` each have a growth chart (`prior`) and a rolling 12 months chart. Docs: "Year on year, rolling sums" in `docs/dashboards.md`, the `formula` field in the reference.
+- Tests: `dashboard/cube/tests/timecalc.test.mjs`, a fake Cube over daily data through `queriesPerCube` → `runAll`: year on year, month on month from the chart's own rows, rolling with a range, with all time and with a gap, a fiscal-year select, a key figure, a bar, a bar by fiscal year, nothing to move, one query sent once, Feb 29. Tried on the mock stack in Chrome: both charts draw, a drill-down into 2021 widens the rolling query and compares with 2020, no console errors.
 
 ## The language (additive, v1)
 - `prior(<measure>, <unit>)`, unit one of `year | quarter | month | week | day`. The measure's value one unit earlier, for the same group.

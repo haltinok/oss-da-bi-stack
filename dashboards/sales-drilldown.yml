@@ -8,6 +8,16 @@ currency: USD
 time:
   dimension: dates.full_date
   fiscal_year_start: 7
+calculations:
+  # time intelligence: prior() is the same month a year before, rolling() the sum of the last 12 months (see docs/dashboards.md, "Year on year, rolling sums")
+  - id: revenue_yoy
+    label: Revenue vs last year
+    formula: (internet_sales.revenue + reseller_sales.revenue - prior(internet_sales.revenue, year) - prior(reseller_sales.revenue, year)) / (prior(internet_sales.revenue, year) + prior(reseller_sales.revenue, year))
+    format: pct
+  - id: revenue_r12
+    label: Revenue, last 12 months
+    formula: rolling(internet_sales.revenue, 12) + rolling(reseller_sales.revenue, 12)
+    format: money
 filters:
   - id: category
     dimension: products.category
@@ -77,6 +87,21 @@ panels:
     limit: 10
     format: money
     on_click: { set_filter: region }
+  - id: growth
+    type: timeseries
+    title: Revenue growth on the year before
+    series:
+      - { member: calc.revenue_yoy, label: vs last year, color: series1, format: pct }
+    granularity: month
+    style: bar
+  - id: rolling
+    type: timeseries
+    title: Revenue, rolling 12 months
+    series:
+      - { member: calc.revenue_r12, label: Last 12 months, color: series1, format: money }
+      - { sum: [internet_sales.revenue, reseller_sales.revenue], label: The month, color: series2, format: money }
+    granularity: month
+    style: line
   - id: detail
     type: table
     title: Revenue by subcategory
@@ -95,4 +120,5 @@ layout:
   - [group: 12]
   - [trend: 7, donut: 5]
   - [categories: 6, regions: 6]
+  - [growth: 6, rolling: 6]
   - [detail: 12]
