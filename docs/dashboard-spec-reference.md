@@ -80,7 +80,7 @@ A named formula over measures; a panel uses it as `calc.<id>`.
 |---|---|---|---|
 | `id` | string | yes | The calculation's id: lower case letters, digits and `_`. A panel uses it as `calc.<id>`. |
 | `label` | string | yes | The name a panel shows for it (the column heading, the legend), unless the panel gives its own `label`. |
-| `formula` | string | yes | `+ - * /`, brackets, numbers, measures (`cube.measure`) and `sum(a, b, ...)`, for example `sum(a.revenue, b.revenue) / sum(a.units, b.units)` or `(a.revenue + b.revenue) * 0.2` (`a` and `b` standing for cubes). A total is the formula over the totals of its parts (a ratio of sums, not an average of ratios). `+`, `-` and `sum` skip a part with no value; `*` and `/` give no value when a side has none, and `/` by zero gives none. A calculation cannot use another calculation. |
+| `formula` | string | yes | `+ - * /`, brackets, numbers, measures (`cube.measure`) and `sum(a, b, ...)`, for example `sum(a.revenue, b.revenue) / sum(a.units, b.units)` or `(a.revenue + b.revenue) * 0.2` (`a` and `b` standing for cubes). A total is the formula over the totals of its parts (a ratio of sums, not an average of ratios). `+`, `-` and `sum` skip a part with no value, unless only numbers are left (`a.x / b.y - 1` with no `b.y` has no value, not -1); `*` and `/` give no value when a side has none, and `/` by zero gives none. A calculation cannot use another calculation. |
 | `format` | `money` \| `int` \| `decimal` \| `pct` \| `number` \| `year` |  | How the value is shown wherever a panel does not say otherwise: money, int, decimal, pct, number. Default: number. |
 
 ### A filter

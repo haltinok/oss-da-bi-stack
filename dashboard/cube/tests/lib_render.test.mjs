@@ -702,7 +702,7 @@ test("tabKeyTarget: arrows move and wrap, Home and End jump, any other key is no
 });
 
 // ---- calculations
-import { evaluateCalc } from "../../static/lib/calc.js";
+import { evaluateCalc, timeCalls } from "../../static/lib/calc.js";
 
 const AVG = { op: "/", a: { sum: [{ m: "i.rev" }, { m: "r.rev" }] }, b: { sum: [{ m: "i.units" }, { m: "r.units" }] } };
 const SPEC = { members: {
@@ -718,6 +718,18 @@ test("a formula skips a part with no value in a sum and gives none in a product 
   assert.equal(evaluateCalc(AVG, v({ "i.rev": 1, "i.units": 0 })), null, "division by zero: no value");
   assert.equal(evaluateCalc({ op: "*", a: { m: "x" }, b: { n: 2 } }, v({})), null, "a product needs both sides");
   assert.equal(evaluateCalc({ neg: { m: "x" } }, v({ x: 3 })), -3);
+});
+
+test("prior() and rolling() read the values other rows put on the row, and numbers alone do not stand in for a missing part", () => {
+  const v = (o) => (m) => o[m] ?? null;
+  const yoy = { op: "-", a: { op: "/", a: { m: "x" }, b: { prior: "x", by: "year" } }, b: { n: 1 } };
+  assert.equal(evaluateCalc(yoy, v({ x: 110, "prior:year:x": 100 })), 0.10000000000000009);
+  assert.equal(evaluateCalc(yoy, v({ x: 110 })), null, "no year before: no value, not -100%");
+  assert.equal(evaluateCalc({ op: "+", a: { n: 2 }, b: { n: 3 } }, v({})), 5, "numbers alone, nothing missing");
+  assert.equal(evaluateCalc({ op: "+", a: { m: "x" }, b: { n: 3 } }, v({})), null);
+  assert.equal(evaluateCalc({ op: "/", a: { rolling: "x", over: 12 }, b: { n: 12 } }, v({ "rolling:12:x": 24 })), 2, "a rolling node is not the number 12");
+  assert.deepEqual(timeCalls([yoy, { rolling: "y", over: 3 }, { op: "+", a: { rolling: "y", over: 12 }, b: { prior: "x", by: "month" } }]),
+    { prior: { year: ["x"], month: ["x"] }, rolling: { y: [3, 12] } });
 });
 
 test("a calculation is asked of Cube as the measures it reads, with the ordering and limit kept for the page", () => {

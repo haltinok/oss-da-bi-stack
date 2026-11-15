@@ -4,12 +4,27 @@ of its parts (a ratio of sums, not an average of ratios).
 
     expr   := term (("+" | "-") term)*
     term   := factor (("*" | "/") factor)*
-    factor := NUMBER | MEMBER | "sum" "(" expr ("," expr)* ")" | "(" expr ")" | "-" factor
+    factor := NUMBER | MEMBER | "sum" "(" expr ("," expr)* ")" | "prior" "(" MEMBER "," UNIT ")" | "rolling" "(" MEMBER "," N ")" | "(" expr ")" | "-" factor
 
-`+`, `-` and `sum` skip a part that has no value (a month one cube has no row for); `*` and `/` give no value when a side has none, and `/` by zero gives none."""
+`prior(m, unit)` is the measure one unit (year, quarter, month, week, day) earlier for the same row; `rolling(m, N)` is its sum over this time bucket and the N-1 before it.
+Their values come from other rows (dashspec/timecalc.py makes the queries that bring them); the tree reads them under `prior_key` / `rolling_key`.
+
+`+`, `-` and `sum` skip a part that has no value (a month one cube has no row for), unless only numbers are left (`x / prior(x, year) - 1` with no year before has none); `*` and `/` give no value when a side has none, and `/` by zero gives none."""
 import re
 
 PREFIX = "calc."
+UNITS = ("year", "quarter", "month", "week", "day")          # what prior() moves by
+ROLLING_MAX = 36
+
+
+def prior_key(unit, member):
+    """Where a row keeps a measure's value one `unit` earlier (mirror of priorKey in lib/calc.js)."""
+    return f"prior:{unit}:{member}"
+
+
+def rolling_key(n, member):
+    """Where a row keeps a measure's sum over its last `n` time buckets (mirror of rollingKey in lib/calc.js)."""
+    return f"rolling:{n}:{member}"
 ID = re.compile(r"[a-z][a-z0-9_]*$")
 _TOKEN = re.compile(r"\s*(?:(\d+(?:\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)|(.))")
 
@@ -78,6 +93,8 @@ def parse(text):
                     args.append(expr())
                 expect(")")
                 return {"sum": args}
+            if val in ("prior", "rolling") and peek() == ("op", "("):
+                return time_call(val)
             if "." not in val:
                 raise FormulaError(f"'{val}' is not a measure: write it as cube.measure (or use sum(...))")
             return {"m": val}
@@ -90,6 +107,25 @@ def parse(text):
             take()
             return {"neg": factor()}
         raise FormulaError(f"unexpected '{val}'")
+
+    def time_call(fn):
+        take()
+        usage = "prior(cube.measure, year)" if fn == "prior" else "rolling(cube.measure, 12)"
+        kind, member = peek()
+        if kind != "name" or "." not in member or member.startswith(PREFIX):
+            raise FormulaError(f"{fn}(...) reads one measure of the model, written cube.measure: {usage}")
+        take()
+        expect(",")
+        kind, arg = take() if pos < len(toks) else (None, None)
+        if fn == "prior":
+            if kind != "name" or arg not in UNITS:
+                raise FormulaError(f"prior(...) moves by {', '.join(UNITS)}" + (f", not '{arg}'" if arg is not None else "") + f": {usage}")
+            expect(")")
+            return {"prior": member, "by": arg}
+        if kind != "num" or not isinstance(arg, int) or not 2 <= arg <= ROLLING_MAX:
+            raise FormulaError(f"rolling(...) sums a whole number of time buckets, 2 to {ROLLING_MAX}" + (f", not '{arg}'" if arg is not None else "") + f": {usage}")
+        expect(")")
+        return {"rolling": member, "over": arg}          # not "n": that key is a number's
 
     tree = expr()
     if pos < len(toks):
@@ -104,6 +140,10 @@ def members_of(tree):
     def walk(n):
         if "m" in n:
             out.append(n["m"])
+        elif "prior" in n:
+            out.append(n["prior"])
+        elif "rolling" in n:
+            out.append(n["rolling"])
         elif "sum" in n:
             for a in n["sum"]:
                 walk(a)
@@ -120,32 +160,64 @@ def members_of(tree):
 def evaluate(tree, value_of):
     """The formula over `value_of(member) -> number | None` (a Python mirror of lib/calc.js; the tests compare the two)."""
     def go(n):
+        """-> (value, whether a measure's value is in it): a sum left with only numbers has no value (x / prior(x, year) - 1 with no year before is not -100%)."""
         if "n" in n:
-            return n["n"]
-        if "m" in n:
-            return value_of(n["m"])
+            return n["n"], False
+        if "m" in n or "prior" in n or "rolling" in n:
+            v = value_of(n["m"] if "m" in n else prior_key(n["by"], n["prior"]) if "prior" in n else rolling_key(n["over"], n["rolling"]))
+            return v, v is not None
         if "neg" in n:
-            v = go(n["neg"])
-            return None if v is None else -v
+            v, d = go(n["neg"])
+            return (None if v is None else -v), d
         if "sum" in n:
             return _add([go(a) for a in n["sum"]])
-        a, b = go(n["a"]), go(n["b"])
+        (a, da), (b, db) = go(n["a"]), go(n["b"])
         if n["op"] == "+":
-            return _add([a, b])
+            return _add([(a, da), (b, db)])
         if n["op"] == "-":
-            return _add([a, None if b is None else -b])
+            return _add([(a, da), (None if b is None else -b, db)])
         if a is None or b is None:
-            return None
+            return None, False
         if n["op"] == "*":
-            return a * b
-        return None if b == 0 else a / b
+            return a * b, da or db
+        return (None, False) if b == 0 else (a / b, da or db)
 
-    return go(tree)
+    return go(tree)[0]
 
 
-def _add(values):
-    vs = [v for v in values if v is not None]
-    return sum(vs) if vs else None
+def time_calls(trees):
+    """What the formulas read from other rows: { "prior": { unit: [members] }, "rolling": { member: [n, ...] } }, each list in order of appearance (mirror of timeCalls in lib/calc.js)."""
+    out = {"prior": {}, "rolling": {}}
+
+    def walk(n):
+        if "prior" in n:
+            ms = out["prior"].setdefault(n["by"], [])
+            if n["prior"] not in ms:
+                ms.append(n["prior"])
+        elif "rolling" in n:
+            ns = out["rolling"].setdefault(n["rolling"], [])
+            if n["over"] not in ns:
+                ns.append(n["over"])
+        elif "sum" in n:
+            for a in n["sum"]:
+                walk(a)
+        elif "neg" in n:
+            walk(n["neg"])
+        elif "op" in n:
+            walk(n["a"])
+            walk(n["b"])
+
+    for t in trees:
+        walk(t)
+    return out
+
+
+def _add(parts):
+    """(value, has data) parts added, skipping those with no value; none left, or only numbers left in place of a missing part: no value."""
+    have = [(v, d) for v, d in parts if v is not None]
+    if not have or (len(have) < len(parts) and not any(d for _, d in have)):
+        return None, False
+    return sum(v for v, _ in have), any(d for _, d in have)
 
 
 def entry(calc, tree):

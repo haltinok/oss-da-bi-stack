@@ -6,6 +6,9 @@
 // `notEquals` on a year, a year that is not a number, years that are not consecutive for previous_period): no comparison.
 
 export const COMPARE_KINDS = ["previous_year", "previous_period"];
+// Besides the two kinds, a fixed shift moves everything by the same amount (a calculation's prior(), see lib/timecalc.js): { months, years? } or { days }.
+// Dates move by the months or days; year values move by `years`, and a shift without `years` cannot move them.
+export const isShift = (kind) => kind != null && typeof kind === "object" && (Number.isInteger(kind.months) || Number.isInteger(kind.days));
 const OPEN = ["beforeDate", "afterDate", "beforeOrOnDate", "afterOrOnDate", "notInDateRange"];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const INT = /^-?\d+$/;
@@ -17,6 +20,11 @@ const isoOf = (y, m, d) => `${pad(y, 4)}-${pad(m)}-${pad(d)}`;
 const toDay = (s) => { const [y, m, d] = parts(s); return Date.UTC(y, m - 1, d) / 86400000; };
 const fromDay = (n) => { const t = new Date(n * 86400000); return isoOf(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()); };
 
+/** `s` moved by `n` days. */
+export const addDays = (s, n) => fromDay(toDay(s) + n);
+/** Is `range` a [from, to] of ISO dates, in order? */
+export const isRange = (range) => Array.isArray(range) && range.length === 2 && range.every((s) => typeof s === "string" && ISO.test(s)) && range[0] <= range[1];
+
 /** `s` moved by `n` months; the day is clamped to the month's length, and with `keepEnd` the last day of a month stays the last day. */
 export function addMonths(s, n, keepEnd = false) {
   const [y, m, d] = parts(s);
@@ -27,9 +35,9 @@ export function addMonths(s, n, keepEnd = false) {
 
 /** The range [from, to] moved back, or null when it cannot be. */
 export function shiftRange(range, kind) {
-  if (!Array.isArray(range) || range.length !== 2 || !range.every((s) => typeof s === "string" && ISO.test(s))) return null;
+  if (!isRange(range)) return null;
   const [a, b] = range;
-  if (a > b) return null;
+  if (isShift(kind)) return Number.isInteger(kind.months) ? [addMonths(a, -kind.months), addMonths(b, -kind.months, true)] : [addDays(a, -kind.days), addDays(b, -kind.days)];
   if (kind === "previous_year") return [addMonths(a, -12), addMonths(b, -12, true)];
   const [ay, am, ad] = parts(a), [by, bm, bd] = parts(b);
   if (ad === 1 && bd === daysIn(by, bm)) {                    // whole months: back by that many months
@@ -44,6 +52,7 @@ export function shiftRange(range, kind) {
 export function shiftYears(values, kind) {
   if (!values?.length || !values.every((v) => INT.test(String(v)))) return null;
   const ys = values.map(Number);
+  if (isShift(kind)) return Number.isInteger(kind.years) ? ys.map((y) => String(y - kind.years)) : null;
   let by = 1;
   if (kind === "previous_period" && ys.length > 1) {
     const sorted = [...new Set(ys)].sort((x, y) => x - y);
@@ -61,7 +70,7 @@ export const isYearField = (member, yearFields) => [...(yearFields?.fiscal || []
  * `moved` lists what changed, each { member, from, to } (from/to: a [from, to] date range, or a list of years).
  */
 export function shiftQuery(query, kind, yearFields) {
-  if (!COMPARE_KINDS.includes(kind)) return null;
+  if (!COMPARE_KINDS.includes(kind) && !isShift(kind)) return null;
   const moved = [];
   let ok = true;
   const filters = (query.filters || []).map((f) => {

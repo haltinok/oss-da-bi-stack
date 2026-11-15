@@ -36,6 +36,15 @@ class Catalog:
             return "dimension", c["dimensions"][name]
         return None
 
+    def agg_type(self, member):
+        """How a measure aggregates, in the model's words (sum, count, count_distinct, avg, number, ...): its type in a model file, Cube's `aggType` in /v1/meta
+        (whose `type` is `number` for every measure); None when the source does not say."""
+        cube, _, name = member.partition(".")
+        c = self.cubes.get(cube) or {}
+        if name in (c.get("aggs") or {}):
+            return c["aggs"][name]
+        return None if c.get("aggs") is not None else c.get("measures", {}).get(name)
+
     def extra(self, member):
         """What the compiled spec keeps about a member beyond its kind and type (a calculation: its formula); nothing for a model member."""
         return {}
@@ -185,6 +194,9 @@ def from_cube(url, token):
         return from_meta(json.load(r))
 
 
+_AGG = {"countDistinct": "count_distinct", "countDistinctApprox": "count_distinct_approx", "runningTotal": "running_total", "numberAgg": "number_agg"}
+
+
 def from_meta(meta):
     """The catalog of a /v1/meta answer."""
     cubes = {}
@@ -192,6 +204,7 @@ def from_meta(meta):
         short = lambda m: m["name"].partition(".")[2]  # noqa: E731
         cubes[c["name"]] = {
             "measures": {short(m): m["type"] for m in c["measures"]},
+            "aggs": {short(m): _AGG.get(m["aggType"], m["aggType"]) for m in c["measures"] if m.get("aggType")},          # Cube's camelCase, in the model files' words
             "dimensions": {short(d): d["type"] for d in c["dimensions"]},
             "joins": None,
             "primary_key": next((short(d) for d in c["dimensions"] if d.get("primaryKey")), None),
