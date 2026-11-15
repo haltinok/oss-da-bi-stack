@@ -1,6 +1,16 @@
 # Plan: time intelligence in calculations, `prior()` and `rolling()`
 
-Status: **planned** (2026-11-15), not started.
+Status: **phase 1 done** (2026-11-15): the formula, the validator and the queries (Python and JS, lint sees them). Until phase 2 the page does not send the added queries yet, so a `prior()` or `rolling()` shows no value.
+
+### As built (phase 1)
+- The rolling node is `{"rolling": m, "over": N}`, not `"n"`: `{"n": ...}` is a number's node, and the evaluator read `rolling(x, 12)` as 12.
+- **The missing-value rule changed** (both evaluators): `+`, `-` and `sum` still skip a part with no value, but when only numbers are left in place of a missing part there is no value. Otherwise `x / prior(x, year) - 1` with no year before was -1 (-100%). Formulas whose parts all have values are unchanged. Docs updated (`docs.py` → the reference, `docs/dashboards.md`).
+- `rolling()` is refused on a key figure (one value; the sparkline does not count), and on a time axis by hour.
+- A fixed shift (`{months, years?}` or `{days}`) sits beside `previous_year` / `previous_period` in `compare.js` / `compare.py`; the two kinds are untouched, so KPI `compare` gives the same queries.
+- With a fiscal-year select, `prior(·, month)` sends no moved query (a month back cannot be written as a year select). On a time chart the month before is then found among the chart's own rows (phase 2), so only the first month of the year has no value.
+- The queries are added by `withTimeCalcs` (`lib/timecalc.js`) / `with_time_calcs` (`dashspec/timecalc.py`) at the end of `panelQueries` / `panel_queries`. Widened queries carry `widened`, moved ones `prior: <unit>`. Phase 2 calls `withTimeCalcs` where the page runs its queries, and puts the rows together.
+- Additivity: `Catalog.agg_type` (a model file's measure type, or Cube's `aggType` from `/v1/meta`).
+- Tests: `dashboards/tests/test_timecalc.py` (+ `dump_timecalc.mjs`: about 3,600 cases, Python against JS), the evaluator cases in `dashboard/cube/tests/lib_render.test.mjs`.
 
 ## Goal
 A calculation (`calculations[]`, used as `calc.<id>`) is arithmetic over the measures of **one result row**. It is parsed in `dashboards/dashspec/calculations.py` and evaluated in the browser by `dashboard/static/lib/calc.js` through `queriesPerCube` → `runAll` → `combine` in `dashboard/static/render/plan.js`. Time intelligence needs values from **other rows**: the same group one period earlier (YoY, MoM), or the last N time buckets (rolling sums and averages).
@@ -20,7 +30,7 @@ calculations:
 - `prior(<measure>, <unit>)`, unit one of `year | quarter | month | week | day`. The measure's value one unit earlier, for the same group.
 - `rolling(<measure>, <N>)`, N an integer from 2 to 36. The sum of the measure over this time bucket and the N−1 before it. A rolling average is `rolling(x, N) / N`, or a ratio of two rollings (a ratio of sums, matching the totals rule).
 - The argument is a single model measure, not an expression and not a calculation. Nesting is refused.
-- AST nodes: `{"prior": "<member>", "by": "<unit>"}` and `{"rolling": "<member>", "n": N}`. `members_of` and `realMembers` include their measures, so cube reach, the join check and lint work unchanged.
+- AST nodes: `{"prior": "<member>", "by": "<unit>"}` and `{"rolling": "<member>", "over": N}`. `members_of` and `realMembers` include their measures, so cube reach, the join check and lint work unchanged.
 
 ## What the functions mean, per panel
 | Panel rows | `prior(x, unit)` | `rolling(x, N)` |
@@ -50,7 +60,7 @@ Allowed units per bucket granularity (otherwise the validator refuses it): year 
 - The `post` of a calculation gains `shifts` (unit → which part results are shifted) and `window` (time key, granularity, the requested start, per-rolling N).
 - Shifted rows are re-keyed **forward** before merging: the time bucket moves by +unit, a year field +1, and the measure is renamed `prior:<unit>:<member>`. They only fill keys that exist among the now rows (a shifted row with no now row is dropped).
 - Rolling: rows are grouped by their non-time dimensions and walked in bucket order over the full bucket sequence (gaps = 0), filling `rolling:<n>:<member>`. Rows before the requested start are then dropped.
-- `evaluateCalc` / `calculations.evaluate` look up `prior` / `rolling` nodes by those synthetic keys. Missing value rules are unchanged.
+- `evaluateCalc` / `calculations.evaluate` look up `prior` / `rolling` nodes by those synthetic keys. (Missing values: see As built.)
 - Totals rows: `prior` = the formula over the shifted totals, as `compare` does. `rolling` on a total row = no value.
 - Order and limit run after this, as now (a bar sorted by a YoY calculation works).
 - Pure helpers (bucket arithmetic, re-keying, windowing) go into a new `dashboard/static/lib/timecalc.js` so they are unit-testable without the DOM.

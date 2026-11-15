@@ -7,6 +7,7 @@ import { AGGREGATE_LIMIT } from "../lib/aggregate.js";
 import { memberLabel } from "../lib/labels.js";
 import { evaluateCalc, realMembers } from "../lib/calc.js";
 import { previousQueries } from "../lib/compare.js";
+import { withTimeCalcs } from "../lib/timecalc.js";
 
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
@@ -622,7 +623,6 @@ export function heatScale(model, member) {
   return { min, max, level: (v) => (v == null || !Number.isFinite(v) ? null : max === min ? 0.5 : (v - min) / (max - min)) };
 }
 
-/** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included). */
 /**
  * The queries behind a slicer's options: the values of its filter's dimension, as many queries as the measures of the panels the filter applies to need (one measure per cube, so
  * the values are those that have data). The other filters that apply to the slicer narrow them (the dashboard's, its tab's, its own pane filters) and so does a drill-down's period;
@@ -637,7 +637,12 @@ export function slicerQueries(spec, def, values) {
   return followPeriod(spec, own, values, queriesPerCube(spec, measures, { dimensions: dims, filters: activeFilters(spec, values, own) }));
 }
 
+/** Every Cube query a panel sends for these filter values, for the panel's default granularity (a KPI's tiles and sparklines included), with the ones its calculations' prior() and rolling() add (lib/timecalc.js). */
 export function panelQueries(spec, def, values) {
+  return withTimeCalcs(ownPanelQueries(spec, def, values), spec.yearFields);
+}
+
+function ownPanelQueries(spec, def, values) {
   switch (def.type) {
     case "slicer": return slicerQueries(spec, def, values);
     case "kpi": return def.measures.map(term).flatMap((t) => { const q = kpiQueries(spec, def, t, values); return [...q.now, ...(q.series || []), ...(q.previous?.queries || [])]; });

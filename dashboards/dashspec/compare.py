@@ -11,6 +11,19 @@ _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _INT = re.compile(r"^-?\d+$")
 
 
+def is_shift(kind):
+    """A fixed shift, { months, years? } or { days } (a calculation's prior(), see timecalc.py), rather than one of COMPARE_KINDS (mirror of isShift in compare.js)."""
+    return isinstance(kind, dict) and any(isinstance(kind.get(k), int) and not isinstance(kind.get(k), bool) for k in ("months", "days"))
+
+
+def add_days(s, n):
+    return (date.fromisoformat(s) + timedelta(days=n)).isoformat()
+
+
+def is_range(rng):
+    return isinstance(rng, list) and len(rng) == 2 and all(isinstance(s, str) and _ISO.match(s) for s in rng) and rng[0] <= rng[1]
+
+
 def _days_in(y, m):
     return monthrange(y, m)[1]
 
@@ -24,11 +37,13 @@ def add_months(s, n, keep_end=False):
 
 
 def shift_range(rng, kind):
-    if not isinstance(rng, list) or len(rng) != 2 or not all(isinstance(s, str) and _ISO.match(s) for s in rng):
+    if not is_range(rng):
         return None
     a, b = rng
-    if a > b:
-        return None
+    if is_shift(kind):
+        if isinstance(kind.get("months"), int):
+            return [add_months(a, -kind["months"]), add_months(b, -kind["months"], True)]
+        return [add_days(a, -kind["days"]), add_days(b, -kind["days"])]
     if kind == "previous_year":
         return [add_months(a, -12), add_months(b, -12, True)]
     ay, am, ad = map(int, a.split("-"))
@@ -45,6 +60,8 @@ def shift_years(values, kind):
     if not values or not all(_INT.match(str(v)) for v in values):
         return None
     ys = [int(v) for v in values]
+    if is_shift(kind):
+        return [str(y - kind["years"]) for y in ys] if isinstance(kind.get("years"), int) else None
     by = 1
     if kind == "previous_period" and len(ys) > 1:
         s = sorted(set(ys))
@@ -61,7 +78,7 @@ def is_year_field(member, year_fields):
 
 def shift_query(query, kind, year_fields=None):
     """{ query, moved } or None (see shiftQuery in compare.js)."""
-    if kind not in COMPARE_KINDS:
+    if kind not in COMPARE_KINDS and not is_shift(kind):
         return None
     moved, ok = [], True
     filters = []

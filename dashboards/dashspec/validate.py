@@ -365,6 +365,48 @@ def _calculation_errors(spec, catalog):
                 errs.append(f"{w}: formula: '{m}' is not in the Cube model ({catalog.suggest(m)})")
             elif found[0] != "measure":
                 errs.append(f"{w}: formula: '{m}' is a {found[0]}, a measure is needed here")
+        for m, ns in calculations.time_calls([tree])["rolling"].items():
+            agg = catalog.agg_type(m) if (catalog.lookup(m) or ("",))[0] == "measure" else None
+            if agg is not None and agg not in ADDITIVE:
+                errs.append(f"{w}: formula: rolling({m}, {ns[0]}): '{m}' is a {agg} measure, which does not add up over time buckets (twelve monthly distinct counts are not "
+                            f"a 12-month distinct count): roll a sum or count measure, or give the model a Cube rolling_window measure for it")
+    return errs
+
+
+PRIOR_FITS = {"year": ("year",), "quarter": ("year", "quarter"), "month": ("year", "quarter", "month"), "week": ("year", "week"),
+              "day": ("year", "quarter", "month", "week", "day"), "hour": ()}          # the prior() units that move a bucket of each granularity onto another bucket
+
+
+def _time_axes(p):
+    """The granularities a panel's rows can be grouped by in time: (granularities of the panel's own figures, the sparkline's). A panel without a time axis has none."""
+    if p["type"] == "timeseries":
+        return list(dict.fromkeys([p["granularity"], *p.get("granularities", []), *p.get("drill", [])])), []
+    if p["type"] == "pivot" and isinstance(p["columns"], dict) and p["columns"].get("granularity"):
+        return [p["columns"]["granularity"]], []
+    if p["type"] == "kpi" and "sparkline" in p:
+        return [], [p["sparkline"]["granularity"]]
+    return [], []
+
+
+def _time_calc_errors(p, w, catalog):
+    """A calculation's prior() must fit every granularity the panel shows, and rolling() needs a time axis (lib/timecalc.js makes their queries)."""
+    errs = []
+    calcs = getattr(catalog, "calcs", {})
+    own, spark = _time_axes(p)
+    for field, member, _ in _panel_members(p):
+        tree = calcs.get(member, {}).get("calc", {}).get("ast")
+        if tree is None:
+            continue
+        calls = calculations.time_calls([tree])
+        if calls["rolling"] and (not own or "hour" in own):
+            where = "a time chart or a pivot whose columns are a time dimension with a granularity"
+            errs.append(f"{w}: {field}: '{member}' uses rolling(), which sums the time buckets before each one, so it needs a time axis by day, week, month, quarter or year: {where}"
+                        + (" (a key figure has a single value; its sparkline does not count)" if p["type"] == "kpi" else ""))
+        for unit in calls["prior"]:
+            for g in [*own, *spark]:
+                if unit not in PRIOR_FITS[g]:
+                    fits = ", ".join(PRIOR_FITS[g]) or "none"
+                    errs.append(f"{w}: {field}: '{member}' uses prior(..., {unit}), which does not move a {g} bucket onto another one (on a {g} axis: {fits})")
     return errs
 
 
@@ -499,6 +541,7 @@ def semantic_errors(spec, catalog):
                         errs.append(f"{w}: measures[{i}]: '{column_member(m)}' is a {typ} measure, which does not add up across rows and columns, so a share of it means nothing: use `show: value` or a `sum` or `count` measure")
             if "heat" in p and p["heat"]["measure"] not in [column_member(m) for m in p["measures"]]:
                 errs.append(f"{w}: heat.measure: '{p['heat']['measure']}' is not one of the pivot's measures")
+        errs.extend(_time_calc_errors(p, w, catalog))
         _join_errors(spec, p, w, catalog, errs)
 
     _layout_errors(spec, panel_ids, errs)

@@ -5,6 +5,7 @@ compares, on every checked-in dashboard and several filter states."""
 from .calculations import PREFIX, real_members
 from .compare import previous_queries
 from .filters import applies, default_env, effective_value, to_cube
+from .timecalc import with_time_calcs
 
 DEFAULT_LIMIT = {"bar": 10, "table": 100}
 PIVOT_LIMIT = {"rows": 25, "columns": 12}
@@ -259,7 +260,12 @@ def pivot_queries(spec, panel, values):
 
 
 def panel_queries(spec, panel, values):
-    """Every query the panel sends for these filter values, at its default granularity (a KPI's tiles and sparklines included)."""
+    """Every query the panel sends for these filter values, at its default granularity (a KPI's tiles and sparklines included), with the ones its calculations'
+    prior() and rolling() add (timecalc.py)."""
+    return with_time_calcs(_panel_queries(spec, panel, values), spec.get("yearFields"))
+
+
+def _panel_queries(spec, panel, values):
     kind = panel["type"]
     if kind == "slicer":
         return slicer_queries(spec, panel, values)
