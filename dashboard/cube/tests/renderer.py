@@ -1250,7 +1250,9 @@ with sync_playwright() as p:
     # a time axis of the panel's own: the drill-down chart and the key figures' sparkline follow the SHIP date; a drill-down sets the period of the ship date only
     def compiled_on_ship_date():
         src = _yaml.safe_load((ms.ROOT / "dashboards" / "sales-drilldown.yml").read_text())
-        next(p for p in src["panels"] if p["id"] == "trend")["time_dimension"] = "ship_dates.full_date"
+        for p in src["panels"]:                      # every time chart (the drill-down, and the growth and rolling charts)
+            if p["type"] == "timeseries":
+                p["time_dimension"] = "ship_dates.full_date"
         kp = next(p for p in src["panels"] if p["type"] == "kpi")
         kp["time_dimension"] = "ship_dates.full_date"
         kp["sparkline"] = {"granularity": "month"}
