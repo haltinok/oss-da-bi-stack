@@ -8,6 +8,16 @@ locale: tr-TR
 currency: TRY
 time:
   dimension: calendar.full_date
+calculations:
+  # zaman zekâsı: prior() bir yıl önceki aynı ay, rolling() son 12 ayın toplamı (docs/dashboards.md)
+  - id: ciro_yoy
+    label: Geçen yıla göre ciro
+    formula: orders.revenue / prior(orders.revenue, year) - 1
+    format: pct
+  - id: ciro_r12
+    label: Son 12 ay ciro
+    formula: rolling(orders.revenue, 12)
+    format: money
 filters:
   - id: year
     dimension: calendar.calendar_year
@@ -36,6 +46,21 @@ panels:
       - { member: payments.collected, label: Tahsilat, color: good, format: money }
     granularity: month
     style: line
+  - id: growth
+    type: timeseries
+    title: Cironun geçen yıla göre değişimi
+    series:
+      - { member: calc.ciro_yoy, label: Geçen yıla göre, color: focus, format: pct }
+    granularity: month
+    style: bar
+  - id: rolling
+    type: timeseries
+    title: Son 12 ay ciro
+    series:
+      - { member: calc.ciro_r12, label: Son 12 ay, color: focus, format: money }
+      - { member: orders.revenue, label: Ay, color: series2, format: money }
+    granularity: month
+    style: line
   - id: segments
     type: pie
     title: Bayi tipine göre ciro
@@ -61,3 +86,4 @@ layout:
   - [{ kpis: 12 }]
   - [{ trend: 8 }, { segments: 4 }]
   - [{ regions: 6 }, { categories: 6 }]
+  - [{ growth: 6 }, { rolling: 6 }]

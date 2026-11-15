@@ -12,6 +12,20 @@
   "time": {
     "dimension": "calendar.full_date"
   },
+  "calculations": [
+    {
+      "id": "ciro_yoy",
+      "label": "Geçen yıla göre ciro",
+      "formula": "orders.revenue / prior(orders.revenue, year) - 1",
+      "format": "pct"
+    },
+    {
+      "id": "ciro_r12",
+      "label": "Son 12 ay ciro",
+      "formula": "rolling(orders.revenue, 12)",
+      "format": "money"
+    }
+  ],
   "filters": [
     {
       "id": "year",
@@ -95,6 +109,42 @@
       ]
     },
     {
+      "id": "growth",
+      "type": "timeseries",
+      "title": "Cironun geçen yıla göre değişimi",
+      "series": [
+        {
+          "member": "calc.ciro_yoy",
+          "label": "Geçen yıla göre",
+          "color": "focus",
+          "format": "pct"
+        }
+      ],
+      "granularity": "month",
+      "style": "bar"
+    },
+    {
+      "id": "rolling",
+      "type": "timeseries",
+      "title": "Son 12 ay ciro",
+      "series": [
+        {
+          "member": "calc.ciro_r12",
+          "label": "Son 12 ay",
+          "color": "focus",
+          "format": "money"
+        },
+        {
+          "member": "orders.revenue",
+          "label": "Ay",
+          "color": "series2",
+          "format": "money"
+        }
+      ],
+      "granularity": "month",
+      "style": "line"
+    },
+    {
       "id": "segments",
       "type": "pie",
       "title": "Bayi tipine göre ciro",
@@ -157,9 +207,61 @@
         "panel": "categories",
         "span": 6
       }
+    ],
+    [
+      {
+        "panel": "growth",
+        "span": 6
+      },
+      {
+        "panel": "rolling",
+        "span": 6
+      }
     ]
   ],
   "members": {
+    "calc.ciro_r12": {
+      "kind": "measure",
+      "type": "number",
+      "label": "Son 12 ay ciro",
+      "calc": {
+        "ast": {
+          "rolling": "orders.revenue",
+          "over": 12
+        },
+        "members": [
+          "orders.revenue"
+        ]
+      },
+      "format": "money"
+    },
+    "calc.ciro_yoy": {
+      "kind": "measure",
+      "type": "number",
+      "label": "Geçen yıla göre ciro",
+      "calc": {
+        "ast": {
+          "op": "-",
+          "a": {
+            "op": "/",
+            "a": {
+              "m": "orders.revenue"
+            },
+            "b": {
+              "prior": "orders.revenue",
+              "by": "year"
+            }
+          },
+          "b": {
+            "n": 1
+          }
+        },
+        "members": [
+          "orders.revenue"
+        ]
+      },
+      "format": "pct"
+    },
     "calendar.calendar_year": {
       "kind": "dimension",
       "type": "number"

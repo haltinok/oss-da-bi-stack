@@ -5,9 +5,9 @@
 import { defaultEnv, toCube } from "../lib/filters.js";
 import { AGGREGATE_LIMIT } from "../lib/aggregate.js";
 import { memberLabel } from "../lib/labels.js";
-import { evaluateCalc, realMembers } from "../lib/calc.js";
+import { evaluateCalc, realMembers, timeCalls } from "../lib/calc.js";
 import { previousQueries } from "../lib/compare.js";
-import { withTimeCalcs } from "../lib/timecalc.js";
+import { isTimeCalcKey, withTimeCalcs, withTimeValues } from "../lib/timecalc.js";
 
 export const cubeOf = (member) => member.split(".")[0];
 export const num = (v) => (v == null || v === "" ? null : Number(v));
@@ -111,6 +111,8 @@ export function queriesPerCube(spec, measures, base = {}) {
     const { order, limit, ...rest } = base;
     base = rest;
     post = { calcs, ...(order ? { order } : {}), ...(limit !== undefined ? { limit } : {}) };
+    const tc = timeCalls(Object.values(calcs));
+    if (Object.keys(tc.prior).length || Object.keys(tc.rolling).length) post.time = { yearFields: spec.yearFields || {}, fiscalStart: spec.time?.fiscal_year_start || 1 };          // what prior() and rolling() need (lib/timecalc.js)
     measures = realMembers(members, measures);
   }
   return [...byCube(measures)].map(([cube, ms]) => ({ cube, query: { ...base, measures: ms }, ...(post ? { post } : {}) }));
@@ -121,12 +123,16 @@ export function queriesPerCube(spec, measures, base = {}) {
  * together on their dimensions, the formulas worked out on each row (a total row is the formula over the totals), then ordered and limited.
  */
 export async function runAll(run, queries, signal) {
-  const results = await Promise.all(queries.map(async ({ cube, query, post }) => ({ cube, rows: await run(query, signal), measures: query.measures, post })));
+  // a calculation's prior() and rolling() add queries (lib/timecalc.js), unless that was done already; the same query is sent once
+  if (!queries.some((q) => q.prior || q.widened)) queries = withTimeCalcs(queries, queries.find((q) => q.post?.time)?.post.time.yearFields);
+  const sent = new Map();
+  const once = (query) => { const k = JSON.stringify(query); if (!sent.has(k)) sent.set(k, run(query, signal)); return sent.get(k); };
+  const results = await Promise.all(queries.map(async ({ cube, query, post, prior, widened }) => ({ cube, rows: await once(query), measures: query.measures, post, query, prior, widened })));
   if (!results.some((r) => r.post)) return results.map(({ cube, rows }) => ({ cube, rows }));
   const out = [], groups = new Map();
   for (const r of results) {
     if (!r.post) { out.push({ cube: r.cube, rows: r.rows }); continue; }
-    if (!groups.has(r.post)) { const slot = { cube: r.cube, rows: [] }; groups.set(r.post, { slot, parts: [] }); out.push(slot); }
+    if (!groups.has(r.post)) { const slot = { cube: r.cube, rows: [] }; groups.set(r.post, { slot, parts: [] }); out.push(slot); }          // a moved query (prior) is a part, not a slot
     groups.get(r.post).parts.push(r);
   }
   for (const [post, { slot, parts }] of groups) slot.rows = combine(parts, post);
@@ -141,14 +147,17 @@ const orderValue = (a, b) => {
 
 function combine(parts, post) {
   const measures = new Set(parts.flatMap((p) => p.measures));
+  const keyOf = (r) => JSON.stringify(Object.keys(r).filter((k) => !measures.has(k) && !isTimeCalcKey(k)).sort().map((k) => [k, r[k]]));          // the dimensions (and a time bucket) tell the rows apart
   const merged = new Map();
-  for (const { rows } of parts) {
+  for (const { rows, prior } of parts) {
+    if (prior) continue;                                    // a moved query's rows are the earlier values of these rows, not rows of their own
     for (const r of rows) {
-      const key = JSON.stringify(Object.keys(r).filter((k) => !measures.has(k)).sort().map((k) => [k, r[k]]));          // the dimensions (and a time bucket) tell the rows apart
+      const key = keyOf(r);
       merged.set(key, { ...(merged.get(key) || {}), ...r });
     }
   }
   let rows = [...merged.values()];
+  if (post.time) rows = withTimeValues(rows, parts, { ...post.time, calls: timeCalls(Object.values(post.calcs)), keyOf });
   for (const r of rows) for (const [id, ast] of Object.entries(post.calcs)) r[id] = evaluateCalc(ast, (m) => num(r[m]));
   const keys = Object.entries(post.order || {});
   if (keys.length) rows.sort((a, b) => { for (const [k, dir] of keys) { const c = orderValue(a[k], b[k]) * (dir === "desc" ? -1 : 1); if (c) return c; } return 0; });

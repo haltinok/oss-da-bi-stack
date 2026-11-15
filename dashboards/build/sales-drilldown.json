@@ -12,6 +12,20 @@
     "dimension": "dates.full_date",
     "fiscal_year_start": 7
   },
+  "calculations": [
+    {
+      "id": "revenue_yoy",
+      "label": "Revenue vs last year",
+      "formula": "(internet_sales.revenue + reseller_sales.revenue - prior(internet_sales.revenue, year) - prior(reseller_sales.revenue, year)) / (prior(internet_sales.revenue, year) + prior(reseller_sales.revenue, year))",
+      "format": "pct"
+    },
+    {
+      "id": "revenue_r12",
+      "label": "Revenue, last 12 months",
+      "formula": "rolling(internet_sales.revenue, 12) + rolling(reseller_sales.revenue, 12)",
+      "format": "money"
+    }
+  ],
   "filters": [
     {
       "id": "category",
@@ -34,6 +48,13 @@
       "dimension": "territories.group_name",
       "label": "Sales group",
       "source": "group"
+    },
+    {
+      "id": "xf_growth_1",
+      "dimension": "dates.fiscal_year",
+      "label": "Fiscal year",
+      "implicit": true,
+      "source": "growth"
     }
   ],
   "panels": [
@@ -186,6 +207,55 @@
       }
     },
     {
+      "id": "growth",
+      "type": "timeseries",
+      "title": "Revenue growth on the year before",
+      "series": [
+        {
+          "member": "calc.revenue_yoy",
+          "label": "vs last year",
+          "color": "series1",
+          "format": "pct"
+        }
+      ],
+      "granularity": "month",
+      "style": "bar",
+      "on_click": {
+        "set_filter": [
+          "xf_growth_1"
+        ]
+      }
+    },
+    {
+      "id": "rolling",
+      "type": "timeseries",
+      "title": "Revenue, rolling 12 months",
+      "series": [
+        {
+          "member": "calc.revenue_r12",
+          "label": "Last 12 months",
+          "color": "series1",
+          "format": "money"
+        },
+        {
+          "sum": [
+            "internet_sales.revenue",
+            "reseller_sales.revenue"
+          ],
+          "label": "The month",
+          "color": "series2",
+          "format": "money"
+        }
+      ],
+      "granularity": "month",
+      "style": "line",
+      "on_click": {
+        "set_filter": [
+          "xf_growth_1"
+        ]
+      }
+    },
+    {
       "id": "detail",
       "type": "table",
       "title": "Revenue by subcategory",
@@ -262,12 +332,94 @@
     ],
     [
       {
+        "panel": "growth",
+        "span": 6
+      },
+      {
+        "panel": "rolling",
+        "span": 6
+      }
+    ],
+    [
+      {
         "panel": "detail",
         "span": 12
       }
     ]
   ],
   "members": {
+    "calc.revenue_r12": {
+      "kind": "measure",
+      "type": "number",
+      "label": "Revenue, last 12 months",
+      "calc": {
+        "ast": {
+          "op": "+",
+          "a": {
+            "rolling": "internet_sales.revenue",
+            "over": 12
+          },
+          "b": {
+            "rolling": "reseller_sales.revenue",
+            "over": 12
+          }
+        },
+        "members": [
+          "internet_sales.revenue",
+          "reseller_sales.revenue"
+        ]
+      },
+      "format": "money"
+    },
+    "calc.revenue_yoy": {
+      "kind": "measure",
+      "type": "number",
+      "label": "Revenue vs last year",
+      "calc": {
+        "ast": {
+          "op": "/",
+          "a": {
+            "op": "-",
+            "a": {
+              "op": "-",
+              "a": {
+                "op": "+",
+                "a": {
+                  "m": "internet_sales.revenue"
+                },
+                "b": {
+                  "m": "reseller_sales.revenue"
+                }
+              },
+              "b": {
+                "prior": "internet_sales.revenue",
+                "by": "year"
+              }
+            },
+            "b": {
+              "prior": "reseller_sales.revenue",
+              "by": "year"
+            }
+          },
+          "b": {
+            "op": "+",
+            "a": {
+              "prior": "internet_sales.revenue",
+              "by": "year"
+            },
+            "b": {
+              "prior": "reseller_sales.revenue",
+              "by": "year"
+            }
+          }
+        },
+        "members": [
+          "internet_sales.revenue",
+          "reseller_sales.revenue"
+        ]
+      },
+      "format": "pct"
+    },
     "dates.full_date": {
       "kind": "dimension",
       "type": "time"
