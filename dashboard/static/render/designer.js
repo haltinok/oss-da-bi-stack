@@ -273,6 +273,16 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
       ops.append(b);
     }
     ops.append(el("p", { class: "hint" }, esc(dz.calcOpsTip)));
+    // examples with this model's first measure; double-click puts one into the formula
+    const fact = baseCatalog.find((c) => c.fact && c.measures.length) || baseCatalog.find((c) => c.measures.length);
+    const mem = fact ? fact.measures[0].member : "a.measure";
+    ops.append(el("h3", {}, esc(dz.calcExamples)));
+    for (const [text, why] of [[`prior(${mem}, year)`, dz.calcExPrior], [`${mem} / prior(${mem}, year) - 1`, dz.calcExYoy], [`rolling(${mem}, 12)`, dz.calcExRolling], [`rolling(${mem}, 3) / 3`, dz.calcExAvg]]) {
+      const b = el("button", { type: "button", class: "calc-op calc-ex", "data-insert": text, title: why }, esc(text));
+      b.addEventListener("dblclick", () => insert(text));
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); insert(text); } });
+      ops.append(b, el("p", { class: "hint" }, esc(why)));
+    }
 
     const candidate = () => saveCalculation(source, { id: current, label: name.value.trim() || dz.calcPlaceholderName, formula: box.value, format: format.value });
     async function check() {
