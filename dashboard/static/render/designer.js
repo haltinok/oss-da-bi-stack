@@ -263,7 +263,7 @@ export async function mountDesigner({ api, t, draft, spec, panels, host }) {
     });
 
     // the operators and keywords
-    const OPS = [["+", " + ", 0], ["−", " - ", 0], ["×", " * ", 0], ["÷", " / ", 0], ["(", "(", 0], [")", ")", 0], [",", ", ", 0], ["sum( )", "sum()", 1]];
+    const OPS = [["+", " + ", 0], ["−", " - ", 0], ["×", " * ", 0], ["÷", " / ", 0], ["(", "(", 0], [")", ")", 0], [",", ", ", 0], ["sum( )", "sum()", 1], ["prior( )", "prior(, year)", 6], ["rolling( )", "rolling(, 12)", 5], ["year", "year", 0], ["quarter", "quarter", 0], ["month", "month", 0], ["week", "week", 0], ["day", "day", 0]];
     const ops = el("div", { class: "calc-ops" });
     ops.append(el("h3", {}, esc(dz.calcOperators)));
     for (const [label, text, back] of OPS) {
