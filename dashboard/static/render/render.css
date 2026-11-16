@@ -409,6 +409,7 @@ code { font-size: 12px; background: var(--surface-2); padding: 1px 4px; border-r
 .calc-check ul { margin: 0; padding-left: 18px; }
 .calc-ops { overflow: auto; }
 .calc-op { padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; cursor: default; }
+.calc-ex { text-align: left; font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
 .calc-op:hover, .calc-op:focus-visible { border-color: var(--focus); }
 .calc-foot { border-top: 1px solid var(--border); }
 .calc-foot .spacer { flex: 1; }
